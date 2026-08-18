@@ -31,3 +31,11 @@ metaprogramming uses of unsafe APIs are isolated and excluded from proof claims.
 
 Placeholder scans, axiom manifests, `lean4checker` where applicable, differential
 tests, browser tests, and final claim review enforce the boundary.
+
+## Reviewed M0 axiom manifest
+
+Lean 4.33 generates `LeanRx.SourcePos.mk.injEq` and
+`LeanRx.SourceSpan.mk.injEq`; each depends on the kernel's standard `propext`
+axiom. These generated constructor-injectivity theorems are not LeanRx semantic
+claims. `Test/Policy/EnvironmentAudit.lean` permits exactly these two
+theorem/axiom pairs and rejects every unlisted or changed pair.

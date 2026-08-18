@@ -4,7 +4,7 @@ set -euo pipefail
 if (( $# > 0 )); then
   roots=("$@")
 else
-  roots=(LeanRx/Core LeanRx/Graph LeanRx/Semantics LeanRx/Proofs)
+  roots=(LeanRx/Core LeanRx/Graph LeanRx/Semantics LeanRx/Proofs examples)
 fi
 
 files=()
@@ -23,7 +23,7 @@ if (( ${#files[@]} == 0 )); then
   exit 0
 fi
 
-pattern='^[[:space:]]*(@\[[^]]+\][[:space:]]*)*((private|protected|public|noncomputable|opaque)[[:space:]]+)*(unsafe|partial)[[:space:]]'
+pattern='^[[:space:]]*(unsafe|partial)([[:space:]]|$)|[[:space:]]in[[:space:]]+(unsafe|partial)[[:space:]]+|^[[:space:]]*(@\[[^]]+\][[:space:]]*)*((private|protected|public|noncomputable|opaque)[[:space:]]+)*(unsafe|partial)[[:space:]]'
 if rg --line-number --with-filename "$pattern" "${files[@]}"; then
   echo "semantic safety: unsafe or partial declaration found in a verified path" >&2
   exit 1

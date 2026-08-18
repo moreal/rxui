@@ -2,4 +2,4 @@
 set -euo pipefail
 
 lake env lean Test/AxiomManifest.lean
-echo "axiom audit: all public LeanRx theorems passed"
+echo "environment audit: all LeanRx declarations passed"

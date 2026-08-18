@@ -9,6 +9,9 @@ package leanrx where
 
 lean_lib LeanRx
 
+lean_lib LeanRxTest where
+  roots := #[`Test.Policy.EnvironmentAudit, `Test.AxiomManifest]
+
 @[default_target]
 lean_exe leanrx_test where
   root := `Test.Main

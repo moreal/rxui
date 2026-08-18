@@ -15,4 +15,10 @@ feature commits and require all of the following:
 
 ## Internal API inventory
 
-None at M0. Public Lake declarations are used in `lakefile.lean`.
+- `Test/Policy/EnvironmentAudit.lean` imports `Lean` for a test-only environment
+  audit. It uses `Environment.constants`, `SMap.toList`,
+  `ConstantInfo.isAxiom`/`isUnsafe`/`isPartial`/`isTheorem`, and
+  `Lean.collectAxioms`. Recheck these names and imported/local environment
+  behavior on every toolchain upgrade.
+- Production code uses no internal Lean metaprogramming or compiler API at M0.
+- `lakefile.lean` uses public Lake declarations.

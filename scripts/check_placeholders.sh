@@ -29,4 +29,9 @@ if rg --line-number --with-filename "$pattern" "${files[@]}"; then
   exit 1
 fi
 
+if rg --line-number --with-filename 'native_decide' "${files[@]}"; then
+  echo "placeholder policy: native_decide requires an explicit ADR and trust review" >&2
+  exit 1
+fi
+
 echo "placeholder policy: ${#files[@]} Lean files passed"

@@ -41,4 +41,9 @@ if ./scripts/check_semantic_safety.sh Test/fixtures/policy/UnsafeSemantic.lean >
   exit 1
 fi
 
+if lake env lean Test/fixtures/policy/EnvironmentUnsafe.lean >/dev/null 2>&1; then
+  echo "environment audit accepted a split unsafe declaration" >&2
+  exit 1
+fi
+
 echo "placeholder scanner regression test passed"

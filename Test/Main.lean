@@ -1,4 +1,4 @@
-import LeanRx
+import Test.AxiomManifest
 
 private def assertEq [BEq α] [ToString α] (expected actual : α) : IO Unit :=
   unless expected == actual do
