@@ -1,0 +1,25 @@
+name: Lean
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          use-github-cache: true
+      - name: Build library and tests
+        run: lake build
+      - name: Run native smoke tests
+        run: lake exe leanrx_test
+      - name: Enforce proof placeholder policy
+        run: ./scripts/check_placeholders.sh
+      - name: Test the policy scanner
+        run: ./scripts/test_placeholder_scanner.sh
