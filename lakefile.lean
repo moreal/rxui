@@ -5,6 +5,7 @@ open Lake DSL
 package leanrx where
   version := v!"0.1.0"
   fixedToolchain := true
+  moreLeanArgs := #["-E", "hasSorry"]
 
 lean_lib LeanRx
 
