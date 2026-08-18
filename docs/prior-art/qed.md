@@ -1,7 +1,8 @@
 # Qed prior-art review
 
-Reviewed on 2026-08-19 from the upstream repository:
-<https://github.com/JacobAsmuth/qed>.
+Reviewed on 2026-08-19 at upstream revision
+`cefc5db34e14fd74138eda25edf09a9b50e01a35`:
+<https://github.com/JacobAsmuth/qed/tree/cefc5db34e14fd74138eda25edf09a9b50e01a35>.
 
 Qed is an MIT-licensed Lean 4 frontend framework. Its public repository describes
 a typed Virtual DOM, Elm-style application/update model, direct value patches for
