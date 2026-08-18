@@ -1,3 +1,5 @@
+import LeanRx.Core.SourceInfo
+
 /-! LeanRx's public library root. -/
 namespace LeanRx
 
