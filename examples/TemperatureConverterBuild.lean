@@ -16,6 +16,7 @@ private def expectedCase (scale : TemperatureScale) (raw : String) : IO String :
 private def expectedJson : IO String := do
   let cases ← [
     (.celsius, "100"), (.fahrenheit, "32"), (.celsius, "-40"),
+    (.celsius, "-1"),
     (.celsius, "9007199254740993")
   ].mapM fun (scale, raw) => expectedCase scale raw
   pure <| "[" ++ String.intercalate "," cases ++ "]\n"

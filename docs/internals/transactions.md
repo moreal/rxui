@@ -25,13 +25,21 @@ development snapshot:
 | 3 | derived evaluations |
 | 4 | changed derived values |
 | 5 | sink evaluations |
-| 6 | DOM text writes |
+| 6 | DOM writes (text, property, or dynamic attribute) |
 | 7 | stable trace-event strings |
 
 Counters are cumulative for that mount and start at zero after initial mount.
 Mutating the returned array or its trace copy cannot modify transaction control.
 Trace events use declared source, derived, sink, and event names. They are a
 development observability contract, not a timing API.
+
+Specialized form emitters preserve the same indices. Parser/validator execution
+is event-local update work, not a graph-derived node, so it never increments
+indices 3 or 4 when the manifest reports `derivedCount: 0`. Index 2 includes
+every evaluated source write, including a successful Temperature conversion's
+explicit opposite-source write. Index 5 increments before each sink evaluation;
+cache equality controls only index 6. Trace entries contain stable declared
+event/payload/sink names and never retain raw key payloads.
 
 Ordinary event expressions may read sources. A direct derived read fails with
 `LRX-TYPE-108` and explains that a transaction barrier is required. LeanRx does

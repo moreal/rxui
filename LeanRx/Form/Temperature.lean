@@ -1,5 +1,6 @@
 import LeanRx.Component.Dependent
 import LeanRx.Component.Model
+import LeanRx.Form.Dom
 import LeanRx.Form.Validation
 import LeanRx.Graph.Topological
 
@@ -34,12 +35,36 @@ def fahrenheitEvent (spec : TemperatureSpec) :
     TypedEventSpec TemperatureState String :=
   TypedEventSpec.assign "editFahrenheit" "value" fahrenheitField spec.span
 
+/-- Checked event-local update plan. Parsing reads only the edited raw field;
+successful conversion performs a second source write to the explicit opposite
+field. Event-local writes are phase-separated from graph propagation and do not
+form derived edges. -/
+structure UpdatePlan where
+  private mk ::
+  binding : StateControlBinding TemperatureState String
+  scale : TemperatureScale
+  convertedTarget : Field TemperatureState String
+  convertedProperty : DomProperty String
+
+namespace UpdatePlan
+
+def celsius (spec : TemperatureSpec) : UpdatePlan :=
+  ⟨.textInput spec.celsiusEvent, .celsius, fahrenheitField, .value⟩
+
+def fahrenheit (spec : TemperatureSpec) : UpdatePlan :=
+  ⟨.textInput spec.fahrenheitEvent, .fahrenheit, celsiusField, .value⟩
+
+def writeTargetIndices (plan : UpdatePlan) : Array Nat :=
+  #[plan.binding.target.index, plan.convertedTarget.index]
+
+end UpdatePlan
+
 structure Checked where
   private mk ::
   spec : TemperatureSpec
   graph : PlannedGraph
-  celsiusEvent : TypedEventSpec TemperatureState String
-  fahrenheitEvent : TypedEventSpec TemperatureState String
+  celsiusUpdate : UpdatePlan
+  fahrenheitUpdate : UpdatePlan
 
 private def graphSpecs (spec : TemperatureSpec) : Array NodeSpec := #[
   .source "celsius" .string spec.span,
@@ -47,7 +72,16 @@ private def graphSpecs (spec : TemperatureSpec) : Array NodeSpec := #[
   .sink "celsiusValue" .string #[{ id := ⟨0⟩, valueType := .string }]
     "property(celsius.value)" spec.span,
   .sink "fahrenheitValue" .string #[{ id := ⟨1⟩, valueType := .string }]
-    "property(fahrenheit.value)" spec.span
+    "property(fahrenheit.value)" spec.span,
+  .sink "temperatureError" .string #[
+    { id := ⟨0⟩, valueType := .string }, { id := ⟨1⟩, valueType := .string }]
+    "validation(signedInteger)" spec.span,
+  .sink "celsiusInvalid" .bool #[
+    { id := ⟨0⟩, valueType := .string }, { id := ⟨1⟩, valueType := .string }]
+    "attribute(celsius.aria-invalid)" spec.span,
+  .sink "fahrenheitInvalid" .bool #[
+    { id := ⟨0⟩, valueType := .string }, { id := ⟨1⟩, valueType := .string }]
+    "attribute(fahrenheit.aria-invalid)" spec.span
 ]
 
 def check (spec : TemperatureSpec) : Except ComponentError Checked :=
@@ -80,8 +114,8 @@ def check (spec : TemperatureSpec) : Except ComponentError Checked :=
         | .ok graph => .ok {
             spec
             graph
-            celsiusEvent := spec.celsiusEvent
-            fahrenheitEvent := spec.fahrenheitEvent
+            celsiusUpdate := .celsius spec
+            fahrenheitUpdate := .fahrenheit spec
           }
 
 end TemperatureSpec

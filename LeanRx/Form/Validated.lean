@@ -36,6 +36,15 @@ def ageEvent (spec : ValidatedFormSpec) : TypedEventSpec ValidatedFormState Stri
 def acceptedEvent (spec : ValidatedFormSpec) : TypedEventSpec ValidatedFormState Bool :=
   TypedEventSpec.assign "toggleAccepted" "checked" formAcceptedField spec.span
 
+def nameControl (spec : ValidatedFormSpec) : StateControlBinding ValidatedFormState String :=
+  .textInput spec.nameEvent
+
+def ageControl (spec : ValidatedFormSpec) : StateControlBinding ValidatedFormState String :=
+  .textChange spec.ageEvent
+
+def acceptedControl (spec : ValidatedFormSpec) : StateControlBinding ValidatedFormState Bool :=
+  .checkedChange spec.acceptedEvent
+
 def submitBinding (_ : ValidatedFormSpec) : ControlBinding Unit :=
   { event := .submit, handlerName := "submitValidated" }
 
@@ -52,9 +61,9 @@ structure Checked where
   private mk ::
   spec : ValidatedFormSpec
   graph : PlannedGraph
-  nameEvent : TypedEventSpec ValidatedFormState String
-  ageEvent : TypedEventSpec ValidatedFormState String
-  acceptedEvent : TypedEventSpec ValidatedFormState Bool
+  nameControl : StateControlBinding ValidatedFormState String
+  ageControl : StateControlBinding ValidatedFormState String
+  acceptedControl : StateControlBinding ValidatedFormState Bool
   submitBinding : ControlBinding Unit
   keyBinding : ControlBinding String
   focusBinding : ControlBinding Unit
@@ -93,9 +102,9 @@ def check (spec : ValidatedFormSpec) : Except ComponentError Checked :=
     | .ok graph => .ok {
         spec
         graph
-        nameEvent := spec.nameEvent
-        ageEvent := spec.ageEvent
-        acceptedEvent := spec.acceptedEvent
+        nameControl := spec.nameControl
+        ageControl := spec.ageControl
+        acceptedControl := spec.acceptedControl
         submitBinding := spec.submitBinding
         keyBinding := spec.keyBinding
         focusBinding := spec.focusBinding

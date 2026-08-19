@@ -18,6 +18,7 @@ import Test.Backend.JsPrinter
 import Test.IR.Erasure
 import Test.Lower.RxExpr
 import Test.Backend.Scalar
+import Test.Backend.FormDom
 import Test.Backend.Component
 import Test.Backend.Tabs
 import Test.Backend.Temperature
@@ -65,6 +66,7 @@ def main : IO Unit := do
   LeanRxTest.IR.Erasure.run
   LeanRxTest.Lower.RxExpr.run
   LeanRxTest.Backend.Scalar.run
+  LeanRxTest.Backend.FormDom.run
   LeanRxTest.Backend.Component.run
   LeanRxTest.Backend.Tabs.run
   LeanRxTest.Backend.Temperature.run

@@ -13,6 +13,8 @@ if (
   manifest.runtimeAbi !== 4 ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string", "string", "bool"]) ||
   manifest.sourceCount !== 3 ||
+  manifest.derivedCount !== 0 ||
+  manifest.textSinkCount !== 4 ||
   manifest.eventCount !== 7 ||
   !manifest.features.includes("typed-command") ||
   !manifest.features.includes("submit") ||

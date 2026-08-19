@@ -100,9 +100,12 @@ test("prevents invalid submit and exposes only a validated fake command", async 
   await inputs.nth(0).fill(hostile);
   await page.keyboard.press("Tab");
   await inputs.nth(1).fill("1_0");
-  await expect(errors.nth(1)).toHaveText("enter a non-negative integer using ASCII digits");
+  await inputs.nth(1).press("Tab");
+  await expect(errors.nth(1)).toHaveText(expected.invalid.lexicalAge);
   await expect(submit).toBeDisabled();
+  await inputs.nth(1).focus();
   await inputs.nth(1).fill("42");
+  await inputs.nth(1).press("Tab");
   await inputs.nth(2).check();
   await expect(errors).toHaveText(["", "", ""]);
   await expect(submit).toBeEnabled();
@@ -120,10 +123,39 @@ test("prevents invalid submit and exposes only a validated fake command", async 
   expect(trace).toContain("event:blur");
   expect(trace).toContain("event:submit");
   expect(trace).toContain("command:fakeSubmit");
-  const instrumentation = await page.evaluate(() => globalThis.formDisposers[0].instrumentation());
-  expect(instrumentation.slice(0, 7)).toEqual([0, 6, 4, 4, 0, 5, 6]);
+  expect(trace).toContain("payload:key");
+  expect(trace).not.toContain("Tab");
 
-  await page.evaluate(() => globalThis.formDisposers[1]());
+  await inputs.nth(1).focus();
+  await inputs.nth(1).fill("121");
+  await inputs.nth(1).press("Tab");
+  await expect(errors.nth(1)).toHaveText(expected.invalid.upperAge);
+  await expect(inputs.nth(1)).toHaveAttribute("aria-invalid", "true");
+  await expect(submit).toBeDisabled();
+  const rejectedAfterValid = await root.locator("form").evaluate((form) => {
+    const event = new Event("submit", { bubbles: true, cancelable: true });
+    form.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(rejectedAfterValid).toBe(true);
+  await expect(status).toHaveText(`Submitted ${expected.name} (${expected.age})`);
+  const finalTrace = (await page.evaluate(() => globalThis.formDisposers[0].instrumentation()))[7];
+  expect(finalTrace.filter((entry) => entry === "command:fakeSubmit")).toHaveLength(1);
+  const instrumentation = await page.evaluate(() => globalThis.formDisposers[0].instrumentation());
+  expect(instrumentation.slice(0, 7)).toEqual([0, 8, 5, 0, 0, 33, 12]);
+
+  await page.locator("#two .validated-form input").nth(0).fill("Second instance");
+  await expect(inputs.nth(0)).toHaveValue(hostile);
+  const disposedIsolation = await page.evaluate(() => {
+    const detached = document.querySelector("#two .validated-form input");
+    const before = globalThis.formDisposers[1].instrumentation().slice(0, 7);
+    globalThis.formDisposers[1]();
+    detached.value = "after disposal";
+    detached.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    return { before, after: globalThis.formDisposers[1].instrumentation().slice(0, 7) };
+  });
+  expect(disposedIsolation.after).toEqual(disposedIsolation.before);
+  await expect(page.locator("#two .validated-form")).toHaveCount(0);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });

@@ -1,4 +1,5 @@
 import LeanRx.Backend.Manifest
+import LeanRx.Backend.FormDom
 import LeanRx.Form.Validated
 import LeanRx.Graph.Serialize
 
@@ -73,6 +74,18 @@ private def runtimeNames : Except Error RuntimeNames := do
     bigInt := ← Ident.checked "BigInt"
   }
 
+private def listenerRuntime (runtime : RuntimeNames) : FormDom.ListenerRuntime := {
+  value := runtime.listenValue
+  checked := runtime.listenChecked
+  key := runtime.listenKey
+  focus := runtime.listenFocus
+  submit := runtime.listenSubmit
+}
+
+private def setProperty (runtime : RuntimeNames) (target : Expr)
+    (property : DomProperty α) (value : Expr) : Expr :=
+  FormDom.setProperty runtime.setProperty target property value
+
 private def validateName : Except Error Ident := Ident.checked "$lrx_validateForm"
 private def renderName : Except Error Ident := Ident.checked "$lrx_renderValidation"
 
@@ -140,32 +153,45 @@ private def renderFunction (runtime : RuntimeNames) : Except Error Function := d
       (3, 0, 3, "nameError"), (4, 1, 4, "ageError"), (5, 2, 5, "termsError")
     ] do
     let next := arrayAt result resultIndex
-    body := body ++ [.ifThen (.unary .not <| .binary .eq (arrayAt cache cacheIndex) next) <|
+    let oldInvalid ← Ident.checked s!"oldInvalid_{traceName}"
+    let nextInvalid ← Ident.checked s!"nextInvalid_{traceName}"
+    body := body ++ [
+      incrementAt metrics 5,
+      trace metrics s!"sink:{traceName}:evaluated",
+      .ifThen (.unary .not <| .binary .eq (arrayAt cache cacheIndex) next) <|
       .ofList [
+        .const oldInvalid (.unary .not <|
+          .binary .eq (arrayAt cache cacheIndex) (.literal (.string ""))),
+        .const nextInvalid (.unary .not <|
+          .binary .eq next (.literal (.string ""))),
         .assign (.index (.ident cache) (uint cacheIndex)) next,
         .expr <| call runtime.setText [arrayAt context contextIndex, next],
-        .expr <| call runtime.setAttribute [arrayAt context (resultIndex - 3),
-          .literal (.string "aria-invalid"),
-          .conditional (.binary .eq next (.literal (.string "")))
-            (.literal (.string "false")) (.literal (.string "true"))],
-        incrementAt metrics 5,
         incrementAt metrics 6,
+        .ifThen (.unary .not <| .binary .eq (.ident oldInvalid) (.ident nextInvalid)) <|
+          .ofList [
+            .expr <| call runtime.setAttribute [arrayAt context (resultIndex - 3),
+              .literal (.string "aria-invalid"),
+              .conditional (.ident nextInvalid)
+                (.literal (.string "true")) (.literal (.string "false"))],
+            incrementAt metrics 6,
+            trace metrics s!"dom:{traceName}:aria-invalid"
+          ],
         trace metrics s!"dom:{traceName}:write"
       ]]
   let disabled := .unary .not (arrayAt result 2)
-  body := body ++ [.ifThen (.unary .not <| .binary .eq (arrayAt cache 3) disabled) <|
+  body := body ++ [incrementAt metrics 5, trace metrics "sink:submitDisabled:evaluated",
+    .ifThen (.unary .not <| .binary .eq (arrayAt cache 3) disabled) <|
     .ofList [
       .assign (.index (.ident cache) (uint 3)) disabled,
-      .expr <| call runtime.setProperty [
-        arrayAt context 6, .literal (.string "disabled"), disabled],
-      incrementAt metrics 5,
+      .expr <| setProperty runtime (arrayAt context 6) DomProperty.disabled disabled,
       incrementAt metrics 6,
       trace metrics "dom:submit:disabled"
     ], .return (.ident result)]
   pure { name, params := #[state, context], body := body.toArray }
 
 private def editStringFunction
-    (event : TypedEventSpec ValidatedFormState String) : Except Error Function := do
+    (binding : StateControlBinding ValidatedFormState String) : Except Error Function := do
+  let event := binding.update
   let name ← Ident.checked s!"$lrx_{event.name}"
   let render ← renderName
   let state ← Ident.checked "state"
@@ -182,7 +208,6 @@ private def editStringFunction
       .ifThen (.unary .not <| .binary .eq (arrayAt state event.target.index) (.ident value)) <|
         .ofList [
           .assign (.index (.ident state) (uint event.target.index)) (.ident value),
-          incrementAt metrics 3,
           .expr <| call render [.ident state, .ident context]
         ],
       incrementAt metrics 1,
@@ -191,7 +216,9 @@ private def editStringFunction
     ]
   }
 
-private def editCheckedFunction (event : TypedEventSpec ValidatedFormState Bool) : Except Error Function := do
+private def editCheckedFunction (binding : StateControlBinding ValidatedFormState Bool) :
+    Except Error Function := do
+  let event := binding.update
   let name ← Ident.checked s!"$lrx_{event.name}"
   let render ← renderName
   let state ← Ident.checked "state"
@@ -208,7 +235,6 @@ private def editCheckedFunction (event : TypedEventSpec ValidatedFormState Bool)
       .ifThen (.unary .not <| .binary .eq (arrayAt state event.target.index) (.ident checked)) <|
         .ofList [
           .assign (.index (.ident state) (uint event.target.index)) (.ident checked),
-          incrementAt metrics 3,
           .expr <| call render [.ident state, .ident context]
         ],
       incrementAt metrics 1,
@@ -229,7 +255,7 @@ private def keyFunction (handlerName : String) : Except Error Function := do
     body := #[
       .const metrics (arrayAt context 8),
       trace metrics "event:keyDown",
-      pushTrace metrics (.ident key),
+      trace metrics "payload:key",
       .return (.literal .null)
     ]
   }
@@ -271,6 +297,8 @@ private def submitFunction (runtime : RuntimeNames) (handlerName : String) : Exc
       .const result (call validator [.ident state]),
       .expr <| call render [.ident state, .ident context],
       .ifThen (arrayAt result 2) <| .ofList [
+        incrementAt metrics 5,
+        trace metrics "sink:submissionStatus:evaluated",
         .const message messageExpr,
         .ifThen (.unary .not <| .binary .eq (arrayAt cache 4) (.ident message)) <| .ofList [
           .assign (.index (.ident cache) (uint 4)) (.ident message),
@@ -315,7 +343,7 @@ private def manifest (moduleName : String) (checked : ValidatedFormSpec.Checked)
     stateSlots := #[.string, .string, .bool]
     sourceCount := 3
     derivedCount := 0
-    textSinkCount := 5
+    textSinkCount := 4
     eventCount := 7
     hostImports := #["./leanrx_dom.mjs", "./leanrx_host.mjs"]
     features := #["forms", "controlled-input", "checked", "disabled", "submit",
@@ -325,12 +353,12 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
   let runtime ← runtimeNames
   let validator ← validatorFunction runtime
   let render ← renderFunction runtime
-  let editName ← editStringFunction checked.nameEvent
-  let editAge ← editStringFunction checked.ageEvent
-  let editAccepted ← editCheckedFunction checked.acceptedEvent
+  let editName ← editStringFunction checked.nameControl
+  let editAge ← editStringFunction checked.ageControl
+  let editAccepted ← editCheckedFunction checked.acceptedControl
   let recordKey ← keyFunction checked.keyBinding.handlerName
   let focusField ← focusFunction checked.focusBinding.handlerName "focus" false
-  let blurField ← focusFunction checked.blurBinding.handlerName "blur" true
+  let blurField ← focusFunction checked.blurBinding.handlerName "blur" false
   let submitValidated ← submitFunction runtime checked.submitBinding.handlerName
   let initial := initial checked.spec.initial
   let mount ← Ident.checked "mount"
@@ -403,8 +431,8 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
     .expr <| call runtime.setAttribute [
       .ident nameInput, .literal (.string "aria-invalid"),
       .literal (.string (if initial.nameError.isEmpty then "false" else "true"))],
-    .expr <| call runtime.setProperty [
-      .ident nameInput, .literal (.string "value"), .literal (.string checked.spec.initial.name)],
+    .expr <| setProperty runtime (.ident nameInput) checked.nameControl.property
+      (.literal (.string checked.spec.initial.name)),
     .expr <| call runtime.append [.ident form, .ident nameInput],
     .const nameError (call runtime.createElement [.literal (.string "p")]),
     .expr <| call runtime.setAttribute [
@@ -430,8 +458,8 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
     .expr <| call runtime.setAttribute [
       .ident ageInput, .literal (.string "aria-invalid"),
       .literal (.string (if initial.ageError.isEmpty then "false" else "true"))],
-    .expr <| call runtime.setProperty [
-      .ident ageInput, .literal (.string "value"), .literal (.string checked.spec.initial.age)],
+    .expr <| setProperty runtime (.ident ageInput) checked.ageControl.property
+      (.literal (.string checked.spec.initial.age)),
     .expr <| call runtime.append [.ident form, .ident ageInput],
     .const ageError (call runtime.createElement [.literal (.string "p")]),
     .expr <| call runtime.setAttribute [.ident ageError, .literal (.string "id"), .ident ageErrorId],
@@ -450,9 +478,8 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
     .expr <| call runtime.setAttribute [
       .ident termsInput, .literal (.string "aria-invalid"),
       .literal (.string (if initial.termsError.isEmpty then "false" else "true"))],
-    .expr <| call runtime.setProperty [
-      .ident termsInput, .literal (.string "checked"),
-      .literal (.boolean checked.spec.initial.accepted)],
+    .expr <| setProperty runtime (.ident termsInput) checked.acceptedControl.property
+      (.literal (.boolean checked.spec.initial.accepted)),
     .expr <| call runtime.append [.ident termsLabel, .ident termsInput],
     .const termsLabelText (call runtime.createText [.literal (.string " Accept terms")]),
     .expr <| call runtime.append [.ident termsLabel, .ident termsLabelText],
@@ -468,8 +495,8 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
     .const submitButton (call runtime.createElement [.literal (.string "button")]),
     .expr <| call runtime.setAttribute [
       .ident submitButton, .literal (.string "type"), .literal (.string "submit")],
-    .expr <| call runtime.setProperty [
-      .ident submitButton, .literal (.string "disabled"), .literal (.boolean initial.disabled)],
+    .expr <| setProperty runtime (.ident submitButton) DomProperty.disabled
+      (.literal (.boolean initial.disabled)),
     .const submitText (call runtime.createText [.literal (.string "Submit")]),
     .expr <| call runtime.append [.ident submitButton, .ident submitText],
     .expr <| call runtime.append [.ident form, .ident submitButton],
@@ -490,26 +517,20 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
       .ident nameErrorText, .ident ageErrorText, .ident termsErrorText,
       .ident submitButton, .ident statusText, .ident metrics, .ident cache]),
     .expr <| call runtime.append [.ident target, .ident root],
-    .const offName <| call runtime.listenValue [
-      .ident nameInput, .literal (.string "input"), .ident state, .ident context,
-      .ident editName.name],
-    .const offAge <| call runtime.listenValue [
-      .ident ageInput, .literal (.string "input"), .ident state, .ident context,
-      .ident editAge.name],
-    .const offAccepted <| call runtime.listenChecked [
-      .ident termsInput, .literal (.string "change"), .ident state, .ident context,
-      .ident editAccepted.name],
-    .const offKey <| call runtime.listenKey [
-      .ident nameInput, .literal (.string "keydown"), .ident state, .ident context,
-      .ident recordKey.name],
-    .const offFocus <| call runtime.listenFocus [
-      .ident nameInput, .literal (.string "focus"), .ident state, .ident context,
-      .ident focusField.name],
-    .const offBlur <| call runtime.listenFocus [
-      .ident nameInput, .literal (.string "blur"), .ident state, .ident context,
-      .ident blurField.name],
-    .const offSubmit <| call runtime.listenSubmit [
-      .ident form, .ident state, .ident context, .ident submitValidated.name],
+    .const offName <| FormDom.listen (listenerRuntime runtime) checked.nameControl.event
+      (.ident nameInput) (.ident state) (.ident context) editName.name,
+    .const offAge <| FormDom.listen (listenerRuntime runtime) checked.ageControl.event
+      (.ident ageInput) (.ident state) (.ident context) editAge.name,
+    .const offAccepted <| FormDom.listen (listenerRuntime runtime) checked.acceptedControl.event
+      (.ident termsInput) (.ident state) (.ident context) editAccepted.name,
+    .const offKey <| FormDom.listen (listenerRuntime runtime) checked.keyBinding.event
+      (.ident nameInput) (.ident state) (.ident context) recordKey.name,
+    .const offFocus <| FormDom.listen (listenerRuntime runtime) checked.focusBinding.event
+      (.ident nameInput) (.ident state) (.ident context) focusField.name,
+    .const offBlur <| FormDom.listen (listenerRuntime runtime) checked.blurBinding.event
+      (.ident nameInput) (.ident state) (.ident context) blurField.name,
+    .const offSubmit <| FormDom.listen (listenerRuntime runtime) checked.submitBinding.event
+      (.ident form) (.ident state) (.ident context) submitValidated.name,
     .const disposer <| call runtime.makeDisposer [
       .ident root, .array <| .ofList <| [offName, offAge, offAccepted, offKey,
         offFocus, offBlur, offSubmit].map Expr.ident,

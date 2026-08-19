@@ -23,6 +23,8 @@ fixtures=(
   Test/fixtures/compile-fail/NatVectorIndex.lean
   Test/fixtures/compile-fail/SubmitRawForm.lean
   Test/fixtures/compile-fail/ForgeSubmitCommand.lean
+  Test/fixtures/compile-fail/ForgeStateControlBinding.lean
+  Test/fixtures/compile-fail/ForgeTemperatureUpdate.lean
 )
 fragments=(
   "Constructor for"
@@ -46,6 +48,8 @@ fragments=(
   "(Fin 3)"
   "ValidatedForm"
   'Constructor for `LeanRx.Form.FakeSubmitCommand` is marked as private'
+  'Constructor for `LeanRx.Form.StateControlBinding` is marked as private'
+  'Constructor for `LeanRx.Form.TemperatureSpec.UpdatePlan` is marked as private'
 )
 
 for index in "${!fixtures[@]}"; do

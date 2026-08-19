@@ -55,5 +55,14 @@ def run : IO Unit := do
           errors.age.map (·.code) == some "LRX-TYPE-204" &&
           errors.accepted.map (·.code) == some "LRX-TYPE-207" do
         throw <| IO.userError "form validation did not accumulate all errors"
+  for (age, expected) in [
+      ("1_0", "enter a non-negative integer using ASCII digits"),
+      ("121", "value must be at most 120")
+    ] do
+    match validateForm { name := "Ada", age, accepted := true } with
+    | .valid _ => throw <| IO.userError s!"invalid age was accepted: {age}"
+    | .invalid errors =>
+        unless errors.age.map (·.message) == some expected do
+          throw <| IO.userError s!"age validation message changed for {age}"
 
 end LeanRxTest.Form.Validation

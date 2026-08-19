@@ -346,7 +346,9 @@ lengths and `Fin` proofs do not appear as runtime objects.
 
 Two raw `String` sources receive typed `input` payloads. Editing Celsius parses
 and converts only into Fahrenheit; editing Fahrenheit does the inverse, so there
-is no derived cycle. Invalid raw text remains in the edited control, leaves the
+is no derived cycle. Each checked event plan explicitly records its edited and
+conditional opposite-source write; the checked graph records both property
+sinks, the parse-error sink, and invalid-state sinks. Invalid raw text remains in the edited control, leaves the
 other value unchanged, and renders an explicit parse error. Native Lean produces
 the browser fixture's expected results, including a value above 2^53.
 
@@ -376,11 +378,16 @@ writes across eight discriminating edits. Independent review then found that
 Lean's standard integer parsers accept digit separators while the compiler-owned
 browser regex does not. Native parsing now enforces the same closed ASCII grammar
 first, with `1_000` and `-0_1` locked as native/browser rejections.
+Review also found that the backend's opposite-source write and error work were
+missing from the checked model, and that form work had reused the derived counter
+slots despite a zero-derived manifest. Checked update metadata, complete sink
+nodes, shared typed DOM lowering, and the original instrumentation meanings now
+make those contracts inspectable rather than backend convention.
 
 ### Security and accessibility checks
 
-Labels wrap their controls, invalid input is announced through an `aria-live`
-region, and axe is green. A hostile `<img ... onerror>` string remains the input
+Labels wrap their controls; both inputs describe the shared live error and
+maintain per-input `aria-invalid`, and axe is green. A hostile `<img ... onerror>` string remains the input
 property value, creates no element, and executes nothing. Generated parsing uses
 only a compiler-owned regex literal followed by BigInt after the lexical guard;
 no exception path, `eval`, `Function`, Proxy, or handwritten reactive JavaScript
@@ -388,9 +395,10 @@ appears.
 
 ### Performance observations
 
-Eight input events record eight commits, eight source-write attempts, eight parser
-evaluations, five converted-value changes, and seven guarded property/error DOM
-writes. These are deterministic work counters, not a speed benchmark.
+Nine input events record nine commits, fifteen source-write evaluations (nine raw
+edits plus six successful conversion writes), zero derived work, forty-two sink
+evaluations, and ten guarded property/error/invalid-state DOM writes. These are
+deterministic work counters, not a speed benchmark.
 
 ### Follow-up issue or commit
 
@@ -405,7 +413,9 @@ Validation accumulates a nonempty-name error, bounded-natural error, and require
 acceptance error. A submit button's `disabled` property follows validity, but the
 generated submit handler independently revalidates before constructing the fake
 command. Keydown, focus, blur, change, and prevented submit payload adapters all
-run through the public closed event model.
+run through the public closed event model. Name uses `input`, age uses text
+`change`, and terms uses checked `change`, so each closed adapter reaches
+production lowering.
 
 ### What was pleasant
 
@@ -436,6 +446,10 @@ constructor is now private and permanently compile-fail gated. The accessibility
 test also initially kept two full `main` components
 mounted while scanning the page; it now verifies cross-instance ID uniqueness,
 disposes the second instance, then runs axe on a valid one-main document.
+Review further found raw key payloads retained in the cumulative trace and form
+validation counted as derived work. Traces now expose only the stable
+`payload:key` category; zero-derived manifests keep derived counters at zero,
+while sink evaluation and DOM-write counters measure their documented work.
 
 ### Security and accessibility checks
 
@@ -443,15 +457,17 @@ Every text control has a unique generated ID, matching label, described error,
 and maintained `aria-invalid`; errors are live regions and submission status uses
 `role="status"`. Chromium verifies checked/disabled properties, keyboard/focus/
 blur traces, Enter submit prevention, zero invalid commands, hostile trimmed name
-text, unique IDs across two mounts, and zero axe violations. Only `mount` is
+text, native-matched lexical and upper-bound errors, valid-to-invalid submit
+rejection, unique IDs and isolation across two mounts, post-disposal listener
+removal, and zero axe violations. Only `mount` is
 exported.
 
 ### Performance observations
 
-The defining path records six commits (one rejected submit, four edits, one valid
-submit), four source changes, four validation passes, five validation/disabled
-sink writes, and six DOM writes including final status. This is work
-instrumentation, not a throughput claim.
+The defining path records eight commits (two rejected submits, five source edits,
+and one valid submit), five source writes, zero derived work, thirty-three sink
+evaluations, and twelve guarded text/property/attribute writes including final
+status. This is work instrumentation, not a throughput claim.
 
 ### Follow-up issue or commit
 

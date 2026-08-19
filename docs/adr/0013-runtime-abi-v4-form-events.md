@@ -17,6 +17,8 @@ DOM host adds `setProperty`, `listenValue`, `listenChecked`, `listenKey`,
 `listenFocus`, and `listenSubmit`. Each adapter only extracts its fixed browser
 payload and delegates to a generated function; parsing, validation, state
 changes, scheduling, and effects remain compiler-generated responsibilities.
+Compiler lowering consumes the closed `DomProperty`/`ControlEvent` constructors
+through a shared typed helper rather than receiving property or event strings.
 The additive `uniqueId` primitive allocates document-unique accessibility IDs;
 it does not own component state or reactive work.
 
@@ -32,5 +34,8 @@ require another explicit ABI review.
 Native tests lock the closed property/event GADTs. Generated form modules are
 validated JavaScript ASTs, deterministic artifact checks require ABI 4, and
 browser tests exercise payload extraction, controlled cursor behavior, submit
-prevention, disposal, and hostile text. Existing Counter, Diamond, and Tabs
+prevention, cross-instance isolation, post-disposal listeners, and hostile text.
+Instrumentation retains the ABI-2 counter meanings; form-local validation is not
+mislabelled as derived evaluation, and public traces redact raw key payloads.
+Existing Counter, Diamond, and Tabs
 browser gates continue to run against the same additive host.

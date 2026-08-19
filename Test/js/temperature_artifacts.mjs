@@ -14,6 +14,7 @@ if (
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string", "string"]) ||
   manifest.sourceCount !== 2 ||
   manifest.derivedCount !== 0 ||
+  manifest.textSinkCount !== 1 ||
   manifest.eventCount !== 2 ||
   !manifest.features.includes("controlled-input") ||
   !manifest.features.includes("validation")

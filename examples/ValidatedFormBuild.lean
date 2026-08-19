@@ -5,7 +5,17 @@ namespace LeanRxExamples.ValidatedFormBuild
 
 open LeanRx LeanRx.Form LeanRxExamples.ValidatedForm
 
-private def expectedJson : IO String :=
+private def invalidAgeMessage (age : String) : IO String :=
+  match validateForm { name := "Ada", age, accepted := true } with
+  | .valid _ => throw <| IO.userError s!"native invalid age fixture was accepted: {age}"
+  | .invalid errors =>
+      match errors.age with
+      | some error => pure error.message
+      | none => throw <| IO.userError s!"native invalid age fixture had no age error: {age}"
+
+private def expectedJson : IO String := do
+  let lexicalAge ← invalidAgeMessage "1_0"
+  let upperAge ← invalidAgeMessage "121"
   match validateForm {
       name := "  <img src=x onerror=\"globalThis.formXss=true\">  "
       age := "42"
@@ -15,7 +25,9 @@ private def expectedJson : IO String :=
   | .valid value =>
       let command := submit value
       pure <| "{\"name\":" ++ Js.Printer.stringLiteral command.name ++
-        ",\"age\":" ++ toString command.age ++ "}\n"
+        ",\"age\":" ++ toString command.age ++
+        ",\"invalid\":{\"lexicalAge\":" ++ Js.Printer.stringLiteral lexicalAge ++
+        ",\"upperAge\":" ++ Js.Printer.stringLiteral upperAge ++ "}}\n"
 
 private def generateChecked (directory : System.FilePath)
     (checked : ValidatedFormSpec.Checked) : IO Unit := do

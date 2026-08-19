@@ -22,6 +22,7 @@ lean_lib LeanRxTest where
     `Test.IR.Erasure,
     `Test.Lower.RxExpr,
     `Test.Backend.Scalar,
+    `Test.Backend.FormDom,
     `Test.Backend.Component,
     `Test.Backend.Tabs,
     `Test.Backend.Temperature,

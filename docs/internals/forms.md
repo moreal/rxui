@@ -35,20 +35,34 @@ than a backend proof.
 The closed `DomProperty` capability currently permits only typed `value : String`,
 `checked : Bool`, and `disabled : Bool` writes. `ControlEvent` similarly fixes
 the payload extraction for text input/change, checked change, submit, keydown,
-focus, and blur. The DOM host exposes one small listener adapter per payload kind
-and a property setter; it still performs no parsing, validation, dependency
-discovery, or scheduling. Backends must select these primitives from the typed
-constructors rather than accepting arbitrary property/event strings.
+focus, and blur. `StateControlBinding` privately joins a typed source update to
+its only valid payload adapter and reflected property. The shared form backend
+lowering pattern-matches these constructors to choose the host listener and
+property name; production form emitters do not accept arbitrary equivalents.
+The DOM host exposes one small listener adapter per payload kind and a property
+setter; it still performs no parsing, validation, dependency discovery, or
+scheduling.
 
 Generated integer parsing uses compiler-owned regex literals and calls `BigInt`
 only after a lexical match, so invalid text cannot throw. Native parsing applies
 the same lexical guard before `String.toInt?`/`String.toNat?`, preventing Lean-only
-digit-separator acceptance. Temperature handlers do
-not rewrite the control currently being edited, preserving its cursor, and use
-source equality plus guarded property/error caches. Validated Form uses the same
+digit-separator acceptance. A checked Temperature update plan records the edited
+source and the conditional opposite-source write separately. Parsing/conversion
+is event-local update evaluation, followed by one graph propagation phase; it is
+not a pair of mutually dependent derived nodes. The checked graph contains both
+controlled property sinks, the shared error sink, and both invalid-state sinks.
+Temperature handlers do not rewrite the control currently being edited,
+preserving its exact raw text and cursor, and use source equality plus guarded
+property/error/invalid caches. Validated Form uses the same
 closed natural/ASCII-trim rules as native Lean, maintains `value`, `checked`,
 `disabled`, and `aria-invalid`, prevents native form navigation, and revalidates
 inside submit. Only a valid result produces the fake command trace/status.
+
+The component manifest's `textSinkCount` counts text-node destinations, not DOM
+properties or attributes. Temperature has one text sink (the parse error);
+Validated Form has three validation-error text sinks plus submission status.
+Property and attribute sinks remain explicit graph nodes/features without being
+misreported as text nodes.
 
 The host only extracts event payloads, prevents submit default behavior, sets a
 typed property chosen by the backend, and allocates document-unique accessibility

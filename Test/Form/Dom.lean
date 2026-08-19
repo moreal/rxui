@@ -9,6 +9,7 @@ def run : IO Unit := do
       DomProperty.disabled.name == "disabled" do
     throw <| IO.userError "closed form property names changed"
   unless ControlEvent.input.name == "input" && ControlEvent.input.payloadKind == .text &&
+      ControlEvent.change.name == "change" && ControlEvent.change.payloadKind == .text &&
       ControlEvent.checkedChange.name == "change" &&
       ControlEvent.checkedChange.payloadKind == .checked &&
       ControlEvent.submit.name == "submit" && ControlEvent.submit.payloadKind == .none &&

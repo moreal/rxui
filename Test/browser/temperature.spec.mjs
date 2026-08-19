@@ -72,9 +72,15 @@ test("preserves raw edits and converts only successfully parsed input", async ({
   const error = page.locator(".temperature-converter p");
   await expect(inputs.nth(0)).toHaveValue("0");
   await expect(inputs.nth(1)).toHaveValue("32");
+  await expect(inputs.nth(0)).toHaveAttribute("aria-invalid", "false");
+  await expect(inputs.nth(1)).toHaveAttribute("aria-invalid", "false");
+  const describedBy = await inputs.nth(0).getAttribute("aria-describedby");
+  expect(describedBy).toBeTruthy();
+  await expect(inputs.nth(1)).toHaveAttribute("aria-describedby", describedBy);
+  await expect(error).toHaveAttribute("id", describedBy);
 
-  const cursor = await dispatchValue(page, 0, "120", 1);
-  expect(cursor).toEqual({ value: "120", cursor: 1 });
+  const cursor = await dispatchValue(page, 0, "00120", 2);
+  expect(cursor).toEqual({ value: "00120", cursor: 2 });
   await expect(inputs.nth(1)).toHaveValue("248");
   await expect(error).toHaveText("");
 
@@ -83,6 +89,8 @@ test("preserves raw edits and converts only successfully parsed input", async ({
   await expect(inputs.nth(0)).toHaveValue('<img src=x onerror="globalThis.tempXss=true">');
   await expect(inputs.nth(1)).toHaveValue("248");
   await expect(error).toHaveText("Enter an integer Celsius temperature.");
+  await expect(inputs.nth(0)).toHaveAttribute("aria-invalid", "true");
+  await expect(inputs.nth(1)).toHaveAttribute("aria-invalid", "false");
   await expect(page.locator(".temperature-converter img")).toHaveCount(0);
   expect(await page.evaluate(() => globalThis.tempXss)).toBeUndefined();
 
@@ -99,13 +107,15 @@ test("preserves raw edits and converts only successfully parsed input", async ({
     await dispatchValue(page, index, testCase.raw);
     await expect(inputs.nth(other)).toHaveValue(testCase.converted);
     await expect(error).toHaveText("");
+    await expect(inputs.nth(0)).toHaveAttribute("aria-invalid", "false");
+    await expect(inputs.nth(1)).toHaveAttribute("aria-invalid", "false");
   }
 
   const instrumentation = await page.evaluate(() =>
     globalThis.temperatureDispose.instrumentation(),
   );
-  expect(instrumentation.slice(0, 7)).toEqual([0, 8, 8, 8, 5, 7, 7]);
-  expect(instrumentation[7].filter((entry) => entry === "transaction:commit")).toHaveLength(8);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 9, 15, 0, 0, 42, 10]);
+  expect(instrumentation[7].filter((entry) => entry === "transaction:commit")).toHaveLength(9);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });

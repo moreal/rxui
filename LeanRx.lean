@@ -20,6 +20,7 @@ import LeanRx.IR.Erasure
 import LeanRx.Lower.RxExpr
 import LeanRx.Backend.Scalar
 import LeanRx.Backend.Manifest
+import LeanRx.Backend.FormDom
 import LeanRx.Backend.Component
 import LeanRx.Backend.Tabs
 import LeanRx.Backend.Temperature

@@ -151,6 +151,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Form.FormValidation.invalid.injEq, #[``propext]),
     (`LeanRx.Form.FormValidation.valid.injEq, #[``propext]),
     (`LeanRx.Form.ControlBinding.mk.injEq, #[``propext]),
+    (`LeanRx.Backend.FormDom.ListenerRuntime.mk.injEq, #[``propext]),
     (`LeanRx.ImmutableProp.mk.injEq, #[``propext]),
     (`LeanRx.ParamUpdate.set.injEq, #[``propext]),
     (`LeanRx.TypedEventSpec.mk.injEq, #[``propext]),
