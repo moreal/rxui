@@ -29,7 +29,7 @@ jobs:
         run: lake exe leanrx_graph_properties -- 195936478
       - name: Run native-to-JavaScript differential tests
         run: ./scripts/check_differential.sh
-      - name: Check deterministic Counter component output
+      - name: Check deterministic component output
         run: ./scripts/check_component_codegen.sh
       - name: Check Counter CLI orchestration
         run: ./scripts/check_cli.sh

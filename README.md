@@ -110,6 +110,20 @@ because pinned Lean normalizes them modulo. See
 [ADR-0011](docs/adr/0011-fin-literal-normalization.md) and the
 [runtime representation contract](docs/internals/runtime-representation.md).
 
+Generate the M7 controlled-input dogfood applications with:
+
+```sh
+lake exe leanrx_temperature_js -- .tmp/temperature
+lake exe leanrx_validated_form_js -- .tmp/validated-form
+```
+
+Temperature Converter preserves invalid raw edits and cursor position while
+updating the opposite field only after an explicit integer parse. Validated Form
+uses nonempty/bounded/accepted refinements, checked and disabled properties,
+prevented submit, and a fake command that only `ValidatedForm` can construct.
+The pure/native, generated-JavaScript, remaining-TCB, and accessibility contracts
+are documented in [the form internals](docs/internals/forms.md).
+
 ## Project boundaries
 
 LeanRx is intended to compile a restricted staged language; it will not transpile

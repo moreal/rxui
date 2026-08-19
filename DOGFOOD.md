@@ -339,3 +339,112 @@ lengths and `Fin` proofs do not appear as runtime objects.
 ### Follow-up issue or commit
 
 `example(tabs): dogfood dependent selection`
+
+## Temperature Converter — controlled typed input
+
+### Scenario exercised
+
+Two raw `String` sources receive typed `input` payloads. Editing Celsius parses
+and converts only into Fahrenheit; editing Fahrenheit does the inverse, so there
+is no derived cycle. Invalid raw text remains in the edited control, leaves the
+other value unchanged, and renders an explicit parse error. Native Lean produces
+the browser fixture's expected results, including a value above 2^53.
+
+### What was pleasant
+
+The public model makes both event payload/target pairs inspectable and the graph
+shows two independent rank-zero sources rather than a fragile two-way derived
+cycle. The generated handler never writes the input currently being edited, so
+the browser preserves the exact cursor position while still controlling external
+updates to the opposite field.
+
+### Friction
+
+The first parser intentionally accepts signed integer text only. This keeps Lean
+`Int.tdiv` and JavaScript BigInt division exactly aligned, but it is less friendly
+than decimal/locale-aware temperature entry. Adding decimals needs an explicit
+numeric representation and differential contract, not a permissive `Number()`
+shortcut.
+
+### Bugs found
+
+The first handler draft installed the invalid message before testing valid input,
+then cleared it in the valid branch. It would have produced two unnecessary text
+writes for every successful edit. Splitting the valid/invalid branches removed
+the transient work; the exact instrumentation snapshot now locks seven sink/DOM
+writes across six discriminating edits.
+
+### Security and accessibility checks
+
+Labels wrap their controls, invalid input is announced through an `aria-live`
+region, and axe is green. A hostile `<img ... onerror>` string remains the input
+property value, creates no element, and executes nothing. Generated parsing uses
+only a compiler-owned regex literal followed by BigInt after the lexical guard;
+no exception path, `eval`, `Function`, Proxy, or handwritten reactive JavaScript
+appears.
+
+### Performance observations
+
+Six input events record six commits, six source-write attempts, six parser
+evaluations, five converted-value changes, and seven guarded property/error DOM
+writes. These are deterministic work counters, not a speed benchmark.
+
+### Follow-up issue or commit
+
+`example(temperature): dogfood controlled conversion`
+
+## Validated Form — refinement and submit capability
+
+### Scenario exercised
+
+Name, age, and accepted-terms sources use typed text/text/checked payloads.
+Validation accumulates a nonempty-name error, bounded-natural error, and required
+acceptance error. A submit button's `disabled` property follows validity, but the
+generated submit handler independently revalidates before constructing the fake
+command. Keydown, focus, blur, change, and prevented submit payload adapters all
+run through the public closed event model.
+
+### What was pleasant
+
+`ValidatedForm` has a private constructor, so application/native code can call
+`submit` only from the `.valid` branch. The fake command payload therefore needs
+no optional fields or defensive defaults. The same expected payload is generated
+by native Lean and observed in Chromium after a synthetic invalid submit proves
+that disabled-button state is not the sole guard.
+
+### Friction
+
+Indexed/refined values are excellent at the command boundary but more verbose in
+tests because valid and invalid branches must be handled explicitly. The browser
+backend still duplicates the closed validation algorithm and remains in the TCB;
+native fixtures and exact messages detect drift, but do not constitute a proof of
+the JavaScript implementation. A real asynchronous `Cmd` begins in M9.
+
+### Bugs found
+
+The first generated live error strings were generic and did not match native
+validator messages. Dogfood made that drift visible; the generated ASCII trim,
+parse, lower-bound, upper-bound, and acceptance branches now emit the exact native
+messages. The accessibility test also initially kept two full `main` components
+mounted while scanning the page; it now verifies cross-instance ID uniqueness,
+disposes the second instance, then runs axe on a valid one-main document.
+
+### Security and accessibility checks
+
+Every text control has a unique generated ID, matching label, described error,
+and maintained `aria-invalid`; errors are live regions and submission status uses
+`role="status"`. Chromium verifies checked/disabled properties, keyboard/focus/
+blur traces, Enter submit prevention, zero invalid commands, hostile trimmed name
+text, unique IDs across two mounts, and zero axe violations. Only `mount` is
+exported.
+
+### Performance observations
+
+The defining path records five commits (one rejected submit, three edits, one
+valid submit), three source changes, three validation passes, four validation/
+disabled sink writes, and five DOM writes including final status. This is work
+instrumentation, not a throughput claim.
+
+### Follow-up issue or commit
+
+`example(form): dogfood validated submission`

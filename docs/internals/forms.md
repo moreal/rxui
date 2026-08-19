@@ -23,9 +23,10 @@ match native Lean for negative values. Invalid raw text remains an explicit
 `LRX-TYPE-201` error. Decimal/locale-aware temperature input is a future parser,
 not silently accepted by the integer contract.
 
-These are type and native-semantic guarantees. Controlled DOM values, cursor
-behavior, generated JavaScript parsing, form prevention, and browser submission
-remain M7 implementation/TCB work until their differential and browser gates land.
+These are type and native-semantic guarantees. The generated JavaScript validator,
+DOM property writes, and browser remain in the TCB; native expected artifacts,
+deterministic code checks, and Chromium tests provide executable evidence rather
+than a backend proof.
 
 The closed `DomProperty` capability currently permits only typed `value : String`,
 `checked : Bool`, and `disabled : Bool` writes. `ControlEvent` similarly fixes
@@ -34,3 +35,15 @@ focus, and blur. The DOM host exposes one small listener adapter per payload kin
 and a property setter; it still performs no parsing, validation, dependency
 discovery, or scheduling. Backends must select these primitives from the typed
 constructors rather than accepting arbitrary property/event strings.
+
+Generated integer parsing uses compiler-owned regex literals and calls `BigInt`
+only after a lexical match, so invalid text cannot throw. Temperature handlers do
+not rewrite the control currently being edited, preserving its cursor, and use
+source equality plus guarded property/error caches. Validated Form uses the same
+closed natural/ASCII-trim rules as native Lean, maintains `value`, `checked`,
+`disabled`, and `aria-invalid`, prevents native form navigation, and revalidates
+inside submit. Only a valid result produces the fake command trace/status.
+
+The host only extracts event payloads, prevents submit default behavior, sets a
+typed property chosen by the backend, and allocates document-unique accessibility
+IDs. It does not parse, validate, schedule, or execute commands.
