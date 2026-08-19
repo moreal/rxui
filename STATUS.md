@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M3 — Typed JavaScript AST and scalar backend
+M4 — Component DSL, static view, and Counter
 
 ## Last green commit
 
-`c1c071d fix(graph): certify typed source and sink shapes`
+`b2720a1 docs(backend): document scalar artifact ABI`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -65,17 +65,39 @@ M3 — Typed JavaScript AST and scalar backend
   jobs, 412 public theorems, 103 exact reviewed axiom uses, 22 exact generated
   unsafe recursion helpers, native/proof/property/example/negative/policy gates
   all passed, and the checkout remained clean.
+- Completed M3's closed custom Reactive IR, validity-checked JavaScript AST,
+  deterministic name allocator, readable/compact ESM printer, scalar runtime
+  helpers, typed positional input ABI, and fail-closed backend diagnostics.
+- Added deterministic adjacent artifact manifests containing compiler/toolchain/
+  runtime ABI versions, actual allocated names, ordered typed inputs, result type,
+  and feature metadata.
+- Added native-Lean versus Node differentials for every staged literal and scalar
+  primitive through `RxExpr → Reactive IR → JsAst → ESM`, with discriminating
+  comparison/modulo cases, hostile identifiers and text, values above 2^53, and
+  both printer modes. The Expression Playground now executes this same public
+  path and validates its manifests.
+- Review found and permanently regressed signed-divisor modulo normalization,
+  `String` shadowing, strict-ESM reserved bindings, shallow AST scope validation,
+  incompatible IR input reuse, incomplete Core-to-IR coverage, and missing
+  artifact metadata.
+- Verified `b2720a1` in the workspace and a fresh no-hardlinks clone with
+  `./scripts/check.sh`; 106 build jobs, 576 public theorems, 146 exact reviewed
+  axiom uses, 38 exact generated unsafe recursion helpers, 40 seeded graph cases,
+  46 native/JavaScript cases across both printer modes, examples, negative and
+  policy gates all passed, and both worktrees remained clean.
 
 ## In progress
 
-- Typed JavaScript AST design and the first pure scalar lowering slice.
+- Explicit public component specification and validated static DOM IR.
 
 ## Next
 
-- Establish Node/pnpm only for the JavaScript differential gates required by M3.
-- Define validity-checked typed JavaScript AST nodes and a deterministic printer.
-- Lower the closed Bool/String/Int/Nat scalar subset through the custom Reactive IR
-  boundary, then add native-Lean versus generated-JavaScript differential tests.
+- Define public state, derived, update, element, text-sink, event-binding, and
+  component-manifest constructors before adding syntax sugar.
+- Split static views into mount templates and scalar sinks, then lower component
+  graphs into direct update functions and a tiny host/runtime boundary.
+- Add the M4 `component` command, minimal JSX-like syntax, CLI orchestration,
+  Counter dogfood, and required browser/security/accessibility gates.
 
 ## Known blockers
 
@@ -131,6 +153,23 @@ M3 — Typed JavaScript AST and scalar backend
   shapes, no-consumer and canceled transactions, branch-complete diagnostics,
   source spans, replayable properties, deterministic artifacts, dogfood assertions,
   and all 15 M2 commit trailers were independently checked.
+
+## M3 independent review notes
+
+- Lean/toolchain: PASS at `b2720a1`; strict ESM identifiers, typed input ABI,
+  private emitted artifacts, exact policy audits, staged primitive coverage, and
+  both printer modes were verified.
+- Type theory/proof: PASS; typed lowering remains exhaustive and fail-closed, no
+  arbitrary Lean compiler IR or banned declarations entered the backend, and
+  JavaScript execution remains explicitly inside the trusted computing base.
+- Compiler/backend: PASS; AST scope validation, global protection, runtime
+  signatures, discriminating full-pipeline differentials, deterministic manifests,
+  and source-linked unsupported diagnostics satisfy the M3 contract.
+- Frontend/runtime: PASS; hostile names/text, dynamic-code bans, BigInt semantics,
+  both output modes, and a separate generated-artifact scan passed, with no
+  premature DOM/browser runtime introduced.
+- Test/quality: PASS after workspace and fresh-clone gates; all 11 M3 commits are
+  coherent and bisectable with exactly one required assistance trailer.
 
 ## Commands
 
