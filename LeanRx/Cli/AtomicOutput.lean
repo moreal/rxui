@@ -51,6 +51,15 @@ private def readPointer (output : System.FilePath) : IO String := do
   let value ← IO.Process.run { cmd := "readlink", args := #[output.toString] }
   pure value.trimAscii.toString
 
+private def ownerMarker (paths : Paths) : String :=
+  s!"LeanRx managed bundle for {paths.outputName}\n"
+
+private def isOwnedBundle (paths : Paths) (bundle : System.FilePath) : IO Bool := do
+  let marker := bundle / ".leanrx-bundle-owner"
+  match ← metadata? marker with
+  | some .file => pure ((← IO.FS.readFile marker) == ownerMarker paths)
+  | _ => pure false
+
 private def checkedOldTarget (paths : Paths) (output : System.FilePath) : IO (Option String) := do
   match ← metadata? output with
   | none => pure none
@@ -66,7 +75,8 @@ private def checkedOldTarget (paths : Paths) (output : System.FilePath) : IO (Op
 
 private def cleanupOlderBundles (paths : Paths) (keep : List String) : IO Unit := do
   for entry in ← paths.parent.readDir do
-    if entry.fileName.startsWith paths.bundlePrefix && !keep.contains entry.fileName then
+    if entry.fileName.startsWith paths.bundlePrefix && !keep.contains entry.fileName &&
+        (← isOwnedBundle paths entry.path) then
       removeIfPresent entry.path
 
 /-- Publish a complete sibling bundle through an atomically replaced symbolic
@@ -83,6 +93,7 @@ def replaceDirectory (output : System.FilePath)
     removeIfPresent paths.pointer
     try
       generate paths.bundle
+      IO.FS.writeFile (paths.bundle / ".leanrx-bundle-owner") (ownerMarker paths)
       createPointer paths.bundle.fileName.get! paths.pointer
       cleanupOlderBundles paths <| paths.bundle.fileName.get! :: oldTarget.toList
     catch error =>

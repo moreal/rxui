@@ -54,8 +54,15 @@ def run : IO Unit := IO.FS.withTempDir fun parent => do
     IO.FS.createDirAll staging
     IO.FS.writeFile (staging / "safe") "safe"
   assertFile (external / "sentinel") "external"
-  if ← hostileBundle.pathExists then
-    throw <| IO.userError "hostile managed-prefix symlink survived cleanup"
+  unless (← hostileBundle.symlinkMetadata).type == .symlink do
+    throw <| IO.userError "unowned managed-prefix symlink was modified"
+  let unrelated := parent / ".bundle.leanrx-bundle-user-data"
+  IO.FS.createDirAll unrelated
+  IO.FS.writeFile (unrelated / "sentinel") "unrelated"
+  LeanRx.Cli.AtomicOutput.replaceDirectory output fun staging => do
+    IO.FS.createDirAll staging
+    IO.FS.writeFile (staging / "safeAgain") "safe"
+  assertFile (unrelated / "sentinel") "unrelated"
   let lockTarget := parent / "lock-target"
   IO.FS.writeFile lockTarget "preserve"
   let poisonedOutput := parent / "poison"

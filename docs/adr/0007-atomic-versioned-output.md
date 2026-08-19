@@ -22,7 +22,9 @@ the output path to either the complete old bundle or the complete new bundle;
 there is no absent or partially generated public path.
 
 The publisher retains the immediately previous bundle during cleanup and removes
-older managed siblings only while holding the lock. A failed generator or failed
+older siblings only when an internal regular-file ownership marker matches the
+output identity, while holding the lock. Prefix collisions and symlinks without
+that positive evidence are left untouched. A failed generator or failed
 pointer rename removes its private artifacts and leaves the prior pointer intact.
 An absent destination bootstraps the pointer. An existing unmanaged file or real
 directory fails with `LRX-PORT-003` before mutation; LeanRx does not claim that a
@@ -49,6 +51,8 @@ loudly until one exists.
 Native tests assert the output is a symbolic link, injected generation failure
 preserves the old bundle, partial files never escape staging, successful rebuilds
 drop stale public files, and unmanaged destinations remain untouched. They also
-prove cleanup never follows a managed-prefix symlink and a poisoned lock symlink
-cannot truncate its target. Component, CLI, determinism, and Chromium gates
+exercise a pre-existing managed-prefix symlink, real-directory prefix collision,
+and poisoned lock symlink, checking that unrelated data remains unchanged. POSIX rename/link/locking behavior
+and hostile concurrent filesystem races remain trusted platform assumptions, not
+formally proved properties. Component, CLI, determinism, and Chromium gates
 consume the published pointer path.
