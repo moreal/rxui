@@ -36,7 +36,7 @@ component Counter (schema := CounterSchema) where {
 
 The string preceding an interpolation is its stable sink name. Tags, static
 attributes, and event attributes remain closed whitelists. Raw HTML and unknown
-attributes fail during macro expansion with stable `LRX-DOM-*` diagnostics.
+attributes fail during macro expansion with stable `LRX-VIEW-*` diagnostics.
 
 ## Alternatives considered
 

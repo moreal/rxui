@@ -11,6 +11,8 @@ fixtures=(
   Test/fixtures/compile-fail/UnsupportedViewExpr.lean
   Test/fixtures/compile-fail/UnknownEventAttribute.lean
   Test/fixtures/compile-fail/RawHtmlView.lean
+  Test/fixtures/compile-fail/ClickOnlyDiv.lean
+  Test/fixtures/compile-fail/ComponentRoleMismatch.lean
   Test/fixtures/compile-fail/ComponentCycle.lean
 )
 fragments=(
@@ -21,9 +23,11 @@ fragments=(
   "LeanRx.Update S"
   "LeanRx.RuntimeEq Int"
   "@LeanRx.View.scalarText"
-  "error[LRX-DOM-006]"
-  "error[LRX-DOM-008]"
-  "error[LRX-ELAB-004]"
+  "error[LRX-VIEW-008]"
+  "error[LRX-VIEW-010]"
+  "error[LRX-VIEW-005]"
+  "error[LRX-ELAB-103]"
+  "error[LRX-GRAPH-001]"
 )
 
 for index in "${!fixtures[@]}"; do
@@ -38,5 +42,12 @@ for index in "${!fixtures[@]}"; do
     exit 1
   fi
 done
+
+cycle_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/ComponentCycle.lean 2>&1 || true)"
+if [[ "$cycle_output" != *"a → b → a"* || "$cycle_output" != *"ComponentCycle.lean:"* ]]; then
+  echo "component cycle diagnostic lost its path or source locations" >&2
+  echo "$cycle_output" >&2
+  exit 1
+fi
 
 echo "compile-fail type-contract fixtures passed"

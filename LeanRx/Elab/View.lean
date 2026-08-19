@@ -31,7 +31,7 @@ macro_rules
   | `(leanrx_jsx_tag% span) => `(LeanRx.HtmlTag.span)
   | `(leanrx_jsx_tag% h1) => `(LeanRx.HtmlTag.h1)
   | `(leanrx_jsx_tag% $unknown:ident) =>
-      Macro.throwErrorAt unknown s!"error[LRX-DOM-005]: unsupported element <{unknown.getId}>"
+      Macro.throwErrorAt unknown s!"error[LRX-VIEW-007]: unsupported element <{unknown.getId}>"
 
 syntax "leanrx_jsx_attr% " leanrxJsxAttr : term
 macro_rules
@@ -50,9 +50,9 @@ macro_rules
   | `(leanrx_jsx_attr% onClick = $event:str) =>
       `(LeanRx.ViewAttr.event { kind := .click, eventName := $event })
   | `(leanrx_jsx_attr% rawHtml = $_:str) =>
-      Macro.throwError "error[LRX-DOM-008]: raw HTML is excluded from the safe view DSL"
+      Macro.throwError "error[LRX-VIEW-010]: raw HTML is excluded from the safe view DSL"
   | `(leanrx_jsx_attr% $name:ident = $_:str) =>
-      Macro.throwErrorAt name s!"error[LRX-DOM-006]: unknown or invalid view attribute {name.getId}"
+      Macro.throwErrorAt name s!"error[LRX-VIEW-008]: unknown or invalid view attribute {name.getId}"
 
 scoped syntax "jsx% " leanrxJsxElement : term
 syntax "leanrx_jsx_child% " leanrxJsxChild : term
@@ -71,6 +71,6 @@ macro_rules
           let attrTerms ← attrs.mapM fun attr => `(leanrx_jsx_attr% $attr)
           let childTerms ← children.getElems.mapM fun child => `(leanrx_jsx_child% $child)
           `(LeanRx.View.nodeWith (leanrx_jsx_tag% $tag) [$childTerms,*] [$attrTerms,*])
-      | _ => Macro.throwErrorAt element "error[LRX-DOM-007]: malformed LeanRx JSX element"
+      | _ => Macro.throwErrorAt element "error[LRX-VIEW-009]: malformed LeanRx JSX element"
 
 end LeanRxDsl

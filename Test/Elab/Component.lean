@@ -14,11 +14,15 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
     throw <| IO.userError "JSX click attributes did not become event bindings"
 
 def run : IO Unit := do
-  unless CounterSyntax_declarations == [
+  unless CounterSyntax_declarations.map SurfaceDecl.debug == [
       "state:count", "derived:doubled", "derived:parity",
       "event:increment", "event:addTwo"
     ] do
     throw <| IO.userError "component command declaration inventory changed"
+  unless CounterSyntax_declarations.all (fun declaration =>
+      !declaration.span.file.isEmpty && declaration.span.start.line > 0 &&
+        declaration.span.start.column > 0) do
+    throw <| IO.userError "component command did not retain source-linked declarations"
   match CounterSyntax_check with
   | .error error => throw <| IO.userError s!"generated component rejected: {error.code}"
   | .ok checked => verify checked

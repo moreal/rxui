@@ -30,25 +30,38 @@ def run : IO Unit := do
         name := "bad"
         update := .set doubledField (RxExpr.literal (.int 9))
       }] }
-  expectError "LRX-COMP-009" writesDerived.check
+  expectError "LRX-TYPE-107" writesDerived.check
   let readsDerived : ComponentSpec CounterSchema :=
     { spec with events := #[{
         name := "badRead"
         update := .set count (RxExpr.binary .intAdd
           (RxExpr.read doubledField) (RxExpr.literal (.int 1)))
       }] }
-  expectError "LRX-COMP-011" readsDerived.check
+  expectError "LRX-TYPE-108" readsDerived.check
   let unknownEvent : ComponentSpec CounterSchema :=
     { spec with view := (View.node .button [.text "Bad"]
         (events := [{ kind := .click, eventName := "missing" }])) }
-  expectError "LRX-COMP-010" unknownEvent.check
+  expectError "LRX-VIEW-006" unknownEvent.check
   let duplicateAttr : ComponentSpec CounterSchema :=
     { spec with view := (View.node .p [.text "Bad"]
         (attrs := [.className "a", .className "b"])) }
-  expectError "LRX-DOM-001" duplicateAttr.check
+  expectError "LRX-VIEW-001" duplicateAttr.check
   let invalidButtonAttr : ComponentSpec CounterSchema :=
     { spec with view := (View.node .p [.text "Bad"] (attrs := [.buttonType .button])) }
-  expectError "LRX-DOM-003" invalidButtonAttr.check
+  expectError "LRX-VIEW-003" invalidButtonAttr.check
+  let clickDiv : ComponentSpec CounterSchema :=
+    { spec with view := (View.node .div [.text "Bad"]
+        (events := [{ kind := .click, eventName := "increment" }])) }
+  expectError "LRX-VIEW-005" clickDiv.check
+  let mismatchedSurface : ComponentSpec CounterSchema :=
+    { spec with surface := #[
+        { role := .derived, name := "count", span := .generated },
+        { role := .derived, name := "doubled", span := .generated },
+        { role := .derived, name := "parity", span := .generated },
+        { role := .event, name := "increment", span := .generated },
+        { role := .event, name := "addTwo", span := .generated }
+      ] }
+  expectError "LRX-ELAB-103" mismatchedSurface.check
   let cycle : ComponentSpec (.field "a" Int <| .field "b" Int .empty) :=
     { name := "Cycle"
       values := #[

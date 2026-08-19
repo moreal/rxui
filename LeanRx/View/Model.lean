@@ -100,6 +100,12 @@ end ViewChildren
 
 namespace View
 
+def withSpan (view : View Γ) (span : SourceSpan) : View Γ :=
+  match view with
+  | .element tag attrs events children _ => .element tag attrs events children span
+  | .text value _ => .text value span
+  | .scalarText name value _ => .scalarText name value span
+
 def node (tag : HtmlTag) (children : List (View Γ))
     (attrs : List StaticAttr := []) (events : List EventBinding := [])
     (span : SourceSpan := .generated) : View Γ :=

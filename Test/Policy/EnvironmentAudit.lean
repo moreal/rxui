@@ -2,8 +2,8 @@ import Lean
 
 open Lean Elab Command
 
-/-- Audit the complete imported `LeanRx.*` environment. The reviewed unsafe
-allowlist is intentionally empty; adding an entry requires trust-boundary review. -/
+/-- Audit the complete imported `LeanRx.*` environment. Every unsafe declaration
+in the exact allowlist below requires an explicit trust-boundary review. -/
 elab "#leanrx_environment_audit" : command => do
   let env ← getEnv
   let reviewedUnsafe : Array Name := #[
@@ -221,6 +221,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.TypedNodeRef.mk.injEq, #[``propext]),
     (`LeanRx.ComponentError.mk.injEq, #[``propext]),
     (`LeanRx.ComponentSpec.mk.injEq, #[``propext]),
+    (`LeanRx.SurfaceDecl.mk.injEq, #[``propext]),
     (`LeanRx.Cli.Command.build.injEq, #[``propext]),
     (`LeanRx.Cli.Command.check.injEq, #[``propext]),
     (`LeanRx.Cli.Command.graph.injEq, #[``propext]),

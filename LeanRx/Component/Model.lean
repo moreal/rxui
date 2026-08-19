@@ -46,6 +46,12 @@ def evaluatorName : ValueSpec Γ → String
 def span : ValueSpec Γ → SourceSpan
   | .source _ _ _ _ span | .derived _ _ _ _ span => span
 
+def withSpan (value : ValueSpec Γ) (span : SourceSpan) : ValueSpec Γ :=
+  match value with
+  | .source runtime equality field initial _ => .source runtime equality field initial span
+  | .derived runtime equality field expression _ =>
+      .derived runtime equality field expression span
+
 end ValueSpec
 
 /-- Pure transaction-local update program. M4 validates writes target sources. -/
@@ -70,18 +76,57 @@ structure EventSpec (Γ : Schema) where
   update : Update Γ
   span : SourceSpan := .generated
 
+def EventSpec.withSpan (event : EventSpec Γ) (span : SourceSpan) : EventSpec Γ :=
+  { event with span }
+
+inductive SurfaceRole where
+  | state | derived | event
+deriving Repr, BEq, DecidableEq
+
+def SurfaceRole.name : SurfaceRole → String
+  | .state => "state"
+  | .derived => "derived"
+  | .event => "event"
+
+structure SurfaceDecl where
+  role : SurfaceRole
+  name : String
+  span : SourceSpan
+deriving Repr, BEq
+
+def SurfaceDecl.debug (value : SurfaceDecl) : String :=
+  value.role.name ++ ":" ++ value.name
+
 structure ComponentSpec (Γ : Schema) where
   name : String
   values : Array (ValueSpec Γ)
   events : Array (EventSpec Γ)
   view : View Γ
+  surface : Array SurfaceDecl := #[]
   span : SourceSpan := .generated
 
 structure ComponentError where
   code : String
   message : String
+  path : Array String := #[]
   spans : Array SourceSpan := #[]
 deriving Repr, BEq
+
+namespace ComponentError
+
+private def spanLine (span : SourceSpan) : String :=
+  if span.file.isEmpty then "<generated>"
+  else s!"{span.file}:{span.start.line}:{span.start.column}"
+
+def render (error : ComponentError) : String :=
+  let path := if error.path.isEmpty then ""
+    else "\n  path: " ++ String.intercalate " → " error.path.toList
+  let spans := if error.spans.isEmpty then ""
+    else "\n  declarations: " ++ String.intercalate ", "
+      (error.spans.toList.map spanLine)
+  s!"error[{error.code}]: {error.message}" ++ path ++ spans
+
+end ComponentError
 
 structure CheckedComponent (Γ : Schema) where
   private mk ::
@@ -108,7 +153,7 @@ private def refsFor (values : Array (ValueSpec Γ)) (ids : List Nat) :
     match values[id]? with
     | some value => pure { id := ⟨id⟩, valueType := value.valueType }
     | none => throw {
-        code := "LRX-COMP-006"
+        code := "LRX-TYPE-106"
         message := s!"expression dependency {id} is outside the component value table"
       }
   pure refs.toArray
@@ -132,57 +177,88 @@ private def sinkNodes (values : Array (ValueSpec Γ))
 
 private def validateValues (spec : ComponentSpec Γ) : Except ComponentError Nat := do
   if spec.values.isEmpty then
-    throw { code := "LRX-COMP-002", message := "component must declare at least one value" }
+    throw { code := "LRX-TYPE-101", message := "component must declare at least one value" }
   unless spec.values.size == Γ.size do
     throw {
-      code := "LRX-COMP-003"
+      code := "LRX-TYPE-102"
       message := "component value declarations must align exactly with its schema"
       spans := #[spec.span]
     }
   for index in List.range spec.values.size do
     match spec.values[index]? with
     | none =>
-        throw { code := "LRX-COMP-003", message := "component value table changed during validation" }
+        throw { code := "LRX-TYPE-102", message := "component value table changed during validation" }
     | some value =>
         unless value.fieldIndex == index do
           throw {
-            code := "LRX-COMP-004"
+            code := "LRX-TYPE-103"
             message := s!"component value at position {index} uses field {value.fieldIndex}"
             spans := #[value.span]
           }
   if duplicate? (spec.values.toList.map ValueSpec.name) then
-    throw { code := "LRX-COMP-005", message := "component value names must be unique" }
+    throw { code := "LRX-TYPE-104", message := "component value names must be unique" }
   let count := sourceCount spec.values.toList
   unless spec.values.toList.take count |>.all ValueSpec.isSource do
-    throw { code := "LRX-COMP-007", message := "component sources must form a leading prefix" }
+    throw { code := "LRX-TYPE-105", message := "component sources must form a leading prefix" }
   unless spec.values.toList.drop count |>.all (fun value => ¬value.isSource) do
-    throw { code := "LRX-COMP-007", message := "component sources must form a leading prefix" }
+    throw { code := "LRX-TYPE-105", message := "component sources must form a leading prefix" }
   pure count
+
+private def actualSurface (spec : ComponentSpec Γ) : Array SurfaceDecl :=
+  spec.values.map (fun value => {
+    role := if value.isSource then .state else .derived
+    name := value.name
+    span := value.span
+  }) ++ spec.events.map (fun event => {
+    role := .event
+    name := event.name
+    span := event.span
+  })
+
+private def validateSurface (spec : ComponentSpec Γ) : Except ComponentError Unit := do
+  if spec.surface.isEmpty then return
+  let actual := actualSurface spec
+  unless spec.surface.size == actual.size do
+    throw {
+      code := "LRX-ELAB-103"
+      message := "surface declarations must align exactly with component values and events"
+      spans := spec.surface.map (·.span)
+    }
+  for pair in spec.surface.toList.zip actual.toList do
+    let declared := pair.1
+    let value := pair.2
+    unless declared.role == value.role && declared.name == value.name do
+      throw {
+        code := "LRX-ELAB-103"
+        message := s!"surface declaration {declared.debug} does not match {value.debug}"
+        path := #[declared.debug, value.debug]
+        spans := #[declared.span, value.span]
+      }
 
 private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
     (split : ViewSplit Γ) : Except ComponentError Unit := do
   let names := spec.events.toList.map (·.name)
   if names.any String.isEmpty || duplicate? names then
-    throw { code := "LRX-COMP-008", message := "component event names must be nonempty and unique" }
+    throw { code := "LRX-ELAB-102", message := "component event names must be nonempty and unique" }
   for event in spec.events do
     for target in event.update.writeTargets do
       unless target < sourceCount do
         throw {
-          code := "LRX-COMP-009"
+          code := "LRX-TYPE-107"
           message := s!"event {event.name} writes non-source value {target}"
           spans := #[event.span]
         }
     for dependency in event.update.readDependencies do
       unless dependency < sourceCount do
         throw {
-          code := "LRX-COMP-011"
+          code := "LRX-TYPE-108"
           message := s!"event {event.name} reads derived value {dependency}; derived reads require a transaction barrier"
           spans := #[event.span]
         }
   for mounted in split.events do
     unless names.contains mounted.binding.eventName do
       throw {
-        code := "LRX-COMP-010"
+        code := "LRX-VIEW-006"
         message := s!"view references unknown event {mounted.binding.eventName}"
         spans := #[mounted.binding.span]
       }
@@ -191,18 +267,24 @@ mutual
 private def validateView : View Γ → Except ComponentError Unit
   | .element tag attrs events children span => do
       if duplicate? (attrs.map StaticAttr.name) then
-        throw { code := "LRX-DOM-001", message := "element has duplicate static attributes", spans := #[span] }
+        throw { code := "LRX-VIEW-001", message := "element has duplicate static attributes", spans := #[span] }
       if duplicate? (events.map fun event => event.kind.name) then
-        throw { code := "LRX-DOM-002", message := "element has duplicate event bindings", spans := #[span] }
+        throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
+      if !events.isEmpty && tag != .button then
+        throw {
+          code := "LRX-VIEW-005"
+          message := "click handlers require a native button in the M4 safe view"
+          spans := #[span]
+        }
       for attr in attrs do
         if let .buttonType _ := attr then
           unless tag == .button do
-            throw { code := "LRX-DOM-003", message := "button type is valid only on button elements", spans := #[span] }
+            throw { code := "LRX-VIEW-003", message := "button type is valid only on button elements", spans := #[span] }
       validateChildren children
   | .text _ _ => pure ()
   | .scalarText name _ span =>
       if name.isEmpty then
-        throw { code := "LRX-DOM-004", message := "text sink name must not be empty", spans := #[span] }
+        throw { code := "LRX-VIEW-004", message := "text sink name must not be empty", spans := #[span] }
       else pure ()
 
 private def validateChildren : ViewChildren Γ → Except ComponentError Unit
@@ -215,24 +297,32 @@ end
 /-- Validate the explicit component contract and retain its certified graph. -/
 def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ) := do
   if spec.name.isEmpty then
-    .error { code := "LRX-COMP-001", message := "component name must not be empty", spans := #[spec.span] }
-  else match validateValues spec with
+    .error { code := "LRX-ELAB-101", message := "component name must not be empty", spans := #[spec.span] }
+  else match validateSurface spec with
   | .error error => .error error
-  | .ok sourceCount => match validateView spec.view with
+  | .ok _ => match validateValues spec with
     | .error error => .error error
-    | .ok _ =>
-      let split := spec.view.split
-      match validateEvents spec sourceCount split with
+    | .ok sourceCount => match validateView spec.view with
       | .error error => .error error
-      | .ok _ => match valueNodes spec.values with
+      | .ok _ =>
+        let split := spec.view.split
+        match validateEvents spec sourceCount split with
         | .error error => .error error
-        | .ok valueNodes => match sinkNodes spec.values split.textSinks with
+        | .ok _ => match valueNodes spec.values with
           | .error error => .error error
-          | .ok sinkNodes => match Graph.plan (valueNodes ++ sinkNodes) with
-            | .error error => .error {
-                code := error.code, message := error.message, spans := error.spans
-              }
-            | .ok graph => .ok ⟨spec, graph, sourceCount, split⟩
+          | .ok valueNodes => match sinkNodes spec.values split.textSinks with
+            | .error error => .error error
+            | .ok sinkNodes => match Graph.plan (valueNodes ++ sinkNodes) with
+              | .error error => .error {
+                  code := error.code, message := error.message,
+                  path := error.path, spans := error.spans
+                }
+              | .ok graph => .ok ⟨spec, graph, sourceCount, split⟩
+
+def validationMessage (spec : ComponentSpec Γ) : String :=
+  match spec.check with
+  | .ok _ => ""
+  | .error error => error.render
 
 end ComponentSpec
 
