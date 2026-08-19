@@ -104,6 +104,7 @@ mutual
     | assign (target : AssignTarget) (value : Expr)
     | expr (value : Expr)
     | ifThen (condition : Expr) (body : Block)
+    | forOf (binding : Ident) (iterable : Expr) (body : Block)
     | return (value : Expr)
   deriving Repr, BEq
 
@@ -201,6 +202,8 @@ mutual
     | .assign target value => assignTargetBound bound target && exprBound bound value
     | .expr value => exprBound bound value
     | .ifThen condition body => exprBound bound condition && blockBound bound body
+    | .forOf binding iterable body =>
+        ¬bound.contains binding && exprBound bound iterable && blockBound (binding :: bound) body
     | .return value => exprBound bound value
 
   private def assignTargetBound (bound : List Ident) : AssignTarget → Bool

@@ -117,6 +117,15 @@ mutual
         | .readable => indent depth ++ "if (" ++ renderedCondition ++ ") {\n" ++
             String.intercalate "\n" renderedBody ++ "\n" ++ indent depth ++ "}"
         | .compact => "if(" ++ renderedCondition ++ "){" ++ String.join renderedBody ++ "}"
+  | .forOf binding iterable body => do
+      let renderedIterable ← expr mode iterable
+      let renderedBody ← block mode (if mode == .readable then depth + 1 else depth) body
+      pure <| match mode with
+        | .readable => indent depth ++ "for (const " ++ binding.raw ++ " of " ++
+            renderedIterable ++ ") {\n" ++ String.intercalate "\n" renderedBody ++
+            "\n" ++ indent depth ++ "}"
+        | .compact => "for(const " ++ binding.raw ++ " of " ++ renderedIterable ++ "){" ++
+            String.join renderedBody ++ "}"
   | .return value => do
       let rendered ← expr mode value
       pure <| match mode with

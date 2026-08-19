@@ -30,6 +30,7 @@ def run : IO Unit := do
     | .ok _ => throw <| IO.userError s!"invalid identifier accepted: {value}"
   let evaluate ← ident "evaluate"
   let input ← ident "input"
+  let item ← ident "item"
   let stringGlobal ← ident "String"
   let valid : Module :=
     { declarations := #[.function {
@@ -41,6 +42,19 @@ def run : IO Unit := do
   match valid.validate with
   | .ok _ => pure ()
   | .error error => throw <| IO.userError s!"valid JavaScript AST rejected: {error.code}"
+  let validLoop : Module :=
+    { declarations := #[.function {
+        name := evaluate
+        params := #[input]
+        body := #[
+          .forOf item (.ident input) <| .ofList [.expr (.ident item)],
+          .return (.ident input)
+        ]
+      }]
+      exports := #[] }
+  match validLoop.validate with
+  | .ok _ => pure ()
+  | .error error => throw <| IO.userError s!"valid for-of AST rejected: {error.code}"
   expectError "LRX-BE-006" ({
     declarations := #[
       .function { name := evaluate, params := #[], body := #[.return (.literal .null)] },
@@ -79,6 +93,14 @@ def run : IO Unit := do
       name := evaluate
       params := #[]
       body := #[.return (.ident input)]
+    }]
+    exports := #[]
+  } : Module).validate
+  expectError "LRX-BE-018" ({
+    declarations := #[.function {
+      name := evaluate
+      params := #[input]
+      body := #[.forOf input (.ident input) <| .ofList [.expr (.ident input)]]
     }]
     exports := #[]
   } : Module).validate

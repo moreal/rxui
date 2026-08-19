@@ -200,6 +200,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Js.Stmt.const.injEq, #[``propext]),
     (`LeanRx.Js.Stmt.assign.injEq, #[``propext]),
     (`LeanRx.Js.Stmt.expr.injEq, #[``propext]),
+    (`LeanRx.Js.Stmt.forOf.injEq, #[``propext]),
     (`LeanRx.Js.Stmt.return.injEq, #[``propext]),
     (`LeanRx.Js.Stmt.ifThen.injEq, #[``propext]),
     (`LeanRx.Lower.rxExpr.eq_def, #[``propext, ``Quot.sound]),
