@@ -54,6 +54,8 @@ def literal : Literal → String
   | .bigint value => if value < 0 then "(" ++ toString value ++ "n)" else toString value ++ "n"
   | .number value => toString value
   | .signedIntegerPattern => "/^-?[0-9]+$/"
+  | .naturalPattern => "/^[0-9]+$/"
+  | .asciiTrimPattern => "/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g"
   | .null => "null"
 
 mutual

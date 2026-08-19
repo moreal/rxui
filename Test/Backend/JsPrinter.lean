@@ -22,6 +22,9 @@ def run : IO Unit := do
     throw <| IO.userError "JavaScript BigInt literal emission changed"
   unless Printer.literal .signedIntegerPattern == "/^-?[0-9]+$/" do
     throw <| IO.userError "closed signed-integer pattern emission changed"
+  unless Printer.literal .naturalPattern == "/^[0-9]+$/" &&
+      Printer.literal .asciiTrimPattern == "/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g" do
+    throw <| IO.userError "closed form validation pattern emission changed"
   let evaluate ← ident "evaluate"
   let input ← ident "input"
   let one : Expr := .literal (.bigint 1)

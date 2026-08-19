@@ -51,6 +51,8 @@ inductive Literal where
   | bigint (value : Int)
   | number (value : UInt32)
   | signedIntegerPattern
+  | naturalPattern
+  | asciiTrimPattern
   | null
 deriving Repr, BEq
 
