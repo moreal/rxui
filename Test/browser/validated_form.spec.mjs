@@ -70,6 +70,9 @@ test("prevents invalid submit and exposes only a validated fake command", async 
     "terms must be accepted",
   ]);
   await expect(submit).toBeDisabled();
+  await expect(inputs.nth(0)).toHaveAttribute("aria-invalid", "true");
+  await expect(inputs.nth(1)).toHaveAttribute("aria-invalid", "true");
+  await expect(inputs.nth(2)).toHaveAttribute("aria-invalid", "true");
   const ids = await page.locator(".validated-form input[id]").evaluateAll((nodes) =>
     nodes.map((node) => node.id),
   );

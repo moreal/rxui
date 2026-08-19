@@ -447,6 +447,9 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
       .ident termsInput, .literal (.string "type"), .literal (.string "checkbox")],
     .expr <| call runtime.setAttribute [
       .ident termsInput, .literal (.string "aria-describedby"), .ident termsErrorId],
+    .expr <| call runtime.setAttribute [
+      .ident termsInput, .literal (.string "aria-invalid"),
+      .literal (.string (if initial.termsError.isEmpty then "false" else "true"))],
     .expr <| call runtime.setProperty [
       .ident termsInput, .literal (.string "checked"),
       .literal (.boolean checked.spec.initial.accepted)],
