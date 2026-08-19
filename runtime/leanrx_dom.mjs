@@ -14,6 +14,10 @@ export function append(parent, child) {
   parent.appendChild(child);
 }
 
+export function childAt(parent, index) {
+  return parent.childNodes[index];
+}
+
 export function setText(node, value) {
   node.data = value;
 }

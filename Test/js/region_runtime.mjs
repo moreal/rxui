@@ -109,9 +109,10 @@ function values(parent) {
   const parent = new FakeParent();
   const region = createKeyedRegion(
     parent,
-    (item) => new FakeNode(`${item[0]}:${item[1]}`),
-    (node, item) => { node.value = `${item[0]}:${item[1]}`; },
-    (node) => { node.disposals += 1; },
+    (item) => [new FakeNode(`${item[0]}:${item[1]}`)],
+    (handle, item) => { handle[0].value = `${item[0]}:${item[1]}`; },
+    (handle) => { handle[0].disposals += 1; },
+    (handle) => handle[0],
   );
   region.update([[1, "a"], [2, "b"], [3, "c"]]);
   const identities = new Map(parent.children.slice(0, 3).map((node) => [node.value[0], node]));

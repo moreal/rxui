@@ -12,7 +12,7 @@ payload adapters but no fixed delegated-row payload contract or region module.
 ## Decision
 
 The internal JavaScript runtime ABI becomes version 5 for every artifact. The DOM
-host adds `listenDelegated`, which searches only the compiler-owned
+host adds `childAt` and `listenDelegated`, which searches only the compiler-owned
 `data-lrx-action` marker inside the registered region root and passes fixed
 action/key/value/checked/key-name fields to a generated handler. The separate
 `leanrx_region.mjs` module receives explicit target arrays and generated

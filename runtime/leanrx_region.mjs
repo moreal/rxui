@@ -95,7 +95,7 @@ export function createPositionalRegion(parent, mountItem, updateItem, disposeIte
   };
 }
 
-export function createKeyedRegion(parent, mountItem, updateItem, disposeItem) {
+export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, rootItem = null) {
   const marker = anchor(parent, "leanrx:keyed");
   const metrics = [0, 0, 0, 0]; // mounts/updates/moves/disposals
   let entries = new Map();
@@ -116,10 +116,11 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem) {
         const key = item[0];
         let entry = entries.get(key);
         if (entry) {
-          updateItem(entry.node, item, index);
+          updateItem(entry.handle, item, index);
           metrics[1] += 1;
         } else {
-          entry = { node: mountItem(item, index) };
+          const handle = mountItem(item, index);
+          entry = { handle, node: rootItem ? rootItem(handle) : handle };
           metrics[0] += 1;
         }
         next.set(key, entry);
@@ -127,7 +128,7 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem) {
       }
       for (const [key, entry] of entries) {
         if (!next.has(key)) {
-          disposeItem(entry.node, key);
+          disposeItem(entry.handle, key);
           detach(entry.node);
           metrics[3] += 1;
         }
@@ -150,7 +151,7 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem) {
       if (disposed) return;
       disposed = true;
       for (const [key, entry] of entries) {
-        disposeItem(entry.node, key);
+        disposeItem(entry.handle, key);
         detach(entry.node);
         metrics[3] += 1;
       }
