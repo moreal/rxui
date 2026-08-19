@@ -24,3 +24,11 @@ not silently accepted by the integer contract.
 These are type and native-semantic guarantees. Controlled DOM values, cursor
 behavior, generated JavaScript parsing, form prevention, and browser submission
 remain M7 implementation/TCB work until their differential and browser gates land.
+
+The closed `DomProperty` capability currently permits only typed `value : String`,
+`checked : Bool`, and `disabled : Bool` writes. `ControlEvent` similarly fixes
+the payload extraction for text input/change, checked change, submit, keydown,
+focus, and blur. The DOM host exposes one small listener adapter per payload kind
+and a property setter; it still performs no parsing, validation, dependency
+discovery, or scheduling. Backends must select these primitives from the typed
+constructors rather than accepting arbitrary property/event strings.
