@@ -17,7 +17,10 @@ private def generateExpected (directory : System.FilePath) : IO Unit := do
       reference.observations == optimized.observations do
     throw <| IO.userError "Diamond reference/optimized semantics diverged"
   IO.FS.writeFile (directory / "Diamond.expected.json") <|
-    "{\"initialTotal\":13,\"finalTotal\":" ++ toString (reference.store 3) ++
+    "{\"initialLeft\":11,\"initialRight\":2,\"initialTotal\":13" ++
+      ",\"finalLeft\":" ++ toString (reference.store 1) ++
+      ",\"finalRight\":" ++ toString (reference.store 2) ++
+      ",\"finalTotal\":" ++ toString (reference.store 3) ++
       ",\"derivedEvaluations\":" ++ toString optimized.derivedEvaluations ++
       ",\"sinkEvaluations\":" ++ toString optimized.sinkEvaluations ++ "}\n"
 

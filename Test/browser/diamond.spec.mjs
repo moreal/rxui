@@ -62,16 +62,16 @@ test("batches a diamond without an intermediate fan-in value", async ({ page }) 
     globalThis.totalObserver.observe(total, { characterData: true });
   });
   await expect(page.locator(".diamond-lab p")).toHaveText([
-    "Left: 11",
-    "Right: 2",
+    `Left: ${expectedValues.initialLeft}`,
+    `Right: ${expectedValues.initialRight}`,
     `Total: ${expectedValues.initialTotal}`,
   ]);
   await page.keyboard.press("Tab");
   await expect(page.locator(".diamond-lab button")).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator(".diamond-lab p")).toHaveText([
-    "Left: 13",
-    "Right: 6",
+    `Left: ${expectedValues.finalLeft}`,
+    `Right: ${expectedValues.finalRight}`,
     `Total: ${expectedValues.finalTotal}`,
   ]);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));

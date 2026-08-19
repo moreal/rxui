@@ -25,7 +25,11 @@ const expected = JSON.parse(
   await readFile(path.join(directory, "Diamond.expected.json"), "utf8"),
 );
 if (
+  expected.initialLeft !== 11 ||
+  expected.initialRight !== 2 ||
   expected.initialTotal !== 13 ||
+  expected.finalLeft !== 13 ||
+  expected.finalRight !== 6 ||
   expected.finalTotal !== 19 ||
   expected.derivedEvaluations !== 3 ||
   expected.sinkEvaluations !== 1
