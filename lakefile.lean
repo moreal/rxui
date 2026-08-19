@@ -28,6 +28,7 @@ lean_lib LeanRxTest where
     `Test.Component.Model,
     `Test.Component.Dependent,
     `Test.Component.DiamondLab,
+    `Test.Form.Validation,
     `Test.Elab.Component,
     `Test.Cli.Model,
     `Test.Cli.AtomicOutput,

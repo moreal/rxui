@@ -21,6 +21,7 @@ fixtures=(
   Test/fixtures/compile-fail/EmptyTabs.lean
   Test/fixtures/compile-fail/InvalidFinLiteral.lean
   Test/fixtures/compile-fail/NatVectorIndex.lean
+  Test/fixtures/compile-fail/SubmitRawForm.lean
 )
 fragments=(
   "Constructor for"
@@ -42,6 +43,7 @@ fragments=(
   "Vector String (0 + 1)"
   "Tactic \`decide\` proved"
   "(Fin 3)"
+  "ValidatedForm"
 )
 
 for index in "${!fixtures[@]}"; do
