@@ -66,7 +66,8 @@ def run : IO Unit := do
         { role := .derived, name := "doubled", span := .generated },
         { role := .derived, name := "parity", span := .generated },
         { role := .event, name := "increment", span := .generated },
-        { role := .event, name := "addTwo", span := .generated }
+        { role := .event, name := "addTwo", span := .generated },
+        { role := .event, name := "nestedAddTwo", span := .generated }
       ] }
   expectError "LRX-ELAB-103" mismatchedSurface.check
   let cycle : ComponentSpec (.field "a" Int <| .field "b" Int .empty) :=

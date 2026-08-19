@@ -10,13 +10,14 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
   unless checked.view.textSinks.map (·.name) ==
       ["countText", "doubledText", "parityText", "hostileText"] do
     throw <| IO.userError "JSX interpolation did not become inspectable text sinks"
-  unless checked.view.events.map (·.binding.eventName) == ["increment", "addTwo"] do
+  unless checked.view.events.map (·.binding.eventName) ==
+      ["increment", "addTwo", "nestedAddTwo"] do
     throw <| IO.userError "JSX click attributes did not become event bindings"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [
       "state:count", "derived:doubled", "derived:parity",
-      "event:increment", "event:addTwo"
+      "event:increment", "event:addTwo", "event:nestedAddTwo"
     ] do
     throw <| IO.userError "component command declaration inventory changed"
   unless CounterSyntax_declarations.all (fun declaration =>

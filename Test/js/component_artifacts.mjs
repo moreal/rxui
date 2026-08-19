@@ -20,10 +20,11 @@ if (
   manifest.sourceCount !== 1 ||
   manifest.derivedCount !== 2 ||
   manifest.textSinkCount !== 4 ||
-  manifest.eventCount !== 2 ||
+  manifest.eventCount !== 3 ||
   JSON.stringify(manifest.hostImports) !==
     JSON.stringify(["./leanrx_dom.mjs", "./leanrx_host.mjs"]) ||
-  JSON.stringify(manifest.features) !== JSON.stringify(["scalar", "events"])
+  JSON.stringify(manifest.features) !==
+    JSON.stringify(["scalar", "events", "transactions", "instrumentation", "trace"])
 ) {
   throw new Error("generated Counter manifest is invalid");
 }

@@ -106,6 +106,41 @@ test("add two suppresses the unchanged parity text write", async ({ page }) => {
   ]);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
   expect(await page.evaluate(() => globalThis.parityMutations)).toBe(0);
+  const instrumentation = await page.evaluate(() => globalThis.leanrxDisposers[0].instrumentation);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 2, 1, 2, 2]);
+  expect(instrumentation[7]).toEqual([
+    "transaction:begin",
+    "event:addTwo",
+    "source:count:write",
+    "source:count:write",
+    "source:count:changed",
+    "derived:doubled:evaluated",
+    "derived:doubled:changed",
+    "derived:parity:evaluated",
+    "sink:countText:evaluated",
+    "dom:countText:write",
+    "sink:doubledText:evaluated",
+    "dom:doubledText:write",
+    "transaction:commit",
+  ]);
+});
+
+test("nested dispatch batches into the outer transaction", async ({ page }) => {
+  await openCounter(page);
+  await page.locator("#one button").nth(2).click();
+  await expect(page.locator("#one .counter p").first()).toHaveText("Count: 3");
+  const instrumentation = await page.evaluate(() => globalThis.leanrxDisposers[0].instrumentation);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 2, 1, 2, 2]);
+  expect(instrumentation[7].filter((event) => event === "transaction:commit")).toHaveLength(1);
+  expect(instrumentation[7].slice(0, 7)).toEqual([
+    "transaction:begin",
+    "event:nestedAddTwo",
+    "event:increment",
+    "source:count:write",
+    "event:increment",
+    "source:count:write",
+    "source:count:changed",
+  ]);
 });
 
 test("mount instances are isolated and disposal is idempotent", async ({ page }) => {

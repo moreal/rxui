@@ -17,9 +17,10 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
     | .error error => throw <| IO.userError s!"compact Counter printing failed: {error.code}"
   unless readable.contains "from \"./leanrx_dom.mjs\"" &&
       readable.contains "function mount(target)" &&
-      readable.contains "function $lrx_event_0(state, refs)" &&
-      readable.contains "if (changed_2)" &&
-      readable.contains "setText(refs[2]" do
+      readable.contains "function $lrx_event_0(context, ignored)" &&
+      readable.contains "if (changed[2])" &&
+      readable.contains "setText(refs[2]" &&
+      readable.contains "disposer[\"instrumentation\"] = tx" do
     throw <| IO.userError s!"Counter output lost direct-DOM component structure:\n{readable}"
   unless ¬readable.contains "currentObserver" && ¬readable.contains "Proxy" &&
       ¬readable.contains "eval(" && ¬readable.contains "Function(" do
@@ -29,9 +30,10 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
       emitted.manifest.exports == #["mount"] &&
       emitted.manifest.stateSlots == #[.int, .int, .string] &&
       emitted.manifest.sourceCount == 1 && emitted.manifest.derivedCount == 2 &&
-      emitted.manifest.textSinkCount == 4 && emitted.manifest.eventCount == 2 &&
+      emitted.manifest.textSinkCount == 4 && emitted.manifest.eventCount == 3 &&
       emitted.manifest.hostImports == #["./leanrx_dom.mjs", "./leanrx_host.mjs"] &&
-      emitted.manifest.features == #["scalar", "events"] do
+      emitted.manifest.features ==
+        #["scalar", "events", "transactions", "instrumentation", "trace"] do
     throw <| IO.userError "Counter manifest lost required deterministic metadata"
   let repeated ← match LeanRx.Backend.Component.emit "Counter.mjs" checked with
     | .ok emitted => pure emitted

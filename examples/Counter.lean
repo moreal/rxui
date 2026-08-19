@@ -39,8 +39,15 @@ def increment : EventSpec CounterSchema :=
 
 def addTwo : EventSpec CounterSchema :=
   { name := "addTwo"
-    update := .set count <| RxExpr.binary .intAdd
-      (RxExpr.read count) (RxExpr.literal (.int 2)) }
+    update := .sequence
+      (.set count <| RxExpr.binary .intAdd
+        (RxExpr.read count) (RxExpr.literal (.int 1)))
+      (.set count <| RxExpr.binary .intAdd
+        (RxExpr.read count) (RxExpr.literal (.int 1))) }
+
+def nestedAddTwo : EventSpec CounterSchema :=
+  { name := "nestedAddTwo"
+    update := .sequence (.dispatch "increment") (.dispatch "increment") }
 
 private def click (name : String) : EventBinding := { kind := .click, eventName := name }
 
@@ -51,6 +58,8 @@ def view : View CounterSchema := View.node .main [
     (attrs := [.buttonType .button]) (events := [click "increment"]),
   View.node .button [.text "Add two"]
     (attrs := [.buttonType .button]) (events := [click "addTwo"]),
+  View.node .button [.text "Nested add two"]
+    (attrs := [.buttonType .button]) (events := [click "nestedAddTwo"]),
   View.node .p [.scalarText "countText" countText],
   View.node .p [.scalarText "doubledText" doubledText],
   View.node .p [.scalarText "parityText" parityText],
@@ -65,7 +74,7 @@ def spec : ComponentSpec CounterSchema :=
       ValueSpec.computed doubledField doubled,
       ValueSpec.computed parityField parity
     ]
-    events := #[increment, addTwo]
+    events := #[increment, addTwo, nestedAddTwo]
     view }
 
 open scoped LeanRxDsl
@@ -76,6 +85,7 @@ def syntaxView : View CounterSchema := jsx% <main class="counter"> [
   <h1> ["Counter"],
   <button type="button" onClick="increment"> ["Increment"],
   <button type="button" onClick="addTwo"> ["Add two"],
+  <button type="button" onClick="nestedAddTwo"> ["Nested add two"],
   <p> [{"countText": countText}],
   <p> [{"doubledText": doubledText}],
   <p> [{"parityText": parityText}],
@@ -88,6 +98,7 @@ component CounterSyntax (schema := CounterSchema) where {
   derived parity := ValueSpec.computed parityField parity;
   event increment := increment;
   event addTwo := addTwo;
+  event nestedAddTwo := nestedAddTwo;
   view := syntaxView;
 }
 
