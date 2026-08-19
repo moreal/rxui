@@ -8,12 +8,14 @@ structure NodeId where
   value : Nat
 deriving Repr, BEq, DecidableEq, Ord
 
-/-- Canonical lawful equality lowering for each sealed scalar runtime type. -/
+/-- Canonical lawful equality lowering for each sealed runtime type. -/
 def RuntimeTypeId.equalityPlan : RuntimeTypeId → JsEqPlan
   | .bool => .strict
   | .string => .strict
   | .int => .bigint
   | .nat => .bigint
+  | .vector _ _ => .structural
+  | .fin _ => .strict
 
 inductive NodeKind where
   | source

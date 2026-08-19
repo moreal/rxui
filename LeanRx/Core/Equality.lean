@@ -37,6 +37,8 @@ def jsPlan (α : Type) [rep : RuntimeRep α] : JsEqPlan :=
   | .string => .strict
   | .int => .bigint
   | .nat => .bigint
+  | .vector _ _ => .structural
+  | .fin _ => .strict
 
 end RuntimeEq
 
@@ -44,5 +46,8 @@ instance : RuntimeEq Bool := RuntimeEq.ofDecidable Bool
 instance : RuntimeEq String := RuntimeEq.ofDecidable String
 instance : RuntimeEq Int := RuntimeEq.ofDecidable Int
 instance : RuntimeEq Nat := RuntimeEq.ofDecidable Nat
+instance [RuntimeRep α] [DecidableEq α] : RuntimeEq (Vector α length) :=
+  RuntimeEq.ofDecidable (Vector α length)
+instance : RuntimeEq (Fin bound) := RuntimeEq.ofDecidable (Fin bound)
 
 end LeanRx

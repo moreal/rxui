@@ -14,6 +14,11 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.Schema.size._unsafe_rec,
     `LeanRx.Store.get._unsafe_rec,
     `LeanRx.Store.set._unsafe_rec,
+    -- Generated dependent recursors for sealed representation metadata. These
+    -- do not execute verified graph/propagation semantics.
+    `LeanRx.RuntimeType.id._unsafe_rec,
+    `LeanRx.RuntimeType.jsType._unsafe_rec,
+    `LeanRx.RuntimeTypeId.debug._unsafe_rec,
     `LeanRx.JsType.debug._unsafe_rec,
     `LeanRx.Js.instBEqArgs.beq_1._unsafe_rec,
     `LeanRx.Js.instBEqArgs.beq_2._unsafe_rec,
@@ -61,7 +66,11 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.Schedule.position.loop._unsafe_rec,
     `LeanRx.instBEqJsType.beq._unsafe_rec,
     `LeanRx.instDecidableEqJsType.decEq._unsafe_rec,
-    `LeanRx.instReprJsType.repr._unsafe_rec
+    `LeanRx.instReprJsType.repr._unsafe_rec,
+    `LeanRx.instBEqRuntimeTypeId.beq._unsafe_rec,
+    `LeanRx.instDecidableEqRuntimeTypeId.decEq._unsafe_rec,
+    `LeanRx.instReprRuntimeTypeId.repr._unsafe_rec,
+    `LeanRx.instOrdRuntimeTypeId.ord._unsafe_rec
   ]
   -- Generated injectivity plus named membership/agreement lemmas use Lean's
   -- standard proposition-extensionality axiom. Each exact pair is reviewed;
@@ -132,6 +141,9 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.GraphError.mk.injEq, #[``propext]),
     (`LeanRx.JsType.array.injEq, #[``propext]),
     (`LeanRx.JsType.object.injEq, #[``propext]),
+    (`LeanRx.RuntimeType.vector.injEq, #[``propext]),
+    (`LeanRx.RuntimeTypeId.vector.injEq, #[``propext]),
+    (`LeanRx.RuntimeTypeId.fin.injEq, #[``propext]),
     (`LeanRx.Js.Decl.function.injEq, #[``propext]),
     (`LeanRx.Js.AssignTarget.ident.injEq, #[``propext]),
     (`LeanRx.Js.AssignTarget.index.injEq, #[``propext]),

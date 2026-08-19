@@ -16,6 +16,14 @@ def run : IO Unit := do
     throw <| IO.userError "Bool equality lowering is not strict equality"
   unless LeanRx.RuntimeEq.jsPlan Int == .bigint do
     throw <| IO.userError "Int equality lowering is not tied to BigInt"
+  unless LeanRx.RuntimeEq.jsPlan (Fin 3) == .strict do
+    throw <| IO.userError "Fin equality must compare the erased numeric index"
+  unless LeanRx.RuntimeEq.jsPlan (Vector String 3) == .structural do
+    throw <| IO.userError "Vector equality must not masquerade as identity equality"
+  let left : Vector String 2 := #v["a", "b"]
+  let right : Vector String 2 := #v["a", "b"]
+  unless LeanRx.RuntimeEq.same left right do
+    throw <| IO.userError "Vector runtime equality is not propositionally lawful"
 
 example (a b : Int) : LeanRx.RuntimeEq.same a b = true ↔ a = b :=
   LeanRx.RuntimeEq.lawful a b

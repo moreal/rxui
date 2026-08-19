@@ -32,11 +32,7 @@ def nodeKind : NodeKind → String
   | .derived => "derived"
   | .sink => "sink"
 
-def runtimeType : RuntimeTypeId → String
-  | .bool => "bool"
-  | .string => "string"
-  | .int => "int"
-  | .nat => "nat"
+def runtimeType (value : RuntimeTypeId) : String := value.debug
 
 def equality : JsEqPlan → String
   | .strict => "strict"

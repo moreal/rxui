@@ -1,6 +1,6 @@
 # Runtime representation contract
 
-The M1 scalar ABI is closed and indexed: callers may supply a local
+The runtime ABI is closed and indexed: callers may supply a local
 `RuntimeRep`, but its `RuntimeType α` index prevents mapping a source type to a
 different JavaScript category.
 
@@ -10,6 +10,16 @@ different JavaScript category.
 | `String` | `string` | `string` | strict |
 | `Int` | `int` | `bigint` | BigInt |
 | `Nat` | `nat` | non-negative `bigint` | BigInt |
+| `Vector α n` | `vector<α,n>` | array of the element representation | structural |
+| `Fin n` | `fin<n>` | non-negative `number` index | strict |
+
+For `Vector`, the runtime array contains only element values: the static length
+and constructor evidence are erased. For `Fin`, only the numeric value remains;
+the bound and proof that the value is below it are erased. Runtime type metadata
+retains the length/bound so lowering can validate a whole expression before
+emission, but generated values do not carry those numbers as proof objects.
+Lean-checked constructors and typed vector access are therefore part of the
+safety contract; foreign callers may not manufacture unchecked indices.
 
 The M3 scalar backend emits ESM functions whose parameters and returns use the
 representations above. Each input position has a declared runtime code, and the
