@@ -7,6 +7,7 @@ import Test.Core.Equality
 import Test.Core.Expr
 import Test.Core.ExprPrimitives
 import Test.Proofs.DependencySound
+import Test.Graph.Model
 
 private def assertEq [BEq α] [ToString α] (expected actual : α) : IO Unit :=
   unless expected == actual do
@@ -24,4 +25,5 @@ def main : IO Unit := do
   LeanRxTest.Expr.run
   LeanRxTest.ExprPrimitives.run
   LeanRxTest.DependencySound.run
+  LeanRxTest.Graph.Model.run
   IO.println "LeanRx native smoke tests passed"

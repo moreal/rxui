@@ -36,8 +36,13 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.SourcePos.mk.injEq, #[``propext]),
     (`LeanRx.SourceSpan.mk.injEq, #[``propext]),
     (`LeanRx.Field.there.injEq, #[``propext]),
+    (`LeanRx.Graph.mk.injEq, #[``propext]),
+    (`LeanRx.GraphError.mk.injEq, #[``propext]),
     (`LeanRx.JsType.array.injEq, #[``propext]),
     (`LeanRx.JsType.object.injEq, #[``propext]),
+    (`LeanRx.Node.mk.injEq, #[``propext]),
+    (`LeanRx.NodeId.mk.injEq, #[``propext]),
+    (`LeanRx.NodeSpec.mk.injEq, #[``propext]),
     (`LeanRx.RxExpr.binary.injEq, #[``propext]),
     (`LeanRx.RxExpr.debug.eq_def, #[``propext, ``Quot.sound]),
     (`LeanRx.RxExpr.debug._unary.eq_def, #[``propext, ``Quot.sound]),
@@ -73,7 +78,8 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Store.agreeOn_empty, #[``propext]),
     (`LeanRx.Store.agreeOn_union_left, #[``propext]),
     (`LeanRx.Store.agreeOn_union_right, #[``propext]),
-    (`LeanRx.Store.cons.injEq, #[``propext])
+    (`LeanRx.Store.cons.injEq, #[``propext]),
+    (`LeanRx.TypedNodeRef.mk.injEq, #[``propext])
   ]
   let declarations := (env.constants.toList.filter fun (name, _) =>
       name.toString.startsWith "LeanRx.").toArray.qsort fun a b =>
