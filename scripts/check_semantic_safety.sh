@@ -4,7 +4,8 @@ set -euo pipefail
 if (( $# > 0 )); then
   roots=("$@")
 else
-  roots=(LeanRx/Core LeanRx/Graph LeanRx/Semantics LeanRx/Proofs LeanRx/Component LeanRx/View examples)
+  roots=(LeanRx/Core LeanRx/Graph LeanRx/Semantics LeanRx/Proofs LeanRx/IR LeanRx/Lower
+    LeanRx/Component LeanRx/View examples)
 fi
 
 files=()
