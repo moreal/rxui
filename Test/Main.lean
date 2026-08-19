@@ -26,6 +26,7 @@ import Test.Component.Dependent
 import Test.Component.DiamondLab
 import Test.Form.Validation
 import Test.Form.Dom
+import Test.Form.Temperature
 import Test.Elab.Component
 import Test.Cli.Model
 import Test.Cli.AtomicOutput
@@ -69,6 +70,7 @@ def main : IO Unit := do
   LeanRxTest.Component.DiamondLab.run
   LeanRxTest.Form.Validation.run
   LeanRxTest.Form.Dom.run
+  LeanRxTest.Form.Temperature.run
   LeanRxTest.Elab.Component.run
   LeanRxTest.Cli.Model.run
   LeanRxTest.Cli.AtomicOutput.run

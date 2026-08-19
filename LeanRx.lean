@@ -33,5 +33,6 @@ import LeanRx.Semantics.Optimized
 import LeanRx.Proofs.PropagationSound
 import LeanRx.Form.Validation
 import LeanRx.Form.Dom
+import LeanRx.Form.Temperature
 
 /-! LeanRx's public library root. -/
