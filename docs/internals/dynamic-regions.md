@@ -19,3 +19,10 @@ The first conditional model has two operations:
 Lean proves that the optimized conditional result has exactly the reference
 logical node. Browser lowering and DOM identity/disposal remain in the TCB and
 will be covered when the local region host lands.
+
+The positional model retains mount tokens for the common prefix, performs direct
+logical-node updates at those positions, creates only an appended suffix, and
+disposes only a removed suffix. Lean proves that its optimized mounted projection
+equals full target-list recomputation. Positional identity deliberately follows
+index, not application keys; reorder-sensitive collections must use the later
+keyed region.
