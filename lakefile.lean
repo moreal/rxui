@@ -27,6 +27,7 @@ lean_lib LeanRxTest where
     `Test.Backend.Tabs,
     `Test.Backend.Temperature,
     `Test.Backend.ValidatedForm,
+    `Test.Backend.Todo,
     `Test.View.Model,
     `Test.Component.Model,
     `Test.Component.Dependent,
@@ -51,7 +52,7 @@ lean_lib LeanRxExamples where
     `examples.DiamondLab, `examples.DiamondLabBuild, `examples.DependentTabs,
     `examples.DependentTabsBuild, `examples.TemperatureConverter,
     `examples.TemperatureConverterBuild, `examples.ValidatedForm,
-    `examples.ValidatedFormBuild]
+    `examples.ValidatedFormBuild, `examples.TodoMVC, `examples.TodoMVCBuild]
 
 @[default_target]
 lean_exe leanrx_test where
@@ -86,6 +87,9 @@ lean_exe leanrx_temperature_js where
 
 lean_exe leanrx_validated_form_js where
   root := `examples.ValidatedFormMain
+
+lean_exe leanrx_todo_js where
+  root := `examples.TodoMVCMain
 
 lean_exe leanrx_graph_bench where
   root := `bench.SmallGraph
