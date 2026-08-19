@@ -86,6 +86,13 @@ test("preserves raw edits and converts only successfully parsed input", async ({
   await expect(page.locator(".temperature-converter img")).toHaveCount(0);
   expect(await page.evaluate(() => globalThis.tempXss)).toBeUndefined();
 
+  for (const separated of ["1_000", "-0_1"]) {
+    await dispatchValue(page, 0, separated);
+    await expect(inputs.nth(0)).toHaveValue(separated);
+    await expect(inputs.nth(1)).toHaveValue("248");
+    await expect(error).toHaveText("Enter an integer Celsius temperature.");
+  }
+
   for (const testCase of expected) {
     const index = testCase.scale === "celsius" ? 0 : 1;
     const other = index === 0 ? 1 : 0;
@@ -97,8 +104,8 @@ test("preserves raw edits and converts only successfully parsed input", async ({
   const instrumentation = await page.evaluate(() =>
     globalThis.temperatureDispose.instrumentation(),
   );
-  expect(instrumentation.slice(0, 7)).toEqual([0, 6, 6, 6, 5, 7, 7]);
-  expect(instrumentation[7].filter((entry) => entry === "transaction:commit")).toHaveLength(6);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 8, 8, 8, 5, 7, 7]);
+  expect(instrumentation[7].filter((entry) => entry === "transaction:commit")).toHaveLength(8);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });

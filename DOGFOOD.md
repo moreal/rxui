@@ -372,7 +372,10 @@ The first handler draft installed the invalid message before testing valid input
 then cleared it in the valid branch. It would have produced two unnecessary text
 writes for every successful edit. Splitting the valid/invalid branches removed
 the transient work; the exact instrumentation snapshot now locks seven sink/DOM
-writes across six discriminating edits.
+writes across eight discriminating edits. Independent review then found that
+Lean's standard integer parsers accept digit separators while the compiler-owned
+browser regex does not. Native parsing now enforces the same closed ASCII grammar
+first, with `1_000` and `-0_1` locked as native/browser rejections.
 
 ### Security and accessibility checks
 
@@ -385,7 +388,7 @@ appears.
 
 ### Performance observations
 
-Six input events record six commits, six source-write attempts, six parser
+Eight input events record eight commits, eight source-write attempts, eight parser
 evaluations, five converted-value changes, and seven guarded property/error DOM
 writes. These are deterministic work counters, not a speed benchmark.
 
@@ -425,7 +428,9 @@ the JavaScript implementation. A real asynchronous `Cmd` begins in M9.
 The first generated live error strings were generic and did not match native
 validator messages. Dogfood made that drift visible; the generated ASCII trim,
 parse, lower-bound, upper-bound, and acceptance branches now emit the exact native
-messages. A later adversarial API check found that the fake command structure was
+messages. A browser case for `1_0` now distinguishes the shared closed natural
+grammar from Lean's separator-accepting standard parser. A later adversarial API
+check found that the fake command structure was
 still directly constructible even though `ValidatedForm` was private; its
 constructor is now private and permanently compile-fail gated. The accessibility
 test also initially kept two full `main` components
@@ -443,9 +448,9 @@ exported.
 
 ### Performance observations
 
-The defining path records five commits (one rejected submit, three edits, one
-valid submit), three source changes, three validation passes, four validation/
-disabled sink writes, and five DOM writes including final status. This is work
+The defining path records six commits (one rejected submit, four edits, one valid
+submit), four source changes, four validation passes, five validation/disabled
+sink writes, and six DOM writes including final status. This is work
 instrumentation, not a throughput claim.
 
 ### Follow-up issue or commit

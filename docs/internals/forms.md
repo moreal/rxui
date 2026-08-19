@@ -18,7 +18,10 @@ produce the fake command payload. Both the validated value and command construct
 are private. Compile-fail fixtures prove `RawForm` cannot be passed to submission
 and the command cannot be forged directly.
 
-Temperature parsing currently accepts signed ASCII integer text. Conversion uses
+Temperature parsing currently accepts signed ASCII integer text. Digit separators
+such as `1_000` and `-0_1`, leading `+`, whitespace, decimals, and locale-specific
+digits are rejected before Lean's standard numeric parser is called; this closed
+grammar is exactly the browser regex grammar. Conversion uses
 truncating integer division (`Int.tdiv`) so the future BigInt browser lowering can
 match native Lean for negative values. Invalid raw text remains an explicit
 `LRX-TYPE-201` error. Decimal/locale-aware temperature input is a future parser,
@@ -38,7 +41,9 @@ discovery, or scheduling. Backends must select these primitives from the typed
 constructors rather than accepting arbitrary property/event strings.
 
 Generated integer parsing uses compiler-owned regex literals and calls `BigInt`
-only after a lexical match, so invalid text cannot throw. Temperature handlers do
+only after a lexical match, so invalid text cannot throw. Native parsing applies
+the same lexical guard before `String.toInt?`/`String.toNat?`, preventing Lean-only
+digit-separator acceptance. Temperature handlers do
 not rewrite the control currently being edited, preserving its cursor, and use
 source equality plus guarded property/error caches. Validated Form uses the same
 closed natural/ASCII-trim rules as native Lean, maintains `value`, `checked`,

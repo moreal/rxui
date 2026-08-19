@@ -99,6 +99,9 @@ test("prevents invalid submit and exposes only a validated fake command", async 
   await inputs.nth(0).focus();
   await inputs.nth(0).fill(hostile);
   await page.keyboard.press("Tab");
+  await inputs.nth(1).fill("1_0");
+  await expect(errors.nth(1)).toHaveText("enter a non-negative integer using ASCII digits");
+  await expect(submit).toBeDisabled();
   await inputs.nth(1).fill("42");
   await inputs.nth(2).check();
   await expect(errors).toHaveText(["", "", ""]);
@@ -118,7 +121,7 @@ test("prevents invalid submit and exposes only a validated fake command", async 
   expect(trace).toContain("event:submit");
   expect(trace).toContain("command:fakeSubmit");
   const instrumentation = await page.evaluate(() => globalThis.formDisposers[0].instrumentation());
-  expect(instrumentation.slice(0, 7)).toEqual([0, 5, 3, 3, 0, 4, 5]);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 6, 4, 4, 0, 5, 6]);
 
   await page.evaluate(() => globalThis.formDisposers[1]());
   const accessibility = await new AxeBuilder({ page }).analyze();

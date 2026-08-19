@@ -15,6 +15,23 @@ def run : IO Unit := do
   | .error error =>
       unless error.code == "LRX-TYPE-201" do
         throw <| IO.userError "signed integer parser returned the wrong diagnostic"
+  for input in ["1_000", "-0_1", "_1", "1_", "1__0", "+1", ""] do
+    match Parser.signedInt.run input with
+    | .ok _ => throw <| IO.userError s!"signed integer parser accepted closed-grammar input {repr input}"
+    | .error error =>
+        unless error.code == "LRX-TYPE-201" do
+          throw <| IO.userError "signed integer parser returned the wrong closed-grammar diagnostic"
+  match Parser.natural.run "42" with
+  | .ok value =>
+      unless value == 42 do
+        throw <| IO.userError "natural parser changed a valid value"
+  | .error _ => throw <| IO.userError "natural parser rejected a valid value"
+  for input in ["1_000", "_1", "1_", "1__0", "-1", "+1", ""] do
+    match Parser.natural.run input with
+    | .ok _ => throw <| IO.userError s!"natural parser accepted closed-grammar input {repr input}"
+    | .error error =>
+        unless error.code == "LRX-TYPE-202" do
+          throw <| IO.userError "natural parser returned the wrong closed-grammar diagnostic"
   match parseTemperature { scale := .celsius, raw := "100" } with
   | .ok result =>
       unless result.edited == .celsius && result.parsed == 100 && result.converted == 212 do

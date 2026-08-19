@@ -18,19 +18,44 @@ def map (parser : Parser α) (f : α → β) : Parser β where
 def andThen (parser : Parser α) (next : α → Except ValidationError β) : Parser β where
   run input := parser.run input >>= next
 
+private def asciiDigit (char : Char) : Bool :=
+  let code := char.toNat
+  decide (48 ≤ code && code ≤ 57)
+
+private def asciiDigits : List Char → Bool
+  | [] => false
+  | chars => chars.all asciiDigit
+
+private def signedIntegerSyntax (input : String) : Bool :=
+  match input.toList with
+  | '-' :: digits => asciiDigits digits
+  | digits => asciiDigits digits
+
 /-- ASCII signed integer parser matching the M7 browser grammar. -/
 def signedInt : Parser Int where
-  run input := match input.toInt? with
-    | some value => .ok value
-    | none => .error {
+  run input :=
+    if signedIntegerSyntax input then
+      match input.toInt? with
+      | some value => .ok value
+      | none => .error {
+          code := "LRX-TYPE-201"
+          message := "enter an integer using optional '-' and ASCII digits"
+        }
+    else .error {
         code := "LRX-TYPE-201"
         message := "enter an integer using optional '-' and ASCII digits"
       }
 
 def natural : Parser Nat where
-  run input := match input.toNat? with
-    | some value => .ok value
-    | none => .error {
+  run input :=
+    if asciiDigits input.toList then
+      match input.toNat? with
+      | some value => .ok value
+      | none => .error {
+          code := "LRX-TYPE-202"
+          message := "enter a non-negative integer using ASCII digits"
+        }
+    else .error {
         code := "LRX-TYPE-202"
         message := "enter a non-negative integer using ASCII digits"
       }
