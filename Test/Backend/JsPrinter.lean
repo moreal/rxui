@@ -39,6 +39,25 @@ def run : IO Unit := do
   let repeated ← print .readable module
   unless repeated == readable do
     throw <| IO.userError "JavaScript printer bytes were not deterministic"
+  let state ← ident "state"
+  let extended : Module :=
+    { declarations := #[.function {
+        name := evaluate
+        params := #[state]
+        body := #[
+          .assign (.index (.ident state) (.literal (.number 0))) (.literal (.bigint 2)),
+          .ifThen (.literal (.boolean true)) <| .ofList [
+            .return (.array <| .ofList [
+              .index (.ident state) (.literal (.number 0)), .literal (.string "ok")
+            ])
+          ]
+        ]
+      }]
+      exports := #[{ localName := evaluate, exportName := evaluate }] }
+  let extendedSource ← print .compact extended
+  unless extendedSource ==
+      "function evaluate(state){state[0]=2n;if(true){return [state[0],\"ok\"];}}export{evaluate};" do
+    throw <| IO.userError s!"extended JavaScript AST golden changed: {extendedSource}"
   let invalid : Module :=
     { declarations := #[]
       exports := #[{ localName := evaluate, exportName := evaluate }] }

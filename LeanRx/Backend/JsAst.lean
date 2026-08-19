@@ -72,6 +72,8 @@ mutual
     | binary (op : BinaryOp) (left right : Expr)
     | conditional (condition yes no : Expr)
     | call (callee : Expr) (args : Args)
+    | array (values : Args)
+    | index (target index : Expr)
   deriving Repr, BEq
 
   inductive Args where
@@ -88,11 +90,33 @@ def ofList : List Expr → Args
 
 end Args
 
-inductive Stmt where
-  | const (name : Ident) (value : Expr)
-  | expr (value : Expr)
-  | return (value : Expr)
+inductive AssignTarget where
+  | ident (name : Ident)
+  | index (target index : Expr)
 deriving Repr, BEq
+
+mutual
+  inductive Stmt where
+    | const (name : Ident) (value : Expr)
+    | assign (target : AssignTarget) (value : Expr)
+    | expr (value : Expr)
+    | ifThen (condition : Expr) (body : Block)
+    | return (value : Expr)
+  deriving Repr, BEq
+
+  inductive Block where
+    | nil
+    | cons (head : Stmt) (tail : Block)
+  deriving Repr, BEq
+end
+
+namespace Block
+
+def ofList : List Stmt → Block
+  | [] => .nil
+  | head :: tail => .cons head (ofList tail)
+
+end Block
 
 structure Function where
   name : Ident
@@ -146,6 +170,11 @@ private def constNames (body : List Stmt) : List Ident :=
     | .const name _ => some name
     | _ => none
 
+private def blockConstNames : Block → List Ident
+  | .nil => []
+  | .cons (.const name _) tail => name :: blockConstNames tail
+  | .cons _ tail => blockConstNames tail
+
 mutual
   private def exprBound (bound : List Ident) : Expr → Bool
     | .ident name => bound.contains name
@@ -155,16 +184,34 @@ mutual
     | .conditional condition yes no =>
         exprBound bound condition && exprBound bound yes && exprBound bound no
     | .call callee args => exprBound bound callee && argsBound bound args
+    | .array values => argsBound bound values
+    | .index target index => exprBound bound target && exprBound bound index
 
   private def argsBound (bound : List Ident) : Args → Bool
     | .nil => true
     | .cons head tail => exprBound bound head && argsBound bound tail
 end
 
-private def stmtBound (bound : List Ident) : Stmt → Bool
-  | .const _ value => exprBound bound value
-  | .expr value => exprBound bound value
-  | .return value => exprBound bound value
+mutual
+  private def stmtBound (bound : List Ident) : Stmt → Bool
+    | .const _ value => exprBound bound value
+    | .assign target value => assignTargetBound bound target && exprBound bound value
+    | .expr value => exprBound bound value
+    | .ifThen condition body => exprBound bound condition && blockBound bound body
+    | .return value => exprBound bound value
+
+  private def assignTargetBound (bound : List Ident) : AssignTarget → Bool
+    | .ident name => bound.contains name
+    | .index target index => exprBound bound target && exprBound bound index
+
+  private def blockBound (outer : List Ident) (body : Block) : Bool :=
+    let locals := blockConstNames body
+    ¬duplicate? locals && ¬locals.any outer.contains && blockStatementsBound (outer ++ locals) body
+
+  private def blockStatementsBound (bound : List Ident) : Block → Bool
+    | .nil => true
+    | .cons head tail => stmtBound bound head && blockStatementsBound bound tail
+end
 
 def validate (module : Module) : Except Error Unit := do
   for entry in module.imports do
@@ -201,7 +248,10 @@ def validate (module : Module) : Except Error Unit := do
           throw { code := "LRX-BE-017", message := "JavaScript function shadows a declared global" }
         let bound := globals ++ imported ++ declared ++ value.params.toList ++ locals
         unless value.body.toList.all (stmtBound bound) do
-          throw { code := "LRX-BE-018", message := "JavaScript function references an unbound identifier" }
+          throw {
+            code := "LRX-BE-018"
+            message := "JavaScript function has an unbound identifier or invalid nested lexical scope"
+          }
   if duplicate? (module.exports.toList.map (·.exportName)) then
     throw { code := "LRX-BE-010", message := "JavaScript module has duplicate export names" }
   let bound := imported ++ declared

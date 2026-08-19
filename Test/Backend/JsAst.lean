@@ -96,5 +96,15 @@ def run : IO Unit := do
     }]
     exports := #[]
   } : Module).validate
+  expectError "LRX-BE-018" ({
+    declarations := #[.function {
+      name := evaluate
+      params := #[input]
+      body := #[.ifThen (.literal (.boolean true)) <| .ofList [
+        .const input (.literal .null)
+      ]]
+    }]
+    exports := #[]
+  } : Module).validate
 
 end LeanRxTest.Backend.JsAst

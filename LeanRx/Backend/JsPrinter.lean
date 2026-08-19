@@ -73,6 +73,11 @@ mutual
         pure <| (← expr mode callee) ++ "(" ++
           String.intercalate (if mode == .readable then ", " else ",")
             (← exprArgs mode args) ++ ")"
+    | .array values => do
+        pure <| "[" ++ String.intercalate (if mode == .readable then ", " else ",")
+          (← exprArgs mode values) ++ "]"
+    | .index target index => do
+        pure <| (← expr mode target) ++ "[" ++ (← expr mode index) ++ "]"
 
   def exprArgs (mode : Mode) : Args → Except Error (List String)
     | .nil => pure []
@@ -82,19 +87,43 @@ end
 private def indent (depth : Nat) : String :=
   String.join (List.replicate (depth * 2) " ")
 
-private def stmt (mode : Mode) (depth : Nat) : Stmt → Except Error String
+private def assignTarget (mode : Mode) : AssignTarget → Except Error String
+  | .ident name => pure name.raw
+  | .index target index => do
+      pure <| (← expr mode target) ++ "[" ++ (← expr mode index) ++ "]"
+
+mutual
+  private def stmt (mode : Mode) (depth : Nat) : Stmt → Except Error String
   | .const name value => do
       let rendered ← expr mode value
       pure <| match mode with
         | .readable => indent depth ++ "const " ++ name.raw ++ " = " ++ rendered ++ ";"
         | .compact => "const " ++ name.raw ++ "=" ++ rendered ++ ";"
+  | .assign target value => do
+      let renderedTarget ← assignTarget mode target
+      let renderedValue ← expr mode value
+      pure <| match mode with
+        | .readable => indent depth ++ renderedTarget ++ " = " ++ renderedValue ++ ";"
+        | .compact => renderedTarget ++ "=" ++ renderedValue ++ ";"
   | .expr value => do
       pure <| (if mode == .readable then indent depth else "") ++ (← expr mode value) ++ ";"
+  | .ifThen condition body => do
+      let renderedCondition ← expr mode condition
+      let renderedBody ← block mode (if mode == .readable then depth + 1 else depth) body
+      pure <| match mode with
+        | .readable => indent depth ++ "if (" ++ renderedCondition ++ ") {\n" ++
+            String.intercalate "\n" renderedBody ++ "\n" ++ indent depth ++ "}"
+        | .compact => "if(" ++ renderedCondition ++ "){" ++ String.join renderedBody ++ "}"
   | .return value => do
       let rendered ← expr mode value
       pure <| match mode with
         | .readable => indent depth ++ "return " ++ rendered ++ ";"
         | .compact => "return " ++ rendered ++ ";"
+
+  private def block (mode : Mode) (depth : Nat) : Block → Except Error (List String)
+    | .nil => pure []
+    | .cons head tail => do pure ((← stmt mode depth head) :: (← block mode depth tail))
+end
 
 private def functionDecl (mode : Mode) (value : Function) : Except Error String := do
   let params := String.intercalate (if mode == .readable then ", " else ",") <|
