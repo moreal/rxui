@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M7 — Controlled inputs and validated forms
+M8 — Conditional and keyed dynamic regions
 
 ## Last green commit
 
-`f6317cd docs(types): record M6 review findings`
+`51a412a fix(form): make observations state-complete`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -160,16 +160,41 @@ M7 — Controlled inputs and validated forms
   native/JavaScript cases in both printer modes, deterministic Counter/Diamond/
   Dependent Tabs artifacts, nine Chromium tests, measured work suppression,
   compile-fail, placeholder, axiom, and 39-file semantic-safety gates passed.
+- Completed M7's pure total parser/validator combinators, sealed nonempty/bounded/
+  accepted refinements, private `ValidatedForm` and fake-submit capabilities,
+  typed DOM properties, and closed input/change/checked/submit/key/focus payloads.
+- Added a shared typed form-lowering boundary so production emitters select host
+  listeners and property names only from sealed capabilities. Private
+  state-control and Temperature update-plan construction is compile-fail gated.
+- Built Temperature Converter with explicit raw/active-scale/conditional-converted
+  source writes, a cycle-free checked graph, strict native/BigInt ASCII grammar,
+  truncating negative conversion, controlled cursor preservation, deterministic
+  invalid observations, complete accessibility state, and hostile-text safety.
+- Built Validated Form with input-synchronized submit-authoritative state,
+  dependency-filtered validation sinks, accessible unique IDs/errors, checked and
+  disabled properties, prevented submit, stale-valid rejection, and a typed fake
+  command boundary. Text change remains a typed observational adapter.
+- Review permanently regressed Lean-only numeric separators, undeclared cross-field
+  writes, decorative DOM capabilities, repurposed instrumentation counters, raw
+  key retention, incomplete invalid-state accessibility, hidden last-event state,
+  no-blur stale submission, and reference-style unrelated sink evaluation.
+- Verified `51a412a` in the workspace and the no-hardlinks clone at
+  `/private/tmp/leanrx-m7-clean.EsG3v5`, both with `./scripts/check.sh`: 184 Lean
+  jobs, 897 public theorems, 220 exact reviewed axiom uses, 64 exact generated
+  unsafe helpers, 40 seeded graph cases, 49 native/JavaScript cases in both
+  printer modes, deterministic five-application artifacts, twelve Chromium tests,
+  benchmark, compile-fail, 114-file placeholder, and 49-file semantic-safety gates
+  passed; the clone remained clean.
 
 ## In progress
 
-- M7 typed controlled-input and validation contracts.
+- M8 conditional, positional-list, keyed-list, and child-ownership regions.
 
 ## Next
 
-- Add typed `input` payloads and controlled value/cursor semantics.
-- Build the Temperature Converter with explicit parse results and no reactive cycle.
-- Add validation combinators, typestate/capability checks, and the Validated Form.
+- Add conditional region reference and optimized semantics.
+- Add positional then keyed list regions with explicit identity and disposal.
+- Build TodoMVC through public APIs without introducing a global Virtual DOM.
 
 ## Known blockers
 
@@ -300,6 +325,30 @@ M7 — Controlled inputs and validated forms
   commits each contain exactly one required assistance trailer. ADR-0011 records
   the false raw-`Fin` literal assumption, and ADR-0012 resolves the M0–M6 versus M7
   dogfood-order contradiction without weakening later form requirements.
+
+## M7 independent review notes
+
+- Lean/toolchain: PASS at `51a412a`; sealed form/update capabilities, strict
+  numeric grammar, explicit active-scale state, input-authoritative submission,
+  diagnostics, exact policy audit, and all local gates were verified.
+- Type theory/proof: PASS; refinements and command construction remain sealed,
+  form parsing is pure/total, the complete checked store determines Temperature
+  observations, and generated validation/JavaScript/browser behavior remains
+  explicitly executable TCB evidence rather than a formal theorem.
+- Compiler/backend: PASS; typed form constructors drive host lowering, effective
+  write sets and graph sinks are explicit, manifests/counters keep their ABI
+  meanings, affected validation sinks follow declared dependencies, and no-blur
+  invalid submission fails closed.
+- Frontend/runtime: PASS; controlled cursor/raw text, simultaneous invalid fields,
+  convergent event histories, exact input/change/checked payloads, prevented and
+  stale-submit rejection, accessibility state, isolation, disposal, hostile text,
+  and axe passed twelve Chromium tests.
+- Test/quality: PASS after workspace and fresh no-hardlinks suites; native/browser
+  grammar and messages, truncating negative division, source-linked diagnostics,
+  state-complete observations, exact sink work, and private-constructor negatives
+  are permanently regressed. History note: `e407ce9` fixed validator messages
+  before the distinguishing lexical/upper-bound browser fixtures landed; history
+  is preserved rather than rewritten.
 
 ## Commands
 
