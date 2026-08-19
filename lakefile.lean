@@ -45,7 +45,8 @@ lean_lib LeanRxExamples where
     `examples.Counter, `examples.CounterBuild,
     `examples.DiamondLab, `examples.DiamondLabBuild, `examples.DependentTabs,
     `examples.DependentTabsBuild, `examples.TemperatureConverter,
-    `examples.TemperatureConverterBuild]
+    `examples.TemperatureConverterBuild, `examples.ValidatedForm,
+    `examples.ValidatedFormBuild]
 
 @[default_target]
 lean_exe leanrx_test where
@@ -77,6 +78,9 @@ lean_exe leanrx_tabs_js where
 
 lean_exe leanrx_temperature_js where
   root := `examples.TemperatureConverterMain
+
+lean_exe leanrx_validated_form_js where
+  root := `examples.ValidatedFormMain
 
 lean_exe leanrx_graph_bench where
   root := `bench.SmallGraph
