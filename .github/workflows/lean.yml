@@ -33,8 +33,10 @@ jobs:
         run: ./scripts/check_component_codegen.sh
       - name: Check Counter CLI orchestration
         run: ./scripts/check_cli.sh
-      - name: Run Counter browser tests
+      - name: Run component browser tests
         run: ./scripts/check_browser.sh
+      - name: Run small graph benchmark smoke gate
+        run: ./scripts/check_bench.sh
       - name: Run public examples
         run: ./scripts/check_examples.sh
       - name: Run compile-fail type contracts

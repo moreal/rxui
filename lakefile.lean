@@ -60,5 +60,8 @@ lean_exe leanrx_counter_js where
 lean_exe leanrx_diamond_js where
   root := `examples.DiamondLabMain
 
+lean_exe leanrx_graph_bench where
+  root := `bench.SmallGraph
+
 lean_exe leanrx where
   root := `LeanRx.Cli.Main
