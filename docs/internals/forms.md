@@ -8,9 +8,11 @@ The first public refinements are:
 
 - `NonEmptyString`, which stores a trimmed nonempty name;
 - `BoundedNat minimum maximum`, which stores a natural and both bound proofs;
-- `ValidatedForm`, which packages a nonempty name and age in `[18, 120]`.
+- `AcceptedTerms`, which can only be constructed from `true`;
+- `ValidatedForm`, which packages a nonempty name, age in `[18, 120]`, and
+  accepted-terms capability.
 
-`validateForm` accumulates independent name and age errors. Only its `.valid`
+`validateForm` accumulates independent name, age, and acceptance errors. Only its `.valid`
 branch exposes `ValidatedForm`, and only that value can enter `Form.submit` to
 produce the fake command payload. A compile-fail fixture proves `RawForm` cannot
 be passed to submission.

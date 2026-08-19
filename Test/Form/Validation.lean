@@ -25,16 +25,17 @@ def run : IO Unit := do
       unless result.edited == .fahrenheit && result.parsed == 32 && result.converted == 0 do
         throw <| IO.userError "Fahrenheit conversion changed"
   | .error _ => throw <| IO.userError "valid Fahrenheit input was rejected"
-  match validateForm { name := "  Ada  ", age := "42" } with
+  match validateForm { name := "  Ada  ", age := "42", accepted := true } with
   | .invalid _ => throw <| IO.userError "valid form data was rejected"
   | .valid value =>
       unless submit value == { name := "Ada", age := 42 } do
         throw <| IO.userError "validated submit payload changed"
-  match validateForm { name := "  ", age := "17" } with
+  match validateForm { name := "  ", age := "17", accepted := false } with
   | .valid _ => throw <| IO.userError "invalid form data reached a submit capability"
   | .invalid errors =>
       unless errors.name.map (·.code) == some "LRX-TYPE-203" &&
-          errors.age.map (·.code) == some "LRX-TYPE-204" do
-        throw <| IO.userError "form validation did not accumulate both errors"
+          errors.age.map (·.code) == some "LRX-TYPE-204" &&
+          errors.accepted.map (·.code) == some "LRX-TYPE-207" do
+        throw <| IO.userError "form validation did not accumulate all errors"
 
 end LeanRxTest.Form.Validation

@@ -92,6 +92,18 @@ end BoundedNat
 def boundedNatural (minimum maximum : Nat) : Parser (BoundedNat minimum maximum) :=
   Validator.after Parser.natural (BoundedNat.validator minimum maximum)
 
+structure AcceptedTerms where
+  private mk ::
+
+namespace AcceptedTerms
+
+def validator : Validator Bool AcceptedTerms where
+  run accepted :=
+    if accepted then .ok ⟨⟩
+    else .error { code := "LRX-TYPE-207", message := "terms must be accepted" }
+
+end AcceptedTerms
+
 inductive TemperatureScale where
   | celsius
   | fahrenheit
@@ -125,16 +137,19 @@ def parseTemperature (edit : TemperatureEdit) : Except ValidationError Temperatu
 structure RawForm where
   name : String
   age : String
+  accepted : Bool := false
 deriving Repr, BEq
 
 structure ValidatedForm where
   private mk ::
   name : NonEmptyString
   age : BoundedNat 18 120
+  accepted : AcceptedTerms
 
 structure FormErrors where
   name : Option ValidationError := none
   age : Option ValidationError := none
+  accepted : Option ValidationError := none
 deriving Repr, BEq
 
 inductive FormValidation where
@@ -148,11 +163,13 @@ private def exceptError : Except ε α → Option ε
 def validateForm (raw : RawForm) : FormValidation :=
   let name := NonEmptyString.validator.run raw.name
   let age := boundedNatural 18 120 |>.run raw.age
-  match name, age with
-  | .ok name, .ok age => .valid ⟨name, age⟩
-  | name, age => .invalid {
+  let accepted := AcceptedTerms.validator.run raw.accepted
+  match name, age, accepted with
+  | .ok name, .ok age, .ok accepted => .valid ⟨name, age, accepted⟩
+  | name, age, accepted => .invalid {
       name := exceptError name
       age := exceptError age
+      accepted := exceptError accepted
     }
 
 /-- Explicit fake command boundary. Only a successfully validated value can
