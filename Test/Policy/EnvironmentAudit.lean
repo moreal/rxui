@@ -26,6 +26,17 @@ elab "#leanrx_environment_audit" : command => do
   -- standard proposition-extensionality axiom. Each exact pair is reviewed;
   -- every other theorem/axiom pair fails closed.
   let reviewedAxiomUses : Array (Name × Array Name) := #[
+    (`LeanRx.Abstract.DerivedStep.mk.injEq, #[``propext]),
+    (`LeanRx.Abstract.Eval.map._proof_1, #[``propext]),
+    (`LeanRx.Abstract.Eval.map₂._proof_1, #[``propext]),
+    (`LeanRx.Abstract.Eval.mk.injEq, #[``propext]),
+    (`LeanRx.Abstract.Program.mk.injEq, #[``propext]),
+    (`LeanRx.Abstract.RunResult.mk.injEq, #[``propext]),
+    (`LeanRx.Abstract.SinkStep.mk.injEq, #[``propext]),
+    (`LeanRx.Abstract.SourceWrite.mk.injEq, #[``propext]),
+    (`LeanRx.Abstract.State.mk.injEq, #[``propext]),
+    (`LeanRx.Abstract.Store.set_other, #[``propext]),
+    (`LeanRx.Abstract.Store.set_same, #[``propext]),
     (`LeanRx.DepSet.contains_singleton, #[``propext]),
     (`LeanRx.DepSet.contains_singleton._simp_1_2, #[``propext]),
     (`LeanRx.DepSet.contains_union_left, #[``propext]),
