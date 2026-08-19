@@ -13,6 +13,7 @@ fixtures=(
   Test/fixtures/compile-fail/RawHtmlView.lean
   Test/fixtures/compile-fail/ClickOnlyDiv.lean
   Test/fixtures/compile-fail/UnknownEventBinding.lean
+  Test/fixtures/compile-fail/DerivedReadInEvent.lean
   Test/fixtures/compile-fail/ComponentRoleMismatch.lean
   Test/fixtures/compile-fail/ComponentCycle.lean
 )
@@ -28,6 +29,7 @@ fragments=(
   "error[LRX-VIEW-010]"
   "error[LRX-VIEW-005]"
   "error[LRX-VIEW-006]"
+  "error[LRX-TYPE-108]"
   "error[LRX-ELAB-103]"
   "error[LRX-GRAPH-001]"
 )
@@ -63,6 +65,13 @@ click_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/ClickOnlyDi
 if [[ "$click_output" != *"ClickOnlyDiv.lean:10:"* ]]; then
   echo "root JSX diagnostic lost its original element location" >&2
   echo "$click_output" >&2
+  exit 1
+fi
+
+derived_read_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/DerivedReadInEvent.lean 2>&1 || true)"
+if [[ "$derived_read_output" != *"derived reads require a transaction barrier"* ]]; then
+  echo "derived event read diagnostic lost its future-capability guidance" >&2
+  echo "$derived_read_output" >&2
   exit 1
 fi
 

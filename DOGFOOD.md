@@ -192,9 +192,9 @@ handwritten host remains limited to DOM calls, listener bridging, and cleanup.
 The M4 command deliberately keeps declaration right-hand sides as explicit
 checked terms, and balanced `[...]` JSX children are slightly noisier than paired
 HTML closing tags. Evaluators currently accept every component
-value as a parameter, and the M4 event function recomputes every derived value
-before suppressing unchanged sinks. M5 will replace that conservative pass with
-the certified affected-closure schedule.
+value as a parameter. M4 initially recomputed every derived value before
+suppressing unchanged sinks; M5 replaced that conservative pass with a generated
+direct-dependency frontier in certified rank order.
 
 ### Missing framework capability
 
@@ -227,9 +227,39 @@ error regions are not applicable to this Counter.
 ### Performance observations
 
 For `addTwo` from 1 to 3, the parity evaluator returns `"odd"` again and the
-generated `changed_2` guard performs zero parity text writes, observed with a
-`MutationObserver`. This is work-count evidence, not a timing benchmark.
+generated changed frontier performs zero parity text writes, observed with a
+`MutationObserver`. M5 instrumentation makes the stronger behavior visible: two
+source writes produce one commit, two derived evaluations, one derived change,
+two sink evaluations, and two DOM writes; the parity sink never evaluates.
 
 ### Follow-up issue or commit
 
 `feat(backend): emit component mount and dispose`
+
+## Diamond Lab — transaction fan-in
+
+### Scenario exercised
+
+One batched event writes `count` twice. Rank-one `left` and `right` feed the
+rank-two `total`, with three direct text sinks. The same dependency-indexed
+expressions construct both the browser component and the all-`Int` abstract
+reference/optimized programs.
+
+### Findings
+
+The public API was sufficient for the diamond without a handwritten scheduler.
+Chromium observes only `Total: 19`, never a mixed-parent intermediate value, and
+the total text node mutates once. Per-mount instrumentation records one commit,
+two source writes, three derived evaluations/changes, three sink evaluations,
+and three DOM writes. The trace orders `left`, `right`, then `total`, and starts
+all sinks after the fan-in derived node.
+
+The native expected artifact and optimized model agree on final total `19`; it is
+generated beside the browser module and checked in the browser gate. A 1,000-step
+alternating small-diamond smoke benchmark recorded 3,000 derived and 1,000 sink
+evaluations. Elapsed nanoseconds are printed for reproducibility but are not a CI
+performance threshold.
+
+### Follow-up issue or commit
+
+`example(diamond): add fan-in propagation lab`

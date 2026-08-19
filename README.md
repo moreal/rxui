@@ -91,6 +91,11 @@ Counter demonstrates the balanced JSX-like child-list form and inspectable
 generated declarations. See [ADR-0006](docs/adr/0006-scoped-component-jsx-syntax.md)
 for the parser rationale and complete example.
 
+M5 transaction depth, affected-frontier scheduling, counters, trace names, and
+the current derived-read restriction are documented in
+[the transaction contract](docs/internals/transactions.md). Diamond Lab runs the
+fan-in browser scenario through `./scripts/check_browser.sh`.
+
 ## Project boundaries
 
 LeanRx is intended to compile a restricted staged language; it will not transpile
