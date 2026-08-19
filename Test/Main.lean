@@ -17,6 +17,7 @@ import Test.Backend.JsName
 import Test.Backend.JsPrinter
 import Test.Lower.RxExpr
 import Test.Backend.Scalar
+import Test.Backend.Component
 import Test.View.Model
 import Test.Component.Model
 import Test.Semantics.Store
@@ -50,6 +51,7 @@ def main : IO Unit := do
   LeanRxTest.Backend.JsPrinter.run
   LeanRxTest.Lower.RxExpr.run
   LeanRxTest.Backend.Scalar.run
+  LeanRxTest.Backend.Component.run
   LeanRxTest.View.Model.run
   LeanRxTest.Component.Model.run
   LeanRxTest.Semantics.Store.run

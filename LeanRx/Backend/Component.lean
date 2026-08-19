@@ -1,0 +1,352 @@
+import LeanRx.Backend.Manifest
+import LeanRx.Component.Model
+import LeanRx.Graph.Serialize
+import LeanRx.Lower.RxExpr
+
+namespace LeanRx.Backend.Component
+
+open LeanRx.Js
+
+structure Emitted where
+  module : Module
+  manifest : String
+deriving Repr, BEq
+
+private structure EvalState where
+  declarations : List Decl := []
+  bindings : List (String × Ident) := []
+
+private def mergeDecl (state : EvalState) (declaration : Decl) : Except Error EvalState :=
+  match state.declarations.find? (fun existing => existing.name == declaration.name) with
+  | none => pure { state with declarations := state.declarations ++ [declaration] }
+  | some existing =>
+      if existing == declaration then pure state
+      else .error {
+        code := "LRX-BE-021"
+        message := s!"component scalar evaluators collide on {declaration.name.raw}"
+      }
+
+private def mergeDecls : EvalState → List Decl → Except Error EvalState
+  | state, [] => pure state
+  | state, declaration :: rest => do
+      mergeDecls (← mergeDecl state declaration) rest
+
+private def addEvaluator (inputSpecs : Array Scalar.InputSpec) (key requested : String)
+    (value : ReactiveIR.Expr α) (state : EvalState) : Except Error EvalState := do
+  let emitted ← Scalar.moduleFor requested inputSpecs value
+  let state ← mergeDecls state emitted.module.declarations.toList
+  pure { state with bindings := state.bindings ++ [(key, emitted.exportName)] }
+
+private def evaluator (state : EvalState) (key : String) : Except Error Ident :=
+  match state.bindings.find? (·.1 == key) with
+  | some binding => pure binding.2
+  | none => .error {
+      code := "LRX-BE-022"
+      message := s!"component lowering is missing evaluator {key}"
+    }
+
+private def inputSpecs (values : Array (ValueSpec Γ)) : Array Scalar.InputSpec :=
+  values.map fun value => { name := value.name, valueType := value.valueType }
+
+private def compileValues (inputs : Array Scalar.InputSpec) :
+    List (ValueSpec Γ) → EvalState → Except Error EvalState
+  | [], state => pure state
+  | .source .. :: rest, state => compileValues inputs rest state
+  | .derived _ _ field value _ :: rest, state => do
+      let state ← addEvaluator inputs s!"value:{field.index}"
+        s!"$lrx_derived_{field.index}" (Lower.rxExpr value) state
+      compileValues inputs rest state
+
+private def compileSinks (inputs : Array Scalar.InputSpec) :
+    List (TextSink Γ) → Nat → EvalState → Except Error EvalState
+  | [], _, state => pure state
+  | sink :: rest, index, state => do
+      let state ← addEvaluator inputs s!"sink:{index}" s!"$lrx_sink_{index}"
+        (Lower.rxExpr sink.value) state
+      compileSinks inputs rest (index + 1) state
+
+private def compileUpdate (inputs : Array Scalar.InputSpec) (eventIndex : Nat) :
+    Update Γ → Nat → EvalState → Except Error (Nat × EvalState)
+  | .set _ value _, writeIndex, state => do
+      let state ← addEvaluator inputs s!"event:{eventIndex}:write:{writeIndex}"
+        s!"$lrx_event_{eventIndex}_write_{writeIndex}" (Lower.rxExpr value) state
+      pure (writeIndex + 1, state)
+  | .sequence first second, writeIndex, state => do
+      let (writeIndex, state) ← compileUpdate inputs eventIndex first writeIndex state
+      compileUpdate inputs eventIndex second writeIndex state
+
+private def compileEvents (inputs : Array Scalar.InputSpec) :
+    List (EventSpec Γ) → Nat → EvalState → Except Error EvalState
+  | [], _, state => pure state
+  | event :: rest, index, state => do
+      let (_, state) ← compileUpdate inputs index event.update 0 state
+      compileEvents inputs rest (index + 1) state
+
+private def uint (value : Nat) : Expr := .literal (.number (UInt32.ofNat value))
+
+private def stateAt (state : Ident) (index : Nat) : Expr :=
+  .index (.ident state) (uint index)
+
+private def refsAt (refs : Ident) (index : Nat) : Expr :=
+  .index (.ident refs) (uint index)
+
+private def call (name : Ident) (args : List Expr) : Expr :=
+  .call (.ident name) (.ofList args)
+
+private def evaluatorCall (name state : Ident) (valueCount : Nat) : Expr :=
+  call name <| (List.range valueCount).map (stateAt state)
+
+private def literal : {α : Type} → ScalarLiteral α → Js.Literal
+  | _, .bool value => .boolean value
+  | _, .string value => .string value
+  | _, .int value => .bigint value
+  | _, .nat value => .bigint (Int.ofNat value)
+
+private def initialValues : List (ValueSpec Γ) → List Expr
+  | [] => []
+  | .source _ _ _ initial _ :: rest => .literal (literal initial) :: initialValues rest
+  | .derived .. :: rest => .literal .null :: initialValues rest
+
+private def valueAt? (values : Array (ValueSpec Γ)) (index : Nat) : Except Error (ValueSpec Γ) :=
+  match values[index]? with
+  | some value => pure value
+  | none => .error {
+      code := "LRX-BE-023"
+      message := s!"component schedule references missing value {index}"
+    }
+
+private def changedName (index : Nat) : Except Error Ident :=
+  Ident.checked s!"changed_{index}"
+
+private def nextName (index : Nat) : Except Error Ident :=
+  Ident.checked s!"next_{index}"
+
+private def oldName (index : Nat) : Except Error Ident :=
+  Ident.checked s!"old_{index}"
+
+private def derivedOrder (checked : CheckedComponent Γ) : List Nat :=
+  checked.graph.schedule.order.toList.filterMap fun id =>
+    checked.graph.graph.nodes[id.value]?.bind fun node =>
+      if node.kind == .derived then some id.value else none
+
+private def updateStatements (evaluators : EvalState) (state : Ident)
+    (valueCount eventIndex : Nat) : Update Γ → Nat → Except Error (Nat × List Stmt)
+  | .set field _ _, writeIndex => do
+      let evaluator ← evaluator evaluators s!"event:{eventIndex}:write:{writeIndex}"
+      pure (writeIndex + 1, [
+        .assign (.index (.ident state) (uint field.index))
+          (evaluatorCall evaluator state valueCount)
+      ])
+  | .sequence first second, writeIndex => do
+      let (writeIndex, first) ← updateStatements evaluators state valueCount eventIndex first writeIndex
+      let (writeIndex, second) ← updateStatements evaluators state valueCount eventIndex second writeIndex
+      pure (writeIndex, first ++ second)
+
+private def anyChanged (deps : List Nat) : Except Error Expr := do
+  let values ← deps.mapM fun id => do pure (.ident (← changedName id))
+  pure <| match values with
+    | [] => .literal (.boolean false)
+    | head :: tail => tail.foldl (fun acc value => .binary .or acc value) head
+
+private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
+    (setText state refs : Ident) (event : EventSpec Γ) (eventIndex : Nat) :
+    Except Error Function := do
+  let valueCount := checked.spec.values.size
+  let mut body : List Stmt := []
+  for sourceId in List.range checked.sourceCount do
+    body := body ++ [.const (← oldName sourceId) (stateAt state sourceId)]
+  let (_, writes) ← updateStatements evaluators state valueCount eventIndex event.update 0
+  body := body ++ writes
+  for sourceId in List.range checked.sourceCount do
+    body := body ++ [.const (← changedName sourceId) <|
+      .unary .not (.binary .eq (.ident (← oldName sourceId)) (stateAt state sourceId))]
+  for id in derivedOrder checked do
+    let evalName ← evaluator evaluators s!"value:{id}"
+    let next ← nextName id
+    let changed ← changedName id
+    body := body ++ [
+      .const next (evaluatorCall evalName state valueCount),
+      .const changed (.unary .not (.binary .eq (stateAt state id) (.ident next))),
+      .assign (.index (.ident state) (uint id)) (.ident next)
+    ]
+  for (sink, sinkIndex) in checked.view.textSinks.zipIdx do
+    let evalName ← evaluator evaluators s!"sink:{sinkIndex}"
+    body := body ++ [.ifThen (← anyChanged sink.value.dependencies.ids) <| .ofList [
+      .expr <| call setText [refsAt refs sinkIndex, evaluatorCall evalName state valueCount]
+    ]]
+  body := body ++ [.return (.literal .null)]
+  pure {
+    name := ← Ident.checked s!"$lrx_event_{eventIndex}"
+    params := #[state, refs]
+    body := body.toArray
+  }
+
+private structure RuntimeNames where
+  createElement : Ident
+  createText : Ident
+  setAttribute : Ident
+  append : Ident
+  listen : Ident
+  setText : Ident
+  makeDisposer : Ident
+
+private def runtimeNames : Except Error RuntimeNames := do
+  pure {
+    createElement := ← Ident.checked "createElement"
+    createText := ← Ident.checked "createText"
+    setAttribute := ← Ident.checked "setAttribute"
+    append := ← Ident.checked "append"
+    listen := ← Ident.checked "listen"
+    setText := ← Ident.checked "setText"
+    makeDisposer := ← Ident.checked "makeDisposer"
+  }
+
+private structure DomBinding where
+  path : List Nat
+  name : Ident
+
+private structure DomState where
+  allocator : NameAllocator
+  statements : List Stmt := []
+  nodes : List DomBinding := []
+
+private structure SinkBinding where
+  path : List Nat
+  index : Nat
+  evaluator : Ident
+
+private def appendStatement (state : DomState) (statement : Stmt) : DomState :=
+  { state with statements := state.statements ++ [statement] }
+
+private def addNode (state : DomState) (path : List Nat) (name : Ident) : DomState :=
+  { state with nodes := state.nodes ++ [{ path, name }] }
+
+private def sinkAt (sinks : List SinkBinding) (path : List Nat) : Except Error SinkBinding :=
+  match sinks.find? (·.path == path) with
+  | some sink => pure sink
+  | none => .error { code := "LRX-BE-024", message := "dynamic text has no scalar sink" }
+
+mutual
+  private def mountNode (runtime : RuntimeNames) (stateName : Ident) (valueCount : Nat)
+      (sinks : List SinkBinding) (path : List Nat) :
+      MountNode → DomState → Except Error (Ident × DomState)
+    | .element tag attrs children, state => do
+        let (name, allocator) ← state.allocator.allocate s!"node_{state.nodes.length}"
+        let state := addNode { state with allocator } path name
+        let state := appendStatement state <| .const name <|
+          call runtime.createElement [.literal (.string tag.name)]
+        let mut state := state
+        for attr in attrs do
+          state := appendStatement state <| .expr <| call runtime.setAttribute [
+            .ident name, .literal (.string attr.name), .literal (.string attr.value)
+          ]
+        let finalState ← mountChildren runtime stateName valueCount sinks name path 0 children state
+        pure (name, finalState)
+    | .text value, state => do
+        let (name, allocator) ← state.allocator.allocate s!"node_{state.nodes.length}"
+        let state := addNode { state with allocator } path name
+        pure (name, appendStatement state <| .const name <|
+          call runtime.createText [.literal (.string value)])
+    | .dynamicText, state => do
+        let sink ← sinkAt sinks path
+        let (name, allocator) ← state.allocator.allocate s!"text_{sink.index}"
+        let state := addNode { state with allocator } path name
+        pure (name, appendStatement state <| .const name <|
+          call runtime.createText [evaluatorCall sink.evaluator stateName valueCount])
+
+  private def mountChildren (runtime : RuntimeNames) (stateName : Ident) (valueCount : Nat)
+      (sinks : List SinkBinding) (parent : Ident) (path : List Nat) (index : Nat) :
+      MountChildren → DomState → Except Error DomState
+    | .nil, state => pure state
+    | .cons head tail, state => do
+        let (child, state) ← mountNode runtime stateName valueCount sinks
+          (path ++ [index]) head state
+        let state := appendStatement state <| .expr <| call runtime.append [.ident parent, .ident child]
+        mountChildren runtime stateName valueCount sinks parent path (index + 1) tail state
+end
+
+private def nodeAt (nodes : List DomBinding) (path : List Nat) : Except Error Ident :=
+  match nodes.find? (·.path == path) with
+  | some node => pure node.name
+  | none => .error { code := "LRX-BE-025", message := "view binding path has no mounted node" }
+
+private def manifest (moduleName : String) (checked : CheckedComponent Γ) : String :=
+  let graph := checked.graph.toJson
+  let hash := graph.toList.foldl
+    (fun value char => (value * 16777619 + char.toNat) % 4294967296) 2166136261
+  "{\"compilerVersion\":" ++ Js.Printer.stringLiteral LeanRx.version ++
+    ",\"leanToolchain\":" ++ Js.Printer.stringLiteral LeanRx.leanToolchain ++
+    ",\"module\":" ++ Js.Printer.stringLiteral moduleName ++
+    ",\"graphHash\":" ++ Js.Printer.stringLiteral (toString hash) ++
+    ",\"runtimeAbi\":" ++ toString LeanRx.runtimeAbi ++
+    ",\"exports\":[\"mount\"],\"features\":[\"scalar\",\"events\"]}\n"
+
+/-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
+def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Emitted := do
+  let runtime ← runtimeNames
+  let inputs := inputSpecs checked.spec.values
+  let evaluators ← compileEvents inputs checked.spec.events.toList 0 <|
+    ← compileSinks inputs checked.view.textSinks 0 <|
+    ← compileValues inputs checked.spec.values.toList {}
+  let state ← Ident.checked "state"
+  let refs ← Ident.checked "refs"
+  let target ← Ident.checked "target"
+  let valueCount := checked.spec.values.size
+  let eventFunctions ← checked.spec.events.toList.zipIdx.mapM fun (event, index) =>
+    eventFunction checked evaluators runtime.setText state refs event index
+  let derivedInitial ← derivedOrder checked |>.mapM fun id => do
+    pure (.assign (.index (.ident state) (uint id)) <|
+      evaluatorCall (← evaluator evaluators s!"value:{id}") state valueCount)
+  let sinkBindings ← checked.view.textSinks.zipIdx.mapM fun (sink, index) => do
+    pure { path := sink.path, index, evaluator := ← evaluator evaluators s!"sink:{index}" }
+  let initialDom : DomState := { allocator := { used := ["state", "refs", "target"] } }
+  let (root, dom) ← mountNode runtime state valueCount sinkBindings [] checked.view.template initialDom
+  let sinkRefs ← checked.view.textSinks.mapM fun sink => do
+    pure (.ident (← nodeAt dom.nodes sink.path))
+  let mut mountBody : List Stmt := [
+    .const state (.array <| .ofList (initialValues checked.spec.values.toList))
+  ] ++ derivedInitial ++ dom.statements ++ [
+    .const refs (.array <| .ofList sinkRefs),
+    .expr <| call runtime.append [.ident target, .ident root]
+  ]
+  let eventNames := checked.spec.events.toList.map (·.name)
+  let mut disposers : List Expr := []
+  for (mounted, index) in checked.view.events.zipIdx do
+    let eventIndex ← match eventNames.idxOf? mounted.binding.eventName with
+      | some value => pure value
+      | none => .error { code := "LRX-BE-026", message := "checked event binding disappeared" }
+    let handler ← Ident.checked s!"$lrx_event_{eventIndex}"
+    let disposer ← Ident.checked s!"off_{index}"
+    let node ← nodeAt dom.nodes mounted.path
+    mountBody := mountBody ++ [.const disposer <| call runtime.listen [
+      .ident node, .literal (.string mounted.binding.kind.name), .ident state, .ident refs,
+      .ident handler
+    ]]
+    disposers := disposers ++ [.ident disposer]
+  mountBody := mountBody ++ [.return <| call runtime.makeDisposer [
+    .ident root, .array (.ofList disposers)
+  ]]
+  let mount ← Ident.checked "mount"
+  let module : Module :=
+    { globals := #[← Ident.checked "String"]
+      imports := #[
+        { source := "./leanrx_dom.mjs", names := #[
+            (runtime.createElement, runtime.createElement),
+            (runtime.createText, runtime.createText),
+            (runtime.setAttribute, runtime.setAttribute),
+            (runtime.append, runtime.append),
+            (runtime.listen, runtime.listen),
+            (runtime.setText, runtime.setText)
+          ] },
+        { source := "./leanrx_host.mjs", names := #[
+            (runtime.makeDisposer, runtime.makeDisposer)
+          ] }
+      ]
+      declarations := (evaluators.declarations ++ eventFunctions.map Decl.function ++ [
+        Decl.function { name := mount, params := #[target], body := mountBody.toArray }
+      ]).toArray
+      exports := #[{ localName := mount, exportName := mount }] }
+  module.validate
+  pure { module, manifest := manifest moduleName checked }
+
+end LeanRx.Backend.Component

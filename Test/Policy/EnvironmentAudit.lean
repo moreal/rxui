@@ -103,6 +103,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Abstract.TraceEvent.sourceChanged.injEq, #[``propext]),
     (`LeanRx.Abstract.ValidState.mk.injEq, #[``propext]),
     (`LeanRx.Backend.ArtifactManifest.mk.injEq, #[``propext]),
+    (`LeanRx.Backend.Component.Emitted.mk.injEq, #[``propext]),
     (`LeanRx.Backend.ManifestInput.mk.injEq, #[``propext]),
     (`LeanRx.Backend.Scalar.HelperBinding.mk.injEq, #[``propext]),
     (`LeanRx.Backend.Scalar.InputSpec.mk.injEq, #[``propext]),

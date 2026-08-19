@@ -1,8 +1,8 @@
-import Test.Component.CounterSpec
+import examples.Counter
 
 namespace LeanRxTest.Component.Model
 
-open LeanRx LeanRxTest.CounterSpec
+open LeanRx LeanRxExamples.Counter
 
 private def expectError (code : String)
     (result : Except ComponentError (CheckedComponent Γ)) : IO Unit :=

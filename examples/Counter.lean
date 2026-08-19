@@ -1,6 +1,6 @@
-import LeanRx.Component.Model
+import LeanRx
 
-namespace LeanRxTest.CounterSpec
+namespace LeanRxExamples.Counter
 
 open LeanRx
 
@@ -41,7 +41,9 @@ def addTwo : EventSpec CounterSchema :=
 
 private def click (name : String) : EventBinding := { kind := .click, eventName := name }
 
+/-- Counter's explicit public view; syntax sugar is layered over this checked term. -/
 def view : View CounterSchema := View.node .main [
+  View.node .h1 [.text "Counter"],
   View.node .button [.text "Increment"]
     (attrs := [.buttonType .button]) (events := [click "increment"]),
   View.node .button [.text "Add two"]
@@ -51,6 +53,7 @@ def view : View CounterSchema := View.node .main [
   View.node .p [.scalarText "parityText" parityText]
 ] (attrs := [.className "counter"])
 
+/-- Counter uses only the public explicit M4 component API. -/
 def spec : ComponentSpec CounterSchema :=
   { name := "Counter"
     values := #[
@@ -61,4 +64,4 @@ def spec : ComponentSpec CounterSchema :=
     events := #[increment, addTwo]
     view }
 
-end LeanRxTest.CounterSpec
+end LeanRxExamples.Counter
