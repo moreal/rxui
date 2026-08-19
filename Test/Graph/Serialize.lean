@@ -32,9 +32,9 @@ def run : IO Unit := do
   let expectedDot := String.intercalate "\n" [
     "digraph LeanRx {",
     "  rankdir=LR;",
-    "  n0 [label=\"count\\nsource\\nrank 0\"];",
-    "  n1 [label=\"doubled\\nderived\\nrank 1\"];",
-    "  n2 [label=\"text\\nsink\\nrank 2\"];",
+    "  n0 [label=\"count\\nkind=source\\nvalueType=int\\ndeps=[]\\nrank=0\\nequality=none\\nevaluator=\\nsource=<generated>\"];",
+    "  n1 [label=\"doubled\\nkind=derived\\nvalueType=int\\ndeps=[0]\\nrank=1\\nequality=bigint\\nevaluator=double\\nsource=<generated>\"];",
+    "  n2 [label=\"text\\nkind=sink\\nvalueType=string\\ndeps=[1]\\nrank=2\\nequality=none\\nevaluator=renderText\\nsource=<generated>\"];",
     "  n0 -> n1;",
     "  n1 -> n2;",
     "}"
@@ -50,7 +50,7 @@ def run : IO Unit := do
   unless hostileJson.contains "count\\\"\\\\\\n" &&
       hostileJson.contains "line\\n\\t\\\"\\\\" do
     throw <| IO.userError s!"JSON graph text was not escaped: {hostileJson}"
-  unless hostileDot.contains "</script>\\nnext\\nsink" do
+  unless hostileDot.contains "</script>\\nnext\\nkind=sink" do
     throw <| IO.userError s!"DOT graph label was not escaped: {hostileDot}"
   match Lean.Json.parse hostileJson with
   | .ok _ => pure ()

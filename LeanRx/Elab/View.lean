@@ -1,9 +1,50 @@
 import LeanRx.View.Model
 import Lean.Elab.Macro
+import Lean.Elab.Term
 
-open Lean Macro
+open Lean Elab Macro Term
 
 namespace LeanRxDsl
+
+private def normalizedFileName : TermElabM String := do
+  let fileName ← getFileName
+  let currentDir ← IO.currentDir
+  let rootPrefix := currentDir.toString ++ "/"
+  pure <| if fileName.startsWith rootPrefix then
+    (fileName.drop rootPrefix.length).toString
+  else fileName
+
+private def sourceSpanTerm (stx : Syntax) : TermElabM (TSyntax `term) := do
+  let fileMap ← getFileMap
+  let fileName := Syntax.mkStrLit (← normalizedFileName)
+  let start := stx.getPos?.getD 0
+  let stop := stx.getTailPos?.getD start
+  let startPosition := fileMap.toPosition start
+  let stopPosition := fileMap.toPosition stop
+  let startLine := Syntax.mkNumLit (toString startPosition.line)
+  let startColumn := Syntax.mkNumLit (toString (startPosition.column + 1))
+  let startByte := Syntax.mkNumLit (toString start.byteIdx)
+  let stopLine := Syntax.mkNumLit (toString stopPosition.line)
+  let stopColumn := Syntax.mkNumLit (toString (stopPosition.column + 1))
+  let stopByte := Syntax.mkNumLit (toString stop.byteIdx)
+  `(LeanRx.SourceSpan.mk $fileName
+      (LeanRx.SourcePos.mk $startLine $startColumn $startByte)
+      (LeanRx.SourcePos.mk $stopLine $stopColumn $stopByte))
+
+syntax "leanrx_source_span% " str : term
+
+elab "leanrx_source_span% " marker:str : term => do
+  let term ← sourceSpanTerm marker
+  Term.elabTerm term (some (mkConst ``LeanRx.SourceSpan))
+
+private def spanMarker (stx : Syntax) : TSyntax `str :=
+  let start := stx.getPos?.getD 0
+  let stop := stx.getTailPos?.getD start
+  ⟨Syntax.mkStrLit "" (info := .synthetic start stop true)⟩
+
+private def spanSyntax (stx : Syntax) : MacroM (TSyntax `term) := do
+  let marker := spanMarker stx
+  `(leanrx_source_span% $marker)
 
 declare_syntax_cat leanrxJsxAttr
 scoped syntax "class" "=" str : leanrxJsxAttr
@@ -68,9 +109,28 @@ macro_rules
       match element with
       | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* >
             [$children:leanrxJsxChild,*]) =>
-          let attrTerms ← attrs.mapM fun attr => `(leanrx_jsx_attr% $attr)
-          let childTerms ← children.getElems.mapM fun child => `(leanrx_jsx_child% $child)
-          `(LeanRx.View.nodeWith (leanrx_jsx_tag% $tag) [$childTerms,*] [$attrTerms,*])
+          let attrTerms ← attrs.mapM fun attr =>
+            let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
+            match attrSyntax with
+            | `(leanrxJsxAttr| onClick = $event:str) => do
+                let span ← spanSyntax attr
+                `(LeanRx.ViewAttr.event {
+                  kind := LeanRx.EventKind.click, eventName := $event, span := $span
+                })
+            | _ => `(leanrx_jsx_attr% $attrSyntax)
+          let childTerms ← children.getElems.mapM fun child =>
+            match child with
+            | `(leanrxJsxChild| $value:str) => do
+                let span ← spanSyntax child
+                `(LeanRx.View.text $value $span)
+            | `(leanrxJsxChild| { $name:str : $value:term }) => do
+                let span ← spanSyntax child
+                `(LeanRx.View.scalarText $name $value $span)
+            | `(leanrxJsxChild| $nested:leanrxJsxElement) => `(jsx% $nested)
+            | _ => Macro.throwErrorAt child "error[LRX-VIEW-009]: malformed LeanRx JSX child"
+          let span ← spanSyntax element
+          `(LeanRx.View.nodeWith (leanrx_jsx_tag% $tag) [$childTerms,*]
+            (attrs := [$attrTerms,*]) (span := $span))
       | _ => Macro.throwErrorAt element "error[LRX-VIEW-009]: malformed LeanRx JSX element"
 
 end LeanRxDsl

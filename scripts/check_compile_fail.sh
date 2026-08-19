@@ -12,6 +12,7 @@ fixtures=(
   Test/fixtures/compile-fail/UnknownEventAttribute.lean
   Test/fixtures/compile-fail/RawHtmlView.lean
   Test/fixtures/compile-fail/ClickOnlyDiv.lean
+  Test/fixtures/compile-fail/UnknownEventBinding.lean
   Test/fixtures/compile-fail/ComponentRoleMismatch.lean
   Test/fixtures/compile-fail/ComponentCycle.lean
 )
@@ -26,6 +27,7 @@ fragments=(
   "error[LRX-VIEW-008]"
   "error[LRX-VIEW-010]"
   "error[LRX-VIEW-005]"
+  "error[LRX-VIEW-006]"
   "error[LRX-ELAB-103]"
   "error[LRX-GRAPH-001]"
 )
@@ -47,6 +49,13 @@ cycle_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/ComponentCy
 if [[ "$cycle_output" != *"a → b → a"* || "$cycle_output" != *"ComponentCycle.lean:"* ]]; then
   echo "component cycle diagnostic lost its path or source locations" >&2
   echo "$cycle_output" >&2
+  exit 1
+fi
+
+binding_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/UnknownEventBinding.lean 2>&1 || true)"
+if [[ "$binding_output" != *"UnknownEventBinding.lean:"* ]]; then
+  echo "unknown event diagnostic lost its JSX attribute location" >&2
+  echo "$binding_output" >&2
   exit 1
 fi
 

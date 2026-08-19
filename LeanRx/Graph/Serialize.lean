@@ -69,7 +69,13 @@ private def nodeJson (node : Node) : String :=
     ",\"span\":" ++ spanJson node.span ++ "}"
 
 private def dotNode (node : Node) : String :=
-  let label := s!"{node.name}\n{nodeKind node.kind}\nrank {node.rank}"
+  let deps := String.intercalate "," (node.deps.toList.map (toString ·.value))
+  let equality := node.equality.map (GraphSerialize.equality) |>.getD "none"
+  let source := if node.span.file.isEmpty then "<generated>" else
+    s!"{node.span.file}:{node.span.start.line}:{node.span.start.column}"
+  let label := s!"{node.name}\nkind={nodeKind node.kind}\nvalueType={runtimeType node.valueType}" ++
+    s!"\ndeps=[{deps}]\nrank={node.rank}\nequality={equality}" ++
+    s!"\nevaluator={node.evaluator}\nsource={source}"
   s!"  n{node.id.value} [label={jsonString label}];"
 
 private def dotEdges (node : Node) : List String :=
