@@ -334,9 +334,10 @@ theorem optimized_equivalent_to_reference
     derivedSound.2 sinkCacheValid |>.trans <| congrArg (Reference.observe program.sinks)
       derivedSound.1
 
-/-- Synchronously nested event bodies are observationally equivalent to one
-flattened outer transaction and therefore commit only once in the abstract model. -/
-theorem optimized_nested_equivalent_to_reference
+/-- The central propagation theorem specialized to the source-write list obtained
+by flattening nested event bodies. This does not model event-expression evaluation
+or count runtime commits. -/
+theorem optimized_equivalent_for_flattened_nested_writes
     (program : Program)
     (wellFormed : program.WellFormed)
     (old : State)

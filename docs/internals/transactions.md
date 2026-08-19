@@ -38,9 +38,11 @@ Ordinary event expressions may read sources. A direct derived read fails with
 not return a stale cache; an explicit `readDerived` barrier remains future work.
 
 The homogeneous abstract semantics model nested events as a list of source-write
-transactions. Lean proves their sequential application equals the flattened
-outer transaction and derives the existing optimized/reference observation
-equivalence for that flattening. This theorem covers the pure static-DAG model.
+transactions. Lean proves their sequential source-store application equals the
+flattened write list and specializes the existing optimized/reference observation
+equivalence to that list. The pure theorem does not model event-expression
+evaluation or commit counts; the single outer commit is executable/browser
+evidence. This theorem covers the pure static-DAG model.
 Generated JavaScript, the context-array representation, DOM, and browser remain
 inside the documented trusted computing base and are checked differentially and
 in Chromium rather than formally verified.

@@ -62,15 +62,15 @@ inductive Update (Γ : Schema) where
 
 namespace Update
 
-def writeTargets : Update Γ → List Nat
+def directWriteTargets : Update Γ → List Nat
   | .set field _ _ => [field.index]
   | .dispatch .. => []
-  | .sequence first second => first.writeTargets ++ second.writeTargets
+  | .sequence first second => first.directWriteTargets ++ second.directWriteTargets
 
-def readDependencies : Update Γ → List Nat
+def directReadDependencies : Update Γ → List Nat
   | .set _ value _ => value.dependencies.ids
   | .dispatch .. => []
-  | .sequence first second => first.readDependencies ++ second.readDependencies
+  | .sequence first second => first.directReadDependencies ++ second.directReadDependencies
 
 def dispatchTargets : Update Γ → List String
   | .set .. => []
@@ -86,6 +86,15 @@ structure EventSpec (Γ : Schema) where
 
 def EventSpec.withSpan (event : EventSpec Γ) (span : SourceSpan) : EventSpec Γ :=
   { event with span }
+
+structure EventSummary where
+  name : String
+  directWrites : List Nat
+  directReads : List Nat
+  dispatchedEvents : List String
+  effectiveWrites : List Nat
+  effectiveReads : List Nat
+deriving Repr, BEq
 
 inductive SurfaceRole where
   | state | derived | event
@@ -141,6 +150,7 @@ structure CheckedComponent (Γ : Schema) where
   spec : ComponentSpec Γ
   graph : PlannedGraph
   sourceCount : Nat
+  eventSummaries : Array EventSummary
   view : ViewSplit Γ
 
 namespace ComponentSpec
@@ -249,14 +259,14 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
   if names.any String.isEmpty || duplicate? names then
     throw { code := "LRX-ELAB-102", message := "component event names must be nonempty and unique" }
   for event in spec.events do
-    for target in event.update.writeTargets do
+    for target in event.update.directWriteTargets do
       unless target < sourceCount do
         throw {
           code := "LRX-TYPE-107"
           message := s!"event {event.name} writes non-source value {target}"
           spans := #[event.span]
         }
-    for dependency in event.update.readDependencies do
+    for dependency in event.update.directReadDependencies do
       unless dependency < sourceCount do
         throw {
           code := "LRX-TYPE-108"
@@ -292,6 +302,35 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
         message := s!"view references unknown event {mounted.binding.eventName}"
         spans := #[mounted.binding.span]
       }
+
+private def eventByName? (events : Array (EventSpec Γ)) (name : String) : Option (EventSpec Γ) :=
+  events.toList.find? (·.name == name)
+
+private def effectiveWrites (events : Array (EventSpec Γ)) : Nat → Update Γ → List Nat
+  | 0, update => update.directWriteTargets.eraseDups
+  | fuel + 1, update =>
+      (update.directWriteTargets ++ update.dispatchTargets.flatMap fun target =>
+        match eventByName? events target with
+        | some event => effectiveWrites events fuel event.update
+        | none => []).eraseDups
+
+private def effectiveReads (events : Array (EventSpec Γ)) : Nat → Update Γ → List Nat
+  | 0, update => update.directReadDependencies.eraseDups
+  | fuel + 1, update =>
+      (update.directReadDependencies ++ update.dispatchTargets.flatMap fun target =>
+        match eventByName? events target with
+        | some event => effectiveReads events fuel event.update
+        | none => []).eraseDups
+
+private def summarizeEvents (events : Array (EventSpec Γ)) : Array EventSummary :=
+  events.map fun event => {
+    name := event.name
+    directWrites := event.update.directWriteTargets.eraseDups
+    directReads := event.update.directReadDependencies.eraseDups
+    dispatchedEvents := event.update.dispatchTargets.eraseDups
+    effectiveWrites := effectiveWrites events events.size event.update
+    effectiveReads := effectiveReads events events.size event.update
+  }
 
 mutual
 private def validateView : View Γ → Except ComponentError Unit
@@ -347,7 +386,8 @@ def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ
                   code := error.code, message := error.message,
                   path := error.path, spans := error.spans
                 }
-              | .ok graph => .ok ⟨spec, graph, sourceCount, split⟩
+              | .ok graph =>
+                  .ok ⟨spec, graph, sourceCount, summarizeEvents spec.events, split⟩
 
 def validationMessage (spec : ComponentSpec Γ) : String :=
   match spec.check with

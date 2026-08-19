@@ -54,6 +54,14 @@ footprint `[propext, Quot.sound]`. These are kernel-checked proofs relative to
 those reviewed standard Lean axioms; the environment audit locks each named
 theorem and its exact footprint independently.
 
+M5's `NestedTransaction.apply_eq_flatten` ordering theorem is axiom-free.
+`NestedTransaction.flatten_valid`, `NestedTransaction.changedIds_tracks`, and
+`optimized_equivalent_for_flattened_nested_writes` each have the exact reviewed
+footprint `[propext, Quot.sound]`. The last theorem specializes the abstract
+propagation result to a flattened write list; it does not prove JavaScript
+transaction depth or a commit count. Those exact pairs are independently locked
+by the environment audit.
+
 The M2 checked well-formedness checker and all-`Int` `RxExpr`-to-abstract-evaluator
 bridge are also kernel checked. Their named proof terms use exact reviewed
 `[propext, Quot.sound]` footprints where list/dependency equations require them;

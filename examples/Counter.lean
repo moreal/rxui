@@ -32,6 +32,11 @@ def parityText := RxExpr.binary .stringAppend (RxExpr.literal (.string "Parity: 
 def hostileText := RxExpr.literal (Γ := CounterSchema) <|
   .string "<img src=x onerror=\"globalThis.leanrxXss=true\">"
 
+def stableText := RxExpr.ifThenElse
+  (RxExpr.binary .intEq (RxExpr.read count) (RxExpr.read count))
+  (RxExpr.literal (.string "Stable"))
+  (RxExpr.literal (.string "Stable"))
+
 def increment : EventSpec CounterSchema :=
   { name := "increment"
     update := .set count <| RxExpr.binary .intAdd
@@ -49,6 +54,14 @@ def nestedAddTwo : EventSpec CounterSchema :=
   { name := "nestedAddTwo"
     update := .sequence (.dispatch "increment") (.dispatch "increment") }
 
+def roundTrip : EventSpec CounterSchema :=
+  { name := "roundTrip"
+    update := .sequence
+      (.set count <| RxExpr.binary .intAdd
+        (RxExpr.read count) (RxExpr.literal (.int 1)))
+      (.set count <| RxExpr.binary .intSub
+        (RxExpr.read count) (RxExpr.literal (.int 1))) }
+
 private def click (name : String) : EventBinding := { kind := .click, eventName := name }
 
 /-- Counter's explicit public view; syntax sugar is layered over this checked term. -/
@@ -60,9 +73,12 @@ def view : View CounterSchema := View.node .main [
     (attrs := [.buttonType .button]) (events := [click "addTwo"]),
   View.node .button [.text "Nested add two"]
     (attrs := [.buttonType .button]) (events := [click "nestedAddTwo"]),
+  View.node .button [.text "Round trip"]
+    (attrs := [.buttonType .button]) (events := [click "roundTrip"]),
   View.node .p [.scalarText "countText" countText],
   View.node .p [.scalarText "doubledText" doubledText],
   View.node .p [.scalarText "parityText" parityText],
+  View.node .p [.scalarText "stableText" stableText],
   View.node .p [.scalarText "hostileText" hostileText]
 ] (attrs := [.className "counter"])
 
@@ -74,7 +90,7 @@ def spec : ComponentSpec CounterSchema :=
       ValueSpec.computed doubledField doubled,
       ValueSpec.computed parityField parity
     ]
-    events := #[increment, addTwo, nestedAddTwo]
+    events := #[increment, addTwo, nestedAddTwo, roundTrip]
     view }
 
 open scoped LeanRxDsl
@@ -86,9 +102,11 @@ def syntaxView : View CounterSchema := jsx% <main class="counter"> [
   <button type="button" onClick="increment"> ["Increment"],
   <button type="button" onClick="addTwo"> ["Add two"],
   <button type="button" onClick="nestedAddTwo"> ["Nested add two"],
+  <button type="button" onClick="roundTrip"> ["Round trip"],
   <p> [{"countText": countText}],
   <p> [{"doubledText": doubledText}],
   <p> [{"parityText": parityText}],
+  <p> [{"stableText": stableText}],
   <p> [{"hostileText": hostileText}]
 ]
 
@@ -99,6 +117,7 @@ component CounterSyntax (schema := CounterSchema) where {
   event increment := increment;
   event addTwo := addTwo;
   event nestedAddTwo := nestedAddTwo;
+  event roundTrip := roundTrip;
   view := syntaxView;
 }
 

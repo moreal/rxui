@@ -60,11 +60,12 @@ test("mounts initial DOM, uses safe text, and passes accessibility scan", async 
     "Count: 1",
     "Doubled: 2",
     "Parity: odd",
+    "Stable",
     '<img src=x onerror="globalThis.leanrxXss=true">',
   ]);
   await expect(page.locator("#one button").first()).toHaveAttribute("type", "button");
 
-  const hostile = page.locator("#one .counter p").nth(3);
+  const hostile = page.locator("#one .counter p").nth(4);
   await expect(hostile).toHaveText('<img src=x onerror="globalThis.leanrxXss=true">');
   await expect(hostile.locator("img")).toHaveCount(0);
   expect(await page.evaluate(() => globalThis.leanrxXss)).toBeUndefined();
@@ -82,6 +83,7 @@ test("increment updates count, doubled, and parity with keyboard activation", as
     "Count: 2",
     "Doubled: 4",
     "Parity: even",
+    "Stable",
     '<img src=x onerror="globalThis.leanrxXss=true">',
   ]);
 });
@@ -102,12 +104,13 @@ test("add two suppresses the unchanged parity text write", async ({ page }) => {
     "Count: 3",
     "Doubled: 6",
     "Parity: odd",
+    "Stable",
     '<img src=x onerror="globalThis.leanrxXss=true">',
   ]);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
   expect(await page.evaluate(() => globalThis.parityMutations)).toBe(0);
   const instrumentation = await page.evaluate(() => globalThis.leanrxDisposers[0].instrumentation());
-  expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 2, 1, 2, 2]);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 2, 1, 3, 2]);
   expect(instrumentation[7]).toEqual([
     "transaction:begin",
     "event:addTwo",
@@ -121,6 +124,7 @@ test("add two suppresses the unchanged parity text write", async ({ page }) => {
     "dom:countText:write",
     "sink:doubledText:evaluated",
     "dom:doubledText:write",
+    "sink:stableText:evaluated",
     "transaction:commit",
   ]);
 });
@@ -135,7 +139,7 @@ test("nested dispatch batches into the outer transaction", async ({ page }) => {
   await page.locator("#one button").nth(2).click();
   await expect(page.locator("#one .counter p").first()).toHaveText("Count: 3");
   const instrumentation = await page.evaluate(() => globalThis.leanrxDisposers[0].instrumentation());
-  expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 2, 1, 2, 2]);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 2, 1, 3, 2]);
   expect(instrumentation[7].filter((event) => event === "transaction:commit")).toHaveLength(1);
   expect(instrumentation[7].slice(0, 7)).toEqual([
     "transaction:begin",
@@ -145,6 +149,21 @@ test("nested dispatch batches into the outer transaction", async ({ page }) => {
     "event:increment",
     "source:count:write",
     "source:count:changed",
+  ]);
+});
+
+test("write then revert leaves the changed frontier empty", async ({ page }) => {
+  await openCounter(page);
+  await page.locator("#one button").nth(3).click();
+  await expect(page.locator("#one .counter p").first()).toHaveText("Count: 1");
+  const instrumentation = await page.evaluate(() => globalThis.leanrxDisposers[0].instrumentation());
+  expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 0, 0, 0, 0]);
+  expect(instrumentation[7]).toEqual([
+    "transaction:begin",
+    "event:roundTrip",
+    "source:count:write",
+    "source:count:write",
+    "transaction:commit",
   ]);
 });
 

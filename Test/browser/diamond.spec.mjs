@@ -87,6 +87,17 @@ test("batches a diamond without an intermediate fan-in value", async ({ page }) 
   expect(right).toBeGreaterThan(left);
   expect(total).toBeGreaterThan(right);
   expect(sink).toBeGreaterThan(total);
+  const latestDerived = Math.max(
+    ...trace.map((event, index) =>
+      event.startsWith("derived:") && event.endsWith(":evaluated") ? index : -1,
+    ),
+  );
+  const earliestSink = Math.min(
+    ...trace.flatMap((event, index) =>
+      event.startsWith("sink:") && event.endsWith(":evaluated") ? [index] : [],
+    ),
+  );
+  expect(earliestSink).toBeGreaterThan(latestDerived);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });

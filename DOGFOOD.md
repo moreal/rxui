@@ -230,7 +230,8 @@ For `addTwo` from 1 to 3, the parity evaluator returns `"odd"` again and the
 generated changed frontier performs zero parity text writes, observed with a
 `MutationObserver`. M5 instrumentation makes the stronger behavior visible: two
 source writes produce one commit, two derived evaluations, one derived change,
-two sink evaluations, and two DOM writes; the parity sink never evaluates.
+three sink evaluations, and two DOM writes; the parity sink never evaluates and
+the dependency-bearing stable-text sink evaluates without writing its equal cache.
 
 ### Follow-up issue or commit
 
@@ -259,6 +260,11 @@ generated beside the browser module and checked in the browser gate. A 1,000-ste
 alternating small-diamond smoke benchmark recorded 3,000 derived and 1,000 sink
 evaluations. Elapsed nanoseconds are printed for reproducibility but are not a CI
 performance threshold.
+
+On the 2026-08-19 local debug build, that smoke run reported 1,559,792 ns for the
+1,000-update loop. This is an environment-specific observation, not a comparative
+benchmark; ADR-0009 reserves the complete size/build/mount/update/DOM/memory
+report for M10.
 
 ### Follow-up issue or commit
 

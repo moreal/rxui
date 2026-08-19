@@ -17,10 +17,17 @@ private def checkCounter (checked : CheckedComponent CounterSchema) : IO Unit :=
     throw <| IO.userError "Counter source prefix changed"
   unless checked.graph.graph.nodes.map (·.name) ==
       #["count", "doubled", "parity", "countText", "doubledText", "parityText",
-        "hostileText"] do
+        "stableText", "hostileText"] do
     throw <| IO.userError "component graph did not derive stable value/sink nodes"
-  unless checked.graph.graph.nodes.map (·.rank) == #[0, 1, 1, 1, 2, 2, 0] do
+  unless checked.graph.graph.nodes.map (·.rank) == #[0, 1, 1, 1, 2, 2, 1, 0] do
     throw <| IO.userError "component graph ranks changed"
+  let nested ← match checked.eventSummaries.toList.find? (·.name == "nestedAddTwo") with
+    | some summary => pure summary
+    | none => throw <| IO.userError "nested event summary disappeared"
+  unless nested.directWrites.isEmpty && nested.directReads.isEmpty &&
+      nested.dispatchedEvents == ["increment"] && nested.effectiveWrites == [0] &&
+      nested.effectiveReads == [0] do
+    throw <| IO.userError "nested event transitive read/write summary changed"
 
 def run : IO Unit := do
   match spec.check with
@@ -67,7 +74,8 @@ def run : IO Unit := do
         { role := .derived, name := "parity", span := .generated },
         { role := .event, name := "increment", span := .generated },
         { role := .event, name := "addTwo", span := .generated },
-        { role := .event, name := "nestedAddTwo", span := .generated }
+        { role := .event, name := "nestedAddTwo", span := .generated },
+        { role := .event, name := "roundTrip", span := .generated }
       ] }
   expectError "LRX-ELAB-103" mismatchedSurface.check
   let cycle : ComponentSpec (.field "a" Int <| .field "b" Int .empty) :=

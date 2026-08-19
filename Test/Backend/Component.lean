@@ -30,7 +30,7 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
       emitted.manifest.exports == #["mount"] &&
       emitted.manifest.stateSlots == #[.int, .int, .string] &&
       emitted.manifest.sourceCount == 1 && emitted.manifest.derivedCount == 2 &&
-      emitted.manifest.textSinkCount == 4 && emitted.manifest.eventCount == 3 &&
+      emitted.manifest.textSinkCount == 5 && emitted.manifest.eventCount == 4 &&
       emitted.manifest.hostImports == #["./leanrx_dom.mjs", "./leanrx_host.mjs"] &&
       emitted.manifest.features ==
         #["scalar", "events", "transactions", "instrumentation", "trace"] do

@@ -39,7 +39,7 @@ theorem nestedCountToThreeValid : nestedCountToThree.Valid diamondProgram := by
 theorem nested_diamond_observations_agree :
     (Optimized.run diamondProgram oldState nestedCountToThree.flatten).observations =
       (Reference.run diamondProgram oldState nestedCountToThree.flatten).observations := by
-  exact optimized_nested_equivalent_to_reference diamondProgram diamondWellFormed oldState
+  exact optimized_equivalent_for_flattened_nested_writes diamondProgram diamondWellFormed oldState
     diamondDerivedValid diamondSinkValid nestedCountToThree nestedCountToThreeValid
 
 def run : IO Unit := do
