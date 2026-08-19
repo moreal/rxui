@@ -178,7 +178,8 @@ private def allocateInputs : List String → NameAllocator →
 /-- Emit one pure ESM evaluator from typed Reactive IR. -/
 def moduleFor (requestedExport : String) (inputNames : Array String)
     (value : ReactiveIR.Expr α) : Except Error Emitted := do
-  let (bindings, allocator) ← allocateHelpers (helpers value) {}
+  let initialAllocator : NameAllocator := { used := ["String"] }
+  let (bindings, allocator) ← allocateHelpers (helpers value) initialAllocator
   let (exportName, allocator) ← allocator.allocate requestedExport
   let (inputs, _) ← allocateInputs inputNames.toList allocator
   let result ← expr inputs.toArray bindings value

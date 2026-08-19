@@ -31,6 +31,15 @@ def run : IO Unit := do
   let repeatedModule ← emit "repeatedMod" #["left", "right"] repeatedMod
   unless repeatedModule.module.declarations.size == 2 do
     throw <| IO.userError "repeated Int.mod emitted duplicate semantic helpers"
+  let display : LeanRx.ReactiveIR.Expr String :=
+    .unary .intToString (.input .int 0 "String")
+  let shadowed ← emit "String" #["String"] display
+  let shadowedSource ← match LeanRx.Js.Printer.module .compact shadowed.module with
+    | .ok source => pure source
+    | .error error => throw <| IO.userError error.message
+  unless shadowedSource.contains "function String_2(String_3)" &&
+      shadowedSource.contains "String(String_3)" do
+    throw <| IO.userError "user identifiers shadowed the backend-owned String builtin"
   let badInput : LeanRx.ReactiveIR.Expr Int := .input .int 2 "missing"
   match LeanRx.Backend.Scalar.moduleFor "bad" #["only"] badInput with
   | .ok _ => throw <| IO.userError "out-of-range Reactive IR input emitted JavaScript"
