@@ -19,10 +19,11 @@ private def isIdentifierContinue (char : Char) : Bool :=
 
 private def reserved : List String := [
   "await", "break", "case", "catch", "class", "const", "continue", "debugger",
-  "default", "delete", "do", "else", "export", "extends", "false", "finally",
+  "default", "delete", "do", "else", "enum", "export", "extends", "false", "finally",
   "for", "function", "if", "import", "in", "instanceof", "let", "new", "null",
   "return", "static", "super", "switch", "this", "throw", "true", "try",
-  "typeof", "var", "void", "while", "with", "yield"
+  "typeof", "var", "void", "while", "with", "yield", "implements", "interface",
+  "package", "private", "protected", "public", "eval", "arguments", "Function"
 ]
 
 structure Ident where
@@ -40,7 +41,7 @@ def valid (value : String) : Bool :=
 
 def checked (value : String) : Except Error Ident :=
   if valid value then .ok ⟨value⟩
-  else .error { code := "LRX-JS-001", message := s!"invalid JavaScript identifier: {value}" }
+  else .error { code := "LRX-BE-001", message := s!"invalid JavaScript identifier: {value}" }
 
 end Ident
 
@@ -121,6 +122,7 @@ structure Export where
 deriving Repr, BEq
 
 structure Module where
+  globals : Array Ident := #[]
   imports : Array Import := #[]
   declarations : Array Decl
   exports : Array Export
@@ -139,35 +141,73 @@ private def importLocals (module : Module) : List Ident :=
 private def declarationNames (module : Module) : List Ident :=
   module.declarations.toList.map Decl.name
 
+private def constNames (body : List Stmt) : List Ident :=
+  body.filterMap fun statement => match statement with
+    | .const name _ => some name
+    | _ => none
+
+mutual
+  private def exprBound (bound : List Ident) : Expr → Bool
+    | .ident name => bound.contains name
+    | .literal _ => true
+    | .unary _ value => exprBound bound value
+    | .binary _ left right => exprBound bound left && exprBound bound right
+    | .conditional condition yes no =>
+        exprBound bound condition && exprBound bound yes && exprBound bound no
+    | .call callee args => exprBound bound callee && argsBound bound args
+
+  private def argsBound (bound : List Ident) : Args → Bool
+    | .nil => true
+    | .cons head tail => exprBound bound head && argsBound bound tail
+end
+
+private def stmtBound (bound : List Ident) : Stmt → Bool
+  | .const _ value => exprBound bound value
+  | .expr value => exprBound bound value
+  | .return value => exprBound bound value
+
 def validate (module : Module) : Except Error Unit := do
   for entry in module.imports do
     if entry.source.isEmpty then
-      throw { code := "LRX-JS-002", message := "JavaScript import source must not be empty" }
+      throw { code := "LRX-BE-002", message := "JavaScript import source must not be empty" }
     if entry.names.isEmpty then
-      throw { code := "LRX-JS-003", message := "JavaScript import must bind at least one name" }
+      throw { code := "LRX-BE-003", message := "JavaScript import must bind at least one name" }
     if duplicate? (entry.names.toList.map (·.2)) then
-      throw { code := "LRX-JS-004", message := "JavaScript import has duplicate local bindings" }
+      throw { code := "LRX-BE-004", message := "JavaScript import has duplicate local bindings" }
   let imported := importLocals module
   let declared := declarationNames module
+  let globals := module.globals.toList
+  if duplicate? globals then
+    throw { code := "LRX-BE-016", message := "JavaScript module has duplicate globals" }
   if duplicate? imported then
-    throw { code := "LRX-JS-005", message := "JavaScript imports collide on a local binding" }
+    throw { code := "LRX-BE-005", message := "JavaScript imports collide on a local binding" }
   if duplicate? declared then
-    throw { code := "LRX-JS-006", message := "JavaScript declarations have duplicate names" }
+    throw { code := "LRX-BE-006", message := "JavaScript declarations have duplicate names" }
   if imported.any declared.contains then
-    throw { code := "LRX-JS-007", message := "JavaScript import and declaration names collide" }
+    throw { code := "LRX-BE-007", message := "JavaScript import and declaration names collide" }
+  if globals.any (fun name => imported.contains name || declared.contains name) then
+    throw { code := "LRX-BE-017", message := "JavaScript global collides with a module binding" }
   for declaration in module.declarations do
     match declaration with
     | .function value =>
         if duplicate? value.params.toList then
-          throw { code := "LRX-JS-008", message := "JavaScript function has duplicate parameters" }
+          throw { code := "LRX-BE-008", message := "JavaScript function has duplicate parameters" }
         if value.body.isEmpty then
-          throw { code := "LRX-JS-009", message := "JavaScript function body must not be empty" }
+          throw { code := "LRX-BE-009", message := "JavaScript function body must not be empty" }
+        let locals := constNames value.body.toList
+        if duplicate? locals || value.params.toList.any locals.contains then
+          throw { code := "LRX-BE-016", message := "JavaScript function has colliding lexical bindings" }
+        if globals.any (fun name => value.params.toList.contains name || locals.contains name) then
+          throw { code := "LRX-BE-017", message := "JavaScript function shadows a declared global" }
+        let bound := globals ++ imported ++ declared ++ value.params.toList ++ locals
+        unless value.body.toList.all (stmtBound bound) do
+          throw { code := "LRX-BE-018", message := "JavaScript function references an unbound identifier" }
   if duplicate? (module.exports.toList.map (·.exportName)) then
-    throw { code := "LRX-JS-010", message := "JavaScript module has duplicate export names" }
+    throw { code := "LRX-BE-010", message := "JavaScript module has duplicate export names" }
   let bound := imported ++ declared
   for entry in module.exports do
     unless bound.contains entry.localName do
-      throw { code := "LRX-JS-011", message := "JavaScript export references an unbound local" }
+      throw { code := "LRX-BE-011", message := "JavaScript export references an unbound local" }
 
 end Module
 

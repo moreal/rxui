@@ -14,6 +14,25 @@ const subtotal = await import(pathToFileURL(path.join(directory, "subtotal.mjs")
 const isLarge = await import(pathToFileURL(path.join(directory, "is_large.mjs")).href);
 const label = await import(pathToFileURL(path.join(directory, "label.mjs")).href);
 
+for (const [moduleName, exportName, resultType] of [
+  ["subtotal.mjs", "subtotal", "int"],
+  ["is_large.mjs", "isLarge", "bool"],
+  ["label.mjs", "label", "string"],
+]) {
+  const manifest = JSON.parse(
+    await readFile(path.join(directory, `${moduleName}.manifest.json`), "utf8"),
+  );
+  if (
+    manifest.module !== moduleName ||
+    manifest.runtimeAbi !== 1 ||
+    JSON.stringify(manifest.exports) !== JSON.stringify([exportName]) ||
+    manifest.inputs.map((input) => input.type).join(",") !== "int,int,int" ||
+    manifest.resultType !== resultType
+  ) {
+    throw new Error(`invalid Expression Playground artifact manifest: ${moduleName}`);
+  }
+}
+
 const inputs = [
   [12n, 4n, 40n],
   [5n, 4n, 40n],

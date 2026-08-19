@@ -26,6 +26,27 @@ inductive RuntimeType : Type → Type 1 where
   | int : RuntimeType Int
   | nat : RuntimeType Nat
 
+/-- Erased runtime type identity retained by graph and backend validation. -/
+inductive RuntimeTypeId where
+  | bool
+  | string
+  | int
+  | nat
+deriving Repr, BEq, DecidableEq, Ord
+
+def RuntimeType.id : {α : Type} → RuntimeType α → RuntimeTypeId
+  | _, .bool => .bool
+  | _, .string => .string
+  | _, .int => .int
+  | _, .nat => .nat
+
+/-- Stable erased runtime type spelling used by diagnostics and manifests. -/
+def RuntimeTypeId.debug : RuntimeTypeId → String
+  | .bool => "bool"
+  | .string => "string"
+  | .int => "int"
+  | .nat => "nat"
+
 def RuntimeType.jsType : {α : Type} → RuntimeType α → JsType
   | _, .bool => .boolean
   | _, .string => .string
@@ -55,6 +76,9 @@ instance : RuntimeRep Nat where
 
 def RuntimeRep.jsType (α : Type) [rep : RuntimeRep α] : JsType :=
   rep.runtimeType.jsType
+
+def RuntimeRep.typeId (α : Type) [rep : RuntimeRep α] : RuntimeTypeId :=
+  rep.runtimeType.id
 
 /-- Stable human-readable representation metadata for diagnostics/manifests. -/
 def RuntimeRep.debug (α : Type) [RuntimeRep α] : String :=

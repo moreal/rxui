@@ -1,3 +1,4 @@
+import LeanRx.Core.Version
 import LeanRx.Core.SourceInfo
 import LeanRx.Core.Schema
 import LeanRx.Core.Dependency
@@ -17,15 +18,10 @@ import LeanRx.Backend.JsPrinter
 import LeanRx.IR.Reactive
 import LeanRx.Lower.RxExpr
 import LeanRx.Backend.Scalar
+import LeanRx.Backend.Manifest
 import LeanRx.Semantics.Store
 import LeanRx.Semantics.Reference
 import LeanRx.Semantics.Optimized
 import LeanRx.Proofs.PropagationSound
 
 /-! LeanRx's public library root. -/
-namespace LeanRx
-
-/-- The pinned implementation version. -/
-def version : String := "0.1.0-dev"
-
-end LeanRx

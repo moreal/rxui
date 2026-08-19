@@ -51,6 +51,12 @@ def debug : {α : Type} → Literal α → String
   | _, .int value => s!"int({value})"
   | _, .nat value => s!"nat({value})"
 
+def runtimeTypeId : {α : Type} → Literal α → RuntimeTypeId
+  | _, .bool _ => .bool
+  | _, .string _ => .string
+  | _, .int _ => .int
+  | _, .nat _ => .nat
+
 end Literal
 
 namespace Unary
@@ -61,6 +67,13 @@ def name : {α β : Type} → Unary α β → String
   | _, _, .natToInt => "nat.toInt"
   | _, _, .intToString => "int.toString"
   | _, _, .natToString => "nat.toString"
+
+def resultTypeId : {α β : Type} → Unary α β → RuntimeTypeId
+  | _, _, .boolNot => .bool
+  | _, _, .intNeg => .int
+  | _, _, .natToInt => .int
+  | _, _, .intToString => .string
+  | _, _, .natToString => .string
 
 end Unary
 
@@ -86,9 +99,25 @@ def name : {α β γ : Type} → Binary α β γ → String
   | _, _, _, .stringAppend => "string.append"
   | _, _, _, .stringEq => "string.eq"
 
+def resultTypeId : {α β γ : Type} → Binary α β γ → RuntimeTypeId
+  | _, _, _, .intAdd | _, _, _, .intSub | _, _, _, .intMul | _, _, _, .intMod => .int
+  | _, _, _, .intEq | _, _, _, .intLt | _, _, _, .intLe => .bool
+  | _, _, _, .natAdd | _, _, _, .natSub | _, _, _, .natMul | _, _, _, .natMod => .nat
+  | _, _, _, .natEq | _, _, _, .natLt | _, _, _, .natLe => .bool
+  | _, _, _, .boolAnd | _, _, _, .boolOr => .bool
+  | _, _, _, .stringAppend => .string
+  | _, _, _, .stringEq => .bool
+
 end Binary
 
 namespace Expr
+
+def runtimeTypeId : {α : Type} → Expr α → RuntimeTypeId
+  | _, .literal value => value.runtimeTypeId
+  | _, .input runtime _ _ => runtime.id
+  | _, .unary op _ => op.resultTypeId
+  | _, .binary op _ _ => op.resultTypeId
+  | _, .conditional _ yes _ => runtimeTypeId yes
 
 def debug : {α : Type} → Expr α → String
   | _, .literal value => value.debug
@@ -112,7 +141,7 @@ terms that are not represented by the staged scalar core. -/
 def rejectUnsupported {α : Type} (name : String) (span : SourceSpan) :
     Except LowerError (Expr α) :=
   .error {
-    code := "LRX-LOWER-001"
+    code := "LRX-BE-020"
     phase := "reactive-ir"
     message := s!"unsupported browser-lowerable computation: {name}"
     span

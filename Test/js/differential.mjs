@@ -35,15 +35,42 @@ function encode(value) {
 }
 
 for (const [index, testCase] of cases.entries()) {
-  const moduleUrl = pathToFileURL(path.join(directory, testCase.module)).href;
-  const generated = await import(moduleUrl);
-  const actual = encode(generated[testCase.export](...testCase.args.map(decode)));
-  if (JSON.stringify(actual) !== JSON.stringify(testCase.expected)) {
-    throw new Error(
-      `differential mismatch at case ${index} (${testCase.module}): ` +
-        `expected ${JSON.stringify(testCase.expected)}, got ${JSON.stringify(actual)}`,
+  const variants = [
+    testCase.module,
+    testCase.module.replace(/\.mjs$/, ".compact.mjs"),
+  ];
+  for (const variant of variants) {
+    const artifact = JSON.parse(
+      await readFile(path.join(directory, `${variant}.manifest.json`), "utf8"),
     );
+    if (
+      artifact.compilerVersion !== "0.1.0-dev" ||
+      artifact.leanToolchain !== "leanprover/lean4:v4.33.0" ||
+      artifact.module !== variant ||
+      artifact.runtimeAbi !== 1 ||
+      JSON.stringify(artifact.exports) !== JSON.stringify([testCase.export]) ||
+      artifact.inputs.length !== testCase.args.length ||
+      !["bool", "string", "int", "nat"].includes(artifact.resultType) ||
+      JSON.stringify(artifact.features) !== JSON.stringify(["scalar"])
+    ) {
+      throw new Error(`invalid scalar artifact manifest for ${variant}`);
+    }
+    if (
+      testCase.module === "hostile_names.mjs" &&
+      artifact.inputs[0].generatedName !== "eval_"
+    ) {
+      throw new Error(`hostile input name was not recorded after mangling: ${variant}`);
+    }
+    const moduleUrl = pathToFileURL(path.join(directory, variant)).href;
+    const generated = await import(moduleUrl);
+    const actual = encode(generated[testCase.export](...testCase.args.map(decode)));
+    if (JSON.stringify(actual) !== JSON.stringify(testCase.expected)) {
+      throw new Error(
+        `differential mismatch at case ${index} (${variant}): ` +
+          `expected ${JSON.stringify(testCase.expected)}, got ${JSON.stringify(actual)}`,
+      );
+    }
   }
 }
 
-console.log(`native/JavaScript differential cases passed: ${cases.length}`);
+console.log(`native/JavaScript differential cases passed: ${cases.length} × 2 printer modes`);

@@ -16,9 +16,20 @@ structure HelperBinding where
   name : Ident
 deriving Repr, BEq
 
+/-- Declared ABI for one evaluator input. Every IR occurrence is checked
+against this signature before a JavaScript AST can be produced. -/
+structure InputSpec where
+  name : String
+  valueType : RuntimeTypeId
+deriving Repr, BEq
+
 structure Emitted where
+  private mk ::
   module : Module
   exportName : Ident
+  inputs : Array InputSpec
+  inputNames : Array Ident
+  resultType : RuntimeTypeId
 deriving Repr, BEq
 
 private def addHelper (helper : Helper) (helpers : List Helper) : List Helper :=
@@ -58,15 +69,21 @@ private def helperName (bindings : List HelperBinding) (helper : Helper) : Excep
   match bindings.find? (·.helper == helper) with
   | some binding => pure binding.name
   | none => .error {
-      code := "LRX-JS-014"
+      code := "LRX-BE-014"
       message := "scalar lowering is missing a required runtime helper binding"
     }
 
-private def input (inputs : Array Ident) (index : Nat) : Except Error Ident :=
+private def input (inputs : Array (Ident × RuntimeTypeId)) (index : Nat)
+    (expected : RuntimeTypeId) : Except Error Ident :=
   match inputs[index]? with
-  | some name => pure name
+  | some (name, actual) =>
+      if actual == expected then pure name
+      else .error {
+        code := "LRX-BE-019"
+        message := s!"Reactive IR input index {index} has an incompatible runtime type"
+      }
   | none => .error {
-      code := "LRX-JS-013"
+      code := "LRX-BE-013"
       message := s!"Reactive IR input index {index} is outside the evaluator parameter list"
     }
 
@@ -114,10 +131,10 @@ private def binaryHelper : {α β γ : Type} → ReactiveIR.Binary α β γ → 
   | _, _, _, .natMod => some .natMod
   | _, _, _, _ => none
 
-def expr (inputs : Array Ident) (bindings : List HelperBinding) :
+def expr (inputs : Array (Ident × RuntimeTypeId)) (bindings : List HelperBinding) :
     {α : Type} → ReactiveIR.Expr α → Except Error Js.Expr
   | _, .literal value => pure (.literal (literal value))
-  | _, .input _ index _ => do pure (.ident (← input inputs index))
+  | _, .input runtime index _ => do pure (.ident (← input inputs index runtime.id))
   | _, .unary op value => do
       match unary op with
       | .identity => expr inputs bindings value
@@ -136,7 +153,7 @@ def expr (inputs : Array Ident) (bindings : List HelperBinding) :
               let helper ← helperName bindings required
               pure (.call (.ident helper) <| .ofList [loweredLeft, loweredRight])
           | none => .error {
-              code := "LRX-JS-015"
+              code := "LRX-BE-015"
               message := "Reactive IR binary primitive has no JavaScript lowering"
             }
   | _, .conditional condition yes no => do
@@ -167,30 +184,37 @@ private def helperFunction (binding : HelperBinding) : Except Error Function := 
           (.binary .rem leftExpr rightExpr)
   pure { name := binding.name, params := #[left, right], body := #[.return body] }
 
-private def allocateInputs : List String → NameAllocator →
-    Except Error (List Ident × NameAllocator)
+private def allocateInputs : List InputSpec → NameAllocator →
+    Except Error (List (Ident × RuntimeTypeId) × NameAllocator)
   | [], allocator => pure ([], allocator)
   | requested :: rest, allocator => do
-      let (name, allocator) ← allocator.allocate requested
+      let (name, allocator) ← allocator.allocate requested.name
       let (names, allocator) ← allocateInputs rest allocator
-      pure (name :: names, allocator)
+      pure ((name, requested.valueType) :: names, allocator)
 
 /-- Emit one pure ESM evaluator from typed Reactive IR. -/
-def moduleFor (requestedExport : String) (inputNames : Array String)
+def moduleFor (requestedExport : String) (inputSpecs : Array InputSpec)
     (value : ReactiveIR.Expr α) : Except Error Emitted := do
   let initialAllocator : NameAllocator := { used := ["String"] }
   let (bindings, allocator) ← allocateHelpers (helpers value) initialAllocator
   let (exportName, allocator) ← allocator.allocate requestedExport
-  let (inputs, _) ← allocateInputs inputNames.toList allocator
+  let (inputs, _) ← allocateInputs inputSpecs.toList allocator
   let result ← expr inputs.toArray bindings value
   let helperDecls ← bindings.mapM fun binding => do
     pure (Decl.function (← helperFunction binding))
   let evaluator : Function :=
-    { name := exportName, params := inputs.toArray, body := #[.return result] }
+    { name := exportName, params := inputs.toArray.map (·.1), body := #[.return result] }
   let module : Module :=
-    { declarations := (helperDecls ++ [Decl.function evaluator]).toArray
+    { globals := #[← Ident.checked "String"]
+      declarations := (helperDecls ++ [Decl.function evaluator]).toArray
       exports := #[{ localName := exportName, exportName }] }
   module.validate
-  pure { module, exportName }
+  pure {
+    module
+    exportName
+    inputs := inputSpecs
+    inputNames := inputs.toArray.map (·.1)
+    resultType := value.runtimeTypeId
+  }
 
 end LeanRx.Backend.Scalar

@@ -23,7 +23,7 @@ def run : IO Unit := do
   match unsupported with
   | .ok _ => throw <| IO.userError "unsupported computation produced Reactive IR"
   | .error error =>
-      unless error.code == "LRX-LOWER-001" && error.phase == "reactive-ir" &&
+      unless error.code == "LRX-BE-020" && error.phase == "reactive-ir" &&
           error.span == span && error.message.contains "App.arbitraryRecursiveFunction" do
         throw <| IO.userError "unsupported lowering lost its source-linked diagnostic"
 

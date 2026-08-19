@@ -10,13 +10,17 @@ private def emit (directory : System.FilePath) (filename exportName : String)
     (expr : RxExpr Pricing deps α) : IO Unit := do
   let ir := Lower.rxExpr expr
   let emitted ← match Backend.Scalar.moduleFor exportName
-      #["price", "quantity", "threshold"] ir with
+      #[{ name := "price", valueType := .int },
+        { name := "quantity", valueType := .int },
+        { name := "threshold", valueType := .int }] ir with
     | .ok emitted => pure emitted
     | .error error => throw <| IO.userError s!"playground lowering failed: {error.code}"
   let source ← match Js.Printer.module .readable emitted.module with
     | .ok source => pure source
     | .error error => throw <| IO.userError s!"playground printing failed: {error.code}"
   IO.FS.writeFile (directory / filename) source
+  IO.FS.writeFile (directory / (filename ++ ".manifest.json")) <|
+    (Backend.ArtifactManifest.scalar filename emitted).json
 
 private def resultJson (name : String) (values : Store Pricing) : String :=
   "{\"name\":" ++ Js.Printer.stringLiteral name ++

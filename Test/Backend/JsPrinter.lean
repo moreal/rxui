@@ -45,7 +45,7 @@ def run : IO Unit := do
   match Printer.module .readable invalid with
   | .ok _ => throw <| IO.userError "printer emitted an invalid JavaScript AST"
   | .error error =>
-      unless error.code == "LRX-JS-011" do
+      unless error.code == "LRX-BE-011" do
         throw <| IO.userError "printer returned the wrong validation diagnostic"
 
 end LeanRxTest.Backend.JsPrinter

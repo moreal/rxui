@@ -8,29 +8,12 @@ structure NodeId where
   value : Nat
 deriving Repr, BEq, DecidableEq, Ord
 
-/-- Erased runtime type identity retained by graph and lowering validation. -/
-inductive RuntimeTypeId where
-  | bool
-  | string
-  | int
-  | nat
-deriving Repr, BEq, DecidableEq, Ord
-
 /-- Canonical lawful equality lowering for each sealed scalar runtime type. -/
 def RuntimeTypeId.equalityPlan : RuntimeTypeId → JsEqPlan
   | .bool => .strict
   | .string => .strict
   | .int => .bigint
   | .nat => .bigint
-
-def RuntimeType.id : {α : Type} → RuntimeType α → RuntimeTypeId
-  | _, .bool => .bool
-  | _, .string => .string
-  | _, .int => .int
-  | _, .nat => .nat
-
-def RuntimeRep.typeId (α : Type) [rep : RuntimeRep α] : RuntimeTypeId :=
-  rep.runtimeType.id
 
 inductive NodeKind where
   | source
