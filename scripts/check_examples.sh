@@ -19,4 +19,16 @@ if [[ "$graph_actual" != "$graph_expected" ]]; then
   exit 1
 fi
 
+playground_js_dir="$(mktemp -d)"
+trap 'rm -rf -- "$playground_js_dir"' EXIT
+lake exe leanrx_expr_playground_js -- "$playground_js_dir"
+playground_js_expected=$'first subtotal: 48\nfirst isLarge: true\nfirst label: large order\nsecond subtotal: 20\nsecond isLarge: false\nsecond label: small order'
+playground_js_actual="$(node examples/expression_playground_js.mjs "$playground_js_dir")"
+
+if [[ "$playground_js_actual" != "$playground_js_expected" ]]; then
+  echo "Expression Playground generated JavaScript output changed" >&2
+  echo "$playground_js_actual" >&2
+  exit 1
+fi
+
 echo "public examples passed"

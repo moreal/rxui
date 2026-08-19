@@ -121,3 +121,46 @@ instrumentation, not a wall-clock benchmark.
 ### Follow-up issue or commit
 
 `example(graph): add native propagation laboratory`
+
+## Expression Playground — generated ESM
+
+### Scenario exercised
+
+The existing public `subtotal`, `isLarge`, and conditional `label` expressions
+are compiled through `RxExpr → Reactive IR → validated JavaScript AST → ESM`,
+imported under Node, and compared with native Lean results for both playground
+stores.
+
+### What was pleasant
+
+The compiler phases remain independently callable pure functions. The example
+generator performs only file orchestration, and the Node runner needs no Lean
+runtime or third-party package.
+
+### Friction
+
+M3 has no component command or build CLI yet, so the dogfood uses a test-only
+output-directory harness. Each generated evaluator currently accepts the whole
+schema parameter list, including fields that a particular expression does not
+read; later lowering can specialize parameters from the dependency index.
+
+### Missing framework capability
+
+There is still no DOM, event, component, or browser host output. The ESM functions
+are pure scalar evaluators only, as required for M3.
+
+### Bugs found
+
+The differential gate found that the first `Int.mod` helper normalized with the
+signed divisor. For `7 % -5`, Lean returned `2` while generated JavaScript returned
+`-3`. The helper now normalizes with the absolute divisor, and all signed/zero
+cases are permanent regressions.
+
+### Performance observations
+
+The gate records deterministic bytes and semantic results, not wall-clock
+performance. No benchmark claim is made before the correctness baseline closes.
+
+### Follow-up issue or commit
+
+`example(js): emit and run the expression playground`

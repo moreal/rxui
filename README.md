@@ -44,6 +44,14 @@ lake exe leanrx_graph_lab
 lake exe leanrx_graph_properties -- 195936478
 ```
 
+Run the M3 deterministic scalar JavaScript differential and generated Expression
+Playground gates with:
+
+```sh
+./scripts/check_differential.sh
+./scripts/check_examples.sh
+```
+
 ## Project boundaries
 
 LeanRx is intended to compile a restricted staged language; it will not transpile

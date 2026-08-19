@@ -38,6 +38,3 @@ def run : IO Unit := do
     IO.println line
 
 end LeanRxExamples.ExpressionPlayground
-
-def main : IO Unit :=
-  LeanRxExamples.ExpressionPlayground.run

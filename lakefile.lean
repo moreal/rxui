@@ -24,12 +24,18 @@ lean_lib LeanRxTest where
     `Test.Semantics.Store, `Test.Semantics.Fixtures, `Test.Semantics.Reference,
     `Test.Semantics.Optimized, `Test.Proofs.PropagationSound]
 
+lean_lib LeanRxExamples where
+  roots := #[`examples.ExpressionPlayground]
+
 @[default_target]
 lean_exe leanrx_test where
   root := `Test.Main
 
 lean_exe leanrx_expr_playground where
-  root := `examples.ExpressionPlayground
+  root := `examples.ExpressionPlaygroundMain
+
+lean_exe leanrx_expr_playground_js where
+  root := `examples.ExpressionPlaygroundJs
 
 lean_exe leanrx_graph_lab where
   root := `examples.GraphLab
