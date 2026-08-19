@@ -168,3 +168,58 @@ performance. No benchmark claim is made before the correctness baseline closes.
 ### Follow-up issue or commit
 
 `example(js): emit and run the expression playground`
+
+## Counter — direct DOM component
+
+### Scenario exercised
+
+One `Int` state field, `doubled` and `parity` derived values, two click events,
+three scalar text sinks, deterministic graph/ESM/manifest output, two independent
+mounts, and idempotent disposal in real Chromium. The example imports only the
+public `LeanRx` root and uses the explicit component/view API.
+
+### What was pleasant
+
+The same dependency-indexed expressions supply native typing, graph edges,
+JavaScript evaluators, initial DOM text, and update functions. Generated event
+functions own state changes, derived order, equality checks, and sink guards; the
+handwritten host remains limited to DOM calls, listener bridging, and cleanup.
+
+### Friction
+
+Without the command/JSX elaborators, the explicit schema, fields, value table,
+and view combinators are verbose. Evaluators currently accept every component
+value as a parameter, and the M4 event function recomputes every derived value
+before suppressing unchanged sinks. M5 will replace that conservative pass with
+the certified affected-closure schedule.
+
+### Missing framework capability
+
+Public `component` syntax, minimal JSX-like syntax, and the `check`/`build`/`graph`
+CLI remain to complete M4. Dynamic structure, properties beyond the static M4
+whitelist, and non-click event payloads remain intentionally unsupported.
+
+### Bugs found
+
+The first axe run rejected Counter because the page had no level-one heading.
+Adding a real `<h1>` to the public view fixed the defect and made the automated
+scan a permanent browser gate. The hostile-text fixture is mounted inside the
+generated `<main>` landmark and proves `<img ... onerror>` remains a text node.
+
+### Security and accessibility checks
+
+Chromium verifies native buttons in source order, keyboard `Tab` focus and
+`Enter` activation, `type="button"`, listener removal, hostile text, and zero axe
+violations. Manual review confirms a single descriptive `<h1>`, a `<main>`
+landmark, visible button labels, and logical focus order. Form labels and live
+error regions are not applicable to this Counter.
+
+### Performance observations
+
+For `addTwo` from 1 to 3, the parity evaluator returns `"odd"` again and the
+generated `changed_2` guard performs zero parity text writes, observed with a
+`MutationObserver`. This is work-count evidence, not a timing benchmark.
+
+### Follow-up issue or commit
+
+`feat(backend): emit component mount and dispose`

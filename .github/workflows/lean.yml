@@ -15,6 +15,10 @@ jobs:
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
         with:
           use-github-cache: true
+      - name: Install pinned browser test dependencies
+        run: corepack pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install pinned Playwright Chromium
+        run: corepack pnpm exec playwright install --with-deps chromium
       - name: Check formatting and shell syntax
         run: ./scripts/check_format.sh
       - name: Build library and tests
@@ -25,6 +29,10 @@ jobs:
         run: lake exe leanrx_graph_properties -- 195936478
       - name: Run native-to-JavaScript differential tests
         run: ./scripts/check_differential.sh
+      - name: Check deterministic Counter component output
+        run: ./scripts/check_component_codegen.sh
+      - name: Run Counter browser tests
+        run: ./scripts/check_browser.sh
       - name: Run public examples
         run: ./scripts/check_examples.sh
       - name: Run compile-fail type contracts

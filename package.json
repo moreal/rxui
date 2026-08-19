@@ -1,0 +1,13 @@
+{
+  "name": "leanrx-browser-tests",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "test:browser": "playwright test",
+    "test:browser:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.62.1"
+  }
+}

@@ -20,6 +20,8 @@ lake build
 lake exe leanrx_test
 lake exe leanrx_graph_properties -- 195936478
 ./scripts/check_differential.sh
+./scripts/check_component_codegen.sh
+./scripts/check_browser.sh
 ./scripts/check_examples.sh
 ./scripts/check_compile_fail.sh
 ./scripts/check_placeholders.sh
@@ -30,6 +32,14 @@ lake exe leanrx_graph_properties -- 195936478
 
 The same commands run in CI. See [STATUS.md](STATUS.md) for the current
 milestone, exact baseline, and the latest green commit.
+
+Install the exact browser-test dependencies and Chromium once before running the
+browser gate:
+
+```sh
+corepack pnpm install --frozen-lockfile --ignore-scripts
+corepack pnpm exec playwright install chromium
+```
 
 Run the M1 public-API dogfood directly with:
 
@@ -50,6 +60,12 @@ Playground gates with:
 ```sh
 ./scripts/check_differential.sh
 ./scripts/check_examples.sh
+```
+
+Generate the explicit M4 Counter component, graph, runtime host, and manifest:
+
+```sh
+lake exe leanrx_counter_js -- .tmp/counter
 ```
 
 ## Project boundaries

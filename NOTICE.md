@@ -10,3 +10,14 @@ affected source comments must record the upstream URL, revision, license,
 modified files, and nature of the adaptation before that code is committed.
 
 No license has yet been selected for LeanRx itself.
+
+M4 browser acceptance tests use the following development-only packages; no
+package source is copied into LeanRx:
+
+- `@playwright/test` 1.62.1 and Playwright/Chromium test tooling,
+  Apache-2.0;
+- `@axe-core/playwright` 4.13.0 and `axe-core` 4.13.0, MPL-2.0.
+
+Exact dependency integrity and transitive versions are recorded in
+`pnpm-lock.yaml`. They are test infrastructure and are not imported by generated
+LeanRx application modules or the browser host.
