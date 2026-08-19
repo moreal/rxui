@@ -10,6 +10,7 @@ import Test.Proofs.DependencySound
 import Test.Graph.Model
 import Test.Graph.Build
 import Test.Graph.Topological
+import Test.Graph.Properties
 import Test.Semantics.Store
 import Test.Semantics.Reference
 import Test.Semantics.Optimized
@@ -34,6 +35,7 @@ def main : IO Unit := do
   LeanRxTest.Graph.Model.run
   LeanRxTest.Graph.Build.run
   LeanRxTest.Graph.Topological.run
+  LeanRxTest.Graph.Properties.run
   LeanRxTest.Semantics.Store.run
   LeanRxTest.Semantics.Reference.run
   LeanRxTest.Semantics.Optimized.run
