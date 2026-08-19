@@ -68,6 +68,16 @@ Generate the explicit M4 Counter component, graph, runtime host, and manifest:
 lake exe leanrx_counter_js -- .tmp/counter
 ```
 
+The M4 syntax is opt-in so its declaration keywords do not pollute ordinary Lean:
+
+```lean
+open scoped LeanRxDsl
+```
+
+Counter demonstrates the balanced JSX-like child-list form and inspectable
+generated declarations. See [ADR-0006](docs/adr/0006-scoped-component-jsx-syntax.md)
+for the parser rationale and complete example.
+
 ## Project boundaries
 
 LeanRx is intended to compile a restricted staged language; it will not transpile

@@ -56,6 +56,26 @@ structure EventBinding where
   span : SourceSpan := .generated
 deriving Repr, BEq
 
+/-- Unified surface attribute; validation still separates static attributes from events. -/
+inductive ViewAttr where
+  | static (value : StaticAttr)
+  | event (value : EventBinding)
+deriving Repr, BEq
+
+namespace ViewAttr
+
+def staticAttrs : List ViewAttr → List StaticAttr
+  | [] => []
+  | .static value :: rest => value :: staticAttrs rest
+  | .event _ :: rest => staticAttrs rest
+
+def events : List ViewAttr → List EventBinding
+  | [] => []
+  | .static _ :: rest => events rest
+  | .event value :: rest => value :: events rest
+
+end ViewAttr
+
 /- Explicit safe M4 view. Interpolation is text-only; raw HTML has no constructor. -/
 mutual
   inductive View (Γ : Schema) where
@@ -84,6 +104,11 @@ def node (tag : HtmlTag) (children : List (View Γ))
     (attrs : List StaticAttr := []) (events : List EventBinding := [])
     (span : SourceSpan := .generated) : View Γ :=
   .element tag attrs events (.ofList children) span
+
+def nodeWith (tag : HtmlTag) (children : List (View Γ))
+    (attrs : List ViewAttr := []) (span : SourceSpan := .generated) : View Γ :=
+  node tag children (attrs := ViewAttr.staticAttrs attrs)
+    (events := ViewAttr.events attrs) (span := span)
 
 end View
 

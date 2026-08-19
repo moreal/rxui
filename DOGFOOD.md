@@ -176,7 +176,9 @@ performance. No benchmark claim is made before the correctness baseline closes.
 One `Int` state field, `doubled` and `parity` derived values, two click events,
 three scalar text sinks, deterministic graph/ESM/manifest output, two independent
 mounts, and idempotent disposal in real Chromium. The example imports only the
-public `LeanRx` root and uses the explicit component/view API.
+public `LeanRx` root. Its browser artifact is generated through the scoped
+`component` command and JSX-like view, while the same declarations also exercise
+the explicit component/view API directly.
 
 ### What was pleasant
 
@@ -187,16 +189,17 @@ handwritten host remains limited to DOM calls, listener bridging, and cleanup.
 
 ### Friction
 
-Without the command/JSX elaborators, the explicit schema, fields, value table,
-and view combinators are verbose. Evaluators currently accept every component
+The M4 command deliberately keeps declaration right-hand sides as explicit
+checked terms, and balanced `[...]` JSX children are slightly noisier than paired
+HTML closing tags. Evaluators currently accept every component
 value as a parameter, and the M4 event function recomputes every derived value
 before suppressing unchanged sinks. M5 will replace that conservative pass with
 the certified affected-closure schedule.
 
 ### Missing framework capability
 
-Public `component` syntax, minimal JSX-like syntax, and the `check`/`build`/`graph`
-CLI remain to complete M4. Dynamic structure, properties beyond the static M4
+The `check`/`build`/`graph` CLI remains to complete M4. Dynamic structure,
+properties beyond the static M4
 whitelist, and non-click event payloads remain intentionally unsupported.
 
 ### Bugs found

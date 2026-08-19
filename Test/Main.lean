@@ -20,6 +20,7 @@ import Test.Backend.Scalar
 import Test.Backend.Component
 import Test.View.Model
 import Test.Component.Model
+import Test.Elab.Component
 import Test.Semantics.Store
 import Test.Semantics.Reference
 import Test.Semantics.Optimized
@@ -54,6 +55,7 @@ def main : IO Unit := do
   LeanRxTest.Backend.Component.run
   LeanRxTest.View.Model.run
   LeanRxTest.Component.Model.run
+  LeanRxTest.Elab.Component.run
   LeanRxTest.Semantics.Store.run
   LeanRxTest.Semantics.Reference.run
   LeanRxTest.Semantics.Optimized.run

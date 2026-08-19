@@ -22,6 +22,7 @@ import LeanRx.Backend.Manifest
 import LeanRx.Backend.Component
 import LeanRx.View.Model
 import LeanRx.Component.Model
+import LeanRx.Elab.Component
 import LeanRx.Semantics.Store
 import LeanRx.Semantics.Reference
 import LeanRx.Semantics.Optimized

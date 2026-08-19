@@ -41,6 +41,9 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.Update.writeTargets._unsafe_rec,
     `LeanRx.Update.readDependencies._unsafe_rec,
     `LeanRx.ViewChildren.ofList._unsafe_rec,
+    `LeanRx.ViewAttr.events._unsafe_rec,
+    `LeanRx.ViewAttr.staticAttrs._unsafe_rec,
+    `LeanRxDsl._aux_LeanRx_Elab_Component___elabRules_LeanRxDsl_leanrxComponent_1.unsafe_1,
     `LeanRx.Abstract.Reference.runDerived._unsafe_rec,
     `LeanRx.Abstract.SourceTransaction.apply._unsafe_rec,
     `LeanRx.Abstract.Program.orderChecked._unsafe_rec,
@@ -234,13 +237,16 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.ValueSpec.derived.injEq, #[``propext]),
     (`LeanRx.ValueSpec.source.injEq, #[``propext]),
     (`LeanRx.View.element.injEq, #[``propext]),
+    (`LeanRx.ViewAttr.event.injEq, #[``propext]),
+    (`LeanRx.ViewAttr.static.injEq, #[``propext]),
     (`LeanRx.View.scalarText.injEq, #[``propext]),
     (`LeanRx.View.text.injEq, #[``propext]),
     (`LeanRx.ViewChildren.cons.injEq, #[``propext]),
     (`LeanRx.ViewSplit.mk.injEq, #[``propext])
   ]
   let declarations := (env.constants.toList.filter fun (name, _) =>
-      name.toString.startsWith "LeanRx.").toArray.qsort fun a b =>
+      name.toString.startsWith "LeanRx." ||
+        name.toString.startsWith "LeanRxDsl.").toArray.qsort fun a b =>
     Name.lt a.1 b.1
   let requiredImports : Array Name := #[`LeanRx.version, `LeanRx.SourcePos]
   for name in requiredImports do

@@ -64,4 +64,26 @@ def spec : ComponentSpec CounterSchema :=
     events := #[increment, addTwo]
     view }
 
+open scoped LeanRxDsl
+
+/-- Lean-friendly M4 JSX surface: balanced `[...]` children avoid a custom
+closing-tag parser while preserving HTML-like tags and whitelisted attributes. -/
+def syntaxView : View CounterSchema := jsx% <main class="counter"> [
+  <h1> ["Counter"],
+  <button type="button" onClick="increment"> ["Increment"],
+  <button type="button" onClick="addTwo"> ["Add two"],
+  <p> [{"countText": countText}],
+  <p> [{"doubledText": doubledText}],
+  <p> [{"parityText": parityText}]
+]
+
+component CounterSyntax (schema := CounterSchema) where {
+  state count := ValueSpec.state count (.int 1);
+  derived doubled := ValueSpec.computed doubledField doubled;
+  derived parity := ValueSpec.computed parityField parity;
+  event increment := increment;
+  event addTwo := addTwo;
+  view := syntaxView;
+}
+
 end LeanRxExamples.Counter

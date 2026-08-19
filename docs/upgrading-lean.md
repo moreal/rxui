@@ -25,4 +25,8 @@ the manifest goldens.
   `Lean.collectAxioms`. Recheck these names and imported/local environment
   behavior on every toolchain upgrade.
 - Production code uses no internal Lean metaprogramming or compiler API.
+- `LeanRx/Elab/Component.lean` uses public command/term elaboration APIs and
+  `Lean.Meta.evalExpr` to execute the generated component checker at compile
+  time. The one compiler-generated unsafe wrapper is exact-name audited; recheck
+  its name and evaluation behavior on every Lean upgrade.
 - `lakefile.lean` uses public Lake declarations.

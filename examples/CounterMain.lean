@@ -21,7 +21,7 @@ private def generateChecked (directory : System.FilePath)
   IO.FS.writeFile (directory / "leanrx_host.mjs") (← IO.FS.readFile "runtime/leanrx_host.mjs")
 
 def generate (directory : System.FilePath) : IO Unit :=
-  match spec.check with
+  match CounterSyntax_spec.check with
   | .error error => throw <| IO.userError s!"Counter component invalid: {error.code}"
   | .ok checked => generateChecked directory checked
 
