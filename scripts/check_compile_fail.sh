@@ -59,4 +59,11 @@ if [[ "$binding_output" != *"UnknownEventBinding.lean:"* ]]; then
   exit 1
 fi
 
+click_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/ClickOnlyDiv.lean 2>&1 || true)"
+if [[ "$click_output" != *"ClickOnlyDiv.lean:10:"* ]]; then
+  echo "root JSX diagnostic lost its original element location" >&2
+  echo "$click_output" >&2
+  exit 1
+fi
+
 echo "compile-fail type-contract fixtures passed"

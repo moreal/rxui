@@ -43,5 +43,31 @@ def run : IO Unit := IO.FS.withTempDir fun parent => do
   catch error =>
     unless error.toString.contains "LRX-PORT-003" do throw error
   assertFile (legacy / "sentinel") "preserved"
+  let external := parent / "external"
+  IO.FS.createDirAll external
+  IO.FS.writeFile (external / "sentinel") "external"
+  let hostileBundle := parent / ".bundle.leanrx-bundle-hostile"
+  let _ ← IO.Process.run {
+    cmd := "ln", args := #["-s", external.toString, hostileBundle.toString]
+  }
+  LeanRx.Cli.AtomicOutput.replaceDirectory output fun staging => do
+    IO.FS.createDirAll staging
+    IO.FS.writeFile (staging / "safe") "safe"
+  assertFile (external / "sentinel") "external"
+  if ← hostileBundle.pathExists then
+    throw <| IO.userError "hostile managed-prefix symlink survived cleanup"
+  let lockTarget := parent / "lock-target"
+  IO.FS.writeFile lockTarget "preserve"
+  let poisonedOutput := parent / "poison"
+  let poisonedLock := parent / ".poison.leanrx.lock"
+  let _ ← IO.Process.run {
+    cmd := "ln", args := #["-s", lockTarget.toString, poisonedLock.toString]
+  }
+  try
+    LeanRx.Cli.AtomicOutput.replaceDirectory poisonedOutput fun _ => pure ()
+    throw <| IO.userError "atomic output followed a poisoned lock path"
+  catch error =>
+    unless error.toString.contains "LRX-PORT-004" do throw error
+  assertFile lockTarget "preserve"
 
 end LeanRxTest.Cli.AtomicOutput

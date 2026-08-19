@@ -29,7 +29,20 @@ private def metadata? (path : System.FilePath) : IO (Option IO.FS.FileType) :=
   catch _ => pure none
 
 private def removeIfPresent (path : System.FilePath) : IO Unit := do
-  if (← metadata? path).isSome then IO.FS.removeDirAll path
+  match ← metadata? path with
+  | none => pure ()
+  | some .dir => IO.FS.removeDirAll path
+  | some _ => IO.FS.removeFile path
+
+private partial def openLock (path : System.FilePath) : IO IO.FS.Handle := do
+  match ← metadata? path with
+  | none => try
+      return ← IO.FS.Handle.mk path .writeNew
+      catch error =>
+        if (← metadata? path).isSome then return ← openLock path else throw error
+  | some .file => return ← IO.FS.Handle.mk path .readWrite
+  | some _ => return ← (throw (IO.userError
+      "error[LRX-PORT-004]: atomic output lock must be a regular file") : IO IO.FS.Handle)
 
 private def createPointer (target : String) (pointer : System.FilePath) : IO Unit := do
   let _ ← IO.Process.run { cmd := "ln", args := #["-s", target, pointer.toString] }
@@ -62,7 +75,7 @@ def replaceDirectory (output : System.FilePath)
     (generate : System.FilePath → IO Unit) : IO Unit := do
   let paths ← paths output
   IO.FS.createDirAll paths.parent
-  let lock ← IO.FS.Handle.mk paths.lock .write
+  let lock ← openLock paths.lock
   lock.lock
   try
     let oldTarget ← checkedOldTarget paths output
@@ -71,6 +84,7 @@ def replaceDirectory (output : System.FilePath)
     try
       generate paths.bundle
       createPointer paths.bundle.fileName.get! paths.pointer
+      cleanupOlderBundles paths <| paths.bundle.fileName.get! :: oldTarget.toList
     catch error =>
       removeIfPresent paths.pointer
       removeIfPresent paths.bundle
@@ -81,7 +95,7 @@ def replaceDirectory (output : System.FilePath)
       removeIfPresent paths.pointer
       removeIfPresent paths.bundle
       throw error
-    cleanupOlderBundles paths <| paths.bundle.fileName.get! :: oldTarget.toList
+    pure ()
   finally
     lock.unlock
 

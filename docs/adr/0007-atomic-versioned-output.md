@@ -16,7 +16,8 @@ gap and can strand the prior bundle if the process is interrupted.
 LeanRx generates each complete bundle in a uniquely named sibling directory.
 The public output path is a relative symbolic link to that version. Publication
 is one rename of a prepared symbolic link over the prior pointer, while a stable
-per-output file lock serializes concurrent publishers. Readers therefore resolve
+per-output regular file lock (opened without truncation after a no-follow type
+check) serializes concurrent publishers. Readers therefore resolve
 the output path to either the complete old bundle or the complete new bundle;
 there is no absent or partially generated public path.
 
@@ -47,5 +48,7 @@ loudly until one exists.
 
 Native tests assert the output is a symbolic link, injected generation failure
 preserves the old bundle, partial files never escape staging, successful rebuilds
-drop stale public files, and unmanaged destinations remain untouched. Component,
-CLI, determinism, and Chromium gates consume the published pointer path.
+drop stale public files, and unmanaged destinations remain untouched. They also
+prove cleanup never follows a managed-prefix symlink and a poisoned lock symlink
+cannot truncate its target. Component, CLI, determinism, and Chromium gates
+consume the published pointer path.

@@ -102,9 +102,11 @@ namespace View
 
 def withSpan (view : View Γ) (span : SourceSpan) : View Γ :=
   match view with
-  | .element tag attrs events children _ => .element tag attrs events children span
-  | .text value _ => .text value span
-  | .scalarText name value _ => .scalarText name value span
+  | .element tag attrs events children existing =>
+      .element tag attrs events children (if existing.file.isEmpty then span else existing)
+  | .text value existing => .text value (if existing.file.isEmpty then span else existing)
+  | .scalarText name value existing =>
+      .scalarText name value (if existing.file.isEmpty then span else existing)
 
 def node (tag : HtmlTag) (children : List (View Γ))
     (attrs : List StaticAttr := []) (events : List EventBinding := [])
