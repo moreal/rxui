@@ -17,6 +17,15 @@ elab "#leanrx_environment_audit" : command => do
   -- standard proposition-extensionality axiom are reviewed and are not semantic
   -- LeanRx proof claims. Every other theorem/axiom pair must fail closed.
   let reviewedAxiomUses : Array (Name × Array Name) := #[
+    (`LeanRx.DepSet.contains_singleton, #[``propext]),
+    (`LeanRx.DepSet.contains_singleton._simp_1_2, #[``propext]),
+    (`LeanRx.DepSet.contains_union_left, #[``propext]),
+    (`LeanRx.DepSet.contains_union_right, #[``propext]),
+    (`LeanRx.DepSet.hasId_empty, #[``propext]),
+    (`LeanRx.DepSet.hasId_singleton, #[``propext]),
+    (`LeanRx.DepSet.hasId_union, #[``propext]),
+    (`LeanRx.DepSet.hasId_union._simp_1_3, #[``propext]),
+    (`LeanRx.DepSet.mk.injEq, #[``propext]),
     (`LeanRx.SourcePos.mk.injEq, #[``propext]),
     (`LeanRx.SourceSpan.mk.injEq, #[``propext]),
     (`LeanRx.Field.there.injEq, #[``propext]),

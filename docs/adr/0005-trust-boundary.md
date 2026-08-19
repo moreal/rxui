@@ -32,13 +32,15 @@ metaprogramming uses of unsafe APIs are isolated and excluded from proof claims.
 Placeholder scans, axiom manifests, `lean4checker` where applicable, differential
 tests, browser tests, and final claim review enforce the boundary.
 
-## Reviewed M0 axiom manifest
+## Reviewed axiom manifest
 
 Lean 4.33 generates constructor-injectivity theorems for universe-bearing
-schemas/fields and source-position structures that depend on the kernel's
-standard `propext` axiom. These generated theorems are not LeanRx semantic
-claims. `Test/Policy/EnvironmentAudit.lean` lists every exact theorem/axiom pair
-and rejects every unlisted or changed pair.
+schemas/fields, dependency sets, and source-position structures that depend on
+the kernel's standard `propext` axiom. The initial dependency membership and
+union proofs also use proposition rewriting whose proof terms name `propext`.
+`Test/Policy/EnvironmentAudit.lean` lists every exact theorem/axiom pair and
+rejects every unlisted or changed pair; generated injectivity and simplifier
+helpers are distinguished from named semantic claims in review output.
 
 Lean also generates `_unsafe_rec` compiler helpers for safe source definitions
 that eliminate universe-bearing schemas/fields. The source declarations remain
