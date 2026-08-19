@@ -12,7 +12,9 @@ different JavaScript category.
 | `Nat` | `nat` | non-negative `bigint` | BigInt |
 
 The M3 scalar backend emits ESM functions whose parameters and returns use the
-representations above. It imports no Lean runtime. `Int.toString` and
+representations above. Each input position has a declared runtime code, and the
+backend rejects any Reactive IR occurrence whose index is out of bounds or whose
+runtime code disagrees with that signature. It imports no Lean runtime. `Int.toString` and
 `Nat.toString` lower to JavaScript `String(BigInt)` and return decimal strings.
 
 The backend does not emit raw JavaScript operators where Lean semantics differ:
@@ -30,7 +32,16 @@ callers must provide non-negative BigInts.
 
 Native-to-Node differential tests cover every supported scalar primitive,
 negative and above-2^53 values, both divisor signs, zero divisors, clamped
-subtraction, Unicode/control strings, conditionals, and display conversion.
+subtraction, Unicode/control strings, conditionals, and display conversion. The
+modules are generated from staged `RxExpr` values, so the gate includes Core to
+Reactive IR lowering, and Node executes both readable and compact printer modes.
+
+Every emitted scalar module has deterministic adjacent JSON metadata containing
+the compiler version, exact Lean toolchain, module filename, runtime ABI version,
+actual allocated export, ordered source/generated input names and runtime codes,
+result runtime code, and the `scalar` feature marker. The runtime ABI is currently
+version 1. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
 `RuntimeEq.jsPlan` is derived from `RuntimeType`; callers cannot pair an object

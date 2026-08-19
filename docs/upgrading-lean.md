@@ -13,6 +13,10 @@ feature commits and require all of the following:
 8. record benchmark changes;
 9. commit the toolchain upgrade separately.
 
+The exact toolchain is also embedded in `LeanRx/Core/Version.lean` for generated
+artifact manifests. Update it in the same isolated upgrade commit and regenerate
+the manifest goldens.
+
 ## Internal API inventory
 
 - `Test/Policy/EnvironmentAudit.lean` imports `Lean` for a test-only environment
@@ -20,5 +24,5 @@ feature commits and require all of the following:
   `ConstantInfo.isAxiom`/`isUnsafe`/`isPartial`/`isTheorem`, and
   `Lean.collectAxioms`. Recheck these names and imported/local environment
   behavior on every toolchain upgrade.
-- Production code uses no internal Lean metaprogramming or compiler API at M0.
+- Production code uses no internal Lean metaprogramming or compiler API.
 - `lakefile.lean` uses public Lake declarations.

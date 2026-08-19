@@ -9,8 +9,8 @@ and [PLAN.md](PLAN.md). The repository is not yet a released framework.
 - Elan with the toolchain named in `lean-toolchain` (Lean 4.33.0)
 - Git
 - Bash and ripgrep for repository policy gates
-- Node.js is introduced when the JavaScript backend reaches M3
-- pnpm is introduced when browser tooling first requires it
+- Node.js 22 or newer for M3 generated-module differential tests
+- pnpm will be introduced when browser tooling first requires it
 
 ## Reproducible commands
 

@@ -135,7 +135,8 @@ stores.
 
 The compiler phases remain independently callable pure functions. The example
 generator performs only file orchestration, and the Node runner needs no Lean
-runtime or third-party package.
+runtime or third-party package. Each module now carries deterministic ABI metadata
+that the public dogfood reads and checks before execution.
 
 ### Friction
 
@@ -154,7 +155,10 @@ are pure scalar evaluators only, as required for M3.
 The differential gate found that the first `Int.mod` helper normalized with the
 signed divisor. For `7 % -5`, Lean returned `2` while generated JavaScript returned
 `-3`. The helper now normalizes with the absolute divisor, and all signed/zero
-cases are permanent regressions.
+cases are permanent regressions. Independent review also found missing strict-ESM
+identifier exclusions, shallow AST binding validation, and an untyped IR input
+boundary; hostile-name Node imports, negative AST fixtures, and signature mismatch
+tests now preserve those fixes.
 
 ### Performance observations
 
