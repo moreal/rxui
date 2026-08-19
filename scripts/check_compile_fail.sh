@@ -14,6 +14,7 @@ fixtures=(
   Test/fixtures/compile-fail/ClickOnlyDiv.lean
   Test/fixtures/compile-fail/UnknownEventBinding.lean
   Test/fixtures/compile-fail/DerivedReadInEvent.lean
+  Test/fixtures/compile-fail/RecursiveEventDispatch.lean
   Test/fixtures/compile-fail/ComponentRoleMismatch.lean
   Test/fixtures/compile-fail/ComponentCycle.lean
 )
@@ -30,6 +31,7 @@ fragments=(
   "error[LRX-VIEW-005]"
   "error[LRX-VIEW-006]"
   "error[LRX-TYPE-108]"
+  "error[LRX-ELAB-107]"
   "error[LRX-ELAB-103]"
   "error[LRX-GRAPH-001]"
 )

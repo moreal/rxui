@@ -271,6 +271,20 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
           path := #[event.name, target]
           spans := #[event.span]
         }
+  unless spec.events.isEmpty do
+    let dispatchNodes := spec.events.map fun event =>
+      let deps := event.update.dispatchTargets.eraseDups.filterMap fun target =>
+        names.idxOf? target |>.map fun id => { id := ⟨id⟩, valueType := .bool }
+      NodeSpec.derived event.name .bool deps.toArray "nested-dispatch" event.span
+    match Graph.plan dispatchNodes with
+    | .ok _ => pure ()
+    | .error error =>
+        throw {
+          code := "LRX-ELAB-107"
+          message := "nested event dispatch must be acyclic"
+          path := error.path
+          spans := error.spans
+        }
   for mounted in split.events do
     unless names.contains mounted.binding.eventName do
       throw {
