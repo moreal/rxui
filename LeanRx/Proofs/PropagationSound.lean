@@ -8,6 +8,14 @@ def TracksChanges (old current : Store) (changed : List Nat) : Prop :=
 
 namespace SourceTransaction
 
+theorem apply_append (first second : SourceTransaction) (old : Store) :
+    (first ++ second).apply old = second.apply (first.apply old) := by
+  induction first generalizing old with
+  | nil => rfl
+  | cons write rest ih =>
+      simp only [List.cons_append, apply]
+      exact ih (old.set write.id write.value)
+
 theorem apply_eq_of_sourceCount_le (program : Program) (transaction : SourceTransaction)
     (old : Store) (valid : transaction.Valid program) {id : Nat}
     (outside : program.sourceCount ≤ id) : transaction.apply old id = old id := by
@@ -39,6 +47,33 @@ theorem changedIds_tracks (program : Program) (transaction : SourceTransaction)
       exact False.elim (different unchanged.symm)
 
 end SourceTransaction
+
+namespace NestedTransaction
+
+theorem apply_eq_flatten (transactions : NestedTransaction) (old : Store) :
+    transactions.apply old = transactions.flatten.apply old := by
+  induction transactions generalizing old with
+  | nil => rfl
+  | cons transaction rest ih =>
+      simp only [apply, flatten, List.flatten_cons]
+      rw [SourceTransaction.apply_append]
+      exact ih (transaction.apply old)
+
+theorem flatten_valid (program : Program) (transactions : NestedTransaction)
+    (valid : transactions.Valid program) : transactions.flatten.Valid program := by
+  intro write member
+  rcases List.mem_flatten.mp member with ⟨transaction, transactionMember, writeMember⟩
+  exact valid transaction transactionMember write writeMember
+
+theorem changedIds_tracks (program : Program) (transactions : NestedTransaction)
+    (old : Store) (valid : transactions.Valid program) :
+    TracksChanges old (transactions.apply old)
+      (transactions.flatten.changedIds program old) := by
+  rw [transactions.apply_eq_flatten old]
+  exact SourceTransaction.changedIds_tracks program transactions.flatten old
+    (transactions.flatten_valid program valid)
+
+end NestedTransaction
 
 namespace Program
 
@@ -298,6 +333,21 @@ theorem optimized_equivalent_to_reference
   exact Optimized.observe_eq old.store _ _ program.sinks old.sinkCache
     derivedSound.2 sinkCacheValid |>.trans <| congrArg (Reference.observe program.sinks)
       derivedSound.1
+
+/-- Synchronously nested event bodies are observationally equivalent to one
+flattened outer transaction and therefore commit only once in the abstract model. -/
+theorem optimized_nested_equivalent_to_reference
+    (program : Program)
+    (wellFormed : program.WellFormed)
+    (old : State)
+    (derivedCacheValid : DerivedCacheValid old.store program.derived)
+    (sinkCacheValid : SinkCacheValid old.store program.sinks old.sinkCache)
+    (transactions : NestedTransaction)
+    (transactionValid : transactions.Valid program) :
+    (Optimized.run program old transactions.flatten).observations =
+      (Reference.run program old transactions.flatten).observations := by
+  exact optimized_equivalent_to_reference program wellFormed old derivedCacheValid
+    sinkCacheValid transactions.flatten (transactions.flatten_valid program transactionValid)
 
 /-- A valid optimized state remains valid after a valid batched transaction, so
 the central theorem composes across event sequences without a reference oracle. -/

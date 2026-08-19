@@ -135,6 +135,23 @@ def changedIds (program : Program) (transaction : SourceTransaction) (old : Stor
 
 end SourceTransaction
 
+/-- Synchronously nested event bodies before the outermost commit. -/
+abbrev NestedTransaction := List SourceTransaction
+
+namespace NestedTransaction
+
+def apply : NestedTransaction → Store → Store
+  | [], store => store
+  | transaction :: rest, store => apply rest (transaction.apply store)
+
+def flatten (transactions : NestedTransaction) : SourceTransaction :=
+  List.flatten transactions
+
+def Valid (program : Program) (transactions : NestedTransaction) : Prop :=
+  ∀ transaction ∈ transactions, transaction.Valid program
+
+end NestedTransaction
+
 structure State where
   store : Store
   sinkCache : List Int
