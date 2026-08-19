@@ -39,9 +39,18 @@ structure TabsSpec (n : Nat) where
 namespace TabsSpec
 
 def create (name : String) (labels panels : Vector String (n + 1))
-    (initialSelected : Fin (n + 1) := ⟨0, Nat.zero_lt_succ n⟩)
     (span : SourceSpan := .generated) : TabsSpec n :=
-  { name, props := TabsProps.ofVectors labels panels, initialSelected, span }
+  { name, props := TabsProps.ofVectors labels panels
+    initialSelected := ⟨0, Nat.zero_lt_succ n⟩, span }
+
+/-- Choose a non-default initial tab without accepting Lean's modulo-normalized
+`OfNat (Fin n)` coercion. The caller must supply the intended natural and its
+strict bound proof. -/
+def createAt (name : String) (labels panels : Vector String (n + 1))
+    (index : Nat) (valid : index < n + 1)
+    (span : SourceSpan := .generated) : TabsSpec n :=
+  { name, props := TabsProps.ofVectors labels panels
+    initialSelected := ⟨index, valid⟩, span }
 
 def selectEvent (spec : TabsSpec n) : TypedEventSpec (TabsState (n + 1)) (Fin (n + 1)) :=
   TypedEventSpec.assign "select" "index" (tabsSelectedField (n + 1)) spec.span

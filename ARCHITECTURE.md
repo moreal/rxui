@@ -112,7 +112,9 @@ LeanRx does not promise that all bugs disappear. It aims to make the following c
 - an event writing a field outside its declared write capability;
 - a view performing IO;
 - a reactive dependency cycle;
-- an invalid `Fin n` index;
+- an intended out-of-range `Fin n` selection through a public constructor
+  (raw Lean `OfNat (Fin n)` syntax is not accepted at that boundary because it
+  normalizes modulo on the pinned toolchain; see ADR-0011);
 - a `Vector α n` length mismatch;
 - a non-exhaustive match;
 - a partial or non-terminating function in verified application code;
@@ -1525,7 +1527,8 @@ Required cases:
 - missing `RuntimeRep`;
 - missing lawful equality;
 - `Vector` length mismatch;
-- invalid `Fin` construction;
+- invalid unchecked numeric selection at a `Fin` boundary (public constructors
+  require the original `Nat` plus a strict-bound proof; see ADR-0011);
 - use of banned `sorry`/`admit` in application modules;
 - direct foreign JS outside a port.
 

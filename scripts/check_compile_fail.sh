@@ -17,6 +17,10 @@ fixtures=(
   Test/fixtures/compile-fail/RecursiveEventDispatch.lean
   Test/fixtures/compile-fail/ComponentRoleMismatch.lean
   Test/fixtures/compile-fail/ComponentCycle.lean
+  Test/fixtures/compile-fail/TabsLengthMismatch.lean
+  Test/fixtures/compile-fail/EmptyTabs.lean
+  Test/fixtures/compile-fail/InvalidFinLiteral.lean
+  Test/fixtures/compile-fail/NatVectorIndex.lean
 )
 fragments=(
   "Constructor for"
@@ -34,6 +38,10 @@ fragments=(
   "error[LRX-ELAB-107]"
   "error[LRX-ELAB-103]"
   "error[LRX-GRAPH-001]"
+  "Vector String (1 + 1)"
+  "Vector String (0 + 1)"
+  "Tactic \`decide\` proved"
+  "(Fin 3)"
 )
 
 for index in "${!fixtures[@]}"; do

@@ -11,14 +11,16 @@ def mappedLabels : Vector String 3 :=
   Vector.ofFn fun index => "Tab " ++ toString (index.val + 1)
 
 def threeTabs : TabsSpec 2 :=
-  TabsSpec.create "ThreeTabs" mappedLabels #v["First panel", "Second panel", "Third panel"]
-    ⟨1, by decide⟩
+  TabsSpec.createAt "ThreeTabs" mappedLabels
+    #v["First panel", "Second panel", "Third panel"] 1 (by decide)
 
 private def checkOne (one : TabsSpec.Checked 0) : IO Unit := do
   unless one.spec.props.count == 1 && one.spec.initialSelected.val == 0 do
     throw <| IO.userError "one-tab dependent construction lost nonempty selection"
 
 private def checkThree (three : TabsSpec.Checked 2) : IO Unit := do
+  unless (3 : Fin 3).val == 0 do
+    throw <| IO.userError "pinned Lean Fin literal normalization premise changed"
   unless three.spec.props.labels.value.toList == ["Tab 1", "Tab 2", "Tab 3"] do
     throw <| IO.userError "mapping dependent labels with indices changed"
   unless three.spec.props.panels.value.get three.spec.initialSelected == "Second panel" do

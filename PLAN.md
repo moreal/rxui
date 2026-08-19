@@ -883,7 +883,9 @@ Implement a public component/API where:
 
 - label/panel length mismatch;
 - empty tabs when API requires `n + 1`;
-- invalid literal coercion to `Fin n`;
+- invalid unchecked numeric selection for `Fin n`; because pinned Lean's raw
+  `OfNat (Fin n)` normalizes modulo, the public Tabs constructor must reject that
+  route and require the original `Nat` plus a strict-bound proof (ADR-0011);
 - indexing panels with arbitrary `Nat` without proof/check.
 
 ## Required browser tests
