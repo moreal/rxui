@@ -28,7 +28,8 @@ def run : IO Unit := do
   match validateForm { name := "  Ada  ", age := "42", accepted := true } with
   | .invalid _ => throw <| IO.userError "valid form data was rejected"
   | .valid value =>
-      unless submit value == { name := "Ada", age := 42 } do
+      let command := submit value
+      unless command.name == "Ada" && command.age == 42 do
         throw <| IO.userError "validated submit payload changed"
   match validateForm { name := "  ", age := "17", accepted := false } with
   | .valid _ => throw <| IO.userError "invalid form data reached a submit capability"

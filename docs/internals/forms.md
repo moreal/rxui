@@ -14,8 +14,9 @@ The first public refinements are:
 
 `validateForm` accumulates independent name, age, and acceptance errors. Only its `.valid`
 branch exposes `ValidatedForm`, and only that value can enter `Form.submit` to
-produce the fake command payload. A compile-fail fixture proves `RawForm` cannot
-be passed to submission.
+produce the fake command payload. Both the validated value and command constructors
+are private. Compile-fail fixtures prove `RawForm` cannot be passed to submission
+and the command cannot be forged directly.
 
 Temperature parsing currently accepts signed ASCII integer text. Conversion uses
 truncating integer division (`Int.tdiv`) so the future BigInt browser lowering can

@@ -425,7 +425,10 @@ the JavaScript implementation. A real asynchronous `Cmd` begins in M9.
 The first generated live error strings were generic and did not match native
 validator messages. Dogfood made that drift visible; the generated ASCII trim,
 parse, lower-bound, upper-bound, and acceptance branches now emit the exact native
-messages. The accessibility test also initially kept two full `main` components
+messages. A later adversarial API check found that the fake command structure was
+still directly constructible even though `ValidatedForm` was private; its
+constructor is now private and permanently compile-fail gated. The accessibility
+test also initially kept two full `main` components
 mounted while scanning the page; it now verifies cross-instance ID uniqueness,
 disposes the second instance, then runs axe on a valid one-main document.
 

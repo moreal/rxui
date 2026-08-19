@@ -175,6 +175,7 @@ def validateForm (raw : RawForm) : FormValidation :=
 /-- Explicit fake command boundary. Only a successfully validated value can
 construct its payload; raw strings have no submission API. -/
 structure FakeSubmitCommand where
+  private mk ::
   name : String
   age : Nat
 deriving Repr, BEq

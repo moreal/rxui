@@ -22,6 +22,7 @@ fixtures=(
   Test/fixtures/compile-fail/InvalidFinLiteral.lean
   Test/fixtures/compile-fail/NatVectorIndex.lean
   Test/fixtures/compile-fail/SubmitRawForm.lean
+  Test/fixtures/compile-fail/ForgeSubmitCommand.lean
 )
 fragments=(
   "Constructor for"
@@ -44,6 +45,7 @@ fragments=(
   "Tactic \`decide\` proved"
   "(Fin 3)"
   "ValidatedForm"
+  'Constructor for `LeanRx.Form.FakeSubmitCommand` is marked as private'
 )
 
 for index in "${!fixtures[@]}"; do
