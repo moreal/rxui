@@ -20,6 +20,8 @@ def run : IO Unit := do
   unless Printer.literal (.bigint (-7)) == "(-7n)" &&
       Printer.literal (.bigint 9007199254740993) == "9007199254740993n" do
     throw <| IO.userError "JavaScript BigInt literal emission changed"
+  unless Printer.literal .signedIntegerPattern == "/^-?[0-9]+$/" do
+    throw <| IO.userError "closed signed-integer pattern emission changed"
   let evaluate ← ident "evaluate"
   let input ← ident "input"
   let one : Expr := .literal (.bigint 1)

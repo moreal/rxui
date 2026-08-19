@@ -39,7 +39,7 @@ private def unaryOp : UnaryOp → String
   | .neg => "-"
 
 private def binaryOp : BinaryOp → String
-  | .add => "+" | .sub => "-" | .mul => "*" | .rem => "%"
+  | .add => "+" | .sub => "-" | .mul => "*" | .div => "/" | .rem => "%"
   | .eq => "===" | .lt => "<" | .le => "<="
   | .and => "&&" | .or => "||"
 
@@ -53,6 +53,7 @@ def literal : Literal → String
   | .string value => stringLiteral value
   | .bigint value => if value < 0 then "(" ++ toString value ++ "n)" else toString value ++ "n"
   | .number value => toString value
+  | .signedIntegerPattern => "/^-?[0-9]+$/"
   | .null => "null"
 
 mutual

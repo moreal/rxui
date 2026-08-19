@@ -50,6 +50,7 @@ inductive Literal where
   | string (value : String)
   | bigint (value : Int)
   | number (value : UInt32)
+  | signedIntegerPattern
   | null
 deriving Repr, BEq
 
@@ -59,7 +60,7 @@ inductive UnaryOp where
 deriving Repr, BEq
 
 inductive BinaryOp where
-  | add | sub | mul | rem
+  | add | sub | mul | div | rem
   | eq | lt | le
   | and | or
 deriving Repr, BEq
