@@ -4,6 +4,7 @@ import LeanRx.Core.Dependency
 import LeanRx.Core.Store
 import LeanRx.Core.RuntimeRep
 import LeanRx.Core.Equality
+import LeanRx.Core.Expr
 
 /-! LeanRx's public library root. -/
 namespace LeanRx

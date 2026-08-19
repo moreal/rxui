@@ -14,6 +14,7 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.Schema.size._unsafe_rec,
     `LeanRx.Store.get._unsafe_rec,
     `LeanRx.Store.set._unsafe_rec,
+    `LeanRx.RxExpr.debug._unsafe_rec,
     `LeanRx.instBEqJsType.beq._unsafe_rec,
     `LeanRx.instDecidableEqJsType.decEq._unsafe_rec,
     `LeanRx.instReprJsType.repr._unsafe_rec
@@ -36,6 +37,22 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Field.there.injEq, #[``propext]),
     (`LeanRx.JsType.array.injEq, #[``propext]),
     (`LeanRx.JsType.object.injEq, #[``propext]),
+    (`LeanRx.RxExpr.binary.injEq, #[``propext]),
+    (`LeanRx.RxExpr.debug.eq_def, #[``propext, ``Quot.sound]),
+    (`LeanRx.RxExpr.debug._unary.eq_def, #[``propext, ``Quot.sound]),
+    (`LeanRx.RxExpr.debug._unary._proof_1, #[``propext, ``Quot.sound]),
+    (`LeanRx.RxExpr.debug._unary._proof_2, #[``propext, ``Quot.sound]),
+    (`LeanRx.RxExpr.debug._unary._proof_3, #[``propext, ``Quot.sound]),
+    (`LeanRx.RxExpr.debug._unary._proof_4, #[``propext, ``Quot.sound]),
+    (`LeanRx.RxExpr.debug._unary._proof_5, #[``propext, ``Quot.sound]),
+    (`LeanRx.RxExpr.debug._unary._proof_6, #[``propext, ``Quot.sound]),
+    (`LeanRx.RxExpr.ifThenElse.injEq, #[``propext]),
+    (`LeanRx.RxExpr.literal.injEq, #[``propext]),
+    (`LeanRx.RxExpr.unary.injEq, #[``propext]),
+    (`LeanRx.ScalarLiteral.bool.injEq, #[``propext]),
+    (`LeanRx.ScalarLiteral.int.injEq, #[``propext]),
+    (`LeanRx.ScalarLiteral.nat.injEq, #[``propext]),
+    (`LeanRx.ScalarLiteral.string.injEq, #[``propext]),
     (`LeanRx.Schema.field.injEq, #[``propext]),
     (`LeanRx.Store.agreeOn_empty, #[``propext]),
     (`LeanRx.Store.agreeOn_union_left, #[``propext]),
@@ -50,13 +67,15 @@ elab "#leanrx_environment_audit" : command => do
     unless declarations.any (fun entry => entry.1 == name) do
       throwError "environment audit is missing required imported declaration '{name}'"
   let mut theoremCount : Nat := 0
+  let mut reviewedAxiomCount : Nat := 0
+  let mut reviewedUnsafeCount : Nat := 0
   for (name, info) in declarations do
     if info.isAxiom then
       throwError "public LeanRx axiom '{name}' is not allowed"
     if info.isUnsafe || info.isPartial then
       unless reviewedUnsafe.contains name do
         throwError "unreviewed unsafe or partial LeanRx declaration: '{name}'"
-      logInfo m!"reviewed generated unsafe recursion helper: {name}"
+      reviewedUnsafeCount := reviewedUnsafeCount + 1
     if info.isTheorem then
       theoremCount := theoremCount + 1
       let axioms ← Lean.collectAxioms name
@@ -65,11 +84,11 @@ elab "#leanrx_environment_audit" : command => do
       unless axioms == expected do
         throwError "public theorem '{name}' axiom manifest mismatch; expected {expected.toList}, got {axioms.toList}"
       unless axioms.isEmpty do
-        logInfo m!"reviewed axiom use: {name} -> {axioms.toList}"
+        reviewedAxiomCount := reviewedAxiomCount + 1
   for (name, _) in reviewedAxiomUses do
     unless declarations.any (fun entry => entry.1 == name) do
       throwError "reviewed axiom manifest names missing declaration '{name}'"
   for name in reviewedUnsafe do
     unless declarations.any (fun entry => entry.1 == name) do
       throwError "reviewed unsafe manifest names missing declaration '{name}'"
-  logInfo m!"LeanRx environment audit passed for {theoremCount} public theorem(s)"
+  logInfo m!"LeanRx environment audit passed: {theoremCount} public theorem(s), {reviewedAxiomCount} exact reviewed axiom use(s), {reviewedUnsafeCount} exact generated unsafe helper(s)"

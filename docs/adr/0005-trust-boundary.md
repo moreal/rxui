@@ -41,6 +41,9 @@ union proofs also use proposition rewriting whose proof terms name `propext`.
 `Test/Policy/EnvironmentAudit.lean` lists every exact theorem/axiom pair and
 rejects every unlisted or changed pair; generated injectivity and simplifier
 helpers are distinguished from named semantic claims in review output.
+Generated equation proofs for deterministic String debug rendering additionally
+name Lean's standard `Quot.sound`; they are exact-listed and do not participate
+in reactive semantics.
 
 Lean also generates `_unsafe_rec` compiler helpers for safe source definitions
 that eliminate universe-bearing schemas/fields. The source declarations remain
