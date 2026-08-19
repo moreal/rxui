@@ -8,7 +8,7 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
   unless checked.spec.name == "CounterSyntax" do
     throw <| IO.userError "component command lost the generated component name"
   unless checked.view.textSinks.map (·.name) ==
-      ["countText", "doubledText", "parityText"] do
+      ["countText", "doubledText", "parityText", "hostileText"] do
     throw <| IO.userError "JSX interpolation did not become inspectable text sinks"
   unless checked.view.events.map (·.binding.eventName) == ["increment", "addTwo"] do
     throw <| IO.userError "JSX click attributes did not become event bindings"

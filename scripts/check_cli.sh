@@ -5,7 +5,7 @@ output="$(mktemp -d)"
 trap 'rm -rf -- "$output"' EXIT
 
 check_output="$(lake exe leanrx -- check Examples.Counter)"
-if [[ "$check_output" != "Examples.Counter: ok (6 nodes)" ]]; then
+if [[ "$check_output" != "Examples.Counter: ok (7 nodes)" ]]; then
   echo "leanrx check output changed: $check_output" >&2
   exit 1
 fi

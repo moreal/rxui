@@ -29,6 +29,9 @@ def doubledText := RxExpr.binary .stringAppend (RxExpr.literal (.string "Doubled
 def parityText := RxExpr.binary .stringAppend (RxExpr.literal (.string "Parity: "))
   (RxExpr.read parityField)
 
+def hostileText := RxExpr.literal (Γ := CounterSchema) <|
+  .string "<img src=x onerror=\"globalThis.leanrxXss=true\">"
+
 def increment : EventSpec CounterSchema :=
   { name := "increment"
     update := .set count <| RxExpr.binary .intAdd
@@ -50,7 +53,8 @@ def view : View CounterSchema := View.node .main [
     (attrs := [.buttonType .button]) (events := [click "addTwo"]),
   View.node .p [.scalarText "countText" countText],
   View.node .p [.scalarText "doubledText" doubledText],
-  View.node .p [.scalarText "parityText" parityText]
+  View.node .p [.scalarText "parityText" parityText],
+  View.node .p [.scalarText "hostileText" hostileText]
 ] (attrs := [.className "counter"])
 
 /-- Counter uses only the public explicit M4 component API. -/
@@ -74,7 +78,8 @@ def syntaxView : View CounterSchema := jsx% <main class="counter"> [
   <button type="button" onClick="addTwo"> ["Add two"],
   <p> [{"countText": countText}],
   <p> [{"doubledText": doubledText}],
-  <p> [{"parityText": parityText}]
+  <p> [{"parityText": parityText}],
+  <p> [{"hostileText": hostileText}]
 ]
 
 component CounterSyntax (schema := CounterSchema) where {

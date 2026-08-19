@@ -174,7 +174,7 @@ performance. No benchmark claim is made before the correctness baseline closes.
 ### Scenario exercised
 
 One `Int` state field, `doubled` and `parity` derived values, two click events,
-three scalar text sinks, deterministic graph/ESM/manifest output, two independent
+four scalar text sinks (including hostile generated text), deterministic graph/ESM/manifest output, two independent
 mounts, and idempotent disposal in real Chromium. The example imports only the
 public `LeanRx` root. Its browser artifact is generated through the scoped
 `component` command and JSX-like view, while the same declarations also exercise
@@ -207,8 +207,10 @@ unsupported.
 
 The first axe run rejected Counter because the page had no level-one heading.
 Adding a real `<h1>` to the public view fixed the defect and made the automated
-scan a permanent browser gate. The hostile-text fixture is mounted inside the
-generated `<main>` landmark and proves `<img ... onerror>` remains a text node.
+scan a permanent browser gate. An early hostile-text test called the DOM host
+directly and therefore bypassed component lowering; moving it into Counter's
+public `scalarText` view made the full Component → JavaScript AST → browser path
+the permanent regression and proves `<img ... onerror>` remains a text node.
 
 ### Security and accessibility checks
 

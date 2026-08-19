@@ -6,9 +6,10 @@ open LeanRx LeanRxExamples.Counter
 
 def run : IO Unit := do
   let split := view.split
-  unless split.textSinks.map (·.name) == ["countText", "doubledText", "parityText"] do
+  unless split.textSinks.map (·.name) ==
+      ["countText", "doubledText", "parityText", "hostileText"] do
     throw <| IO.userError "view split lost or reordered scalar text sinks"
-  unless split.textSinks.map (·.path) == [[3, 0], [4, 0], [5, 0]] do
+  unless split.textSinks.map (·.path) == [[3, 0], [4, 0], [5, 0], [6, 0]] do
     throw <| IO.userError "view split produced unstable text paths"
   unless split.events.map (·.binding.eventName) == ["increment", "addTwo"] &&
       split.events.map (·.path) == [[1], [2]] do

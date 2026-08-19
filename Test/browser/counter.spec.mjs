@@ -19,7 +19,7 @@ test.beforeAll(async () => {
         response.setHeader("content-type", "text/html; charset=utf-8");
         response.end(`<!doctype html>
           <html lang="en"><head><title>LeanRx Counter test</title></head><body>
-          <div id="one"></div><div id="two"></div><div id="hostile"></div>
+          <div id="one"></div><div id="two"></div>
           </body></html>`);
       } else if (files.has(requested)) {
         response.setHeader("content-type", "text/javascript; charset=utf-8");
@@ -60,17 +60,13 @@ test("mounts initial DOM, uses safe text, and passes accessibility scan", async 
     "Count: 1",
     "Doubled: 2",
     "Parity: odd",
+    '<img src=x onerror="globalThis.leanrxXss=true">',
   ]);
   await expect(page.locator("#one button").first()).toHaveAttribute("type", "button");
 
-  const hostile = '<img src=x onerror="globalThis.leanrxXss=true">';
-  await page.evaluate(async (text) => {
-    const { createText, append } = await import("/leanrx_dom.mjs");
-    append(document.querySelector("#one main"), document.getElementById("hostile"));
-    append(document.getElementById("hostile"), createText(text));
-  }, hostile);
-  await expect(page.locator("#hostile")).toHaveText(hostile);
-  await expect(page.locator("#hostile img")).toHaveCount(0);
+  const hostile = page.locator("#one .counter p").nth(3);
+  await expect(hostile).toHaveText('<img src=x onerror="globalThis.leanrxXss=true">');
+  await expect(hostile.locator("img")).toHaveCount(0);
   expect(await page.evaluate(() => globalThis.leanrxXss)).toBeUndefined();
 
   const accessibility = await new AxeBuilder({ page }).analyze();
@@ -86,6 +82,7 @@ test("increment updates count, doubled, and parity with keyboard activation", as
     "Count: 2",
     "Doubled: 4",
     "Parity: even",
+    '<img src=x onerror="globalThis.leanrxXss=true">',
   ]);
 });
 
@@ -105,6 +102,7 @@ test("add two suppresses the unchanged parity text write", async ({ page }) => {
     "Count: 3",
     "Doubled: 6",
     "Parity: odd",
+    '<img src=x onerror="globalThis.leanrxXss=true">',
   ]);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
   expect(await page.evaluate(() => globalThis.parityMutations)).toBe(0);

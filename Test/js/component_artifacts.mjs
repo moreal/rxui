@@ -19,7 +19,7 @@ if (
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "int", "string"]) ||
   manifest.sourceCount !== 1 ||
   manifest.derivedCount !== 2 ||
-  manifest.textSinkCount !== 3 ||
+  manifest.textSinkCount !== 4 ||
   manifest.eventCount !== 2 ||
   JSON.stringify(manifest.hostImports) !==
     JSON.stringify(["./leanrx_dom.mjs", "./leanrx_host.mjs"]) ||

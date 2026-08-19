@@ -16,9 +16,10 @@ private def checkCounter (checked : CheckedComponent CounterSchema) : IO Unit :=
   unless checked.sourceCount == 1 do
     throw <| IO.userError "Counter source prefix changed"
   unless checked.graph.graph.nodes.map (·.name) ==
-      #["count", "doubled", "parity", "countText", "doubledText", "parityText"] do
+      #["count", "doubled", "parity", "countText", "doubledText", "parityText",
+        "hostileText"] do
     throw <| IO.userError "component graph did not derive stable value/sink nodes"
-  unless checked.graph.graph.nodes.map (·.rank) == #[0, 1, 1, 1, 2, 2] do
+  unless checked.graph.graph.nodes.map (·.rank) == #[0, 1, 1, 1, 2, 2, 0] do
     throw <| IO.userError "component graph ranks changed"
 
 def run : IO Unit := do
