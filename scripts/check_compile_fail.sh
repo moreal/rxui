@@ -26,6 +26,7 @@ fixtures=(
   Test/fixtures/compile-fail/ForgeStateControlBinding.lean
   Test/fixtures/compile-fail/ForgeTemperatureUpdate.lean
   Test/fixtures/compile-fail/ForgeKeyedList.lean
+  Test/fixtures/compile-fail/ForgeTodoState.lean
 )
 fragments=(
   "Constructor for"
@@ -52,6 +53,7 @@ fragments=(
   'Constructor for `LeanRx.Form.StateControlBinding` is marked as private'
   'Constructor for `LeanRx.Form.TemperatureSpec.UpdatePlan` is marked as private'
   'Constructor for `LeanRx.Region.KeyedList` is marked as private'
+  'Constructor for `LeanRx.Todo.State` is marked as private'
 )
 
 for index in "${!fixtures[@]}"; do

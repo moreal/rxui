@@ -40,3 +40,10 @@ callbacks. It never discovers dependencies, observes reactive reads, or rebuilds
 outside its anchor. Conditional replacement, positional suffix ownership, keyed
 identity/reorder, duplicate-key fail-before-mutation, copied instrumentation, and
 idempotent disposal run against a deterministic fake DOM before browser dogfood.
+
+TodoMVC begins from a private pure `Todo.State` and closed `Todo.Msg` update
+algebra. Add/toggle/delete/filter/edit/clear operations are total and preserve
+monotonic unique natural keys; empty titles are rejected on add and delete the
+edited item on commit. The native logical renderer and checked keyed projection
+form the M8 differential reference. The browser backend must consume this public
+model rather than moving Todo semantics into the region host.

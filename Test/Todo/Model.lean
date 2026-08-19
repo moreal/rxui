@@ -1,0 +1,41 @@
+import LeanRx.Todo.Model
+
+namespace LeanRxTest.Todo.Model
+
+open LeanRx.Todo
+
+def run : IO Unit := do
+  let one := update (update initial (.setNewTitle "  First  ")) .add
+  let two := update (update one (.setNewTitle "Second")) .add
+  unless two.todos.map (·.title) == ["First", "Second"] && two.nextId == 2 &&
+      two.newTitle.isEmpty do
+    throw <| IO.userError "Todo add/trim/identity semantics changed"
+  let toggled := update two (.toggle 0)
+  unless completedCount toggled == 1 && remaining toggled == 1 do
+    throw <| IO.userError "Todo toggle counts changed"
+  let active := update toggled (.setFilter .active)
+  unless (visible active).map (·.id) == [1] do
+    throw <| IO.userError "Todo active filter changed"
+  let editing := update (update active (.startEditing 1)) (.setDraft " Edited ")
+  let committed := update editing .commitEditing
+  unless committed.todos.map (·.title) == ["First", "Edited"] && committed.editing.isNone do
+    throw <| IO.userError "Todo edit commit changed"
+  let cleared := update committed .clearCompleted
+  unless cleared.todos.map (·.id) == [1] && completedCount cleared == 0 do
+    throw <| IO.userError "Todo clear-completed changed"
+  let deletedByEmpty := update
+    (update (update cleared (.startEditing 1)) (.setDraft "  ")) .commitEditing
+  unless deletedByEmpty.todos.isEmpty do
+    throw <| IO.userError "empty edit no longer deletes its Todo"
+  match (Spec.create "").check with
+  | .ok _ => throw <| IO.userError "empty TodoMVC component name was accepted"
+  | .error error =>
+      unless error.code == "LRX-REGION-002" do
+        throw <| IO.userError "TodoMVC diagnostic changed"
+  match keyedVisible two with
+  | .error error => throw <| IO.userError s!"valid Todo keys failed: {error.code}"
+  | .ok keyed =>
+      unless keyed.keys == [0, 1] do
+        throw <| IO.userError "Todo keyed projection changed"
+
+end LeanRxTest.Todo.Model

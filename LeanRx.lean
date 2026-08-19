@@ -41,5 +41,6 @@ import LeanRx.Form.Validated
 import LeanRx.Region.Model
 import LeanRx.Region.Positional
 import LeanRx.Region.Keyed
+import LeanRx.Todo.Model
 
 /-! LeanRx's public library root. -/
