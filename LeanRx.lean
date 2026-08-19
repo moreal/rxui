@@ -7,6 +7,7 @@ import LeanRx.Core.Equality
 import LeanRx.Core.Expr
 import LeanRx.Proofs.DependencySound
 import LeanRx.Graph.Model
+import LeanRx.Graph.Build
 
 /-! LeanRx's public library root. -/
 namespace LeanRx
