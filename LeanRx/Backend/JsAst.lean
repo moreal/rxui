@@ -63,14 +63,29 @@ inductive BinaryOp where
   | and | or
 deriving Repr, BEq
 
-inductive Expr where
-  | ident (name : Ident)
-  | literal (value : Literal)
-  | unary (op : UnaryOp) (value : Expr)
-  | binary (op : BinaryOp) (left right : Expr)
-  | conditional (condition yes no : Expr)
-  | call (callee : Expr) (args : Array Expr)
-deriving Repr, BEq
+mutual
+  inductive Expr where
+    | ident (name : Ident)
+    | literal (value : Literal)
+    | unary (op : UnaryOp) (value : Expr)
+    | binary (op : BinaryOp) (left right : Expr)
+    | conditional (condition yes no : Expr)
+    | call (callee : Expr) (args : Args)
+  deriving Repr, BEq
+
+  inductive Args where
+    | nil
+    | cons (head : Expr) (tail : Args)
+  deriving Repr, BEq
+end
+
+namespace Args
+
+def ofList : List Expr → Args
+  | [] => .nil
+  | head :: tail => .cons head (ofList tail)
+
+end Args
 
 inductive Stmt where
   | const (name : Ident) (value : Expr)

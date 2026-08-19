@@ -14,6 +14,7 @@ import Test.Graph.Serialize
 import Test.Graph.IntProgram
 import Test.Backend.JsAst
 import Test.Backend.JsName
+import Test.Backend.JsPrinter
 import Test.Semantics.Store
 import Test.Semantics.Reference
 import Test.Semantics.Optimized
@@ -42,6 +43,7 @@ def main : IO Unit := do
   LeanRxTest.Graph.IntProgram.run
   LeanRxTest.Backend.JsAst.run
   LeanRxTest.Backend.JsName.run
+  LeanRxTest.Backend.JsPrinter.run
   LeanRxTest.Semantics.Store.run
   LeanRxTest.Semantics.Reference.run
   LeanRxTest.Semantics.Optimized.run
