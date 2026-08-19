@@ -39,6 +39,12 @@ def name : {α β : Type} → UnaryPrim α β → String
   | _, _, .intNeg => "Int.neg"
   | _, _, .natToInt => "Nat.toInt"
 
+/-- Native semantics for unary primitives. -/
+def eval : {α β : Type} → UnaryPrim α β → α → β
+  | _, _, .boolNot, value => !value
+  | _, _, .intNeg, value => -value
+  | _, _, .natToInt, value => Int.ofNat value
+
 end UnaryPrim
 
 /-- Supported typed binary scalar operations. -/
@@ -84,6 +90,27 @@ def name : {α β γ : Type} → BinaryPrim α β γ → String
   | _, _, _, .stringAppend => "String.append"
   | _, _, _, .stringEq => "String.eq"
 
+/-- Native semantics for binary primitives. -/
+def eval : {α β γ : Type} → BinaryPrim α β γ → α → β → γ
+  | _, _, _, .intAdd, left, right => left + right
+  | _, _, _, .intSub, left, right => left - right
+  | _, _, _, .intMul, left, right => left * right
+  | _, _, _, .intMod, left, right => left % right
+  | _, _, _, .intEq, left, right => decide (left = right)
+  | _, _, _, .intLt, left, right => decide (left < right)
+  | _, _, _, .intLe, left, right => decide (left ≤ right)
+  | _, _, _, .natAdd, left, right => left + right
+  | _, _, _, .natSub, left, right => left - right
+  | _, _, _, .natMul, left, right => left * right
+  | _, _, _, .natMod, left, right => left % right
+  | _, _, _, .natEq, left, right => decide (left = right)
+  | _, _, _, .natLt, left, right => decide (left < right)
+  | _, _, _, .natLe, left, right => decide (left ≤ right)
+  | _, _, _, .boolAnd, left, right => left && right
+  | _, _, _, .boolOr, left, right => left || right
+  | _, _, _, .stringAppend, left, right => left ++ right
+  | _, _, _, .stringEq, left, right => decide (left = right)
+
 end BinaryPrim
 
 /-- A typed staged expression whose index is its complete source dependency set. -/
@@ -103,6 +130,16 @@ namespace RxExpr
 /-- Recover the kernel-checked dependency index as ordinary data. -/
 def dependencies {Γ : Schema} {deps : DepSet Γ} {α : Type}
     (_ : RxExpr Γ deps α) : DepSet Γ := deps
+
+/-- Pure native evaluation against a typed logical store. -/
+def eval : {Γ : Schema} → {deps : DepSet Γ} → {α : Type} →
+    RxExpr Γ deps α → Store Γ → α
+  | _, _, _, .literal value, _ => value.value
+  | _, _, _, .read field, store => store.get field
+  | _, _, _, .unary op value, store => op.eval (value.eval store)
+  | _, _, _, .binary op left right, store => op.eval (left.eval store) (right.eval store)
+  | _, _, _, .ifThenElse condition yes no, store =>
+      if condition.eval store then yes.eval store else no.eval store
 
 /-- Stable structural debug form, independent of object addresses or hash order. -/
 def debug : {Γ : Schema} → {deps : DepSet Γ} → {α : Type} →
