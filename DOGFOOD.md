@@ -321,6 +321,9 @@ reject serialized proof markers, Lean `Fin`/`Vector` runtime names, dynamic-code
 constructs, Proxy discovery, and any fourth handler for the three-tab fixture.
 Chromium verifies initial selection, all three click paths, native-button
 `Tab`/`Enter` activation, exact label/panel alignment, and zero axe violations.
+The defining interaction snapshot records four selections as four source writes,
+four sink evaluations, four direct text writes, and four commits, with stable
+event/source/sink/DOM/commit trace entries.
 
 ### Performance observations
 

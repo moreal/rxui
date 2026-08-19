@@ -65,6 +65,10 @@ test("keeps dependent labels, panels, and finite events aligned", async ({ page 
     await expect(panel).toHaveText(expected[index]);
   }
   expect(await panel.textContent()).not.toBe("undefined");
+  const instrumentation = await page.evaluate(() => globalThis.tabsDispose.instrumentation());
+  expect(instrumentation.slice(0, 7)).toEqual([0, 4, 4, 0, 0, 4, 4]);
+  expect(instrumentation[7].filter((event) => event === "event:select")).toHaveLength(4);
+  expect(instrumentation[7].filter((event) => event === "transaction:commit")).toHaveLength(4);
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);

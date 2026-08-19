@@ -20,6 +20,15 @@ private def arrayAt (value : Ident) (index : Nat) : Expr :=
 private def call (name : Ident) (args : List Expr) : Expr :=
   .call (.ident name) (.ofList args)
 
+private def incrementAt (array : Ident) (index : Nat) : Stmt :=
+  .assign (.index (.ident array) (uint index))
+    (.binary .add (arrayAt array index) (uint 1))
+
+private def pushTrace (metrics : Ident) (message : String) : Stmt :=
+  .expr <| .call
+    (.index (arrayAt metrics 7) (.literal (.string "push")))
+    (.ofList [.literal (.string message)])
+
 private def stringArray (values : Vector String count) : Expr :=
   .array <| .ofList <| values.toList.map fun value => .literal (.string value)
 
@@ -49,13 +58,24 @@ private def selectFunction (runtime : RuntimeNames) (panelEvaluator : Ident)
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
   let index ← Ident.checked event.parameterName
+  let metrics ← Ident.checked "metrics"
   pure {
     name := select
     params := #[state, context, index]
     body := #[
+      .const metrics (arrayAt context 2),
+      pushTrace metrics s!"event:{event.name}",
       .assign (.index (.ident state) (uint event.target.index)) (.ident index),
+      incrementAt metrics 2,
+      pushTrace metrics s!"source:{event.target.name}:write",
+      incrementAt metrics 5,
+      pushTrace metrics "sink:panel:evaluated",
       .expr <| call runtime.setText [arrayAt context 0,
         call panelEvaluator [arrayAt context 1, arrayAt state 0]],
+      incrementAt metrics 6,
+      pushTrace metrics "dom:panel:write",
+      incrementAt metrics 1,
+      pushTrace metrics "transaction:commit",
       .return (.literal .null)
     ]
   }
@@ -162,7 +182,9 @@ def emit (moduleName : String) (checked : TabsSpec.Checked n) : Except Error Emi
       call panelEvaluator.exportName [.ident panels, arrayAt state 0]]),
     .expr <| call runtime.append [.ident panel, .ident panelText],
     .expr <| call runtime.append [.ident root, .ident panel],
-    .const context (.array <| .ofList [.ident panelText, .ident panels]),
+    .const metrics (.array <| .ofList [
+      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil]),
+    .const context (.array <| .ofList [.ident panelText, .ident panels, .ident metrics]),
     .expr <| call runtime.append [.ident target, .ident root]
   ]
   let mut offNames : List Ident := []
@@ -174,8 +196,6 @@ def emit (moduleName : String) (checked : TabsSpec.Checked n) : Except Error Emi
       .ident button, .literal (.string "click"), .ident state, .ident context, .ident handler
     ]]
   body := body ++ [
-    .const metrics (.array <| .ofList [
-      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil]),
     .const disposer <| call runtime.makeDisposer [
       .ident root, .array (.ofList <| offNames.map Expr.ident), .ident metrics],
     .return (.ident disposer)
