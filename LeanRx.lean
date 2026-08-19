@@ -21,6 +21,7 @@ import LeanRx.Lower.RxExpr
 import LeanRx.Backend.Scalar
 import LeanRx.Backend.Manifest
 import LeanRx.Backend.Component
+import LeanRx.Backend.Tabs
 import LeanRx.View.Model
 import LeanRx.Component.Model
 import LeanRx.Component.Dependent

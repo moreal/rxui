@@ -51,7 +51,7 @@ for (const [index, testCase] of cases.entries()) {
       artifact.compilerVersion !== "0.1.0-dev" ||
       artifact.leanToolchain !== "leanprover/lean4:v4.33.0" ||
       artifact.module !== variant ||
-      artifact.runtimeAbi !== 2 ||
+      artifact.runtimeAbi !== 3 ||
       JSON.stringify(artifact.exports) !== JSON.stringify([testCase.export]) ||
       artifact.inputs.length !== testCase.args.length ||
       !["bool", "string", "int", "nat"].includes(artifact.resultType) ||

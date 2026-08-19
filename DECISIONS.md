@@ -11,6 +11,7 @@
 | [0007](docs/adr/0007-atomic-versioned-output.md) | Accepted | Publish versioned bundles through an atomic pointer | 2026-08-19 |
 | [0008](docs/adr/0008-runtime-abi-v2.md) | Accepted | Bump the internal runtime ABI for M5 transactions | 2026-08-19 |
 | [0009](docs/adr/0009-m5-benchmark-smoke-scope.md) | Accepted | Treat the M5 graph runner as a pre-benchmark smoke harness | 2026-08-19 |
+| [0010](docs/adr/0010-runtime-abi-v3-dependent-values.md) | Accepted | Bump the internal runtime ABI for dependent values and typed event payloads | 2026-08-19 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

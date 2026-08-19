@@ -19,6 +19,7 @@ import Test.IR.Erasure
 import Test.Lower.RxExpr
 import Test.Backend.Scalar
 import Test.Backend.Component
+import Test.Backend.Tabs
 import Test.View.Model
 import Test.Component.Model
 import Test.Component.Dependent
@@ -59,6 +60,7 @@ def main : IO Unit := do
   LeanRxTest.Lower.RxExpr.run
   LeanRxTest.Backend.Scalar.run
   LeanRxTest.Backend.Component.run
+  LeanRxTest.Backend.Tabs.run
   LeanRxTest.View.Model.run
   LeanRxTest.Component.Model.run
   LeanRxTest.Component.Dependent.run
