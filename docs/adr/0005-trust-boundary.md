@@ -34,8 +34,14 @@ tests, browser tests, and final claim review enforce the boundary.
 
 ## Reviewed M0 axiom manifest
 
-Lean 4.33 generates `LeanRx.SourcePos.mk.injEq` and
-`LeanRx.SourceSpan.mk.injEq`; each depends on the kernel's standard `propext`
-axiom. These generated constructor-injectivity theorems are not LeanRx semantic
-claims. `Test/Policy/EnvironmentAudit.lean` permits exactly these two
-theorem/axiom pairs and rejects every unlisted or changed pair.
+Lean 4.33 generates constructor-injectivity theorems for universe-bearing
+schemas/fields and source-position structures that depend on the kernel's
+standard `propext` axiom. These generated theorems are not LeanRx semantic
+claims. `Test/Policy/EnvironmentAudit.lean` lists every exact theorem/axiom pair
+and rejects every unlisted or changed pair.
+
+Lean also generates `_unsafe_rec` compiler helpers for safe source definitions
+that eliminate universe-bearing schemas/fields. The source declarations remain
+kernel checked and semantic modules contain no written `unsafe` declaration.
+The environment audit exact-lists these generated helpers; any new unsafe or
+partial declaration fails until separately reviewed.
