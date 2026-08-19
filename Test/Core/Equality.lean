@@ -12,6 +12,10 @@ def run : IO Unit := do
     throw <| IO.userError "large Int runtime equality lost BigInt semantics"
   if LeanRx.RuntimeEq.same beyondSafeInteger (beyondSafeInteger + 1) then
     throw <| IO.userError "large Int runtime equality rounded distinct values"
+  unless LeanRx.RuntimeEq.jsPlan Bool == .strict do
+    throw <| IO.userError "Bool equality lowering is not strict equality"
+  unless LeanRx.RuntimeEq.jsPlan Int == .bigint do
+    throw <| IO.userError "Int equality lowering is not tied to BigInt"
 
 example (a b : Int) : LeanRx.RuntimeEq.same a b = true ↔ a = b :=
   LeanRx.RuntimeEq.lawful a b

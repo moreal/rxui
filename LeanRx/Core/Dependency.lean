@@ -9,6 +9,7 @@ universe u
 The constructor is not used directly by expression APIs; public operations
 normalize IDs into strictly increasing, duplicate-free order. -/
 structure DepSet (Γ : Schema.{u}) where
+  private mk ::
   ids : List Nat
 deriving Repr, BEq, DecidableEq
 

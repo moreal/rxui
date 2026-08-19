@@ -8,6 +8,12 @@ open LeanRxTest.Schema
 def initial : LeanRx.Store Cart :=
   .cons (17 : Int) <| .cons (3 : Nat) <| .cons true .empty
 
+abbrev UniverseOne : LeanRx.Schema.{1} := .field "storedType" Type .empty
+def storedType : LeanRx.Field UniverseOne Type := .here
+def typeStore : LeanRx.Store UniverseOne := .cons Nat .empty
+
+example : typeStore.get storedType = Nat := rfl
+
 def run : IO Unit := do
   unless initial.get price == 17 do
     throw <| IO.userError "heterogeneous store returned the wrong Int field"

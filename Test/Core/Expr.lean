@@ -22,6 +22,18 @@ def label := LeanRx.RxExpr.ifThenElse isLarge
 def pricingStore (priceValue quantityValue thresholdValue : Int) : LeanRx.Store Pricing :=
   .cons priceValue <| .cons quantityValue <| .cons thresholdValue .empty
 
+abbrev Choice : LeanRx.Schema :=
+  .field "condition" Bool <| .field "yes" String <| .field "no" String .empty
+
+def condition : LeanRx.Field Choice Bool := .here
+def yesValue : LeanRx.Field Choice String := .there .here
+def noValue : LeanRx.Field Choice String := .there (.there .here)
+
+def choose := LeanRx.RxExpr.ifThenElse
+  (LeanRx.RxExpr.read condition)
+  (LeanRx.RxExpr.read yesValue)
+  (LeanRx.RxExpr.read noValue)
+
 def run : IO Unit := do
   unless subtotal.dependencies.ids == [0, 1] do
     throw <| IO.userError s!"subtotal dependencies incomplete: {subtotal.dependencies.ids}"
@@ -29,9 +41,15 @@ def run : IO Unit := do
     throw <| IO.userError s!"comparison dependencies incomplete: {isLarge.dependencies.ids}"
   unless label.dependencies.ids == [0, 1, 2] do
     throw <| IO.userError "if dependencies omitted a condition or branch"
+  unless choose.dependencies.ids == [0, 1, 2] do
+    throw <| IO.userError "if dependencies omitted a distinct condition/yes/no field"
   unless label.debug ==
-      "if(Int.lt(read(threshold@2),Int.mul(read(price@0),read(quantity@1))),string(large),string(small))" do
+      "if(Int.lt(read(\"threshold\"@2),Int.mul(read(\"price\"@0),read(\"quantity\"@1))),string(\"large\"),string(\"small\"))" do
     throw <| IO.userError s!"expression debug form changed: {label.debug}"
+  let hostile : LeanRx.RxExpr .empty (LeanRx.DepSet.empty .empty) String :=
+    LeanRx.RxExpr.literal (.string "x)\n\"")
+  unless hostile.debug == "string(\"x)\\n\\\"\")" do
+    throw <| IO.userError s!"expression debug string is ambiguous: {hostile.debug}"
   unless subtotal.eval (pricingStore 12 4 40) == 48 do
     throw <| IO.userError "native expression multiplication is incorrect"
   unless label.eval (pricingStore 12 4 40) == "large" do

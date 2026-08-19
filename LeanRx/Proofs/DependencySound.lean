@@ -10,7 +10,7 @@ theorem eval_congr_on_deps {Γ : Schema} {deps : DepSet Γ} {α : Type}
   induction expr generalizing left right with
   | literal value =>
       simp only [eval]
-  | read field =>
+  | readWith _ field =>
       simpa only [eval] using agree field (DepSet.contains_singleton field)
   | unary op value ih =>
       simp only [eval]

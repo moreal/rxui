@@ -10,34 +10,54 @@ inductive JsType where
   | object (name : String)
 deriving Repr, BEq, DecidableEq
 
-/-- Explicit evidence that a Lean value may cross the browser boundary. -/
-class RuntimeRep (α : Type u) where
-  jsType : JsType
-  eraseProofs : Bool := false
+/-- Stable recursive runtime-type rendering for diagnostics and manifests. -/
+def JsType.debug : JsType → String
+  | .boolean => "boolean"
+  | .string => "string"
+  | .bigint => "bigint"
+  | .number => "number"
+  | .array element => "array<" ++ element.debug ++ ">"
+  | .object name => "object(" ++ name.quote ++ ")"
+
+/-- Closed scalar runtime codes. A code's index fixes its JavaScript ABI. -/
+inductive RuntimeType : Type → Type 1 where
+  | bool : RuntimeType Bool
+  | string : RuntimeType String
+  | int : RuntimeType Int
+  | nat : RuntimeType Nat
+
+def RuntimeType.jsType : {α : Type} → RuntimeType α → JsType
+  | _, .bool => .boolean
+  | _, .string => .string
+  | _, .int => .bigint
+  | _, .nat => .bigint
+
+/-- Explicit evidence that a Lean value may cross the browser boundary.
+
+The indexed runtime code prevents local instances from remapping `Int` or `Nat`
+to JavaScript Number. -/
+class RuntimeRep (α : Type) where
+  runtimeType : RuntimeType α
 
 instance : RuntimeRep Bool where
-  jsType := .boolean
+  runtimeType := .bool
 
 instance : RuntimeRep String where
-  jsType := .string
+  runtimeType := .string
 
 /-- Unbounded Lean integers use JavaScript BigInt, never Number. -/
 instance : RuntimeRep Int where
-  jsType := .bigint
+  runtimeType := .int
 
 /-- Naturals use non-negative JavaScript BigInt. -/
 instance : RuntimeRep Nat where
-  jsType := .bigint
+  runtimeType := .nat
+
+def RuntimeRep.jsType (α : Type) [rep : RuntimeRep α] : JsType :=
+  rep.runtimeType.jsType
 
 /-- Stable human-readable representation metadata for diagnostics/manifests. -/
-def RuntimeRep.debug (α : Type u) [rep : RuntimeRep α] : String :=
-  let kind := match rep.jsType with
-    | .boolean => "boolean"
-    | .string => "string"
-    | .bigint => "bigint"
-    | .number => "number"
-    | .array _ => "array"
-    | .object name => "object:" ++ name
-  if rep.eraseProofs then kind ++ ":erased" else kind
+def RuntimeRep.debug (α : Type) [RuntimeRep α] : String :=
+  (RuntimeRep.jsType α).debug
 
 end LeanRx

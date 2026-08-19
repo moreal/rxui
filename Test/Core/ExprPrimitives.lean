@@ -26,6 +26,10 @@ def run : IO Unit := do
     .binary .intMul (.literal (.int 7)) (.literal (.int 5))
   expect "Int.mod" (2 : Int) <| evalEmpty <|
     .binary .intMod (.literal (.int 7)) (.literal (.int 5))
+  expect "Int.mod negative" (3 : Int) <| evalEmpty <|
+    .binary .intMod (.literal (.int (-7))) (.literal (.int 5))
+  expect "Int.mod zero" (7 : Int) <| evalEmpty <|
+    .binary .intMod (.literal (.int 7)) (.literal (.int 0))
   expect "Int.eq" true <| evalEmpty <|
     .binary .intEq (.literal (.int (-7))) (.literal (.int (-7)))
   expect "Int.lt" true <| evalEmpty <|
@@ -40,6 +44,8 @@ def run : IO Unit := do
     .binary .natMul (.literal (.nat 7)) (.literal (.nat 5))
   expect "Nat.mod" 2 <| evalEmpty <|
     .binary .natMod (.literal (.nat 7)) (.literal (.nat 5))
+  expect "Nat.mod zero" 7 <| evalEmpty <|
+    .binary .natMod (.literal (.nat 7)) (.literal (.nat 0))
   expect "Nat.eq" false <| evalEmpty <|
     .binary .natEq (.literal (.nat 7)) (.literal (.nat 5))
   expect "Nat.lt" true <| evalEmpty <|

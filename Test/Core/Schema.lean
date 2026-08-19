@@ -16,6 +16,8 @@ def run : IO Unit := do
     throw <| IO.userError "schema names are not in declaration order"
   unless price.index == 0 && quantity.index == 1 && featured.index == 2 do
     throw <| IO.userError "typed field indices are not declaration-stable"
+  unless price.toFin.val == 0 && quantity.toFin.val == 1 && featured.toFin.val == 2 do
+    throw <| IO.userError "typed field Fin indices are not declaration-stable"
   unless price.name == "price" && quantity.name == "quantity" && featured.name == "featured" do
     throw <| IO.userError "typed fields lost their names"
 

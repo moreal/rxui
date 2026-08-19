@@ -22,7 +22,7 @@ def debug : {α : Type} → ScalarLiteral α → String
   | _, .bool value => s!"bool({value})"
   | _, .int value => s!"int({value})"
   | _, .nat value => s!"nat({value})"
-  | _, .string value => "string(" ++ value ++ ")"
+  | _, .string value => "string(" ++ value.quote ++ ")"
 
 end ScalarLiteral
 
@@ -116,7 +116,8 @@ end BinaryPrim
 /-- A typed staged expression whose index is its complete source dependency set. -/
 inductive RxExpr (Γ : Schema) : DepSet Γ → Type → Type 1 where
   | literal (value : ScalarLiteral α) : RxExpr Γ (DepSet.empty Γ) α
-  | read (field : Field Γ α) : RxExpr Γ (DepSet.singleton field) α
+  | readWith (runtime : RuntimeRep α) (field : Field Γ α) :
+      RxExpr Γ (DepSet.singleton field) α
   | unary (op : UnaryPrim α β) (value : RxExpr Γ deps α) : RxExpr Γ deps β
   | binary (op : BinaryPrim α β γ)
       (left : RxExpr Γ leftDeps α) (right : RxExpr Γ rightDeps β) :
@@ -127,6 +128,11 @@ inductive RxExpr (Γ : Schema) : DepSet Γ → Type → Type 1 where
 
 namespace RxExpr
 
+/-- Stage a field read only when its value has a canonical runtime code. -/
+def read {Γ : Schema} {α : Type} [runtime : RuntimeRep α]
+    (field : Field Γ α) : RxExpr Γ (DepSet.singleton field) α :=
+  .readWith runtime field
+
 /-- Recover the kernel-checked dependency index as ordinary data. -/
 def dependencies {Γ : Schema} {deps : DepSet Γ} {α : Type}
     (_ : RxExpr Γ deps α) : DepSet Γ := deps
@@ -135,7 +141,7 @@ def dependencies {Γ : Schema} {deps : DepSet Γ} {α : Type}
 def eval : {Γ : Schema} → {deps : DepSet Γ} → {α : Type} →
     RxExpr Γ deps α → Store Γ → α
   | _, _, _, .literal value, _ => value.value
-  | _, _, _, .read field, store => store.get field
+  | _, _, _, .readWith _ field, store => store.get field
   | _, _, _, .unary op value, store => op.eval (value.eval store)
   | _, _, _, .binary op left right, store => op.eval (left.eval store) (right.eval store)
   | _, _, _, .ifThenElse condition yes no, store =>
@@ -145,7 +151,7 @@ def eval : {Γ : Schema} → {deps : DepSet Γ} → {α : Type} →
 def debug : {Γ : Schema} → {deps : DepSet Γ} → {α : Type} →
     RxExpr Γ deps α → String
   | _, _, _, .literal value => value.debug
-  | _, _, _, .read field => s!"read({field.name}@{field.index})"
+  | _, _, _, .readWith _ field => "read(" ++ field.name.quote ++ s!"@{field.index})"
   | _, _, _, .unary op value => op.name ++ "(" ++ value.debug ++ ")"
   | _, _, _, .binary op left right =>
       op.name ++ "(" ++ left.debug ++ "," ++ right.debug ++ ")"

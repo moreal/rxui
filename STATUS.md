@@ -74,6 +74,7 @@ M1 — Typed staged expression core
 - `lake build`
 - `lake exe leanrx_test`
 - `./scripts/check_examples.sh`
+- `./scripts/check_compile_fail.sh`
 - `./scripts/check_placeholders.sh`
 - `./scripts/test_placeholder_scanner.sh`
 - `./scripts/check_axioms.sh`
