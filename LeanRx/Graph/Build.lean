@@ -65,7 +65,7 @@ private def validateRefs (specs : Array NodeSpec) (owner : NodeSpec) :
           code := "LRX-TYPE-005"
           message := s!"dependency type mismatch: expected {repr reference.valueType}, found {repr dependency.valueType}"
           path := #[owner.name, dependency.name]
-          spans := #[owner.span]
+          spans := #[owner.span, dependency.span]
         }
       validateRefs specs owner rest
 
@@ -96,6 +96,7 @@ def buildNodes (specs : Array NodeSpec) : Except GraphError (Array Node) := do
       code := "LRX-GRAPH-011"
       message := s!"duplicate graph node name: {name}"
       path := #[name]
+      spans := specs.filter (·.name == name) |>.map (·.span)
     }
   buildLoop specs specs.toList 0 []
 

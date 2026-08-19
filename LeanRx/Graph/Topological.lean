@@ -75,9 +75,17 @@ private def cycleIds (remaining : List Node) : Array NodeId :=
               match node.deps.toList.find? remainingIds.contains with
               | none => (current :: seen).reverse
               | some next => follow fuel next (current :: seen)
+  let trimToCycle (path : List NodeId) : List NodeId :=
+    match path.reverse with
+    | [] => []
+    | closing :: _ =>
+        let rec loop : List NodeId → List NodeId
+          | [] => path
+          | current :: rest => if current == closing then current :: rest else loop rest
+        loop path
   match remaining with
   | [] => #[]
-  | first :: _ => (follow (remaining.length + 1) first.id []).toArray
+  | first :: _ => trimToCycle (follow (remaining.length + 1) first.id []) |>.toArray
 
 private def cycleError (remaining : List Node) : GraphError :=
   let ids := cycleIds remaining

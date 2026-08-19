@@ -15,6 +15,11 @@ private def expectCycle (expected : Array String) (specs : Array LeanRx.NodeSpec
       unless error.code == "LRX-GRAPH-001" && error.path == expected do
         throw <| IO.userError s!"cycle path is not useful: {error.path.toList}"
 
+private def sourceSpan (line offset : Nat) : LeanRx.SourceSpan :=
+  { file := "app/Cycle.lean"
+    start := { line, column := 1, byteOffset := offset }
+    stop := { line, column := 2, byteOffset := offset + 1 } }
+
 def run : IO Unit := do
   let linear ← mustPlan LeanRxTest.Graph.Build.validSpecs
   unless linear.schedule.order.map (·.value) == #[0, 1, 2] do
@@ -71,5 +76,19 @@ def run : IO Unit := do
     .derived "b" .int #[{ id := ⟨1⟩, valueType := .int }] "b",
     .derived "c" .int #[{ id := ⟨2⟩, valueType := .int }] "c"
   ]
+  let downstreamSpan := sourceSpan 2 10
+  let aSpan := sourceSpan 3 20
+  let bSpan := sourceSpan 4 30
+  match LeanRx.Graph.plan #[
+      .derived "downstream" .int #[{ id := ⟨1⟩, valueType := .int }]
+        "downstream" downstreamSpan,
+      .derived "a" .int #[{ id := ⟨2⟩, valueType := .int }] "a" aSpan,
+      .derived "b" .int #[{ id := ⟨1⟩, valueType := .int }] "b" bSpan
+    ] with
+  | .ok _ => throw <| IO.userError "tailed cycle unexpectedly planned"
+  | .error error =>
+      unless error.code == "LRX-GRAPH-001" && error.message == "reactive dependency cycle" &&
+          error.path == #["a", "b", "a"] && error.spans == #[aSpan, bSpan, aSpan] do
+        throw <| IO.userError s!"cycle tail or spans were not trimmed: {error.path.toList}"
 
 end LeanRxTest.Graph.Topological
