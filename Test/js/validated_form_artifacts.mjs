@@ -15,7 +15,7 @@ if (
   manifest.sourceCount !== 3 ||
   manifest.derivedCount !== 0 ||
   manifest.textSinkCount !== 4 ||
-  manifest.eventCount !== 7 ||
+  manifest.eventCount !== 8 ||
   !manifest.features.includes("typed-command") ||
   !manifest.features.includes("submit") ||
   !manifest.features.includes("checked")

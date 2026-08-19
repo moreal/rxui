@@ -52,6 +52,12 @@ def payloadKind : {α : Type} → ControlEvent α → PayloadKind
   | _, .submit | _, .focus | _, .blur => .none
   | _, .keyDown => .key
 
+def PayloadKind.name : PayloadKind → String
+  | .text => "text"
+  | .checked => "checked"
+  | .none => "none"
+  | .key => "key"
+
 end ControlEvent
 
 /-- One typed event binding. The backend chooses a fixed host listener from the

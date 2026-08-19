@@ -11,8 +11,8 @@ const manifest = JSON.parse(
 if (
   manifest.module !== "TemperatureConverter.mjs" ||
   manifest.runtimeAbi !== 4 ||
-  JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string", "string"]) ||
-  manifest.sourceCount !== 2 ||
+  JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string", "string", "bool"]) ||
+  manifest.sourceCount !== 3 ||
   manifest.derivedCount !== 0 ||
   manifest.textSinkCount !== 1 ||
   manifest.eventCount !== 2 ||
@@ -27,8 +27,8 @@ for (const banned of ["currentObserver", "new Proxy", "eval(", "Function(", "inn
   if (source.includes(banned)) throw new Error(`generated temperature module contains ${banned}`);
 }
 if (
-  !source.includes('/^-?[0-9]+$/["test"](value)') ||
-  !source.includes("BigInt(value)") ||
+  !source.includes('/^-?[0-9]+$/["test"](activeRaw)') ||
+  !source.includes("BigInt(activeRaw)") ||
   !source.includes("listenValue")
 ) {
   throw new Error("generated temperature parser/payload path is incomplete");

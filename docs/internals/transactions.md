@@ -36,9 +36,10 @@ development observability contract, not a timing API.
 Specialized form emitters preserve the same indices. Parser/validator execution
 is event-local update work, not a graph-derived node, so it never increments
 indices 3 or 4 when the manifest reports `derivedCount: 0`. Index 2 includes
-every evaluated source write, including a successful Temperature conversion's
-explicit opposite-source write. Index 5 increments before each sink evaluation;
-cache equality controls only index 6. Trace entries contain stable declared
+every evaluated source write, including Temperature's explicit active-scale and
+successful conversion writes. Index 5 increments before each affected sink
+evaluation; submit revalidation intentionally evaluates every validation sink,
+while cache equality controls only index 6. Trace entries contain stable declared
 event/payload/sink names and never retain raw key payloads.
 
 Ordinary event expressions may read sources. A direct derived read fails with

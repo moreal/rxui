@@ -344,11 +344,13 @@ lengths and `Fin` proofs do not appear as runtime objects.
 
 ### Scenario exercised
 
-Two raw `String` sources receive typed `input` payloads. Editing Celsius parses
+Two raw `String` sources receive typed `input` payloads; a compiler-owned `Bool`
+source records the active edited scale. Editing Celsius parses
 and converts only into Fahrenheit; editing Fahrenheit does the inverse, so there
-is no derived cycle. Each checked event plan explicitly records its edited and
-conditional opposite-source write; the checked graph records both property
-sinks, the parse-error sink, and invalid-state sinks. Invalid raw text remains in the edited control, leaves the
+is no derived cycle. Each checked event plan explicitly records its edited,
+active-scale, and conditional opposite-source write; the checked graph records
+both property sinks, the parse-error sink, and invalid-state sinks. Invalid raw
+text remains in the edited control, leaves the
 other value unchanged, and renders an explicit parse error. Native Lean produces
 the browser fixture's expected results, including a value above 2^53.
 
@@ -373,8 +375,7 @@ shortcut.
 The first handler draft installed the invalid message before testing valid input,
 then cleared it in the valid branch. It would have produced two unnecessary text
 writes for every successful edit. Splitting the valid/invalid branches removed
-the transient work; the exact instrumentation snapshot now locks seven sink/DOM
-writes across eight discriminating edits. Independent review then found that
+that transient work. Independent review then found that
 Lean's standard integer parsers accept digit separators while the compiler-owned
 browser regex does not. Native parsing now enforces the same closed ASCII grammar
 first, with `1_000` and `-0_1` locked as native/browser rejections.
@@ -383,11 +384,17 @@ missing from the checked model, and that form work had reused the derived counte
 slots despite a zero-derived manifest. Checked update metadata, complete sink
 nodes, shared typed DOM lowering, and the original instrumentation meanings now
 make those contracts inspectable rather than backend convention.
+An adversarial two-order scenario then exposed hidden last-event state: identical
+raw strings could render different invalid observations. `activeCelsius` is now
+an explicit source, both invalid sinks parse their own raw values, and two event
+orders that converge on the same complete store render identically.
 
 ### Security and accessibility checks
 
 Labels wrap their controls; both inputs describe the shared live error and
-maintain per-input `aria-invalid`, and axe is green. A hostile `<img ... onerror>` string remains the input
+maintain independently parsed `aria-invalid`, and axe is green. A two-order
+browser regression covers simultaneous invalid values. A hostile
+`<img ... onerror>` string remains the input
 property value, creates no element, and executes nothing. Generated parsing uses
 only a compiler-owned regex literal followed by BigInt after the lexical guard;
 no exception path, `eval`, `Function`, Proxy, or handwritten reactive JavaScript
@@ -395,8 +402,9 @@ appears.
 
 ### Performance observations
 
-Nine input events record nine commits, fifteen source-write evaluations (nine raw
-edits plus six successful conversion writes), zero derived work, forty-two sink
+Nine input events record nine commits, twenty-four source-write evaluations (nine
+raw edits, nine active-scale writes, and six successful conversion writes), zero
+derived work, forty-two sink
 evaluations, and ten guarded property/error/invalid-state DOM writes. These are
 deterministic work counters, not a speed benchmark.
 
@@ -413,9 +421,10 @@ Validation accumulates a nonempty-name error, bounded-natural error, and require
 acceptance error. A submit button's `disabled` property follows validity, but the
 generated submit handler independently revalidates before constructing the fake
 command. Keydown, focus, blur, change, and prevented submit payload adapters all
-run through the public closed event model. Name uses `input`, age uses text
-`change`, and terms uses checked `change`, so each closed adapter reaches
-production lowering.
+run through the public closed event model. Name and submit-authoritative age state
+use `input`; an observational age listener exercises text `change`; terms uses
+checked `change`, so each closed adapter reaches production lowering without a
+stale-state window.
 
 ### What was pleasant
 
@@ -450,6 +459,12 @@ Review further found raw key payloads retained in the cumulative trace and form
 validation counted as derived work. Traces now expose only the stable
 `payload:key` category; zero-derived manifests keep derived counters at zero,
 while sink evaluation and DOM-write counters measure their documented work.
+Review also reproduced a valid-to-visible-invalid submit before blur when age was
+authoritative only on `change`. Age now synchronizes on `input`, the no-blur
+submit is rejected, and dependency-filtered rendering evaluates only the changed
+field's error plus the shared disabled sink during ordinary edits. The initial
+checkbox `aria-invalid` state was also missing in the first generated mount and
+is now asserted before any event.
 
 ### Security and accessibility checks
 
@@ -465,7 +480,7 @@ exported.
 ### Performance observations
 
 The defining path records eight commits (two rejected submits, five source edits,
-and one valid submit), five source writes, zero derived work, thirty-three sink
+and one valid submit), five source writes, zero derived work, twenty-three sink
 evaluations, and twelve guarded text/property/attribute writes including final
 status. This is work instrumentation, not a throughput claim.
 

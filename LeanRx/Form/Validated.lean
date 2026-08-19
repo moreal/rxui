@@ -40,10 +40,13 @@ def nameControl (spec : ValidatedFormSpec) : StateControlBinding ValidatedFormSt
   .textInput spec.nameEvent
 
 def ageControl (spec : ValidatedFormSpec) : StateControlBinding ValidatedFormState String :=
-  .textChange spec.ageEvent
+  .textInput spec.ageEvent
 
 def acceptedControl (spec : ValidatedFormSpec) : StateControlBinding ValidatedFormState Bool :=
   .checkedChange spec.acceptedEvent
+
+def ageChangeBinding (_ : ValidatedFormSpec) : ControlBinding String :=
+  { event := .change, handlerName := "recordAgeChange" }
 
 def submitBinding (_ : ValidatedFormSpec) : ControlBinding Unit :=
   { event := .submit, handlerName := "submitValidated" }
@@ -64,6 +67,7 @@ structure Checked where
   nameControl : StateControlBinding ValidatedFormState String
   ageControl : StateControlBinding ValidatedFormState String
   acceptedControl : StateControlBinding ValidatedFormState Bool
+  ageChangeBinding : ControlBinding String
   submitBinding : ControlBinding Unit
   keyBinding : ControlBinding String
   focusBinding : ControlBinding Unit
@@ -105,6 +109,7 @@ def check (spec : ValidatedFormSpec) : Except ComponentError Checked :=
         nameControl := spec.nameControl
         ageControl := spec.ageControl
         acceptedControl := spec.acceptedControl
+        ageChangeBinding := spec.ageChangeBinding
         submitBinding := spec.submitBinding
         keyBinding := spec.keyBinding
         focusBinding := spec.focusBinding

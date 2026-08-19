@@ -118,7 +118,7 @@ test("prevents invalid submit and exposes only a validated fake command", async 
   await expect(root.locator("img")).toHaveCount(0);
   expect(await page.evaluate(() => globalThis.formXss)).toBeUndefined();
   const trace = (await page.evaluate(() => globalThis.formDisposers[0].instrumentation()))[7];
-  expect(trace).toContain("event:keyDown");
+  expect(trace).toContain("event:keydown");
   expect(trace).toContain("event:focus");
   expect(trace).toContain("event:blur");
   expect(trace).toContain("event:submit");
@@ -128,7 +128,6 @@ test("prevents invalid submit and exposes only a validated fake command", async 
 
   await inputs.nth(1).focus();
   await inputs.nth(1).fill("121");
-  await inputs.nth(1).press("Tab");
   await expect(errors.nth(1)).toHaveText(expected.invalid.upperAge);
   await expect(inputs.nth(1)).toHaveAttribute("aria-invalid", "true");
   await expect(submit).toBeDisabled();
@@ -138,11 +137,19 @@ test("prevents invalid submit and exposes only a validated fake command", async 
     return event.defaultPrevented;
   });
   expect(rejectedAfterValid).toBe(true);
+  await inputs.nth(1).press("Tab");
   await expect(status).toHaveText(`Submitted ${expected.name} (${expected.age})`);
   const finalTrace = (await page.evaluate(() => globalThis.formDisposers[0].instrumentation()))[7];
   expect(finalTrace.filter((entry) => entry === "command:fakeSubmit")).toHaveLength(1);
+  expect(finalTrace).toContain("event:change");
+  expect(finalTrace).toContain("payload:text");
+  expect(finalTrace.filter((entry) => entry === "sink:nameError:evaluated")).toHaveLength(4);
+  expect(finalTrace.filter((entry) => entry === "sink:ageError:evaluated")).toHaveLength(6);
+  expect(finalTrace.filter((entry) => entry === "sink:termsError:evaluated")).toHaveLength(4);
+  expect(finalTrace.filter((entry) => entry === "sink:submitDisabled:evaluated")).toHaveLength(8);
+  expect(finalTrace.filter((entry) => entry === "sink:submissionStatus:evaluated")).toHaveLength(1);
   const instrumentation = await page.evaluate(() => globalThis.formDisposers[0].instrumentation());
-  expect(instrumentation.slice(0, 7)).toEqual([0, 8, 5, 0, 0, 33, 12]);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 8, 5, 0, 0, 23, 12]);
 
   await page.locator("#two .validated-form input").nth(0).fill("Second instance");
   await expect(inputs.nth(0)).toHaveValue(hostile);

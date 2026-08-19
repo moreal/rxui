@@ -37,5 +37,8 @@ browser tests exercise payload extraction, controlled cursor behavior, submit
 prevention, cross-instance isolation, post-disposal listeners, and hostile text.
 Instrumentation retains the ABI-2 counter meanings; form-local validation is not
 mislabelled as derived evaluation, and public traces redact raw key payloads.
+Submit-authoritative text state uses `input`; a separate `change` listener is
+observational. Temperature's active edited scale is an explicit Boolean state
+slot so validation sinks remain functions of the checked store.
 Existing Counter, Diamond, and Tabs
 browser gates continue to run against the same additive host.

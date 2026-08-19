@@ -47,16 +47,23 @@ Generated integer parsing uses compiler-owned regex literals and calls `BigInt`
 only after a lexical match, so invalid text cannot throw. Native parsing applies
 the same lexical guard before `String.toInt?`/`String.toNat?`, preventing Lean-only
 digit-separator acceptance. A checked Temperature update plan records the edited
-source and the conditional opposite-source write separately. Parsing/conversion
+source, active-edited-scale source, and conditional opposite-source write
+separately. Parsing/conversion
 is event-local update evaluation, followed by one graph propagation phase; it is
 not a pair of mutually dependent derived nodes. The checked graph contains both
 controlled property sinks, the shared error sink, and both invalid-state sinks.
+Each invalid-state sink parses its own raw source; the shared message selects the
+active invalid field, with a deterministic Celsius-first fallback. Presentation
+is therefore a function of the complete checked store, not hidden event history.
 Temperature handlers do not rewrite the control currently being edited,
 preserving its exact raw text and cursor, and use source equality plus guarded
 property/error/invalid caches. Validated Form uses the same
 closed natural/ASCII-trim rules as native Lean, maintains `value`, `checked`,
 `disabled`, and `aria-invalid`, prevents native form navigation, and revalidates
-inside submit. Only a valid result produces the fake command trace/status.
+inside submit. Submit-authoritative name and age state synchronize on `input`;
+the separate text `change` capability is an observational payload trace and
+cannot leave visible values ahead of validated state. Only a valid result
+produces the fake command trace/status.
 
 The component manifest's `textSinkCount` counts text-node destinations, not DOM
 properties or attributes. Temperature has one text sink (the parse error);

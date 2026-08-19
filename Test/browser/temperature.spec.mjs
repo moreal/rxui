@@ -22,7 +22,7 @@ test.beforeAll(async () => {
       const requested = new URL(request.url, "http://localhost").pathname.slice(1);
       if (requested === "") {
         response.setHeader("content-type", "text/html; charset=utf-8");
-        response.end("<!doctype html><html lang=\"en\"><head><title>Temperature Converter</title></head><body><div id=\"app\"></div></body></html>");
+        response.end("<!doctype html><html lang=\"en\"><head><title>Temperature Converter</title></head><body><div id=\"app\"></div><div id=\"left\"></div><div id=\"right\"></div></body></html>");
       } else if (files.has(requested)) {
         response.setHeader(
           "content-type",
@@ -114,8 +114,40 @@ test("preserves raw edits and converts only successfully parsed input", async ({
   const instrumentation = await page.evaluate(() =>
     globalThis.temperatureDispose.instrumentation(),
   );
-  expect(instrumentation.slice(0, 7)).toEqual([0, 9, 15, 0, 0, 42, 10]);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 9, 24, 0, 0, 42, 10]);
   expect(instrumentation[7].filter((entry) => entry === "transaction:commit")).toHaveLength(9);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
+});
+
+test("derives invalid observations from the complete checked state", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    const { mount } = await import("/TemperatureConverter.mjs");
+    globalThis.temperatureOrderDisposers = [
+      mount(document.getElementById("left")),
+      mount(document.getElementById("right")),
+    ];
+  });
+  const left = page.locator("#left .temperature-converter");
+  const right = page.locator("#right .temperature-converter");
+  const dispatch = async (input, value) => input.evaluate((node, next) => {
+    node.value = next;
+    node.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+  }, value);
+
+  await dispatch(left.locator("input").nth(0), "bad-c");
+  await dispatch(left.locator("input").nth(1), "bad-f");
+  await dispatch(left.locator("input").nth(0), "bad-c");
+  await dispatch(right.locator("input").nth(1), "bad-f");
+  await dispatch(right.locator("input").nth(0), "bad-c");
+
+  for (const root of [left, right]) {
+    await expect(root.locator("input").nth(0)).toHaveValue("bad-c");
+    await expect(root.locator("input").nth(1)).toHaveValue("bad-f");
+    await expect(root.locator("input").nth(0)).toHaveAttribute("aria-invalid", "true");
+    await expect(root.locator("input").nth(1)).toHaveAttribute("aria-invalid", "true");
+    await expect(root.locator("p")).toHaveText("Enter an integer Celsius temperature.");
+  }
+  await page.evaluate(() => globalThis.temperatureOrderDisposers.forEach((dispose) => dispose()));
 });

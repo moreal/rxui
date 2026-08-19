@@ -16,12 +16,14 @@ def run : IO Unit := do
       unless checked.nameControl.payloadType == .string && checked.nameControl.target.index == 0 &&
           checked.nameControl.event.name == "input" && checked.nameControl.property.name == "value" &&
           checked.ageControl.payloadType == .string && checked.ageControl.target.index == 1 &&
-          checked.ageControl.event.name == "change" && checked.ageControl.property.name == "value" &&
+          checked.ageControl.event.name == "input" && checked.ageControl.property.name == "value" &&
           checked.acceptedControl.payloadType == .bool && checked.acceptedControl.target.index == 2 &&
           checked.acceptedControl.event.payloadKind == .checked &&
           checked.acceptedControl.property.name == "checked" do
         throw <| IO.userError "validated form typed payloads drifted from state targets"
       unless checked.submitBinding.event.payloadKind == .none &&
+          checked.ageChangeBinding.event.name == "change" &&
+          checked.ageChangeBinding.event.payloadKind == .text &&
           checked.keyBinding.event.payloadKind == .key &&
           checked.focusBinding.event.name == "focus" && checked.blurBinding.event.name == "blur" do
         throw <| IO.userError "validated form browser event capabilities changed"

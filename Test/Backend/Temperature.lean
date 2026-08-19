@@ -16,13 +16,14 @@ def run : IO Unit := do
       let source ← match Js.Printer.module .readable emitted.module with
         | .ok source => pure source
         | .error error => throw <| IO.userError s!"temperature printer failed: {error.code}"
-      unless source.contains "/^-?[0-9]+$/[\"test\"](value)" &&
-          source.contains "BigInt(value)" && source.contains "listenValue" &&
+      unless source.contains "/^-?[0-9]+$/[\"test\"](activeRaw)" &&
+          source.contains "BigInt(activeRaw)" && source.contains "listenValue" &&
           source.contains "setProperty(context[1], \"value\", next)" &&
           ¬source.contains "eval(" && ¬source.contains "Function(" do
         throw <| IO.userError s!"temperature lowering changed:\n{source}"
-      unless emitted.manifest.stateSlots == #[RuntimeTypeId.string, RuntimeTypeId.string] &&
-          emitted.manifest.sourceCount == 2 && emitted.manifest.derivedCount == 0 &&
+      unless emitted.manifest.stateSlots ==
+          #[RuntimeTypeId.string, RuntimeTypeId.string, RuntimeTypeId.bool] &&
+          emitted.manifest.sourceCount == 3 && emitted.manifest.derivedCount == 0 &&
           emitted.manifest.textSinkCount == 1 && emitted.manifest.eventCount == 2 &&
           emitted.manifest.runtimeAbi == LeanRx.runtimeAbi do
         throw <| IO.userError "temperature manifest changed"

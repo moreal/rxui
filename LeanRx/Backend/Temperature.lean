@@ -86,8 +86,8 @@ private def setProperty (runtime : RuntimeNames) (target : Expr)
 private def invalidMessage (scale : TemperatureScale) : String :=
   s!"Enter an integer {scale.name} temperature."
 
-private def validInput (value : Ident) : Expr :=
-  callExpr (property (.literal .signedIntegerPattern) "test") [.ident value]
+private def validInput (value : Expr) : Expr :=
+  callExpr (property (.literal .signedIntegerPattern) "test") [value]
 
 private def converted (scale : TemperatureScale) (parsed : Ident) : Expr :=
   match scale with
@@ -101,38 +101,39 @@ private def converted (scale : TemperatureScale) (parsed : Ident) : Expr :=
       (.literal (.bigint 9))
 
 private def updateError (runtime : RuntimeNames) (errorCache errorText metrics : Ident)
-    (message : String) : Stmt :=
-  .ifThen (.unary .not <| .binary .eq (arrayAt errorCache 0) (.literal (.string message))) <|
+    (message : Expr) : Stmt :=
+  .ifThen (.unary .not <| .binary .eq (arrayAt errorCache 0) message) <|
     .ofList [
-      .assign (.index (.ident errorCache) (uint 0)) (.literal (.string message)),
-      .expr <| call runtime.setText [.ident errorText, .literal (.string message)],
+      .assign (.index (.ident errorCache) (uint 0)) message,
+      .expr <| call runtime.setText [.ident errorText, message],
       incrementAt metrics 6,
       pushTrace metrics "dom:temperatureError:write"
     ]
 
 private def updateInvalid (runtime : RuntimeNames) (context invalidCache metrics : Ident)
-    (index : Nat) (invalid : Bool) : Stmt :=
-  let value := .literal (.boolean invalid)
-  .ifThen (.unary .not <| .binary .eq (arrayAt invalidCache index) value) <| .ofList [
-    .assign (.index (.ident invalidCache) (uint index)) value,
+    (index : Nat) (invalid : Expr) : Stmt :=
+  .ifThen (.unary .not <| .binary .eq (arrayAt invalidCache index) invalid) <| .ofList [
+    .assign (.index (.ident invalidCache) (uint index)) invalid,
     .expr <| call runtime.setAttribute [arrayAt context index,
-      .literal (.string "aria-invalid"), .literal (.string (if invalid then "true" else "false"))],
+      .literal (.string "aria-invalid"),
+      .conditional invalid (.literal (.string "true")) (.literal (.string "false"))],
     incrementAt metrics 6,
     pushTrace metrics s!"dom:{if index == 0 then "celsius" else "fahrenheit"}:aria-invalid"
   ]
 
 private def presentation (runtime : RuntimeNames) (context errorCache errorText invalidCache
-    metrics : Ident) (ownIndex : Nat) (message : String) (invalid : Bool) : List Stmt := [
-  incrementAt metrics 5,
-  pushTrace metrics "sink:temperatureError:evaluated",
-  updateError runtime errorCache errorText metrics message,
-  incrementAt metrics 5,
-  pushTrace metrics "sink:celsiusInvalid:evaluated",
-  updateInvalid runtime context invalidCache metrics 0 (invalid && ownIndex == 0),
-  incrementAt metrics 5,
-  pushTrace metrics "sink:fahrenheitInvalid:evaluated",
-  updateInvalid runtime context invalidCache metrics 1 (invalid && ownIndex == 1)
-]
+    metrics celsiusInvalid fahrenheitInvalid message : Ident) : List Stmt :=
+  [
+    incrementAt metrics 5,
+    pushTrace metrics "sink:temperatureError:evaluated",
+    updateError runtime errorCache errorText metrics (.ident message),
+    incrementAt metrics 5,
+    pushTrace metrics "sink:celsiusInvalid:evaluated",
+    updateInvalid runtime context invalidCache metrics 0 (.ident celsiusInvalid),
+    incrementAt metrics 5,
+    pushTrace metrics "sink:fahrenheitInvalid:evaluated",
+    updateInvalid runtime context invalidCache metrics 1 (.ident fahrenheitInvalid)
+  ]
 
 private def editFunction (runtime : RuntimeNames) (plan : TemperatureSpec.UpdatePlan) :
     Except Error Function := do
@@ -147,14 +148,23 @@ private def editFunction (runtime : RuntimeNames) (plan : TemperatureSpec.Update
   let propertyCache ← Ident.checked "propertyCache"
   let invalidCache ← Ident.checked "invalidCache"
   let errorText ← Ident.checked "errorText"
+  let activeRaw ← Ident.checked "activeRaw"
   let lexical ← Ident.checked "lexical"
   let parsed ← Ident.checked "parsed"
   let next ← Ident.checked "next"
+  let celsiusInvalid ← Ident.checked "celsiusInvalid"
+  let fahrenheitInvalid ← Ident.checked "fahrenheitInvalid"
+  let message ← Ident.checked "message"
   let ownIndex := plan.binding.target.index
+  let activeIndex := plan.activeTarget.index
   let otherIndex := plan.convertedTarget.index
   let otherInput := arrayAt context otherIndex
+  let rawChanged := .unary .not <| .binary .eq (arrayAt state ownIndex) (.ident value)
+  let activeValue := .literal (.boolean plan.activeCelsius)
+  let activeChanged := .unary .not <| .binary .eq (arrayAt state activeIndex) activeValue
+  let changed := .binary .or rawChanged activeChanged
   let validBody : List Stmt := [
-    .const parsed (call runtime.bigInt [.ident value]),
+    .const parsed (call runtime.bigInt [.ident activeRaw]),
     .const next (call runtime.string [converted scale parsed]),
     incrementAt metrics 2,
     pushTrace metrics s!"source:{plan.convertedTarget.name}:write",
@@ -170,9 +180,34 @@ private def editFunction (runtime : RuntimeNames) (plan : TemperatureSpec.Update
           pushTrace metrics s!"dom:{if otherIndex == 0 then "celsius" else "fahrenheit"}:value"
         ]
     ]
-  ] ++ presentation runtime context errorCache errorText invalidCache metrics ownIndex "" false
-  let invalidBody := presentation runtime context errorCache errorText invalidCache metrics
-    ownIndex (invalidMessage scale) true
+  ]
+  let changedBody : List Stmt := [
+    .ifThen rawChanged <| .ofList [
+      .assign (.index (.ident state) (uint ownIndex)) (.ident value),
+      .assign (.index (.ident propertyCache) (uint ownIndex)) (.ident value),
+      incrementAt metrics 5,
+      pushTrace metrics s!"sink:{if ownIndex == 0 then "celsiusValue" else "fahrenheitValue"}:evaluated"
+    ],
+    .ifThen activeChanged <| .ofList [
+      .assign (.index (.ident state) (uint activeIndex)) activeValue
+    ],
+    .const activeRaw (.conditional (arrayAt state activeIndex) (arrayAt state 0) (arrayAt state 1)),
+    .const lexical (validInput (.ident activeRaw)),
+    pushTrace metrics "validation:signedInteger:evaluated",
+    .ifThen (.ident lexical) (.ofList validBody),
+    .const celsiusInvalid (.unary .not <| validInput (arrayAt state 0)),
+    .const fahrenheitInvalid (.unary .not <| validInput (arrayAt state 1)),
+    .const message <| .conditional
+      (.binary .and (arrayAt state activeIndex) (.ident celsiusInvalid))
+      (.literal (.string (invalidMessage .celsius))) <|
+      .conditional
+        (.binary .and (.unary .not <| arrayAt state activeIndex) (.ident fahrenheitInvalid))
+        (.literal (.string (invalidMessage .fahrenheit))) <|
+        .conditional (.ident celsiusInvalid) (.literal (.string (invalidMessage .celsius))) <|
+          .conditional (.ident fahrenheitInvalid)
+            (.literal (.string (invalidMessage .fahrenheit))) (.literal (.string ""))
+  ] ++ presentation runtime context errorCache errorText invalidCache metrics
+    celsiusInvalid fahrenheitInvalid message
   pure {
     name
     params := #[state, context, value]
@@ -185,17 +220,9 @@ private def editFunction (runtime : RuntimeNames) (plan : TemperatureSpec.Update
       pushTrace metrics s!"event:{event.name}",
       incrementAt metrics 2,
       pushTrace metrics s!"source:{plan.binding.target.name}:write",
-      .ifThen (.unary .not <| .binary .eq (arrayAt state ownIndex) (.ident value)) <|
-        .ofList [
-          .assign (.index (.ident state) (uint ownIndex)) (.ident value),
-          .assign (.index (.ident propertyCache) (uint ownIndex)) (.ident value),
-          incrementAt metrics 5,
-          pushTrace metrics s!"sink:{if ownIndex == 0 then "celsiusValue" else "fahrenheitValue"}:evaluated",
-          .const lexical (validInput value),
-          pushTrace metrics "validation:signedInteger:evaluated",
-          .ifThen (.unary .not <| .ident lexical) (.ofList invalidBody),
-          .ifThen (.ident lexical) (.ofList validBody)
-        ],
+      incrementAt metrics 2,
+      pushTrace metrics s!"source:{plan.activeTarget.name}:write",
+      .ifThen changed (.ofList changedBody),
       incrementAt metrics 1,
       pushTrace metrics "transaction:commit",
       .return (.literal .null)
@@ -213,8 +240,8 @@ private def manifest (moduleName : String) (checked : TemperatureSpec.Checked) :
     graphHash := toString (hash checked.graph.toJson)
     runtimeAbi := LeanRx.runtimeAbi
     exports := #["mount"]
-    stateSlots := #[.string, .string]
-    sourceCount := 2
+    stateSlots := #[.string, .string, .bool]
+    sourceCount := 3
     derivedCount := 0
     textSinkCount := 1
     eventCount := 2
@@ -252,7 +279,8 @@ def emit (moduleName : String) (checked : TemperatureSpec.Checked) : Except Erro
   let body : Array Stmt := #[
     .const state (.array <| .ofList [
       .literal (.string checked.spec.initialCelsius),
-      .literal (.string checked.spec.initialFahrenheit)]),
+      .literal (.string checked.spec.initialFahrenheit),
+      .literal (.boolean true)]),
     .const root (call runtime.createElement [.literal (.string "main")]),
     .expr <| call runtime.setAttribute [
       .ident root, .literal (.string "class"), .literal (.string "temperature-converter")],

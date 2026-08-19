@@ -11,16 +11,16 @@ def run : IO Unit := do
   | .error error => throw <| IO.userError s!"temperature model failed: {error.code}"
   | .ok checked =>
       unless checked.graph.graph.nodes.map (·.name) ==
-          #["celsius", "fahrenheit", "celsiusValue", "fahrenheitValue",
+          #["celsius", "fahrenheit", "activeCelsius", "celsiusValue", "fahrenheitValue",
             "temperatureError", "celsiusInvalid", "fahrenheitInvalid"] &&
-          checked.graph.graph.nodes.map (·.rank) == #[0, 0, 1, 1, 1, 1, 1] do
+          checked.graph.graph.nodes.map (·.rank) == #[0, 0, 0, 1, 1, 1, 1, 1] do
         throw <| IO.userError "temperature graph gained a cycle or unstable shape"
       unless checked.celsiusUpdate.binding.payloadType == .string &&
           checked.celsiusUpdate.binding.event.name == "input" &&
-          checked.celsiusUpdate.writeTargetIndices == #[0, 1] &&
+          checked.celsiusUpdate.writeTargetIndices == #[0, 2, 1] &&
           checked.fahrenheitUpdate.binding.payloadType == .string &&
           checked.fahrenheitUpdate.binding.event.name == "input" &&
-          checked.fahrenheitUpdate.writeTargetIndices == #[1, 0] do
+          checked.fahrenheitUpdate.writeTargetIndices == #[1, 2, 0] do
         throw <| IO.userError "temperature input payloads drifted from string state targets"
   match (TemperatureSpec.create "Bad" "0" "31").check with
   | .ok _ => throw <| IO.userError "inconsistent initial temperatures were accepted"

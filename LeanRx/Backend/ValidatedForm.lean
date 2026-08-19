@@ -141,6 +141,7 @@ private def renderFunction (runtime : RuntimeNames) : Except Error Function := d
   let validator ← validateName
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
+  let changedSource ← Ident.checked "changedSource"
   let result ← Ident.checked "result"
   let metrics ← Ident.checked "metrics"
   let cache ← Ident.checked "cache"
@@ -155,7 +156,10 @@ private def renderFunction (runtime : RuntimeNames) : Except Error Function := d
     let next := arrayAt result resultIndex
     let oldInvalid ← Ident.checked s!"oldInvalid_{traceName}"
     let nextInvalid ← Ident.checked s!"nextInvalid_{traceName}"
-    body := body ++ [
+    let affected := .binary .or
+      (.binary .eq (.ident changedSource) (uint cacheIndex))
+      (.binary .eq (.ident changedSource) (uint 3))
+    let sinkBody : List Stmt := [
       incrementAt metrics 5,
       trace metrics s!"sink:{traceName}:evaluated",
       .ifThen (.unary .not <| .binary .eq (arrayAt cache cacheIndex) next) <|
@@ -178,6 +182,7 @@ private def renderFunction (runtime : RuntimeNames) : Except Error Function := d
           ],
         trace metrics s!"dom:{traceName}:write"
       ]]
+    body := body ++ [.ifThen affected (.ofList sinkBody)]
   let disabled := .unary .not (arrayAt result 2)
   body := body ++ [incrementAt metrics 5, trace metrics "sink:submitDisabled:evaluated",
     .ifThen (.unary .not <| .binary .eq (arrayAt cache 3) disabled) <|
@@ -187,7 +192,7 @@ private def renderFunction (runtime : RuntimeNames) : Except Error Function := d
       incrementAt metrics 6,
       trace metrics "dom:submit:disabled"
     ], .return (.ident result)]
-  pure { name, params := #[state, context], body := body.toArray }
+  pure { name, params := #[state, context, changedSource], body := body.toArray }
 
 private def editStringFunction
     (binding : StateControlBinding ValidatedFormState String) : Except Error Function := do
@@ -208,7 +213,7 @@ private def editStringFunction
       .ifThen (.unary .not <| .binary .eq (arrayAt state event.target.index) (.ident value)) <|
         .ofList [
           .assign (.index (.ident state) (uint event.target.index)) (.ident value),
-          .expr <| call render [.ident state, .ident context]
+          .expr <| call render [.ident state, .ident context, uint event.target.index]
         ],
       incrementAt metrics 1,
       trace metrics "transaction:commit",
@@ -235,7 +240,7 @@ private def editCheckedFunction (binding : StateControlBinding ValidatedFormStat
       .ifThen (.unary .not <| .binary .eq (arrayAt state event.target.index) (.ident checked)) <|
         .ofList [
           .assign (.index (.ident state) (uint event.target.index)) (.ident checked),
-          .expr <| call render [.ident state, .ident context]
+          .expr <| call render [.ident state, .ident context, uint event.target.index]
         ],
       incrementAt metrics 1,
       trace metrics "transaction:commit",
@@ -243,19 +248,19 @@ private def editCheckedFunction (binding : StateControlBinding ValidatedFormStat
     ]
   }
 
-private def keyFunction (handlerName : String) : Except Error Function := do
-  let name ← Ident.checked s!"$lrx_{handlerName}"
+private def stringPayloadFunction (binding : ControlBinding String) : Except Error Function := do
+  let name ← Ident.checked s!"$lrx_{binding.handlerName}"
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
-  let key ← Ident.checked "key"
+  let payload ← Ident.checked "payload"
   let metrics ← Ident.checked "metrics"
   pure {
     name
-    params := #[state, context, key]
+    params := #[state, context, payload]
     body := #[
       .const metrics (arrayAt context 8),
-      trace metrics "event:keyDown",
-      trace metrics "payload:key",
+      trace metrics s!"event:{binding.event.name}",
+      trace metrics s!"payload:{binding.event.payloadKind.name}",
       .return (.literal .null)
     ]
   }
@@ -269,7 +274,7 @@ private def focusFunction (handlerName eventName : String) (render : Bool) : Exc
   let body : List Stmt := [
     .const metrics (arrayAt context 8),
     trace metrics s!"event:{eventName}"
-  ] ++ (if render then [.expr <| call renderValidation [.ident state, .ident context]] else []) ++
+  ] ++ (if render then [.expr <| call renderValidation [.ident state, .ident context, uint 3]] else []) ++
     [.return (.literal .null)]
   pure { name, params := #[state, context], body := body.toArray }
 
@@ -295,7 +300,7 @@ private def submitFunction (runtime : RuntimeNames) (handlerName : String) : Exc
       .const cache (arrayAt context 9),
       trace metrics "event:submit",
       .const result (call validator [.ident state]),
-      .expr <| call render [.ident state, .ident context],
+      .expr <| call render [.ident state, .ident context, uint 3],
       .ifThen (arrayAt result 2) <| .ofList [
         incrementAt metrics 5,
         trace metrics "sink:submissionStatus:evaluated",
@@ -344,7 +349,7 @@ private def manifest (moduleName : String) (checked : ValidatedFormSpec.Checked)
     sourceCount := 3
     derivedCount := 0
     textSinkCount := 4
-    eventCount := 7
+    eventCount := 8
     hostImports := #["./leanrx_dom.mjs", "./leanrx_host.mjs"]
     features := #["forms", "controlled-input", "checked", "disabled", "submit",
       "keyboard", "focus", "validation", "typed-command", "instrumentation", "trace"] }
@@ -356,7 +361,8 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
   let editName ← editStringFunction checked.nameControl
   let editAge ← editStringFunction checked.ageControl
   let editAccepted ← editCheckedFunction checked.acceptedControl
-  let recordKey ← keyFunction checked.keyBinding.handlerName
+  let recordAgeChange ← stringPayloadFunction checked.ageChangeBinding
+  let recordKey ← stringPayloadFunction checked.keyBinding
   let focusField ← focusFunction checked.focusBinding.handlerName "focus" false
   let blurField ← focusFunction checked.blurBinding.handlerName "blur" false
   let submitValidated ← submitFunction runtime checked.submitBinding.handlerName
@@ -398,6 +404,7 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
   let disposer ← Ident.checked "disposer"
   let offName ← Ident.checked "offName"
   let offAge ← Ident.checked "offAge"
+  let offAgeChange ← Ident.checked "offAgeChange"
   let offAccepted ← Ident.checked "offAccepted"
   let offKey ← Ident.checked "offKey"
   let offFocus ← Ident.checked "offFocus"
@@ -521,6 +528,8 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
       (.ident nameInput) (.ident state) (.ident context) editName.name,
     .const offAge <| FormDom.listen (listenerRuntime runtime) checked.ageControl.event
       (.ident ageInput) (.ident state) (.ident context) editAge.name,
+    .const offAgeChange <| FormDom.listen (listenerRuntime runtime) checked.ageChangeBinding.event
+      (.ident ageInput) (.ident state) (.ident context) recordAgeChange.name,
     .const offAccepted <| FormDom.listen (listenerRuntime runtime) checked.acceptedControl.event
       (.ident termsInput) (.ident state) (.ident context) editAccepted.name,
     .const offKey <| FormDom.listen (listenerRuntime runtime) checked.keyBinding.event
@@ -532,7 +541,7 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
     .const offSubmit <| FormDom.listen (listenerRuntime runtime) checked.submitBinding.event
       (.ident form) (.ident state) (.ident context) submitValidated.name,
     .const disposer <| call runtime.makeDisposer [
-      .ident root, .array <| .ofList <| [offName, offAge, offAccepted, offKey,
+      .ident root, .array <| .ofList <| [offName, offAge, offAgeChange, offAccepted, offKey,
         offFocus, offBlur, offSubmit].map Expr.ident,
       .ident metrics],
     .return (.ident disposer)
@@ -559,7 +568,7 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
           ] }
       ]
       declarations := #[.function validator, .function render, .function editName,
-        .function editAge, .function editAccepted, .function recordKey,
+        .function editAge, .function editAccepted, .function recordAgeChange, .function recordKey,
         .function focusField, .function blurField, .function submitValidated,
         .function { name := mount, params := #[target], body }]
       exports := #[{ localName := mount, exportName := mount }] }
