@@ -95,17 +95,32 @@ abbrev SourceTransaction := List SourceWrite
 
 namespace SourceTransaction
 
-def apply (transaction : SourceTransaction) (store : Store) : Store :=
-  transaction.foldl (fun current write => current.set write.id write.value) store
+def apply : SourceTransaction → Store → Store
+  | [], store => store
+  | write :: rest, store => apply rest (store.set write.id write.value)
 
 def Valid (program : Program) (transaction : SourceTransaction) : Prop :=
   ∀ write ∈ transaction, write.id < program.sourceCount
+
+/-- Source IDs whose final batched value differs from the previous store. -/
+def changedIds (program : Program) (transaction : SourceTransaction) (old : Store) : List Nat :=
+  let current := transaction.apply old
+  (List.range program.sourceCount).filter fun id => decide (old id ≠ current id)
 
 end SourceTransaction
 
 structure State where
   store : Store
   sinkCache : List Int
+
+inductive TraceEvent where
+  | sourceChanged (id : Nat)
+  | derivedPending (id : Nat)
+  | derivedEvaluated (id : Nat)
+  | derivedChanged (id : Nat)
+  | sinkPending (name : String)
+  | sinkEvaluated (name : String)
+deriving Repr, BEq, DecidableEq
 
 inductive DerivedCacheValid (old : Store) : List DerivedStep → Prop where
   | nil : DerivedCacheValid old []
@@ -117,10 +132,26 @@ inductive SinkCacheValid (old : Store) : List SinkStep → List Int → Prop whe
   | cons : cached = sink.evaluator.run old → SinkCacheValid old rest cachedRest →
       SinkCacheValid old (sink :: rest) (cached :: cachedRest)
 
+namespace State
+
+def Valid (program : Program) (state : State) : Prop :=
+  DerivedCacheValid state.store program.derived ∧
+    SinkCacheValid state.store program.sinks state.sinkCache
+
+end State
+
+structure ValidState (program : Program) where
+  state : State
+  valid : state.Valid program
+
 structure RunResult where
   store : Store
   observations : List Int
   derivedEvaluations : Nat
   sinkEvaluations : Nat
+  trace : List TraceEvent
+
+def RunResult.nextState (result : RunResult) : State :=
+  { store := result.store, sinkCache := result.observations }
 
 end LeanRx.Abstract

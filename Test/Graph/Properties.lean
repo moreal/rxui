@@ -119,6 +119,34 @@ def CaseSpec.sourceTransactions (spec : CaseSpec) : List SourceTransaction :=
 private def storesAgreeThrough (size : Nat) (left right : Store) : Bool :=
   (List.range size).all fun id => decide (left id = right id)
 
+private def insertId (id : Nat) (changed : List Nat) : List Nat :=
+  id :: changed.filter (· != id)
+
+private def traceReachable (program : Program) : List TraceEvent → List Nat → Bool
+  | [], _ => true
+  | .sourceChanged id :: rest, changed =>
+      decide (id < program.sourceCount) && traceReachable program rest (insertId id changed)
+  | .derivedPending id :: rest, changed =>
+      match program.derived.find? (·.id == id) with
+      | some step => Optimized.isPending step.evaluator.deps changed &&
+          traceReachable program rest changed
+      | none => false
+  | .derivedChanged id :: rest, changed =>
+      traceReachable program rest (insertId id changed)
+  | .sinkPending name :: rest, changed =>
+      match program.sinks.find? (·.name == name) with
+      | some sink => Optimized.isPending sink.evaluator.deps changed &&
+          traceReachable program rest changed
+      | none => false
+  | _ :: rest, changed => traceReachable program rest changed
+
+private def isSubsequence [BEq α] : List α → List α → Bool
+  | [], _ => true
+  | _ :: _, [] => false
+  | expected@(_ :: _), actual :: rest =>
+      if expected.head? == some actual then isSubsequence expected.tail rest
+      else isSubsequence expected rest
+
 private def replayLabel (seed caseIndex : Nat) (spec : CaseSpec) : String :=
   s!"seed={seed} case={caseIndex} spec={repr spec}"
 
@@ -137,7 +165,21 @@ private def runTransactions (seed caseIndex : Nat) (spec : CaseSpec)
         throw <| IO.userError s!"derived work increased: {replayLabel seed caseIndex spec}"
       unless optimized.sinkEvaluations ≤ reference.sinkEvaluations do
         throw <| IO.userError s!"sink work increased: {replayLabel seed caseIndex spec}"
-      let next : State := { store := reference.store, sinkCache := reference.observations }
+      unless traceReachable program optimized.trace [] do
+        throw <| IO.userError s!"trace left affected closure: {replayLabel seed caseIndex spec}"
+      let derivedOrder := program.derived.map (·.id)
+      let evaluatedDerived := optimized.trace.filterMap fun event => match event with
+        | .derivedEvaluated id => some id
+        | _ => none
+      unless isSubsequence evaluatedDerived derivedOrder do
+        throw <| IO.userError s!"derived trace violated schedule: {replayLabel seed caseIndex spec}"
+      let sinkOrder := program.sinks.map (·.name)
+      let evaluatedSinks := optimized.trace.filterMap fun event => match event with
+        | .sinkEvaluated name => some name
+        | _ => none
+      unless isSubsequence evaluatedSinks sinkOrder do
+        throw <| IO.userError s!"sink trace violated order: {replayLabel seed caseIndex spec}"
+      let next := optimized.nextState
       runTransactions seed caseIndex spec program rest next
 
 def runWithSeed (seed : Nat) (caseCount : Nat := 40) : IO Unit :=
