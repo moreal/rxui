@@ -1,5 +1,6 @@
 import LeanRx.Backend.JsName
 import LeanRx.IR.Reactive
+import LeanRx.IR.Erasure
 
 namespace LeanRx.Backend.Scalar
 
@@ -198,6 +199,9 @@ private def allocateInputs : List InputSpec → NameAllocator →
 /-- Emit one pure ESM evaluator from typed Reactive IR. -/
 def moduleFor (requestedExport : String) (inputSpecs : Array InputSpec)
     (value : ReactiveIR.Expr α) : Except Error Emitted := do
+  let _ ← match value.assertErasureSafe with
+    | .ok report => pure report
+    | .error error => throw { code := error.code, message := error.message }
   let initialAllocator : NameAllocator := { used := ["String"] }
   let (bindings, allocator) ← allocateHelpers (helpers value) initialAllocator
   let (exportName, allocator) ← allocator.allocate requestedExport

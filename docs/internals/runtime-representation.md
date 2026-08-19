@@ -26,6 +26,15 @@ one JavaScript array access; the logical operation needs no runtime bounds
 branch. Native-to-Node differential cases execute the first and last valid
 indices in both printer modes.
 
+`ReactiveIR.Expr.erasureReport` traverses every closed IR constructor, records
+the vector lengths and finite bounds removed by the ABI, and separately records
+any operation that would inspect such evidence. The scalar emitter invokes the
+fail-closed `assertErasureSafe` gate before producing a JavaScript AST. The named
+theorem `erasureReport_no_inspections` establishes that every expression in the
+current closed IR reports no evidence inspection; its exact reviewed axiom
+footprint is `[propext]`. This proves a property of the typed IR and analyzer,
+not that the trusted JavaScript printer or engine implements erasure correctly.
+
 The M3 scalar backend emits ESM functions whose parameters and returns use the
 representations above. Each input position has a declared runtime code, and the
 backend rejects any Reactive IR occurrence whose index is out of bounds or whose

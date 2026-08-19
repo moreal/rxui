@@ -62,6 +62,12 @@ propagation result to a flattened write list; it does not prove JavaScript
 transaction depth or a commit count. Those exact pairs are independently locked
 by the environment audit.
 
+M6's named `ReactiveIR.Expr.erasureReport_no_inspections` theorem has the exact
+reviewed footprint `[propext]`. It proves that the current closed Reactive IR
+contains no evidence-inspection action according to its structural erasure
+analysis. The analyzer-to-emitter call is executable validation; JavaScript AST
+emission, printing, and engine behavior remain in the TCB.
+
 The M2 checked well-formedness checker and all-`Int` `RxExpr`-to-abstract-evaluator
 bridge are also kernel checked. Their named proof terms use exact reviewed
 `[propext, Quot.sound]` footprints where list/dependency equations require them;

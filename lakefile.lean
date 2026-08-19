@@ -19,6 +19,7 @@ lean_lib LeanRxTest where
     `Test.Backend.JsAst,
     `Test.Backend.JsName,
     `Test.Backend.JsPrinter,
+    `Test.IR.Erasure,
     `Test.Lower.RxExpr,
     `Test.Backend.Scalar,
     `Test.Backend.Component,
