@@ -10,6 +10,7 @@ import LeanRx.Graph.Model
 import LeanRx.Graph.Build
 import LeanRx.Graph.Topological
 import LeanRx.Semantics.Store
+import LeanRx.Semantics.Reference
 
 /-! LeanRx's public library root. -/
 namespace LeanRx

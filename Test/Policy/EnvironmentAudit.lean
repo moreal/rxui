@@ -15,6 +15,7 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.Store.get._unsafe_rec,
     `LeanRx.Store.set._unsafe_rec,
     `LeanRx.JsType.debug._unsafe_rec,
+    `LeanRx.Abstract.Reference.runDerived._unsafe_rec,
     `LeanRx.RxExpr.debug._unsafe_rec,
     `LeanRx.RxExpr.eval._unsafe_rec,
     `LeanRx.Schedule.position.loop._unsafe_rec,
