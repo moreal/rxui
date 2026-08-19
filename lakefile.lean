@@ -25,5 +25,8 @@ lean_exe leanrx_test where
 lean_exe leanrx_expr_playground where
   root := `examples.ExpressionPlayground
 
+lean_exe leanrx_graph_lab where
+  root := `examples.GraphLab
+
 lean_exe leanrx_graph_properties where
   root := `Test.Graph.PropertyMain

@@ -73,3 +73,47 @@ is an M2/M5 measurement and is not claimed here.
 ### Follow-up issue or commit
 
 `example(expr): dogfood the scalar expression core`
+
+## Graph Lab
+
+### Scenario exercised
+
+A public-API diamond graph with stable IDs, direct edges, certified topological
+ranks, full-recomputation and actual-change evaluation, plus the required parity
+case where `count` changes from 1 to 3 while `parity` remains odd.
+
+### What was pleasant
+
+Graph planning, deterministic artifact generation, reference evaluation, and
+optimized evaluation are independently callable pure APIs. The diamond output is
+compact enough for an exact golden, and the parity case makes work suppression
+visible without browser instrumentation.
+
+### Friction
+
+M2 intentionally keeps the executable typed graph and homogeneous abstract proof
+model separate, so Graph Lab declares corresponding graph metadata and abstract
+evaluators explicitly. Later component extraction must generate both rather than
+asking application authors to duplicate them.
+
+### Missing framework capability
+
+There is no source component syntax, automatic graph extraction from `RxExpr`,
+JavaScript lowering, browser host, or DOM sink yet. Those begin in M3–M5.
+
+### Bugs found
+
+The first fixture review showed that graph validation allowed another node to
+depend on a sink. `LRX-GRAPH-012` now rejects that invalid scalar-graph shape, and
+the case is a permanent regression test.
+
+### Performance observations
+
+For `count 1 → 3`, full recomputation performs two derived and two sink
+evaluations. Actual-change propagation evaluates parity once and performs no
+downstream or sink work: four evaluations versus one. This is deterministic work
+instrumentation, not a wall-clock benchmark.
+
+### Follow-up issue or commit
+
+`example(graph): add native propagation laboratory`
