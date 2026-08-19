@@ -253,7 +253,9 @@ elab "#leanrx_environment_audit" : command => do
       name.toString.startsWith "LeanRx." ||
         name.toString.startsWith "LeanRxDsl.").toArray.qsort fun a b =>
     Name.lt a.1 b.1
-  let requiredImports : Array Name := #[`LeanRx.version, `LeanRx.SourcePos]
+  let requiredImports : Array Name := #[
+    `LeanRx.version, `LeanRx.SourcePos, `LeanRx.Cli.Driver.run
+  ]
   for name in requiredImports do
     unless declarations.any (fun entry => entry.1 == name) do
       throwError "environment audit is missing required imported declaration '{name}'"

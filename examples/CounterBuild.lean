@@ -1,4 +1,5 @@
 import examples.Counter
+import LeanRx.Cli.AtomicOutput
 
 namespace LeanRxExamples.CounterBuild
 
@@ -16,13 +17,16 @@ private def generateChecked (directory : System.FilePath)
   IO.FS.writeFile (directory / "Counter.mjs") source
   IO.FS.writeFile (directory / "Counter.mjs.manifest.json") emitted.manifest
   IO.FS.writeFile (directory / "Counter.graph.json") (checked.graph.toJson ++ "\n")
-  IO.FS.writeFile (directory / "Counter.graph.dot") checked.graph.toDot
+  IO.FS.writeFile (directory / "Counter.graph.dot") (checked.graph.toDot ++ "\n")
   IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")
   IO.FS.writeFile (directory / "leanrx_host.mjs") (← IO.FS.readFile "runtime/leanrx_host.mjs")
 
-def generate (directory : System.FilePath) : IO Unit :=
+def generateInto (directory : System.FilePath) : IO Unit :=
   match CounterSyntax_spec.check with
   | .error error => throw <| IO.userError s!"Counter component invalid: {error.code}"
   | .ok checked => generateChecked directory checked
+
+def generate (directory : System.FilePath) : IO Unit :=
+  LeanRx.Cli.AtomicOutput.replaceDirectory directory generateInto
 
 end LeanRxExamples.CounterBuild

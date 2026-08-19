@@ -10,7 +10,7 @@ and [PLAN.md](PLAN.md). The repository is not yet a released framework.
 - Git
 - Bash and ripgrep for repository policy gates
 - Node.js 22 or newer for M3 generated-module differential tests
-- pnpm will be introduced when browser tooling first requires it
+- Corepack with pnpm 10.33.0 (pinned by `packageManager`) for browser tests
 
 ## Reproducible commands
 
@@ -68,7 +68,8 @@ Generate the explicit M4 Counter component, graph, runtime host, and manifest:
 ```sh
 lake exe leanrx_counter_js -- .tmp/counter
 lake exe leanrx -- check Examples.Counter
-lake exe leanrx -- graph Examples.Counter
+lake exe leanrx -- graph Examples.Counter --format json
+lake exe leanrx -- graph Examples.Counter --format dot
 lake exe leanrx -- build Examples.Counter --out .tmp/counter
 ```
 

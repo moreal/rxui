@@ -17,9 +17,15 @@ if [[ "$build_output" != "Examples.Counter: built $output" ]]; then
 fi
 node Test/js/component_artifacts.mjs "$output"
 
-lake exe leanrx -- graph Examples.Counter > "$output/cli.graph.json"
+lake exe leanrx -- graph Examples.Counter --format json > "$output/cli.graph.json"
 if ! diff -u "$output/Counter.graph.json" "$output/cli.graph.json"; then
   echo "leanrx graph differs from the build artifact" >&2
+  exit 1
+fi
+
+lake exe leanrx -- graph Examples.Counter --format dot > "$output/cli.graph.dot"
+if ! diff -u "$output/Counter.graph.dot" "$output/cli.graph.dot"; then
+  echo "leanrx DOT graph differs from the build artifact" >&2
   exit 1
 fi
 
@@ -27,7 +33,7 @@ if unknown_output="$(lake exe leanrx -- check Missing.Component 2>&1)"; then
   echo "leanrx check accepted an unknown module" >&2
   exit 1
 fi
-if [[ "$unknown_output" != *"error[LRX-CLI-001]"* ]]; then
+if [[ "$unknown_output" != *"error[LRX-ELAB-020]"* ]]; then
   echo "leanrx check returned the wrong unknown-module diagnostic" >&2
   echo "$unknown_output" >&2
   exit 1

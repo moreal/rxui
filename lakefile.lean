@@ -26,6 +26,7 @@ lean_lib LeanRxTest where
     `Test.Component.Model,
     `Test.Elab.Component,
     `Test.Cli.Model,
+    `Test.Cli.AtomicOutput,
     `Test.Semantics.Store, `Test.Semantics.Fixtures, `Test.Semantics.Reference,
     `Test.Semantics.Optimized, `Test.Proofs.PropagationSound]
 
