@@ -211,6 +211,10 @@ scan a permanent browser gate. An early hostile-text test called the DOM host
 directly and therefore bypassed component lowering; moving it into Counter's
 public `scalarText` view made the full Component → JavaScript AST → browser path
 the permanent regression and proves `<img ... onerror>` remains a text node.
+The first CLI publisher moved the old directory aside before renaming the new
+one, leaving a brief absent-path window. Counter's CLI regression now publishes
+locked versioned siblings through one pointer rename and rejects unmanaged
+destinations rather than pretending their replacement is atomic.
 
 ### Security and accessibility checks
 

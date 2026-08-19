@@ -74,6 +74,12 @@ lake exe leanrx -- graph Examples.Counter --format dot
 lake exe leanrx -- build Examples.Counter --out .tmp/counter
 ```
 
+`build` publishes a complete versioned sibling directory by atomically replacing
+the output path's symbolic-link pointer. The first output path must be absent;
+later builds must target the LeanRx-managed pointer. An existing unmanaged file
+or real directory is rejected without modification because POSIX cannot replace
+a nonempty directory atomically. See [ADR-0007](docs/adr/0007-atomic-versioned-output.md).
+
 The M4 syntax is opt-in so its declaration keywords do not pollute ordinary Lean:
 
 ```lean
