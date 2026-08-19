@@ -108,6 +108,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Js.Literal.number.injEq, #[``propext]),
     (`LeanRx.Js.Literal.string.injEq, #[``propext]),
     (`LeanRx.Js.Module.mk.injEq, #[``propext]),
+    (`LeanRx.Js.NameAllocator.mk.injEq, #[``propext]),
     (`LeanRx.Js.Stmt.const.injEq, #[``propext]),
     (`LeanRx.Js.Stmt.expr.injEq, #[``propext]),
     (`LeanRx.Js.Stmt.return.injEq, #[``propext]),
