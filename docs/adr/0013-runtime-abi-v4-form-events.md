@@ -17,6 +17,8 @@ DOM host adds `setProperty`, `listenValue`, `listenChecked`, `listenKey`,
 `listenFocus`, and `listenSubmit`. Each adapter only extracts its fixed browser
 payload and delegates to a generated function; parsing, validation, state
 changes, scheduling, and effects remain compiler-generated responsibilities.
+The additive `uniqueId` primitive allocates document-unique accessibility IDs;
+it does not own component state or reactive work.
 
 ## Consequences
 

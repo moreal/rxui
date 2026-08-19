@@ -22,6 +22,13 @@ export function setProperty(node, name, value) {
   node[name] = value;
 }
 
+let nextIdValue = 0;
+
+export function uniqueId(prefix) {
+  nextIdValue += 1;
+  return `${prefix}-${nextIdValue}`;
+}
+
 export function listenValue(node, type, state, context, dispatch) {
   const handler = (event) => dispatch(state, context, event.currentTarget.value);
   node.addEventListener(type, handler);
