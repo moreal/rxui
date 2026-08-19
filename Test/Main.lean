@@ -12,6 +12,7 @@ import Test.Graph.Build
 import Test.Graph.Topological
 import Test.Semantics.Store
 import Test.Semantics.Reference
+import Test.Semantics.Optimized
 
 private def assertEq [BEq α] [ToString α] (expected actual : α) : IO Unit :=
   unless expected == actual do
@@ -34,4 +35,5 @@ def main : IO Unit := do
   LeanRxTest.Graph.Topological.run
   LeanRxTest.Semantics.Store.run
   LeanRxTest.Semantics.Reference.run
+  LeanRxTest.Semantics.Optimized.run
   IO.println "LeanRx native smoke tests passed"
