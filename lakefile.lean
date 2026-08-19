@@ -37,6 +37,7 @@ lean_lib LeanRxTest where
     `Test.Form.Validated,
     `Test.Region.Conditional,
     `Test.Region.Positional,
+    `Test.Region.Keyed,
     `Test.Elab.Component,
     `Test.Cli.Model,
     `Test.Cli.AtomicOutput,

@@ -26,3 +26,10 @@ disposes only a removed suffix. Lean proves that its optimized mounted projectio
 equals full target-list recomputation. Positional identity deliberately follows
 index, not application keys; reorder-sensitive collections must use the later
 keyed region.
+
+The keyed model validates unique natural-number keys before reconciliation.
+Retained keys preserve opaque tokens through reorder, scalar node changes update
+in place, removed keys report exactly their owned tokens for disposal, and new
+keys alone allocate fresh tokens. Lean proves that the optimized mounted
+projection equals full target-list recomputation. Token retention and disposal
+counts remain executable model facts until the browser region host is connected.
