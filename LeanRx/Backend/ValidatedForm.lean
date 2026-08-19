@@ -90,9 +90,9 @@ private def validatorFunction (runtime : RuntimeNames) : Except Error Function :
   let trimCall := callExpr (property rawName "replace") [
     .literal .asciiTrimPattern, .literal (.string "")]
   let naturalTest := callExpr (property (.literal .naturalPattern) "test") [rawAge]
-  let withinBounds := .binary .and
-    (.binary .le (.literal (.bigint 18)) (.ident ageValue))
-    (.binary .le (.ident ageValue) (.literal (.bigint 120)))
+  let lowerValid := .binary .le (.literal (.bigint 18)) (.ident ageValue)
+  let upperValid := .binary .le (.ident ageValue) (.literal (.bigint 120))
+  let withinBounds := .binary .and lowerValid upperValid
   pure {
     name
     params := #[state]
@@ -110,11 +110,15 @@ private def validatorFunction (runtime : RuntimeNames) : Except Error Function :
         .ident ageValue,
         .ident valid,
         .conditional (.ident nameValid) (.literal (.string ""))
-          (.literal (.string "Name must not be empty.")),
-        .conditional (.ident ageValid) (.literal (.string ""))
-          (.literal (.string "Age must be an integer from 18 to 120.")),
+          (.literal (.string "name must not be empty")),
+        .conditional (.ident ageLexical)
+          (.conditional lowerValid
+            (.conditional upperValid (.literal (.string ""))
+              (.literal (.string "value must be at most 120")))
+            (.literal (.string "value must be at least 18")))
+          (.literal (.string "enter a non-negative integer using ASCII digits")),
         .conditional (arrayAt state 2) (.literal (.string ""))
-          (.literal (.string "Accept the terms to continue."))
+          (.literal (.string "terms must be accepted"))
       ]
     ]
   }
