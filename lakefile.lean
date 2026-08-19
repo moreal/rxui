@@ -36,7 +36,8 @@ lean_lib LeanRxTest where
 
 lean_lib LeanRxExamples where
   roots := #[`examples.ExpressionPlayground, `examples.Counter, `examples.CounterBuild,
-    `examples.DiamondLab, `examples.DiamondLabBuild]
+    `examples.DiamondLab, `examples.DiamondLabBuild, `examples.DependentTabs,
+    `examples.DependentTabsBuild]
 
 @[default_target]
 lean_exe leanrx_test where
@@ -62,6 +63,9 @@ lean_exe leanrx_counter_js where
 
 lean_exe leanrx_diamond_js where
   root := `examples.DiamondLabMain
+
+lean_exe leanrx_tabs_js where
+  root := `examples.DependentTabsMain
 
 lean_exe leanrx_graph_bench where
   root := `bench.SmallGraph
