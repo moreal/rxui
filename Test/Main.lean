@@ -21,6 +21,7 @@ import Test.Backend.Scalar
 import Test.Backend.Component
 import Test.View.Model
 import Test.Component.Model
+import Test.Component.Dependent
 import Test.Component.DiamondLab
 import Test.Elab.Component
 import Test.Cli.Model
@@ -60,6 +61,7 @@ def main : IO Unit := do
   LeanRxTest.Backend.Component.run
   LeanRxTest.View.Model.run
   LeanRxTest.Component.Model.run
+  LeanRxTest.Component.Dependent.run
   LeanRxTest.Component.DiamondLab.run
   LeanRxTest.Elab.Component.run
   LeanRxTest.Cli.Model.run
