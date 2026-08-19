@@ -14,6 +14,8 @@ import LeanRx.Graph.IntProgram
 import LeanRx.Backend.JsAst
 import LeanRx.Backend.JsName
 import LeanRx.Backend.JsPrinter
+import LeanRx.IR.Reactive
+import LeanRx.Lower.RxExpr
 import LeanRx.Semantics.Store
 import LeanRx.Semantics.Reference
 import LeanRx.Semantics.Optimized
