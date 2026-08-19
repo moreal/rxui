@@ -24,10 +24,14 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
   unless ¬readable.contains "currentObserver" && ¬readable.contains "Proxy" &&
       ¬readable.contains "eval(" && ¬readable.contains "Function(" do
     throw <| IO.userError "Counter output introduced a banned runtime mechanism"
-  unless emitted.manifest.contains "\"module\":\"Counter.mjs\"" &&
-      emitted.manifest.contains "\"runtimeAbi\":1" &&
-      emitted.manifest.contains "\"exports\":[\"mount\"]" &&
-      emitted.manifest.contains "\"features\":[\"scalar\",\"events\"]" do
+  unless emitted.manifest.moduleName == "Counter.mjs" &&
+      emitted.manifest.runtimeAbi == 1 &&
+      emitted.manifest.exports == #["mount"] &&
+      emitted.manifest.stateSlots == #[.int, .int, .string] &&
+      emitted.manifest.sourceCount == 1 && emitted.manifest.derivedCount == 2 &&
+      emitted.manifest.textSinkCount == 3 && emitted.manifest.eventCount == 2 &&
+      emitted.manifest.hostImports == #["./leanrx_dom.mjs", "./leanrx_host.mjs"] &&
+      emitted.manifest.features == #["scalar", "events"] do
     throw <| IO.userError "Counter manifest lost required deterministic metadata"
   let repeated ← match LeanRx.Backend.Component.emit "Counter.mjs" checked with
     | .ok emitted => pure emitted
@@ -35,7 +39,7 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
   let repeatedCompact ← match Js.Printer.module .compact repeated.module with
     | .ok source => pure source
     | .error error => throw <| IO.userError error.message
-  unless repeatedCompact == compact && repeated.manifest == emitted.manifest do
+  unless repeatedCompact == compact && repeated.manifest.json == emitted.manifest.json do
     throw <| IO.userError "Counter component output is not deterministic"
 
 def run : IO Unit :=

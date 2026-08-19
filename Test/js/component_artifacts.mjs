@@ -16,6 +16,13 @@ if (
   manifest.graphHash.length === 0 ||
   manifest.runtimeAbi !== 1 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
+  JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "int", "string"]) ||
+  manifest.sourceCount !== 1 ||
+  manifest.derivedCount !== 2 ||
+  manifest.textSinkCount !== 3 ||
+  manifest.eventCount !== 2 ||
+  JSON.stringify(manifest.hostImports) !==
+    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_host.mjs"]) ||
   JSON.stringify(manifest.features) !== JSON.stringify(["scalar", "events"])
 ) {
   throw new Error("generated Counter manifest is invalid");

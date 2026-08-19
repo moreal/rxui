@@ -221,6 +221,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.TypedNodeRef.mk.injEq, #[``propext]),
     (`LeanRx.ComponentError.mk.injEq, #[``propext]),
     (`LeanRx.ComponentSpec.mk.injEq, #[``propext]),
+    (`LeanRx.Backend.ComponentManifest.mk.injEq, #[``propext]),
     (`LeanRx.SurfaceDecl.mk.injEq, #[``propext]),
     (`LeanRx.Cli.Command.build.injEq, #[``propext]),
     (`LeanRx.Cli.Command.check.injEq, #[``propext]),

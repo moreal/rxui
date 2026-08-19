@@ -47,3 +47,13 @@ tests are executable evidence, not a formal backend verification claim.
 `RuntimeEq.jsPlan` is derived from `RuntimeType`; callers cannot pair an object
 representation with JavaScript identity equality while claiming structural Lean
 equality.
+
+The M4 component ABI is also explicit. A component manifest records the ordered
+runtime code for every state-array slot, the source-prefix and derived counts,
+text-sink and event counts, exact host imports, exported `mount`, graph hash,
+compiler/toolchain versions, and runtime ABI. The generated module owns the
+state array in schema order. Its private event handlers receive only that array
+and the depth-first text-node reference array; they update direct text nodes
+through `setText`. `mount(target)` owns the mounted root and listener-disposal
+closures and returns an idempotent disposer. The host modules integrate DOM and
+effects only: they do not discover dependencies or schedule reactive work.

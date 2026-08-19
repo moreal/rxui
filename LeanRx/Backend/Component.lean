@@ -9,7 +9,7 @@ open LeanRx.Js
 
 structure Emitted where
   module : Module
-  manifest : String
+  manifest : ComponentManifest
 deriving Repr, BEq
 
 private structure EvalState where
@@ -270,16 +270,23 @@ private def nodeAt (nodes : List DomBinding) (path : List Nat) : Except Error Id
   | some node => pure node.name
   | none => .error { code := "LRX-BE-025", message := "view binding path has no mounted node" }
 
-private def manifest (moduleName : String) (checked : CheckedComponent Γ) : String :=
+private def manifest (moduleName : String) (checked : CheckedComponent Γ) : ComponentManifest :=
   let graph := checked.graph.toJson
   let hash := graph.toList.foldl
     (fun value char => (value * 16777619 + char.toNat) % 4294967296) 2166136261
-  "{\"compilerVersion\":" ++ Js.Printer.stringLiteral LeanRx.version ++
-    ",\"leanToolchain\":" ++ Js.Printer.stringLiteral LeanRx.leanToolchain ++
-    ",\"module\":" ++ Js.Printer.stringLiteral moduleName ++
-    ",\"graphHash\":" ++ Js.Printer.stringLiteral (toString hash) ++
-    ",\"runtimeAbi\":" ++ toString LeanRx.runtimeAbi ++
-    ",\"exports\":[\"mount\"],\"features\":[\"scalar\",\"events\"]}\n"
+  { compilerVersion := LeanRx.version
+    leanToolchain := LeanRx.leanToolchain
+    moduleName
+    graphHash := toString hash
+    runtimeAbi := LeanRx.runtimeAbi
+    exports := #["mount"]
+    stateSlots := checked.spec.values.map ValueSpec.valueType
+    sourceCount := checked.sourceCount
+    derivedCount := checked.spec.values.size - checked.sourceCount
+    textSinkCount := checked.view.textSinks.length
+    eventCount := checked.spec.events.size
+    hostImports := #["./leanrx_dom.mjs", "./leanrx_host.mjs"]
+    features := #["scalar", "events"] }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
 def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Emitted := do

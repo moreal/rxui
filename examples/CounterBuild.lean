@@ -15,7 +15,7 @@ private def generateChecked (directory : System.FilePath)
     | .error error => throw <| IO.userError s!"Counter printer failed: {error.code}"
   IO.FS.createDirAll directory
   IO.FS.writeFile (directory / "Counter.mjs") source
-  IO.FS.writeFile (directory / "Counter.mjs.manifest.json") emitted.manifest
+  IO.FS.writeFile (directory / "Counter.mjs.manifest.json") emitted.manifest.json
   IO.FS.writeFile (directory / "Counter.graph.json") (checked.graph.toJson ++ "\n")
   IO.FS.writeFile (directory / "Counter.graph.dot") (checked.graph.toDot ++ "\n")
   IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")

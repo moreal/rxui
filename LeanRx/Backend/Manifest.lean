@@ -4,6 +4,50 @@ import LeanRx.Core.Version
 
 namespace LeanRx.Backend
 
+structure ComponentManifest where
+  compilerVersion : String
+  leanToolchain : String
+  moduleName : String
+  graphHash : String
+  runtimeAbi : Nat
+  exports : Array String
+  stateSlots : Array RuntimeTypeId
+  sourceCount : Nat
+  derivedCount : Nat
+  textSinkCount : Nat
+  eventCount : Nat
+  hostImports : Array String
+  features : Array String
+deriving Repr, BEq
+
+namespace ComponentManifest
+
+private def quoted (value : String) : String := Js.Printer.stringLiteral value
+
+private def strings (values : Array String) : String :=
+  "[" ++ String.intercalate "," (values.toList.map quoted) ++ "]"
+
+private def types (values : Array RuntimeTypeId) : String :=
+  strings (values.map (·.debug))
+
+/-- Stable component ABI metadata. Field order is deliberately fixed. -/
+def json (value : ComponentManifest) : String :=
+  "{\"compilerVersion\":" ++ quoted value.compilerVersion ++
+    ",\"leanToolchain\":" ++ quoted value.leanToolchain ++
+    ",\"module\":" ++ quoted value.moduleName ++
+    ",\"graphHash\":" ++ quoted value.graphHash ++
+    ",\"runtimeAbi\":" ++ toString value.runtimeAbi ++
+    ",\"exports\":" ++ strings value.exports ++
+    ",\"stateSlots\":" ++ types value.stateSlots ++
+    ",\"sourceCount\":" ++ toString value.sourceCount ++
+    ",\"derivedCount\":" ++ toString value.derivedCount ++
+    ",\"textSinkCount\":" ++ toString value.textSinkCount ++
+    ",\"eventCount\":" ++ toString value.eventCount ++
+    ",\"hostImports\":" ++ strings value.hostImports ++
+    ",\"features\":" ++ strings value.features ++ "}\n"
+
+end ComponentManifest
+
 structure ManifestInput where
   sourceName : String
   generatedName : String
