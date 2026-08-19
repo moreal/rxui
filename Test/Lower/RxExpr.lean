@@ -14,6 +14,16 @@ def run : IO Unit := do
   unless conditionalIr.debug ==
       "if(input(\"condition\"@0),input(\"yes\"@1),input(\"no\"@2))" do
     throw <| IO.userError s!"conditional Reactive IR lowering changed: {conditionalIr.debug}"
+  let valuesSchema : LeanRx.Schema :=
+    .field "values" (Vector String 3) <| .field "selected" (Fin 3) .empty
+  let selected := LeanRx.RxExpr.vectorGet
+    (LeanRx.RxExpr.read (.here : LeanRx.Field valuesSchema (Vector String 3)))
+    (LeanRx.RxExpr.read (.there .here : LeanRx.Field valuesSchema (Fin 3)))
+  let selectedIr := LeanRx.Lower.rxExpr selected
+  unless selectedIr.debug ==
+      "vector.get(input(\"values\"@0),input(\"selected\"@1))" &&
+      selectedIr.runtimeTypeId == .string do
+    throw <| IO.userError s!"proof-safe vector lowering changed: {selectedIr.debug}"
   let span : LeanRx.SourceSpan :=
     { file := "app/Unsupported.lean"
       start := { line := 4, column := 3, byteOffset := 30 }

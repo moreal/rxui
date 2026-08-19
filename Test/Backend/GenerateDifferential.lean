@@ -12,6 +12,8 @@ inductive RuntimeValue where
   | bool (value : Bool)
   | string (value : String)
   | bigint (value : Int)
+  | number (value : Nat)
+  | array (values : List RuntimeValue)
 
 namespace RuntimeValue
 
@@ -23,6 +25,11 @@ def json : RuntimeValue → String
   | .bigint value =>
       "{\"type\":\"bigint\",\"value\":" ++
         Js.Printer.stringLiteral (toString value) ++ "}"
+  | .number value =>
+      "{\"type\":\"number\",\"value\":" ++ toString value ++ "}"
+  | .array values =>
+      "{\"type\":\"array\",\"value\":[" ++
+        String.intercalate "," (values.map json) ++ "]}"
 
 end RuntimeValue
 
@@ -65,6 +72,13 @@ private def conditionalExpr := RxExpr.ifThenElse
   (RxExpr.read (.here : Field ChoiceSchema Bool))
   (RxExpr.read (.there .here : Field ChoiceSchema String))
   (RxExpr.read (.there (.there .here) : Field ChoiceSchema String))
+
+private abbrev SelectionSchema : Schema :=
+  .field "panels" (Vector String 3) <| .field "selected" (Fin 3) .empty
+
+private def selectedPanel := RxExpr.vectorGet
+  (RxExpr.read (.here : Field SelectionSchema (Vector String 3)))
+  (RxExpr.read (.there .here : Field SelectionSchema (Fin 3)))
 
 private def literalBool : RxExpr .empty (DepSet.empty .empty) Bool := .literal (.bool true)
 private def literalString : RxExpr .empty (DepSet.empty .empty) String :=
@@ -145,6 +159,8 @@ private def emitModules (directory : System.FilePath) : IO Unit := do
       #[input "left" .string, input "right" .string] <| binaryExpr .stringEq
   writeModule directory "conditional.mjs"
       #[input "condition" .bool, input "yes" .string, input "no" .string] conditionalExpr
+  writeModule directory "vector_get.mjs"
+      #[input "panels" (.vector .string 3), input "selected" (.fin 3)] selectedPanel
   writeModuleAs directory "hostile_names.mjs" "enum" #[input "eval" .int] <|
     unaryExpr .intNeg
 
@@ -231,7 +247,13 @@ private def cases : List Case := [
   { moduleName := "conditional.mjs", args := [.bool true, .string "yes", .string "no"],
     expected := .string "yes" },
   { moduleName := "conditional.mjs", args := [.bool false, .string "yes", .string "no"],
-    expected := .string "no" }
+    expected := .string "no" },
+  { moduleName := "vector_get.mjs",
+    args := [.array [.string "first", .string "second", .string "third"], .number 0],
+    expected := .string "first" },
+  { moduleName := "vector_get.mjs",
+    args := [.array [.string "first", .string "second", .string "third"], .number 2],
+    expected := .string "third" }
 ]
 
 def generate (directory : System.FilePath) : IO Unit := do

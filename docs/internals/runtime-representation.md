@@ -20,6 +20,11 @@ retains the length/bound so lowering can validate a whole expression before
 emission, but generated values do not carry those numbers as proof objects.
 Lean-checked constructors and typed vector access are therefore part of the
 safety contract; foreign callers may not manufacture unchecked indices.
+`RxExpr.vectorGet` requires the vector and `Fin` expression to share the same
+length index. Lowering retains that relation through typed Reactive IR and emits
+one JavaScript array access; the logical operation needs no runtime bounds
+branch. Native-to-Node differential cases execute the first and last valid
+indices in both printer modes.
 
 The M3 scalar backend emits ESM functions whose parameters and returns use the
 representations above. Each input position has a declared runtime code, and the

@@ -51,6 +51,7 @@ def helpers : {α : Type} → ReactiveIR.Expr α → List Helper
       | _ => nested
   | _, .conditional condition yes no =>
       mergeHelpers (mergeHelpers (helpers condition) (helpers yes)) (helpers no)
+  | _, .vectorGet _ values index => mergeHelpers (helpers values) (helpers index)
 
 private def helperRequested : Helper → String
   | .intMod => "$lrx_intMod"
@@ -159,6 +160,8 @@ def expr (inputs : Array (Ident × RuntimeTypeId)) (bindings : List HelperBindin
   | _, .conditional condition yes no => do
       pure (.conditional (← expr inputs bindings condition)
         (← expr inputs bindings yes) (← expr inputs bindings no))
+  | _, .vectorGet _ values index => do
+      pure (.index (← expr inputs bindings values) (← expr inputs bindings index))
 
 private def internalIdent (value : String) : Except Error Ident :=
   Ident.checked value

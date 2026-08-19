@@ -34,6 +34,14 @@ def choose := LeanRx.RxExpr.ifThenElse
   (LeanRx.RxExpr.read yesValue)
   (LeanRx.RxExpr.read noValue)
 
+abbrev Selection : LeanRx.Schema :=
+  .field "panels" (Vector String 3) <| .field "selected" (Fin 3) .empty
+
+def panels : LeanRx.Field Selection (Vector String 3) := .here
+def selected : LeanRx.Field Selection (Fin 3) := .there .here
+def selectedPanel := LeanRx.RxExpr.vectorGet
+  (LeanRx.RxExpr.read panels) (LeanRx.RxExpr.read selected)
+
 def run : IO Unit := do
   unless subtotal.dependencies.ids == [0, 1] do
     throw <| IO.userError s!"subtotal dependencies incomplete: {subtotal.dependencies.ids}"
@@ -43,6 +51,8 @@ def run : IO Unit := do
     throw <| IO.userError "if dependencies omitted a condition or branch"
   unless choose.dependencies.ids == [0, 1, 2] do
     throw <| IO.userError "if dependencies omitted a distinct condition/yes/no field"
+  unless selectedPanel.dependencies.ids == [0, 1] do
+    throw <| IO.userError "vector access omitted its values or finite index dependency"
   unless label.debug ==
       "if(Int.lt(read(\"threshold\"@2),Int.mul(read(\"price\"@0),read(\"quantity\"@1))),string(\"large\"),string(\"small\"))" do
     throw <| IO.userError s!"expression debug form changed: {label.debug}"
@@ -66,5 +76,9 @@ def run : IO Unit := do
     (LeanRx.RxExpr.literal (.int 9))
   unless huge.eval (.empty : LeanRx.Store .empty) == 9007199254741002 do
     throw <| IO.userError "native Int evaluation lost unbounded semantics"
+  let selectedStore : LeanRx.Store Selection :=
+    .cons #v["first", "second", "third"] <| .cons ⟨2, by decide⟩ .empty
+  unless selectedPanel.eval selectedStore == "third" do
+    throw <| IO.userError "proof-safe vector access changed native semantics"
 
 end LeanRxTest.Expr

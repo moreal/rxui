@@ -43,5 +43,12 @@ theorem eval_congr_on_deps {Γ : Schema} {deps : DepSet Γ} {α : Type}
       split
       · exact yesEqual
       · exact noEqual
+  | vectorGetWith _ values index valuesIH indexIH =>
+      simp only [eval]
+      have valuesEqual : values.eval left = values.eval right :=
+        valuesIH left right <| Store.agreeOn_union_left left right _ _ agree
+      have indexEqual : index.eval left = index.eval right :=
+        indexIH left right <| Store.agreeOn_union_right left right _ _ agree
+      rw [valuesEqual, indexEqual]
 
 end LeanRx.RxExpr

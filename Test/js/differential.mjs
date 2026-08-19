@@ -16,6 +16,10 @@ function decode(value) {
       return value.value;
     case "bigint":
       return BigInt(value.value);
+    case "number":
+      return value.value;
+    case "array":
+      return value.value.map(decode);
     default:
       throw new Error(`unknown manifest value type: ${value.type}`);
   }

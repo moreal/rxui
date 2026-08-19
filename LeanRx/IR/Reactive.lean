@@ -42,6 +42,8 @@ inductive Expr : Type → Type 1 where
   | unary (op : Unary α β) (value : Expr α) : Expr β
   | binary (op : Binary α β γ) (left : Expr α) (right : Expr β) : Expr γ
   | conditional (condition : Expr Bool) (yes no : Expr α) : Expr α
+  | vectorGet (element : RuntimeType α) (values : Expr (Vector α length))
+      (index : Expr (Fin length)) : Expr α
 
 namespace Literal
 
@@ -118,6 +120,7 @@ def runtimeTypeId : {α : Type} → Expr α → RuntimeTypeId
   | _, .unary op _ => op.resultTypeId
   | _, .binary op _ _ => op.resultTypeId
   | _, .conditional _ yes _ => runtimeTypeId yes
+  | _, .vectorGet element _ _ => element.id
 
 def debug : {α : Type} → Expr α → String
   | _, .literal value => value.debug
@@ -126,6 +129,8 @@ def debug : {α : Type} → Expr α → String
   | _, .binary op left right => op.name ++ "(" ++ left.debug ++ "," ++ right.debug ++ ")"
   | _, .conditional condition yes no =>
       "if(" ++ condition.debug ++ "," ++ yes.debug ++ "," ++ no.debug ++ ")"
+  | _, .vectorGet _ values index =>
+      "vector.get(" ++ values.debug ++ "," ++ index.debug ++ ")"
 
 end Expr
 

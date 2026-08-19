@@ -46,5 +46,7 @@ def rxExpr : {Γ : Schema} → {deps : DepSet Γ} → {α : Type} →
   | _, _, _, .binary op left right => .binary (binary op) (rxExpr left) (rxExpr right)
   | _, _, _, .ifThenElse condition yes no =>
       .conditional (rxExpr condition) (rxExpr yes) (rxExpr no)
+  | _, _, _, .vectorGetWith element values index =>
+      .vectorGet element.runtimeType (rxExpr values) (rxExpr index)
 
 end LeanRx.Lower

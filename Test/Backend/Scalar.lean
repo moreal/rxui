@@ -65,5 +65,15 @@ def run : IO Unit := do
   | .error error =>
       unless error.code == "LRX-BE-019" do
         throw <| IO.userError "conflicting input type returned the wrong diagnostic"
+  let selected : LeanRx.ReactiveIR.Expr String := .vectorGet .string
+    (.input (.vector .string 3) 0 "panels") (.input (.fin 3) 1 "selected")
+  let selectedModule ← emit "selected"
+    #[input "panels" (.vector .string 3), input "selected" (.fin 3)] selected
+  let selectedSource ← match LeanRx.Js.Printer.module .readable selectedModule.module with
+    | .ok source => pure source
+    | .error error => throw <| IO.userError error.message
+  unless selectedSource ==
+      "function selected(panels, selected_2) {\n  return panels[selected_2];\n}\nexport { selected };\n" do
+    throw <| IO.userError s!"proof-safe vector access golden changed:\n{selectedSource}"
 
 end LeanRxTest.Backend.Scalar

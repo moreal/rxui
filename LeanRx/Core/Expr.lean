@@ -131,6 +131,10 @@ inductive RxExpr (Γ : Schema) : DepSet Γ → Type → Type 1 where
   | ifThenElse (condition : RxExpr Γ conditionDeps Bool)
       (yes : RxExpr Γ yesDeps α) (no : RxExpr Γ noDeps α) :
       RxExpr Γ (DepSet.union conditionDeps (DepSet.union yesDeps noDeps)) α
+  | vectorGetWith (element : RuntimeRep α)
+      (values : RxExpr Γ valuesDeps (Vector α length))
+      (index : RxExpr Γ indexDeps (Fin length)) :
+      RxExpr Γ (DepSet.union valuesDeps indexDeps) α
 
 namespace RxExpr
 
@@ -138,6 +142,15 @@ namespace RxExpr
 def read {Γ : Schema} {α : Type} [runtime : RuntimeRep α]
     (field : Field Γ α) : RxExpr Γ (DepSet.singleton field) α :=
   .readWith runtime field
+
+/-- Proof-safe staged vector access. The shared `length` index makes an
+unchecked `Nat` index or a differently-sized `Fin` unrepresentable. -/
+def vectorGet {Γ : Schema} {α : Type} {length : Nat}
+    {valuesDeps indexDeps : DepSet Γ} [element : RuntimeRep α]
+    (values : RxExpr Γ valuesDeps (Vector α length))
+    (index : RxExpr Γ indexDeps (Fin length)) :
+    RxExpr Γ (DepSet.union valuesDeps indexDeps) α :=
+  .vectorGetWith element values index
 
 /-- Recover the kernel-checked dependency index as ordinary data. -/
 def dependencies {Γ : Schema} {deps : DepSet Γ} {α : Type}
@@ -152,6 +165,8 @@ def eval : {Γ : Schema} → {deps : DepSet Γ} → {α : Type} →
   | _, _, _, .binary op left right, store => op.eval (left.eval store) (right.eval store)
   | _, _, _, .ifThenElse condition yes no, store =>
       if condition.eval store then yes.eval store else no.eval store
+  | _, _, _, .vectorGetWith _ values index, store =>
+      (values.eval store).get (index.eval store)
 
 /-- Stable structural debug form, independent of object addresses or hash order. -/
 def debug : {Γ : Schema} → {deps : DepSet Γ} → {α : Type} →
@@ -163,6 +178,8 @@ def debug : {Γ : Schema} → {deps : DepSet Γ} → {α : Type} →
       op.name ++ "(" ++ left.debug ++ "," ++ right.debug ++ ")"
   | _, _, _, .ifThenElse condition yes no =>
       "if(" ++ condition.debug ++ "," ++ yes.debug ++ "," ++ no.debug ++ ")"
+  | _, _, _, .vectorGetWith _ values index =>
+      "vector.get(" ++ values.debug ++ "," ++ index.debug ++ ")"
 
 end RxExpr
 
