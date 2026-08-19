@@ -43,7 +43,7 @@ def run : IO Unit := do
     throw <| IO.userError s!"DOT golden changed:\n{first.toDot}"
   let hostile ← plan #[
     .source "count\"\\\n" .int,
-    .sink "</script>\nnext" #[{ id := ⟨0⟩, valueType := .int }] "line\n\t\"\\"
+    .sink "</script>\nnext" .string #[{ id := ⟨0⟩, valueType := .int }] "line\n\t\"\\"
   ]
   let hostileJson := hostile.toJson
   let hostileDot := hostile.toDot

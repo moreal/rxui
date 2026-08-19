@@ -32,7 +32,7 @@ def run : IO Unit := do
     .derived "right" .int #[{ id := ⟨0⟩, valueType := .int }] "right",
     .derived "join" .int #[{ id := ⟨1⟩, valueType := .int }, { id := ⟨2⟩, valueType := .int }]
       "join",
-    .sink "sink" #[{ id := ⟨3⟩, valueType := .int }] "sink"
+    .sink "sink" .string #[{ id := ⟨3⟩, valueType := .int }] "sink"
   ]
   unless diamond.schedule.order.map (·.value) == #[0, 1, 2, 3, 4] do
     throw <| IO.userError "diamond schedule is not deterministic"

@@ -6,7 +6,7 @@ def run : IO Unit := do
   let count := LeanRx.NodeSpec.source "count" .int
   let doubled := LeanRx.NodeSpec.derived "doubled" .int
     #[{ id := ⟨0⟩, valueType := .int }] "double"
-  let sink := LeanRx.NodeSpec.sink "text"
+  let sink := LeanRx.NodeSpec.sink "text" .string
     #[{ id := ⟨1⟩, valueType := .int }] "renderText"
   unless count.kind == .source && count.deps.isEmpty do
     throw <| IO.userError "source node specification gained dependencies"

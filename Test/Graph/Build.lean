@@ -5,7 +5,7 @@ namespace LeanRxTest.Graph.Build
 def validSpecs : Array LeanRx.NodeSpec := #[
   .source "count" .int,
   .derived "doubled" .int #[{ id := ⟨0⟩, valueType := .int }] "double",
-  .sink "text" #[{ id := ⟨1⟩, valueType := .int }] "renderText"
+  .sink "text" .string #[{ id := ⟨1⟩, valueType := .int }] "renderText"
 ]
 
 private def expectError (expected : String)
@@ -47,8 +47,8 @@ def run : IO Unit := do
   ]
   expectError "LRX-GRAPH-012" <| LeanRx.Graph.buildNodes #[
     .source "count" .int,
-    .sink "firstSink" #[{ id := ⟨0⟩, valueType := .int }] "first",
-    .sink "secondSink" #[{ id := ⟨1⟩, valueType := .string }] "second"
+    .sink "firstSink" .string #[{ id := ⟨0⟩, valueType := .int }] "first",
+    .sink "secondSink" .string #[{ id := ⟨1⟩, valueType := .string }] "second"
   ]
   for (valueType, equality) in [
       (.bool, .bigint), (.string, .bigint), (.int, .strict), (.nat, .structural)

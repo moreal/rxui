@@ -69,6 +69,14 @@ def span : IntValueSpec Γ → SourceSpan
   | .source _ span => span
   | .derived _ _ span => span
 
+def isSource : IntValueSpec Γ → Bool
+  | .source _ _ => true
+  | .derived _ _ _ => false
+
+def isDerived : IntValueSpec Γ → Bool
+  | .source _ _ => false
+  | .derived _ _ _ => true
+
 end IntValueSpec
 
 inductive IntSinkSpec (Γ : Schema.{0}) where
@@ -97,7 +105,7 @@ private def valueNodeSpecs : List (IntValueSpec Γ) → List NodeSpec
 private def sinkNodeSpecs : List (IntSinkSpec Γ) → List NodeSpec
   | [] => []
   | .observe name expr span :: rest =>
-      .sink name (deps expr.dependencies.ids) expr.debug span :: sinkNodeSpecs rest
+      .sink name .int (deps expr.dependencies.ids) expr.debug span :: sinkNodeSpecs rest
 
 def nodeSpecs (spec : IntProgramSpec Γ) : Array NodeSpec :=
   (valueNodeSpecs spec.values ++ sinkNodeSpecs spec.sinks).toArray
@@ -128,6 +136,11 @@ private def fieldsAlignedFrom : Nat → List (IntValueSpec Γ) → Bool
 def alignmentValid (spec : IntProgramSpec Γ) : Bool :=
   decide (spec.values.length = Γ.size) && fieldsAlignedFrom 0 spec.values
 
+def sourceShapeValid (spec : IntProgramSpec Γ) : Bool :=
+  decide (spec.sourceCount ≤ spec.values.length) &&
+    (spec.values.take spec.sourceCount).all IntValueSpec.isSource &&
+    (spec.values.drop spec.sourceCount).all IntValueSpec.isDerived
+
 end IntProgramSpec
 
 /-- One privately constructed source of both the planned executable graph and
@@ -144,17 +157,23 @@ namespace Graph
 same expressions. No caller-authored dependency/equality/evaluator metadata is used. -/
 def planInt (spec : IntProgramSpec Γ) : Except GraphError CheckedIntProgram :=
   if spec.alignmentValid then
-    let program := spec.program
-    if checked : program.checkWellFormed = true then
+    if spec.sourceShapeValid then
       match plan spec.nodeSpecs with
       | .error error => .error error
       | .ok planned =>
-          .ok <| CheckedIntProgram.mk planned program <|
-            Abstract.Program.wellFormed_of_check program checked
+        let program := spec.program
+        if checked : program.checkWellFormed = true then
+            .ok <| CheckedIntProgram.mk planned program <|
+              Abstract.Program.wellFormed_of_check program checked
+        else
+          .error {
+            code := "LRX-PROOF-002"
+            message := "all-Int proof adapter requires sources first and derived declarations in dependency order"
+          }
     else
       .error {
-        code := "LRX-PROOF-002"
-        message := "typed graph does not satisfy the abstract finite-DAG proof model"
+        code := "LRX-TYPE-008"
+        message := "typed graph sources must be exactly the declared leading value prefix"
       }
   else
     .error {

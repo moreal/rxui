@@ -67,9 +67,10 @@ def derived (name : String) (valueType : RuntimeTypeId) (deps : Array TypedNodeR
   { name, kind := .derived, valueType, deps, equality := some valueType.equalityPlan,
     evaluator, span }
 
-def sink (name : String) (deps : Array TypedNodeRef) (evaluator : String)
+def sink (name : String) (valueType : RuntimeTypeId)
+    (deps : Array TypedNodeRef) (evaluator : String)
     (span : SourceSpan := .generated) : NodeSpec :=
-  { name, kind := .sink, valueType := .string, deps, equality := none,
+  { name, kind := .sink, valueType, deps, equality := none,
     evaluator, span }
 
 end NodeSpec
