@@ -57,17 +57,25 @@ end ValueSpec
 /-- Pure transaction-local update program. M4 validates writes target sources. -/
 inductive Update (Γ : Schema) where
   | set (field : Field Γ α) (value : RxExpr Γ deps α) (span : SourceSpan := .generated)
+  | dispatch (eventName : String) (span : SourceSpan := .generated)
   | sequence (first second : Update Γ)
 
 namespace Update
 
 def writeTargets : Update Γ → List Nat
   | .set field _ _ => [field.index]
+  | .dispatch .. => []
   | .sequence first second => first.writeTargets ++ second.writeTargets
 
 def readDependencies : Update Γ → List Nat
   | .set _ value _ => value.dependencies.ids
+  | .dispatch .. => []
   | .sequence first second => first.readDependencies ++ second.readDependencies
+
+def dispatchTargets : Update Γ → List String
+  | .set .. => []
+  | .dispatch eventName _ => [eventName]
+  | .sequence first second => first.dispatchTargets ++ second.dispatchTargets
 
 end Update
 
@@ -253,6 +261,14 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
         throw {
           code := "LRX-TYPE-108"
           message := s!"event {event.name} reads derived value {dependency}; derived reads require a transaction barrier"
+          spans := #[event.span]
+        }
+    for target in event.update.dispatchTargets do
+      unless names.contains target do
+        throw {
+          code := "LRX-ELAB-106"
+          message := s!"event {event.name} dispatches unknown event {target}"
+          path := #[event.name, target]
           spans := #[event.span]
         }
   for mounted in split.events do

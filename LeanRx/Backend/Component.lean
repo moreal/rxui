@@ -71,6 +71,7 @@ private def compileUpdate (inputs : Array Scalar.InputSpec) (eventIndex : Nat) :
       let state ← addEvaluator inputs s!"event:{eventIndex}:write:{writeIndex}"
         s!"$lrx_event_{eventIndex}_write_{writeIndex}" (Lower.rxExpr value) state
       pure (writeIndex + 1, state)
+  | .dispatch .., writeIndex, state => pure (writeIndex, state)
   | .sequence first second, writeIndex, state => do
       let (writeIndex, state) ← compileUpdate inputs eventIndex first writeIndex state
       compileUpdate inputs eventIndex second writeIndex state
@@ -137,6 +138,7 @@ private def updateStatements (evaluators : EvalState) (state : Ident)
         .assign (.index (.ident state) (uint field.index))
           (evaluatorCall evaluator state valueCount)
       ])
+  | .dispatch .., writeIndex => pure (writeIndex, [])
   | .sequence first second, writeIndex => do
       let (writeIndex, first) ← updateStatements evaluators state valueCount eventIndex first writeIndex
       let (writeIndex, second) ← updateStatements evaluators state valueCount eventIndex second writeIndex

@@ -54,6 +54,12 @@ def run : IO Unit := do
     { spec with view := (View.node .div [.text "Bad"]
         (events := [{ kind := .click, eventName := "increment" }])) }
   expectError "LRX-VIEW-005" clickDiv.check
+  let unknownDispatch : ComponentSpec CounterSchema :=
+    { spec with events := #[{
+        name := "badDispatch"
+        update := .dispatch "missing"
+      }] }
+  expectError "LRX-ELAB-106" unknownDispatch.check
   let mismatchedSurface : ComponentSpec CounterSchema :=
     { spec with surface := #[
         { role := .derived, name := "count", span := .generated },
