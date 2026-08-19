@@ -9,8 +9,11 @@ private def assertFile (path : System.FilePath) (expected : String) : IO Unit :=
 
 def run : IO Unit := IO.FS.withTempDir fun parent => do
   let output := parent / "bundle"
-  IO.FS.createDirAll output
-  IO.FS.writeFile (output / "sentinel") "old"
+  LeanRx.Cli.AtomicOutput.replaceDirectory output fun staging => do
+    IO.FS.createDirAll staging
+    IO.FS.writeFile (staging / "sentinel") "old"
+  unless (← output.symlinkMetadata).type == .symlink do
+    throw <| IO.userError "atomic output is not a stable publication pointer"
   try
     LeanRx.Cli.AtomicOutput.replaceDirectory output fun staging => do
       IO.FS.createDirAll staging
@@ -29,5 +32,16 @@ def run : IO Unit := IO.FS.withTempDir fun parent => do
   assertFile (output / "fresh") "fresh"
   if ← (output / "stale").pathExists then
     throw <| IO.userError "atomic replacement retained a stale artifact"
+  unless (← output.symlinkMetadata).type == .symlink do
+    throw <| IO.userError "atomic replacement lost its publication pointer"
+  let legacy := parent / "legacy"
+  IO.FS.createDirAll legacy
+  IO.FS.writeFile (legacy / "sentinel") "preserved"
+  try
+    LeanRx.Cli.AtomicOutput.replaceDirectory legacy fun _ => pure ()
+    throw <| IO.userError "atomic output accepted an unmanaged destination"
+  catch error =>
+    unless error.toString.contains "LRX-PORT-003" do throw error
+  assertFile (legacy / "sentinel") "preserved"
 
 end LeanRxTest.Cli.AtomicOutput

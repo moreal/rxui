@@ -5,11 +5,11 @@ first="$(mktemp -d)"
 second="$(mktemp -d)"
 trap 'rm -rf -- "$first" "$second"' EXIT
 
-lake exe leanrx_counter_js -- "$first"
-lake exe leanrx_counter_js -- "$second"
+lake exe leanrx_counter_js -- "$first/dist"
+lake exe leanrx_counter_js -- "$second/dist"
 
-diff -ru "$first" "$second"
-node --check "$first/Counter.mjs"
-node --check "$first/leanrx_dom.mjs"
-node --check "$first/leanrx_host.mjs"
-node Test/js/component_artifacts.mjs "$first"
+diff -ru "$first/dist/" "$second/dist/"
+node --check "$first/dist/Counter.mjs"
+node --check "$first/dist/leanrx_dom.mjs"
+node --check "$first/dist/leanrx_host.mjs"
+node Test/js/component_artifacts.mjs "$first/dist"

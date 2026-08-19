@@ -9,6 +9,7 @@ and [PLAN.md](PLAN.md). The repository is not yet a released framework.
 - Elan with the toolchain named in `lean-toolchain` (Lean 4.33.0)
 - Git
 - Bash and ripgrep for repository policy gates
+- POSIX `ln` and `readlink` for atomic versioned-directory publication
 - Node.js 22 or newer for M3 generated-module differential tests
 - Corepack with pnpm 10.33.0 (pinned by `packageManager`) for browser tests
 
