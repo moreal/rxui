@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M6 — Dependent types and proof erasure
+M7 — Controlled inputs and validated forms
 
 ## Last green commit
 
-`f20c2c5 fix(runtime): close transaction contract gaps`
+`f6317cd docs(types): record M6 review findings`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -131,18 +131,45 @@ M6 — Dependent types and proof erasure
   axiom uses, 55 exact generated unsafe helpers, 40 property cases, 46 native/JS
   cases in both printer modes, deterministic Counter/Diamond artifacts, seven
   Chromium tests, benchmark smoke, examples, negative and policy gates all passed.
+- Completed M6's sealed `Vector α n`/`Fin n` runtime identities, indexed native
+  semantics, safe staged vector access, Reactive IR proof-erasure report/assertion,
+  and the named `erasureReport_no_inspections` theorem with exact `[propext]`
+  footprint.
+- Added immutable typed props and definitionally typed event parameters. Dependent
+  Tabs privately stores `Fin (n + 1)`, accepts equal nonempty label/panel vectors,
+  and requires an explicit `Nat` plus strict-bound proof for nonzero initial
+  selection. ADR-0011 records pinned Lean's modulo-normalized raw `Fin` literals.
+- Added ABI 3, typed dependent manifests, direct array-index lowering, strict
+  source equality, panel sink caching, copied instrumentation, and finite private
+  event handlers. Only `mount` is exported; generated values contain no proof
+  objects or Lean runtime.
+- Built Dependent Tabs entirely through public APIs. Deterministic artifacts and
+  Chromium cover initial/every-tab selection, native-button keyboard activation,
+  maintained grouped `aria-pressed` state, hostile name/label/panel text, active
+  reselection suppression, equal-panel sink caching, axe, and instrumentation.
+- Added four dependent compile-fail contracts for mismatched lengths, empty tabs,
+  invalid unchecked selection, and arbitrary `Nat` indexing. Native-to-Node vector
+  cases derive first/middle/last expectations from `RxExpr.eval` in both printers.
+- Strengthened the benchmark gate to record four reference evaluations versus one
+  optimized evaluation for the parity actual-change case, while retaining ADR-0009's
+  non-comparative timing scope. IR and Lower are now in the pure-path safety gate.
+- Verified `f6317cd` in the workspace and a fresh no-hardlinks clone after
+  `corepack pnpm install --frozen-lockfile --ignore-scripts`, both with
+  `./scripts/check.sh`: 156 Lean jobs, 836 public theorems, 209 exact reviewed
+  axiom uses, 64 exact generated unsafe helpers, 40 seeded graph cases, 49
+  native/JavaScript cases in both printer modes, deterministic Counter/Diamond/
+  Dependent Tabs artifacts, nine Chromium tests, measured work suppression,
+  compile-fail, placeholder, axiom, and 39-file semantic-safety gates passed.
 
 ## In progress
 
-- Runtime representations and erasure contracts for `Vector` and `Fin`.
+- M7 typed controlled-input and validation contracts.
 
 ## Next
 
-- Add proof-erased `Vector`/`Fin` representations and checked safe indexing in the
-  staged core, Reactive IR, and JavaScript backend.
-- Add typed event parameters and immutable component props needed by Dependent Tabs.
-- Build compile-pass/fail dependent Tabs fixtures, inspect proof erasure in IR/JS,
-  and run every tab interaction in Chromium.
+- Add typed `input` payloads and controlled value/cursor semantics.
+- Build the Temperature Converter with explicit parse results and no reactive cycle.
+- Add validation combinators, typestate/capability checks, and the Validated Form.
 
 ## Known blockers
 
@@ -254,6 +281,25 @@ M6 — Dependent types and proof erasure
   implemented its lowering, so that intermediate commit was buildable but not a
   behavior-complete public capability. The history is preserved rather than
   rewritten; later public constructors and lowering must land together.
+
+## M6 independent review notes
+
+- Lean/toolchain: PASS at `f6317cd`; sealed dependent representations, explicit
+  finite construction, actual-change Tabs semantics, native-derived vector
+  differentials, measured suppression, and all local gates were verified.
+- Type theory/proof: PASS; the closed-IR erasure theorem has exact `[propext]`,
+  vector dependency congruence retains `[propext, Quot.sound]`, IR/Lower totality
+  is policy-gated, and JavaScript/browser erasure remains explicitly in the TCB.
+- Compiler/backend: PASS; the Core → Reactive IR → erasure assertion → typed
+  JavaScript AST path is intact, ABI 3 is deterministic, finite handlers are
+  private, equality/cache suppression is correct, and the host stays integration-only.
+- Frontend/runtime: PASS; active reselection and equal-output caching, copied
+  instrumentation, hostile dependent text, grouped maintained selection state,
+  keyboard, axe, disposal boundaries, and supply-chain pins passed Chromium review.
+- Test/quality: PASS after workspace and fresh no-hardlinks suites; 15 coherent M6
+  commits each contain exactly one required assistance trailer. ADR-0011 records
+  the false raw-`Fin` literal assumption, and ADR-0012 resolves the M0–M6 versus M7
+  dogfood-order contradiction without weakening later form requirements.
 
 ## Commands
 
