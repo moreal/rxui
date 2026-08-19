@@ -1,0 +1,34 @@
+# ADR-0013: Bump the internal runtime ABI for form events
+
+- Status: Accepted
+- Date: 2026-08-19
+
+## Context
+
+M7 adds controlled DOM property writes and typed browser payload extraction for
+text, checked, keyboard, focus, and submit events. ABI 3 hosts do not provide
+these primitives, so accepting an M7 artifact under that version would fail at
+module import or silently bypass the typed event contract.
+
+## Decision
+
+The internal JavaScript runtime ABI becomes version 4 for every artifact. The
+DOM host adds `setProperty`, `listenValue`, `listenChecked`, `listenKey`,
+`listenFocus`, and `listenSubmit`. Each adapter only extracts its fixed browser
+payload and delegates to a generated function; parsing, validation, state
+changes, scheduling, and effects remain compiler-generated responsibilities.
+
+## Consequences
+
+ABI-3 and ABI-4 artifacts/hosts must not be mixed. All existing scalar and
+component manifest consumers move to version 4. The host surface grows, but it
+does not discover dependencies or own form semantics. Later payload kinds
+require another explicit ABI review.
+
+## Validation
+
+Native tests lock the closed property/event GADTs. Generated form modules are
+validated JavaScript ASTs, deterministic artifact checks require ABI 4, and
+browser tests exercise payload extraction, controlled cursor behavior, submit
+prevention, disposal, and hostile text. Existing Counter, Diamond, and Tabs
+browser gates continue to run against the same additive host.
