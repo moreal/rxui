@@ -72,7 +72,9 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.instBEqRuntimeTypeId.beq._unsafe_rec,
     `LeanRx.instDecidableEqRuntimeTypeId.decEq._unsafe_rec,
     `LeanRx.instReprRuntimeTypeId.repr._unsafe_rec,
-    `LeanRx.instOrdRuntimeTypeId.ord._unsafe_rec
+    `LeanRx.instOrdRuntimeTypeId.ord._unsafe_rec,
+    `LeanRx.Region.instBEqLogicalNode.beq._unsafe_rec,
+    `LeanRx.Region.instReprLogicalNode.repr._unsafe_rec
   ]
   -- Generated injectivity plus named membership/agreement lemmas use Lean's
   -- standard proposition-extensionality axiom. Each exact pair is reviewed;
@@ -152,6 +154,11 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Form.FormValidation.valid.injEq, #[``propext]),
     (`LeanRx.Form.ControlBinding.mk.injEq, #[``propext]),
     (`LeanRx.Backend.FormDom.ListenerRuntime.mk.injEq, #[``propext]),
+    (`LeanRx.Region.Error.mk.injEq, #[``propext]),
+    (`LeanRx.Region.LogicalNode.text.injEq, #[``propext]),
+    (`LeanRx.Region.LogicalNode.element.injEq, #[``propext]),
+    (`LeanRx.Region.ConditionalInstance.mk.injEq, #[``propext]),
+    (`LeanRx.Region.ConditionalResult.mk.injEq, #[``propext]),
     (`LeanRx.ImmutableProp.mk.injEq, #[``propext]),
     (`LeanRx.ParamUpdate.set.injEq, #[``propext]),
     (`LeanRx.TypedEventSpec.mk.injEq, #[``propext]),

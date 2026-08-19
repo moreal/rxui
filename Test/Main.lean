@@ -31,6 +31,7 @@ import Test.Form.Validation
 import Test.Form.Dom
 import Test.Form.Temperature
 import Test.Form.Validated
+import Test.Region.Conditional
 import Test.Elab.Component
 import Test.Cli.Model
 import Test.Cli.AtomicOutput
@@ -79,6 +80,7 @@ def main : IO Unit := do
   LeanRxTest.Form.Dom.run
   LeanRxTest.Form.Temperature.run
   LeanRxTest.Form.Validated.run
+  LeanRxTest.Region.Conditional.run
   LeanRxTest.Elab.Component.run
   LeanRxTest.Cli.Model.run
   LeanRxTest.Cli.AtomicOutput.run

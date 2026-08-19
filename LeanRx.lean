@@ -38,5 +38,6 @@ import LeanRx.Form.Validation
 import LeanRx.Form.Dom
 import LeanRx.Form.Temperature
 import LeanRx.Form.Validated
+import LeanRx.Region.Model
 
 /-! LeanRx's public library root. -/

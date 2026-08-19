@@ -68,6 +68,11 @@ contains no evidence-inspection action according to its structural erasure
 analysis. The analyzer-to-emitter call is executable validation; JavaScript AST
 emission, printing, and engine behavior remain in the TCB.
 
+M8's initial `Region.reconcileConditional_logical` theorem is axiom-free. It
+relates the pure token-retaining/replacing conditional model to the reference
+logical node; it does not prove the later region host, DOM identity, or disposal
+effects. Those remain executable/browser evidence inside the documented TCB.
+
 The M2 checked well-formedness checker and all-`Int` `RxExpr`-to-abstract-evaluator
 bridge are also kernel checked. Their named proof terms use exact reviewed
 `[propext, Quot.sound]` footprints where list/dependency equations require them;
