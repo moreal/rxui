@@ -48,6 +48,13 @@ private def validateRefs (specs : Array NodeSpec) (owner : NodeSpec) :
             path := #[owner.name, s!"#{reference.id.value}"]
             spans := #[owner.span]
           }
+      if dependency.kind == .sink then
+        throw {
+          code := "LRX-GRAPH-012"
+          message := "sink nodes cannot be reactive dependencies"
+          path := #[owner.name, dependency.name]
+          spans := #[owner.span, dependency.span]
+        }
       unless dependency.valueType == reference.valueType do
         throw {
           code := "LRX-TYPE-005"

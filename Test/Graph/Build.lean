@@ -40,5 +40,10 @@ def run : IO Unit := do
   expectError "LRX-GRAPH-011" <| LeanRx.Graph.buildNodes #[
     .source "same" .int, .source "same" .int
   ]
+  expectError "LRX-GRAPH-012" <| LeanRx.Graph.buildNodes #[
+    .source "count" .int,
+    .sink "firstSink" #[{ id := ⟨0⟩, valueType := .int }] "first",
+    .sink "secondSink" #[{ id := ⟨1⟩, valueType := .string }] "second"
+  ]
 
 end LeanRxTest.Graph.Build
