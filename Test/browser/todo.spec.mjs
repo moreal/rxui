@@ -135,17 +135,9 @@ test("preserves keyed identity, focus, routing, and local region ownership", asy
   await expect(status).toHaveText("0 items left");
 
   const instrumentation = await page.evaluate(() => globalThis.todoDispose.instrumentation());
-  expect(instrumentation[0]).toBe(0);
-  expect(instrumentation[3]).toBe(0);
-  expect(instrumentation[4]).toBe(0);
-  expect(instrumentation[1]).toBeGreaterThan(0);
-  expect(instrumentation[5]).toBeGreaterThan(0);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 15, 15, 0, 0, 33, 13]);
   const regions = await page.evaluate(() => globalThis.todoDispose.regionInstrumentation());
-  expect(regions).toHaveLength(2);
-  expect(regions[0][0]).toBeGreaterThan(1);
-  expect(regions[0][2]).toBeGreaterThan(0);
-  expect(regions[0][3]).toBeGreaterThan(0);
-  expect(regions[1][0]).toBe(3);
+  expect(regions).toEqual([[3, 13, 4, 3], [3, 33, 0]]);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 

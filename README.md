@@ -125,6 +125,18 @@ prevented submit, and a fake command that only `ValidatedForm` can construct.
 The pure/native, generated-JavaScript, remaining-TCB, and accessibility contracts
 are documented in [the form internals](docs/internals/forms.md).
 
+Generate the M8 keyed TodoMVC dogfood application with:
+
+```sh
+lake exe leanrx_todo_js -- .tmp/todo
+```
+
+TodoMVC uses a pure closed update model and generated direct DOM outside three
+explicit local region kinds: conditional edit/view branches, positional filter
+controls, and keyed rows. Key identity survives reorder, stable rows update in
+place, removed rows dispose their nested branch, and no root-wide Virtual DOM is
+present. See [the dynamic-region contract](docs/internals/dynamic-regions.md).
+
 ## Project boundaries
 
 LeanRx is intended to compile a restricted staged language; it will not transpile

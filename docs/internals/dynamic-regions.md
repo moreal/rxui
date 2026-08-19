@@ -32,7 +32,7 @@ Retained keys preserve opaque tokens through reorder, scalar node changes update
 in place, removed keys report exactly their owned tokens for disposal, and new
 keys alone allocate fresh tokens. Lean proves that the optimized mounted
 projection equals full target-list recomputation. Token retention and disposal
-counts remain executable model facts until the browser region host is connected.
+counts are now compared with the connected browser region host in TodoMVC.
 
 `runtime/leanrx_region.mjs` is a separate local reconciler, not a scheduler. It
 receives explicit target items and compiler-generated mount/update/dispose
@@ -47,3 +47,15 @@ monotonic unique natural keys; empty titles are rejected on add and delete the
 edited item on commit. The native logical renderer and checked keyed projection
 form the M8 differential reference. The browser backend must consume this public
 model rather than moving Todo semantics into the region host.
+
+The generated Todo representation is explicit and backend-owned:
+
+- each stored item is `[id : BigInt, title : String, completed : Bool]`;
+- component state is `[items, nextId, filter, editingId, draft, newTitle]`, with
+  `-1n` as the checked backend's no-edit sentinel;
+- keyed render payloads extend an item with `editing : Bool` and `draft : String`.
+
+The manifest describes this as `list<record<TodoItem>>` plus five scalar slots.
+That metadata does not create a general arbitrary-record lowering. The pure Todo
+update/logical model, specialized extractor, JavaScript AST backend, region host,
+DOM, and delegated event adapter remain distinguished at the TCB boundary.

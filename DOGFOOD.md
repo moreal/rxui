@@ -487,3 +487,67 @@ status. This is work instrumentation, not a throughput claim.
 ### Follow-up issue or commit
 
 `example(form): dogfood validated submission`
+
+## TodoMVC — local conditional, positional, and keyed regions
+
+### Scenario exercised
+
+TodoMVC creates hostile and ordinary titles, toggles completion, switches
+all/active filters, enters and commits local editing state, reverses row order,
+deletes a keyed row, and clears completed items. A pure `Todo.update` model and
+native expected artifact drive the generated-browser logical DOM comparison.
+Only public LeanRx/Todo APIs declare the application; there is no handwritten
+reactive JavaScript in the example.
+
+### What was pleasant
+
+Opaque region tokens made the identity contract testable before DOM work. The
+browser then retained the exact second-row node through filtering and reorder,
+retained its edit input and focus during a programmatic reorder, and routed Enter
+to the correct key afterward. Stable view branches use direct checkbox/text
+updates; only edit/view transitions replace branch shape. The root identity never
+changes, and one completion toggle produces zero child-list mutations.
+
+### Friction
+
+The first dynamic backend is intentionally explicit and therefore verbose: the
+typed JavaScript AST gained only `for…of`, while row/filter/branch creation stays
+as validated AST rather than an opaque template string. Delegated events need
+compiler-owned action/key attributes and a documented fixed payload. The
+specialized Todo array ABI is clear but is not yet a reusable derived record
+lowering. Child component ownership was not needed because each row owns only a
+conditional region and delegated events.
+
+### Bugs found
+
+The first click path would have rendered a checkbox's old state before its
+subsequent `change` event; unknown click actions now return without propagation.
+The backend initially cleared editing unconditionally during `clearCompleted`,
+unlike the pure model, and was corrected to retain an active edited item. Initial
+instrumentation also reused depth/DOM slots for render/event counts; standard
+indices are restored and local structural metrics are exposed separately. The
+browser identity assertion originally compared automation handles rather than
+in-page nodes, so it now checks actual DOM object identity.
+
+### Security and accessibility checks
+
+Titles always enter text nodes; a hostile `<img ... onerror>` title creates no
+element and executes nothing. Delegation searches only the fixed
+`data-lrx-action` marker inside its registered root. Inputs have programmatic
+names, controls are native buttons/checkboxes, filter state uses `aria-pressed`,
+the list and filters are named, status is live, keyboard add/edit commit works,
+and axe is green.
+
+### Performance observations
+
+The defining scenario records the standard snapshot
+`[0,15,15,0,0,33,13]`: zero depth/derived work, fifteen commits/source writes,
+thirty-three scalar/region sink evaluations, and thirteen direct scalar DOM
+writes. The keyed region records `[3,13,4,3]` mounts/updates/moves/disposals; the
+positional filter region records `[3,33,0]`. These are deterministic work counts,
+not a timing benchmark. Root/row/input identity and zero child-list work for one
+toggle provide the important structural evidence.
+
+### Follow-up issue or commit
+
+`example(todo): dogfood keyed dynamic regions`

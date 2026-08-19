@@ -31,6 +31,8 @@ jobs:
         run: ./scripts/check_differential.sh
       - name: Check deterministic component output
         run: ./scripts/check_component_codegen.sh
+      - name: Check local dynamic-region runtime
+        run: ./scripts/check_region_runtime.sh
       - name: Check Counter CLI orchestration
         run: ./scripts/check_cli.sh
       - name: Run component browser tests
