@@ -8,6 +8,7 @@ import LeanRx.Core.Expr
 import LeanRx.Proofs.DependencySound
 import LeanRx.Graph.Model
 import LeanRx.Graph.Build
+import LeanRx.Graph.Topological
 
 /-! LeanRx's public library root. -/
 namespace LeanRx

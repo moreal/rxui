@@ -17,6 +17,7 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.JsType.debug._unsafe_rec,
     `LeanRx.RxExpr.debug._unsafe_rec,
     `LeanRx.RxExpr.eval._unsafe_rec,
+    `LeanRx.Schedule.position.loop._unsafe_rec,
     `LeanRx.instBEqJsType.beq._unsafe_rec,
     `LeanRx.instDecidableEqJsType.decEq._unsafe_rec,
     `LeanRx.instReprJsType.repr._unsafe_rec
@@ -43,6 +44,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Node.mk.injEq, #[``propext]),
     (`LeanRx.NodeId.mk.injEq, #[``propext]),
     (`LeanRx.NodeSpec.mk.injEq, #[``propext]),
+    (`LeanRx.PlannedGraph.mk.injEq, #[``propext]),
     (`LeanRx.RxExpr.binary.injEq, #[``propext]),
     (`LeanRx.RxExpr.debug.eq_def, #[``propext, ``Quot.sound]),
     (`LeanRx.RxExpr.debug._unary.eq_def, #[``propext, ``Quot.sound]),
@@ -70,6 +72,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.RxExpr.literal.injEq, #[``propext]),
     (`LeanRx.RxExpr.readWith.injEq, #[``propext]),
     (`LeanRx.RxExpr.unary.injEq, #[``propext]),
+    (`LeanRx.Schedule.mk.injEq, #[``propext]),
     (`LeanRx.ScalarLiteral.bool.injEq, #[``propext]),
     (`LeanRx.ScalarLiteral.int.injEq, #[``propext]),
     (`LeanRx.ScalarLiteral.nat.injEq, #[``propext]),
@@ -79,6 +82,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Store.agreeOn_union_left, #[``propext]),
     (`LeanRx.Store.agreeOn_union_right, #[``propext]),
     (`LeanRx.Store.cons.injEq, #[``propext]),
+    (`LeanRx.Graph.certified_schedule_respects_edges, #[``propext, ``Quot.sound]),
     (`LeanRx.TypedNodeRef.mk.injEq, #[``propext])
   ]
   let declarations := (env.constants.toList.filter fun (name, _) =>

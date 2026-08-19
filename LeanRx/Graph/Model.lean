@@ -78,9 +78,11 @@ structure Node where
   equality : Option JsEqPlan
   evaluator : String
   span : SourceSpan
+deriving Repr, BEq, DecidableEq
 
 structure Graph where
   nodes : Array Node
+deriving Repr, BEq, DecidableEq
 
 /-- Stable structured graph diagnostic. -/
 structure GraphError where

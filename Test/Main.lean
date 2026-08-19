@@ -9,6 +9,7 @@ import Test.Core.ExprPrimitives
 import Test.Proofs.DependencySound
 import Test.Graph.Model
 import Test.Graph.Build
+import Test.Graph.Topological
 
 private def assertEq [BEq α] [ToString α] (expected actual : α) : IO Unit :=
   unless expected == actual do
@@ -28,4 +29,5 @@ def main : IO Unit := do
   LeanRxTest.DependencySound.run
   LeanRxTest.Graph.Model.run
   LeanRxTest.Graph.Build.run
+  LeanRxTest.Graph.Topological.run
   IO.println "LeanRx native smoke tests passed"
