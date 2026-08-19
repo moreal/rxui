@@ -131,7 +131,7 @@ def emit (moduleName : String) (checked : TabsSpec.Checked n) : Except Error Emi
   let mut body : List Stmt := [
     .const state (.array <| .ofList [uint checked.spec.initialSelected.val]),
     .const panels (stringArray checked.spec.props.panels.value),
-    .const root (call runtime.createElement [.literal (.string "div")]),
+    .const root (call runtime.createElement [.literal (.string "main")]),
     .expr <| call runtime.setAttribute [
       .ident root, .literal (.string "class"), .literal (.string "leanrx-tabs")],
     .const title (call runtime.createElement [.literal (.string "h1")]),
