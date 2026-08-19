@@ -4,7 +4,7 @@ namespace LeanRxTest.Graph.Build
 
 def validSpecs : Array LeanRx.NodeSpec := #[
   .source "count" .int,
-  .derived "doubled" .int #[{ id := ⟨0⟩, valueType := .int }] .bigint "double",
+  .derived "doubled" .int #[{ id := ⟨0⟩, valueType := .int }] "double",
   .sink "text" #[{ id := ⟨1⟩, valueType := .int }] "renderText"
 ]
 
@@ -26,11 +26,11 @@ def run : IO Unit := do
     throw <| IO.userError "builder flattened or changed a direct sink dependency"
   expectError "LRX-GRAPH-009" <| LeanRx.Graph.buildNodes #[
     .source "count" .int,
-    .derived "bad" .int #[{ id := ⟨9⟩, valueType := .int }] .bigint "bad"
+    .derived "bad" .int #[{ id := ⟨9⟩, valueType := .int }] "bad"
   ]
   expectError "LRX-TYPE-005" <| LeanRx.Graph.buildNodes #[
     .source "count" .int,
-    .derived "bad" .int #[{ id := ⟨0⟩, valueType := .string }] .bigint "bad"
+    .derived "bad" .int #[{ id := ⟨0⟩, valueType := .string }] "bad"
   ]
   expectError "LRX-GRAPH-004" <| LeanRx.Graph.buildNodes #[
     { name := "source", kind := .source, valueType := .int,
@@ -44,6 +44,17 @@ def run : IO Unit := do
     .source "count" .int,
     .sink "firstSink" #[{ id := ⟨0⟩, valueType := .int }] "first",
     .sink "secondSink" #[{ id := ⟨1⟩, valueType := .string }] "second"
+  ]
+  for (valueType, equality) in [
+      (.bool, .bigint), (.string, .bigint), (.int, .strict), (.nat, .structural)
+    ] do
+    expectError "LRX-TYPE-006" <| LeanRx.Graph.buildNodes #[
+      { name := "badEquality", kind := .derived, valueType, deps := #[],
+        equality := some equality, evaluator := "bad", span := .generated }
+    ]
+  expectError "LRX-GRAPH-013" <| LeanRx.Graph.buildNodes #[
+    { name := "badSource", kind := .source, valueType := .int, deps := #[],
+      equality := none, evaluator := "unexpected", span := .generated }
   ]
 
 end LeanRxTest.Graph.Build

@@ -7,10 +7,10 @@ open LeanRx.Abstract
 
 def diamondSpecs : Array NodeSpec := #[
   .source "count" .int,
-  .derived "left" .int #[{ id := ⟨0⟩, valueType := .int }] .bigint "count + 10",
-  .derived "right" .int #[{ id := ⟨0⟩, valueType := .int }] .bigint "count * 2",
+  .derived "left" .int #[{ id := ⟨0⟩, valueType := .int }] "count + 10",
+  .derived "right" .int #[{ id := ⟨0⟩, valueType := .int }] "count * 2",
   .derived "total" .int #[{ id := ⟨1⟩, valueType := .int }, { id := ⟨2⟩, valueType := .int }]
-    .bigint "left + right",
+    "left + right",
   .sink "totalText" #[{ id := ⟨3⟩, valueType := .int }] "observe total"
 ]
 

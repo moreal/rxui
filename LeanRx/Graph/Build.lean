@@ -23,11 +23,16 @@ private def validateShape (spec : NodeSpec) : Except GraphError Unit := do
   | .source, none =>
       unless spec.deps.isEmpty do
         throw <| mkError "LRX-GRAPH-004" "source nodes cannot have dependencies" spec
+      unless spec.evaluator.isEmpty do
+        throw <| mkError "LRX-GRAPH-013" "source nodes cannot have evaluators" spec
   | .source, some _ =>
       throw <| mkError "LRX-GRAPH-005" "source equality belongs to the state field contract" spec
   | .derived, none =>
       throw <| mkError "LRX-TYPE-004" "derived nodes require a lawful equality plan" spec
-  | .derived, some _ =>
+  | .derived, some equality =>
+      unless equality == spec.valueType.equalityPlan do
+        throw <| mkError "LRX-TYPE-006"
+          "derived equality plan is incompatible with its runtime type" spec
       if spec.evaluator.isEmpty then
         throw <| mkError "LRX-GRAPH-006" "derived node has no evaluator" spec
   | .sink, some _ =>

@@ -23,10 +23,10 @@ def run : IO Unit := do
     throw <| IO.userError "linear ranks changed"
   let diamond ← mustPlan #[
     .source "source" .int,
-    .derived "left" .int #[{ id := ⟨0⟩, valueType := .int }] .bigint "left",
-    .derived "right" .int #[{ id := ⟨0⟩, valueType := .int }] .bigint "right",
+    .derived "left" .int #[{ id := ⟨0⟩, valueType := .int }] "left",
+    .derived "right" .int #[{ id := ⟨0⟩, valueType := .int }] "right",
     .derived "join" .int #[{ id := ⟨1⟩, valueType := .int }, { id := ⟨2⟩, valueType := .int }]
-      .bigint "join",
+      "join",
     .sink "sink" #[{ id := ⟨3⟩, valueType := .int }] "sink"
   ]
   unless diamond.schedule.order.map (·.value) == #[0, 1, 2, 3, 4] do
@@ -35,8 +35,8 @@ def run : IO Unit := do
     throw <| IO.userError "diamond ranks do not preserve fan-in"
   let fanOut ← mustPlan #[
     .source "source" .int,
-    .derived "left" .int #[{ id := ⟨0⟩, valueType := .int }] .bigint "left",
-    .derived "right" .int #[{ id := ⟨0⟩, valueType := .int }] .bigint "right"
+    .derived "left" .int #[{ id := ⟨0⟩, valueType := .int }] "left",
+    .derived "right" .int #[{ id := ⟨0⟩, valueType := .int }] "right"
   ]
   unless fanOut.graph.nodes.map (·.rank) == #[0, 1, 1] do
     throw <| IO.userError "fan-out ranks changed"
@@ -44,15 +44,15 @@ def run : IO Unit := do
     .source "left" .int,
     .source "right" .int,
     .derived "join" .int #[{ id := ⟨0⟩, valueType := .int }, { id := ⟨1⟩, valueType := .int }]
-      .bigint "join"
+      "join"
   ]
   unless fanIn.graph.nodes.map (·.rank) == #[0, 0, 1] do
     throw <| IO.userError "fan-in ranks changed"
   let disconnected ← mustPlan #[
     .source "firstSource" .int,
     .source "secondSource" .int,
-    .derived "firstDerived" .int #[{ id := ⟨0⟩, valueType := .int }] .bigint "first",
-    .derived "secondDerived" .int #[{ id := ⟨1⟩, valueType := .int }] .bigint "second"
+    .derived "firstDerived" .int #[{ id := ⟨0⟩, valueType := .int }] "first",
+    .derived "secondDerived" .int #[{ id := ⟨1⟩, valueType := .int }] "second"
   ]
   unless disconnected.schedule.order.map (·.value) == #[0, 1, 2, 3] &&
       disconnected.graph.nodes.map (·.rank) == #[0, 0, 1, 1] do
@@ -62,14 +62,14 @@ def run : IO Unit := do
     throw <| IO.userError "source without consumers was not scheduled"
   expectCycle #["a", "b", "a"] #[
     .source "source" .int,
-    .derived "a" .int #[{ id := ⟨2⟩, valueType := .int }] .bigint "a",
-    .derived "b" .int #[{ id := ⟨1⟩, valueType := .int }] .bigint "b"
+    .derived "a" .int #[{ id := ⟨2⟩, valueType := .int }] "a",
+    .derived "b" .int #[{ id := ⟨1⟩, valueType := .int }] "b"
   ]
   expectCycle #["a", "c", "b", "a"] #[
     .source "source" .int,
-    .derived "a" .int #[{ id := ⟨3⟩, valueType := .int }] .bigint "a",
-    .derived "b" .int #[{ id := ⟨1⟩, valueType := .int }] .bigint "b",
-    .derived "c" .int #[{ id := ⟨2⟩, valueType := .int }] .bigint "c"
+    .derived "a" .int #[{ id := ⟨3⟩, valueType := .int }] "a",
+    .derived "b" .int #[{ id := ⟨1⟩, valueType := .int }] "b",
+    .derived "c" .int #[{ id := ⟨2⟩, valueType := .int }] "c"
   ]
 
 end LeanRxTest.Graph.Topological

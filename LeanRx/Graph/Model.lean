@@ -16,6 +16,13 @@ inductive RuntimeTypeId where
   | nat
 deriving Repr, BEq, DecidableEq, Ord
 
+/-- Canonical lawful equality lowering for each sealed scalar runtime type. -/
+def RuntimeTypeId.equalityPlan : RuntimeTypeId → JsEqPlan
+  | .bool => .strict
+  | .string => .strict
+  | .int => .bigint
+  | .nat => .bigint
+
 def RuntimeType.id : {α : Type} → RuntimeType α → RuntimeTypeId
   | _, .bool => .bool
   | _, .string => .string
@@ -55,9 +62,9 @@ def source (name : String) (valueType : RuntimeTypeId)
     evaluator := "", span }
 
 def derived (name : String) (valueType : RuntimeTypeId) (deps : Array TypedNodeRef)
-    (equality : JsEqPlan) (evaluator : String)
+    (evaluator : String)
     (span : SourceSpan := .generated) : NodeSpec :=
-  { name, kind := .derived, valueType, deps, equality := some equality,
+  { name, kind := .derived, valueType, deps, equality := some valueType.equalityPlan,
     evaluator, span }
 
 def sink (name : String) (deps : Array TypedNodeRef) (evaluator : String)
