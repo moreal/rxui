@@ -92,7 +92,7 @@ test("prevents invalid submit and exposes only a validated fake command", async 
     (await page.evaluate(() => globalThis.formDisposers[0].instrumentation()))[7],
   ).not.toContain("command:fakeSubmit");
 
-  const hostile = '<img src=x onerror="globalThis.formXss=true">';
+  const hostile = '  <img src=x onerror="globalThis.formXss=true">  ';
   await inputs.nth(0).focus();
   await inputs.nth(0).fill(hostile);
   await page.keyboard.press("Tab");
@@ -114,6 +114,8 @@ test("prevents invalid submit and exposes only a validated fake command", async 
   expect(trace).toContain("event:blur");
   expect(trace).toContain("event:submit");
   expect(trace).toContain("command:fakeSubmit");
+  const instrumentation = await page.evaluate(() => globalThis.formDisposers[0].instrumentation());
+  expect(instrumentation.slice(0, 7)).toEqual([0, 5, 3, 3, 0, 4, 5]);
 
   await page.evaluate(() => globalThis.formDisposers[1]());
   const accessibility = await new AxeBuilder({ page }).analyze();

@@ -97,9 +97,7 @@ test("preserves raw edits and converts only successfully parsed input", async ({
   const instrumentation = await page.evaluate(() =>
     globalThis.temperatureDispose.instrumentation(),
   );
-  expect(instrumentation[1]).toBe(6);
-  expect(instrumentation[2]).toBe(6);
-  expect(instrumentation[3]).toBe(6);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 6, 6, 6, 5, 7, 7]);
   expect(instrumentation[7].filter((entry) => entry === "transaction:commit")).toHaveLength(6);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);

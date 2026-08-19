@@ -7,7 +7,7 @@ open LeanRx LeanRx.Form LeanRxExamples.ValidatedForm
 
 private def expectedJson : IO String :=
   match validateForm {
-      name := "<img src=x onerror=\"globalThis.formXss=true\">"
+      name := "  <img src=x onerror=\"globalThis.formXss=true\">  "
       age := "42"
       accepted := true
     } with
