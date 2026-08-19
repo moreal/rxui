@@ -33,3 +33,10 @@ in place, removed keys report exactly their owned tokens for disposal, and new
 keys alone allocate fresh tokens. Lean proves that the optimized mounted
 projection equals full target-list recomputation. Token retention and disposal
 counts remain executable model facts until the browser region host is connected.
+
+`runtime/leanrx_region.mjs` is a separate local reconciler, not a scheduler. It
+receives explicit target items and compiler-generated mount/update/dispose
+callbacks. It never discovers dependencies, observes reactive reads, or rebuilds
+outside its anchor. Conditional replacement, positional suffix ownership, keyed
+identity/reorder, duplicate-key fail-before-mutation, copied instrumentation, and
+idempotent disposal run against a deterministic fake DOM before browser dogfood.

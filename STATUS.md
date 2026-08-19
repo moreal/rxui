@@ -360,6 +360,7 @@ M8 — Conditional and keyed dynamic regions
 - `lake exe leanrx_graph_lab`
 - `./scripts/check_differential.sh`
 - `./scripts/check_component_codegen.sh`
+- `./scripts/check_region_runtime.sh`
 - `./scripts/check_cli.sh`
 - `./scripts/check_browser.sh`
 - `./scripts/check_bench.sh`
