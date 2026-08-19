@@ -35,3 +35,41 @@ machine. This is a tooling observation, not a framework benchmark.
 ### Follow-up issue or commit
 
 `14d44a6 chore(repo): initialize LeanRx Lake package`
+
+## Expression Playground
+
+### Scenario exercised
+
+Typed `price`, `quantity`, and `threshold` fields; staged `subtotal`, `isLarge`,
+and conditional `label` expressions; dependency inspection; and native evaluation
+against two heterogeneous stores.
+
+### What was pleasant
+
+Typed field witnesses make cross-typed reads unrepresentable, and expression
+dependencies are inspectable through the same public values used for evaluation.
+The output is deterministic enough to gate as a small golden fixture.
+
+### Friction
+
+The explicit combinators are intentionally verbose. There is no local staged
+`let` or operator notation yet, so nested arithmetic is noisier than ordinary Lean.
+
+### Missing framework capability
+
+No source syntax, components, updates, graph extraction, or browser lowering is
+expected in M1. Formatting values into staged strings is still primitive.
+
+### Bugs found
+
+Generalizing schema/store universes exposed several accidentally universe-zero
+helper signatures; store integration tests forced those signatures to be fixed.
+
+### Performance observations
+
+The playground performs full pure evaluation. Runtime propagation work reduction
+is an M2/M5 measurement and is not claimed here.
+
+### Follow-up issue or commit
+
+`example(expr): dogfood the scalar expression core`

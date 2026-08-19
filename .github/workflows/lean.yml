@@ -21,6 +21,8 @@ jobs:
         run: lake build
       - name: Run native smoke tests
         run: lake exe leanrx_test
+      - name: Run public examples
+        run: ./scripts/check_examples.sh
       - name: Enforce proof placeholder policy
         run: ./scripts/check_placeholders.sh
       - name: Test the policy scanner

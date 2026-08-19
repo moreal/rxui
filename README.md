@@ -18,6 +18,7 @@ and [PLAN.md](PLAN.md). The repository is not yet a released framework.
 ./scripts/check_format.sh
 lake build
 lake exe leanrx_test
+./scripts/check_examples.sh
 ./scripts/check_placeholders.sh
 ./scripts/test_placeholder_scanner.sh
 ./scripts/check_axioms.sh
@@ -26,6 +27,12 @@ lake exe leanrx_test
 
 The same commands run in CI. See [STATUS.md](STATUS.md) for the current
 milestone, exact baseline, and the latest green commit.
+
+Run the M1 public-API dogfood directly with:
+
+```sh
+lake exe leanrx_expr_playground
+```
 
 ## Project boundaries
 

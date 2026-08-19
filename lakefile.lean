@@ -17,3 +17,6 @@ lean_lib LeanRxTest where
 @[default_target]
 lean_exe leanrx_test where
   root := `Test.Main
+
+lean_exe leanrx_expr_playground where
+  root := `examples.ExpressionPlayground
