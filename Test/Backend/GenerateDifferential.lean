@@ -80,6 +80,16 @@ private def selectedPanel := RxExpr.vectorGet
   (RxExpr.read (.here : Field SelectionSchema (Vector String 3)))
   (RxExpr.read (.there .here : Field SelectionSchema (Fin 3)))
 
+private def panelValues : Vector String 3 := #v["first", "second", "third"]
+
+private def selectedStore (index : Fin 3) : Store SelectionSchema :=
+  .cons panelValues <| .cons index .empty
+
+private def vectorCase (index : Fin 3) : Case :=
+  { moduleName := "vector_get.mjs"
+    args := [.array (panelValues.toList.map RuntimeValue.string), .number index.val]
+    expected := .string (selectedPanel.eval (selectedStore index)) }
+
 private def literalBool : RxExpr .empty (DepSet.empty .empty) Bool := .literal (.bool true)
 private def literalString : RxExpr .empty (DepSet.empty .empty) String :=
   .literal (.string "린\nRx\x00")
@@ -248,12 +258,9 @@ private def cases : List Case := [
     expected := .string "yes" },
   { moduleName := "conditional.mjs", args := [.bool false, .string "yes", .string "no"],
     expected := .string "no" },
-  { moduleName := "vector_get.mjs",
-    args := [.array [.string "first", .string "second", .string "third"], .number 0],
-    expected := .string "first" },
-  { moduleName := "vector_get.mjs",
-    args := [.array [.string "first", .string "second", .string "third"], .number 2],
-    expected := .string "third" }
+  vectorCase ⟨0, by decide⟩,
+  vectorCase ⟨1, by decide⟩,
+  vectorCase ⟨2, by decide⟩
 ]
 
 def generate (directory : System.FilePath) : IO Unit := do
