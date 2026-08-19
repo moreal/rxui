@@ -40,6 +40,15 @@ test.afterAll(async () => {
   );
 });
 
+async function expectPressed(buttons, selected) {
+  for (let index = 0; index < 3; index += 1) {
+    await expect(buttons.nth(index)).toHaveAttribute(
+      "aria-pressed",
+      index === selected ? "true" : "false",
+    );
+  }
+}
+
 test("keeps dependent labels, panels, and finite events aligned", async ({ page }) => {
   await page.goto(origin);
   const exports = await page.evaluate(async () => {
@@ -50,26 +59,84 @@ test("keeps dependent labels, panels, and finite events aligned", async ({ page 
   expect(exports).toEqual(["mount"]);
 
   const buttons = page.locator(".leanrx-tabs button");
-  await expect(buttons).toHaveText(["Overview", "Details", "History"]);
+  const hostileLabel = '<img src=x onerror="globalThis.tabsLabelXss=true">';
+  const hostilePanel = '<img src=x onerror="globalThis.tabsPanelXss=true">';
+  const hostileName =
+    'Dependent <img src=x onerror="globalThis.tabsNameXss=true"> Tabs';
+  await expect(page.locator(".leanrx-tabs h1")).toHaveText(hostileName);
+  await expect(buttons).toHaveText(["Overview", "Details", hostileLabel]);
+  await expect(page.locator('.leanrx-tabs [role="group"]')).toHaveAttribute(
+    "aria-label",
+    "Tab selection",
+  );
+  await expectPressed(buttons, 1);
   const panel = page.locator(".leanrx-tabs p");
-  await expect(panel).toHaveText("Details panel");
+  await expect(panel).toHaveText("Shared panel");
+  await expect(page.locator(".leanrx-tabs img")).toHaveCount(0);
+  expect(
+    await page.evaluate(() => [
+      globalThis.tabsNameXss,
+      globalThis.tabsLabelXss,
+      globalThis.tabsPanelXss,
+    ]),
+  ).toEqual([undefined, undefined, undefined]);
 
+  await page.evaluate(() => {
+    const text = document.querySelector(".leanrx-tabs p").firstChild;
+    globalThis.equalPanelMutations = 0;
+    globalThis.equalPanelObserver = new MutationObserver((records) => {
+      globalThis.equalPanelMutations += records.length;
+    });
+    globalThis.equalPanelObserver.observe(text, { characterData: true });
+  });
   await page.keyboard.press("Tab");
   await expect(buttons.nth(0)).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(panel).toHaveText("Overview panel");
+  await expect(panel).toHaveText("Shared panel");
+  await expectPressed(buttons, 0);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  expect(await page.evaluate(() => globalThis.equalPanelMutations)).toBe(0);
+  expect(
+    (await page.evaluate(() => globalThis.tabsDispose.instrumentation())).slice(0, 7),
+  ).toEqual([0, 1, 1, 0, 0, 1, 0]);
 
-  const expected = ["Overview panel", "Details panel", "History panel"];
+  const expected = ["Shared panel", "Shared panel", hostilePanel];
   for (let index = 0; index < expected.length; index += 1) {
     await buttons.nth(index).click();
     await expect(panel).toHaveText(expected[index]);
+    await expectPressed(buttons, index);
   }
   expect(await panel.textContent()).not.toBe("undefined");
   const instrumentation = await page.evaluate(() => globalThis.tabsDispose.instrumentation());
-  expect(instrumentation.slice(0, 7)).toEqual([0, 4, 4, 0, 0, 4, 4]);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 4, 4, 0, 0, 3, 1]);
   expect(instrumentation[7].filter((event) => event === "event:select")).toHaveLength(4);
   expect(instrumentation[7].filter((event) => event === "transaction:commit")).toHaveLength(4);
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
+});
+
+test("reselecting the active tab suppresses panel work and DOM writes", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    const { mount } = await import("/DependentTabs.mjs");
+    globalThis.tabsDispose = mount(document.getElementById("app"));
+    const text = document.querySelector(".leanrx-tabs p").firstChild;
+    globalThis.tabsMutations = 0;
+    globalThis.tabsObserver = new MutationObserver((records) => {
+      globalThis.tabsMutations += records.length;
+    });
+    globalThis.tabsObserver.observe(text, { characterData: true });
+  });
+  await page.locator(".leanrx-tabs button").nth(1).click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  await expect(page.locator(".leanrx-tabs p")).toHaveText("Shared panel");
+  expect(await page.evaluate(() => globalThis.tabsMutations)).toBe(0);
+  const instrumentation = await page.evaluate(() => globalThis.tabsDispose.instrumentation());
+  expect(instrumentation.slice(0, 7)).toEqual([0, 1, 1, 0, 0, 0, 0]);
+  expect(instrumentation[7]).toEqual([
+    "event:select",
+    "source:selected:write",
+    "transaction:commit",
+  ]);
 });

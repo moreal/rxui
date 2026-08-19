@@ -26,6 +26,9 @@ if (
       "typed-events",
       "proof-erasure",
       "direct-dom",
+      "actual-change",
+      "instrumentation",
+      "trace",
     ])
 ) {
   throw new Error("generated Dependent Tabs manifest is invalid");

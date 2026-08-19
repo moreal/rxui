@@ -18,7 +18,8 @@ def run : IO Unit := do
         | .error error => throw <| IO.userError s!"Tabs printer failed: {error.code}"
       unless source.contains "return panels[selected];" &&
           source.contains "function $lrx_select(state, context, index)" &&
-          source.contains "setText(context[0], $lrx_panel(context[1], state[0]))" &&
+          source.contains "if ((!(state[0] === index)))" &&
+          source.contains "setText(context[0], next)" &&
           source.contains "createText(\"Third panel\")" == false &&
           ¬source.contains "Nat.zero_lt_succ" && ¬source.contains "proof" do
         throw <| IO.userError s!"dependent Tabs lowering changed:\n{source}"
@@ -27,7 +28,7 @@ def run : IO Unit := do
           emitted.manifest.sourceCount == 1 && emitted.manifest.derivedCount == 0 &&
           emitted.manifest.textSinkCount == 1 && emitted.manifest.eventCount == 1 &&
           emitted.manifest.features == #["dependent", "immutable-props", "typed-events",
-            "proof-erasure", "direct-dom"] do
+            "proof-erasure", "direct-dom", "actual-change", "instrumentation", "trace"] do
         throw <| IO.userError "dependent Tabs manifest changed"
 
 end LeanRxTest.Backend.Tabs

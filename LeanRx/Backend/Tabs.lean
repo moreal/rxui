@@ -59,21 +59,40 @@ private def selectFunction (runtime : RuntimeNames) (panelEvaluator : Ident)
   let context ← Ident.checked "context"
   let index ← Ident.checked event.parameterName
   let metrics ← Ident.checked "metrics"
+  let sinkCache ← Ident.checked "sinkCache"
+  let next ← Ident.checked "next"
+  let changed : Expr := .unary .not <| .binary .eq
+    (arrayAt state event.target.index) (.ident index)
+  let sinkChanged : Expr := .unary .not <| .binary .eq (arrayAt sinkCache 0) (.ident next)
+  let pressedUpdates := List.range count |>.map fun buttonIndex =>
+    Stmt.expr <| call runtime.setAttribute [
+      .index (arrayAt context 4) (uint buttonIndex),
+      .literal (.string "aria-pressed"),
+      .conditional (.binary .eq (.ident index) (uint buttonIndex))
+        (.literal (.string "true")) (.literal (.string "false"))
+    ]
+  let changedBody : List Stmt := [
+    .assign (.index (.ident state) (uint event.target.index)) (.ident index),
+    incrementAt metrics 5,
+    pushTrace metrics "sink:panel:evaluated",
+    .const next (call panelEvaluator [arrayAt context 1, arrayAt state 0]),
+    .ifThen sinkChanged <| .ofList [
+      .assign (.index (.ident sinkCache) (uint 0)) (.ident next),
+      .expr <| call runtime.setText [arrayAt context 0, .ident next],
+      incrementAt metrics 6,
+      pushTrace metrics "dom:panel:write"
+    ]
+  ] ++ pressedUpdates
   pure {
     name := select
     params := #[state, context, index]
     body := #[
       .const metrics (arrayAt context 2),
+      .const sinkCache (arrayAt context 3),
       pushTrace metrics s!"event:{event.name}",
-      .assign (.index (.ident state) (uint event.target.index)) (.ident index),
       incrementAt metrics 2,
       pushTrace metrics s!"source:{event.target.name}:write",
-      incrementAt metrics 5,
-      pushTrace metrics "sink:panel:evaluated",
-      .expr <| call runtime.setText [arrayAt context 0,
-        call panelEvaluator [arrayAt context 1, arrayAt state 0]],
-      incrementAt metrics 6,
-      pushTrace metrics "dom:panel:write",
+      .ifThen changed (.ofList changedBody),
       incrementAt metrics 1,
       pushTrace metrics "transaction:commit",
       .return (.literal .null)
@@ -111,7 +130,8 @@ private def manifest (moduleName : String) (checked : TabsSpec.Checked n) : Comp
     textSinkCount := 1
     eventCount := 1
     hostImports := #["./leanrx_dom.mjs", "./leanrx_host.mjs"]
-    features := #["dependent", "immutable-props", "typed-events", "proof-erasure", "direct-dom"] }
+    features := #["dependent", "immutable-props", "typed-events", "proof-erasure",
+      "direct-dom", "actual-change", "instrumentation", "trace"] }
 
 /-- Emit one checked dependent Tabs component through the same typed scalar
 evaluator, JavaScript AST, printer, and tiny DOM host boundaries as scalar
@@ -143,10 +163,12 @@ def emit (moduleName : String) (checked : TabsSpec.Checked n) : Except Error Emi
   let root ← Ident.checked "root"
   let title ← Ident.checked "title"
   let titleText ← Ident.checked "titleText"
+  let controls ← Ident.checked "controls"
   let panel ← Ident.checked "panel"
   let panelText ← Ident.checked "panelText"
   let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
+  let sinkCache ← Ident.checked "sinkCache"
   let disposer ← Ident.checked "disposer"
   let mut body : List Stmt := [
     .const state (.array <| .ofList [uint checked.spec.initialSelected.val]),
@@ -157,7 +179,13 @@ def emit (moduleName : String) (checked : TabsSpec.Checked n) : Except Error Emi
     .const title (call runtime.createElement [.literal (.string "h1")]),
     .const titleText (call runtime.createText [.literal (.string checked.spec.name)]),
     .expr <| call runtime.append [.ident title, .ident titleText],
-    .expr <| call runtime.append [.ident root, .ident title]
+    .expr <| call runtime.append [.ident root, .ident title],
+    .const controls (call runtime.createElement [.literal (.string "div")]),
+    .expr <| call runtime.setAttribute [
+      .ident controls, .literal (.string "role"), .literal (.string "group")],
+    .expr <| call runtime.setAttribute [
+      .ident controls, .literal (.string "aria-label"), .literal (.string "Tab selection")],
+    .expr <| call runtime.append [.ident root, .ident controls]
   ]
   let mut buttonNames : List Ident := []
   for (label, index) in checked.spec.props.labels.value.toList.zipIdx do
@@ -170,9 +198,12 @@ def emit (moduleName : String) (checked : TabsSpec.Checked n) : Except Error Emi
         .ident button, .literal (.string "type"), .literal (.string "button")],
       .expr <| call runtime.setAttribute [
         .ident button, .literal (.string "aria-label"), .literal (.string label)],
+      .expr <| call runtime.setAttribute [
+        .ident button, .literal (.string "aria-pressed"),
+        .literal (.string (if index == checked.spec.initialSelected.val then "true" else "false"))],
       .const text (call runtime.createText [.literal (.string label)]),
       .expr <| call runtime.append [.ident button, .ident text],
-      .expr <| call runtime.append [.ident root, .ident button]
+      .expr <| call runtime.append [.ident controls, .ident button]
     ]
   body := body ++ [
     .const panel (call runtime.createElement [.literal (.string "p")]),
@@ -184,7 +215,11 @@ def emit (moduleName : String) (checked : TabsSpec.Checked n) : Except Error Emi
     .expr <| call runtime.append [.ident root, .ident panel],
     .const metrics (.array <| .ofList [
       uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil]),
-    .const context (.array <| .ofList [.ident panelText, .ident panels, .ident metrics]),
+    .const sinkCache (.array <| .ofList [
+      call panelEvaluator.exportName [.ident panels, arrayAt state 0]]),
+    .const context (.array <| .ofList [
+      .ident panelText, .ident panels, .ident metrics, .ident sinkCache,
+      .array (.ofList <| buttonNames.map Expr.ident)]),
     .expr <| call runtime.append [.ident target, .ident root]
   ]
   let mut offNames : List Ident := []
