@@ -16,6 +16,7 @@ lean_lib LeanRxTest where
     `Test.Graph.Model, `Test.Graph.Build, `Test.Graph.Topological, `Test.Graph.Properties,
     `Test.Graph.Serialize,
     `Test.Graph.IntProgram,
+    `Test.Backend.JsAst,
     `Test.Semantics.Store, `Test.Semantics.Fixtures, `Test.Semantics.Reference,
     `Test.Semantics.Optimized, `Test.Proofs.PropagationSound]
 

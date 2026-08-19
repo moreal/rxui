@@ -11,6 +11,7 @@ import LeanRx.Graph.Build
 import LeanRx.Graph.Topological
 import LeanRx.Graph.Serialize
 import LeanRx.Graph.IntProgram
+import LeanRx.Backend.JsAst
 import LeanRx.Semantics.Store
 import LeanRx.Semantics.Reference
 import LeanRx.Semantics.Optimized
