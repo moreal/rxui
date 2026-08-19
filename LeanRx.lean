@@ -19,6 +19,8 @@ import LeanRx.IR.Reactive
 import LeanRx.Lower.RxExpr
 import LeanRx.Backend.Scalar
 import LeanRx.Backend.Manifest
+import LeanRx.View.Model
+import LeanRx.Component.Model
 import LeanRx.Semantics.Store
 import LeanRx.Semantics.Reference
 import LeanRx.Semantics.Optimized

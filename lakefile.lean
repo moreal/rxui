@@ -21,6 +21,9 @@ lean_lib LeanRxTest where
     `Test.Backend.JsPrinter,
     `Test.Lower.RxExpr,
     `Test.Backend.Scalar,
+    `Test.Component.CounterSpec,
+    `Test.View.Model,
+    `Test.Component.Model,
     `Test.Semantics.Store, `Test.Semantics.Fixtures, `Test.Semantics.Reference,
     `Test.Semantics.Optimized, `Test.Proofs.PropagationSound]
 
