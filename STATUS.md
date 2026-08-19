@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M2 — Graph model, scheduling, and semantics
+M3 — Typed JavaScript AST and scalar backend
 
 ## Last green commit
 
-`3491e8a fix(core): enforce staged type contracts`
+`c1c071d fix(graph): certify typed source and sink shapes`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -44,16 +44,38 @@ M2 — Graph model, scheduling, and semantics
 - Verified `3491e8a` from a fresh clone with `./scripts/check.sh`; 178 public
   theorems, 49 exact reviewed axiom uses, and 13 exact generated unsafe helpers
   passed, and the checkout remained clean.
+- Completed M2 typed source/derived/sink graphs, validated stable IDs and direct
+  dependency types, useful source-linked cycle paths, deterministic certified
+  topological schedules/ranks, and pure JSON/DOT graph artifacts.
+- Added full-recomputation and explicit changed-frontier abstract semantics with
+  batched sources, pending/evaluated/changed traces, lawful equality stopping,
+  sink suppression, and work instrumentation.
+- Proved exact changed-frontier tracking, topological-prefix store equality,
+  sink observation equality, reference cache initialization, and optimized
+  next-state validity. Repeated optimized transactions require no reference-state
+  oracle.
+- Added the checked all-`Int` proof-subset bridge: graph metadata and abstract
+  evaluators derive from the same dependency-indexed `RxExpr`; source/sink shapes,
+  declaration-order restrictions, and private planned artifacts fail closed.
+- Added replayable fixed-seed DAG properties, branch-complete graph diagnostics,
+  graph serializer goldens, compile-fail planned-artifact construction, and the
+  public Graph Lab with a measured parity stop (four reference evaluations versus
+  one optimized evaluation).
+- Verified `c1c071d` from a fresh local clone with `./scripts/check.sh`; 80 build
+  jobs, 412 public theorems, 103 exact reviewed axiom uses, 22 exact generated
+  unsafe recursion helpers, native/proof/property/example/negative/policy gates
+  all passed, and the checkout remained clean.
 
 ## In progress
 
-- Static source/derived/sink graph representation and deterministic validation.
+- Typed JavaScript AST design and the first pure scalar lowering slice.
 
 ## Next
 
-- Define stable graph node IDs/kinds and direct-dependency specifications.
-- Add source-linked validation, cycle paths, and deterministic topological ranks.
-- Implement reference then optimized abstract graph semantics before browser code.
+- Establish Node/pnpm only for the JavaScript differential gates required by M3.
+- Define validity-checked typed JavaScript AST nodes and a deterministic printer.
+- Lower the closed Bool/String/Int/Nat scalar subset through the custom Reactive IR
+  boundary, then add native-Lean versus generated-JavaScript differential tests.
 
 ## Known blockers
 
@@ -91,12 +113,33 @@ M2 — Graph model, scheduling, and semantics
   branches, Type-1 store retrieval, hostile debug strings, compile-fail contracts,
   all primitives, Unicode, and unbounded Int behavior are covered.
 
+## M2 independent review notes
+
+- Lean/toolchain: PASS at `c1c071d`; explicit affected traces, optimized-only
+  repeated-state validity, typed bridge invariants, graph-first cycle diagnostics,
+  and extra property seeds were verified.
+- Type theory/proof: PASS; `wellFormed_of_check`, reference initialization,
+  exact changed-frontier preservation, central store/observation equivalence, and
+  optimized next-state validity are kernel checked with exact audited footprints.
+- Compiler/backend: PASS; graph/proof data derive from the same staged expressions,
+  planned constructors are private, equality/source/sink shapes are sealed, and
+  unsupported forward proof-subset dependencies fail loudly.
+- Frontend/runtime: PASS; hostile graph text remains escaped data, Graph Lab uses
+  the single-declaration public path, CI commands match locally, and no premature
+  DOM/browser/runtime implementation exists.
+- Test/quality: PASS after workspace and fresh-clone gates; all required graph
+  shapes, no-consumer and canceled transactions, branch-complete diagnostics,
+  source spans, replayable properties, deterministic artifacts, dogfood assertions,
+  and all 15 M2 commit trailers were independently checked.
+
 ## Commands
 
 - `./scripts/check.sh`
 - `./scripts/check_format.sh`
 - `lake build`
 - `lake exe leanrx_test`
+- `lake exe leanrx_graph_properties -- 195936478`
+- `lake exe leanrx_graph_lab`
 - `./scripts/check_examples.sh`
 - `./scripts/check_compile_fail.sh`
 - `./scripts/check_placeholders.sh`
