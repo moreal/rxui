@@ -11,6 +11,9 @@ def run : IO Unit := do
   unless report.erased == [.vectorLength 3, .finBound 3] &&
       report.inspections.isEmpty && report.operations == ["input", "input", "vector.get"] do
     throw <| IO.userError s!"dependent IR erasure report changed: {repr report}"
+  unless ReactiveIR.erasedStaticEvidence (.list (.vector (.fin 4) 2)) ==
+      [.finBound 4, .vectorLength 2] do
+    throw <| IO.userError "dynamic-list erasure metadata changed"
   match selected.assertErasureSafe with
   | .error error => throw <| IO.userError s!"safe dependent IR failed: {error.code}"
   | .ok _ => pure ()

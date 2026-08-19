@@ -24,6 +24,9 @@ def run : IO Unit := do
     throw <| IO.userError "nested Vector runtime identity lost an indexed length"
   unless (LeanRx.RuntimeTypeId.vector (.fin 4) 2).debug == "vector<fin<4>,2>" do
     throw <| IO.userError "dependent runtime type diagnostics are ambiguous"
+  unless (LeanRx.RuntimeTypeId.list (.record "TodoItem")).debug ==
+      "list<record<TodoItem>>" do
+    throw <| IO.userError "dynamic record/list runtime metadata changed"
   unless (LeanRx.JsType.array (.array .bigint)).debug == "array<array<bigint>>" do
     throw <| IO.userError "nested runtime type debug output is ambiguous"
   unless (LeanRx.JsType.object "x)\n\"").debug == "object(\"x)\\n\\\"\")" do

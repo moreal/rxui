@@ -181,6 +181,8 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.RuntimeType.vector.injEq, #[``propext]),
     (`LeanRx.RuntimeTypeId.vector.injEq, #[``propext]),
     (`LeanRx.RuntimeTypeId.fin.injEq, #[``propext]),
+    (`LeanRx.RuntimeTypeId.record.injEq, #[``propext]),
+    (`LeanRx.RuntimeTypeId.list.injEq, #[``propext]),
     (`LeanRx.Js.Decl.function.injEq, #[``propext]),
     (`LeanRx.Js.AssignTarget.ident.injEq, #[``propext]),
     (`LeanRx.Js.AssignTarget.index.injEq, #[``propext]),
