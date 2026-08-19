@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M4 — Component DSL, static view, and Counter
+M5 — Transactions, diamond graphs, and instrumentation
 
 ## Last green commit
 
-`b2720a1 docs(backend): document scalar artifact ABI`
+`246619c fix(cli): require bundle ownership markers`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -16,7 +16,7 @@ M4 — Component DSL, static view, and Counter
 - Lean: `4.33.0` (`d8b18978322de05a8f3dba51ef03cf5461676c17`).
 - Lake: `5.0.0-src+d8b1897`.
 - Node: `v22.23.2`.
-- pnpm: unavailable and intentionally not installed before JavaScript tests exist.
+- pnpm: unavailable at the initial baseline; M4 now pins Corepack pnpm 10.33.0.
 - First `lake build` exposed a root module doc-comment parse error; after correction,
   `lake build` and `lake exe leanrx_test` passed.
 
@@ -85,19 +85,42 @@ M4 — Component DSL, static view, and Counter
   axiom uses, 38 exact generated unsafe recursion helpers, 40 seeded graph cases,
   46 native/JavaScript cases across both printer modes, examples, negative and
   policy gates all passed, and both worktrees remained clean.
+- Completed M4's explicit component/update/view model, typed surface declaration
+  inventory, checked static DOM split, scoped component/JSX-like syntax, and
+  source-linked diagnostics down to nested elements, interpolations, and events.
+- Added deterministic component lowering through Reactive IR and validated
+  JavaScript AST to direct DOM mount/event/sink functions. The tiny DOM/disposal
+  hosts contain no dependency discovery or scheduler, and typed manifests record
+  state slots, graph hash, counts, imports, exports, toolchain, and runtime ABI.
+- Added pure `check`, JSON/DOT `graph`, and atomic `build` CLI paths. ADR-0007
+  records locked versioned sibling publication through one symlink rename;
+  unmanaged outputs and hostile bundle/lock symlinks fail without mutation.
+- Built Counter entirely through public APIs with two events, derived fan-out,
+  direct scalar text sinks, generated hostile text, separate instances, and
+  idempotent disposal. Chromium covers mount, updates, same-value write
+  suppression, keyboard activation, isolation, disposal, hostile text, and axe.
+- Review permanently regressed decorative surface roles, generic cycle errors,
+  missing nested spans, click-only generic elements, shallow CLI checks,
+  incomplete DOT, untyped manifests, non-atomic directory replacement, and
+  symlink-following cleanup/lock hazards.
+- Verified `246619c` in the workspace and a fresh no-hardlinks clone with
+  `./scripts/check.sh`; 138 build jobs, 727 public theorems, 184 exact reviewed
+  axiom uses, 53 exact generated unsafe helpers, 40 seeded graph cases, 46
+  native/JavaScript cases in both printer modes, four Chromium tests, examples,
+  negative and policy gates all passed, and both worktrees remained clean.
 
 ## In progress
 
-- Explicit public component specification and validated static DOM IR.
+- Transaction-local event evaluation and generated affected-closure scheduling.
 
 ## Next
 
-- Define public state, derived, update, element, text-sink, event-binding, and
-  component-manifest constructors before adding syntax sugar.
-- Split static views into mount templates and scalar sinks, then lower component
-  graphs into direct update functions and a tiny host/runtime boundary.
-- Add the M4 `component` command, minimal JSX-like syntax, CLI orchestration,
-  Counter dogfood, and required browser/security/accessibility gates.
+- Add atomic multi-write transactions with final changed-source tracking and
+  rank-ordered derived/sink phases.
+- Add nested transaction depth, stable trace events, and evaluation/change/DOM
+  instrumentation counters.
+- Build Diamond Lab, browser glitch-freedom and batching gates, generated-vs-
+  reference differential checks, then the first small-graph benchmark harness.
 
 ## Known blockers
 
@@ -171,6 +194,24 @@ M4 — Component DSL, static view, and Counter
 - Test/quality: PASS after workspace and fresh-clone gates; all 11 M3 commits are
   coherent and bisectable with exactly one required assistance trailer.
 
+## M4 independent review notes
+
+- Lean/toolchain: PASS at `1bb3834`; typed surface alignment, exact nested/root
+  spans, diagnostic taxonomy, audited CLI driver, and symlink-safe atomic output
+  passed the full gate.
+- Type theory/proof: PASS; component/backend/browser behavior remains explicitly
+  in the TCB, the isolated elaborator evaluation is exact-name audited, and no
+  semantic path gained unsafe, partial, or unreviewed axioms.
+- Compiler/backend: PASS at `1bb3834`; graph metadata and diagnostics are complete,
+  manifests are typed, CLI checks every pure backend phase, publication is atomic,
+  and compiler/host responsibilities remain separated.
+- Frontend/runtime: PASS; generated hostile text, native-button click semantics,
+  direct text writes, work suppression, instance isolation, disposal, keyboard,
+  axe, pinned dependencies, and tiny-host boundaries passed in Chromium.
+- Test/quality: PASS after workspace and fresh-clone suites; rollback, stale-file,
+  hostile symlink/lock, JSON/DOT, codegen determinism, public dogfood, browser,
+  negative, policy, and commit-trailer checks are permanent gates.
+
 ## Commands
 
 - `./scripts/check.sh`
@@ -179,6 +220,10 @@ M4 — Component DSL, static view, and Counter
 - `lake exe leanrx_test`
 - `lake exe leanrx_graph_properties -- 195936478`
 - `lake exe leanrx_graph_lab`
+- `./scripts/check_differential.sh`
+- `./scripts/check_component_codegen.sh`
+- `./scripts/check_cli.sh`
+- `./scripts/check_browser.sh`
 - `./scripts/check_examples.sh`
 - `./scripts/check_compile_fail.sh`
 - `./scripts/check_placeholders.sh`
