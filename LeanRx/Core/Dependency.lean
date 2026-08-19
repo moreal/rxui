@@ -2,11 +2,13 @@ import LeanRx.Core.Schema
 
 namespace LeanRx
 
+universe u
+
 /-- A canonical dependency set for fields in `Γ`.
 
 The constructor is not used directly by expression APIs; public operations
 normalize IDs into strictly increasing, duplicate-free order. -/
-structure DepSet (Γ : Schema) where
+structure DepSet (Γ : Schema.{u}) where
   ids : List Nat
 deriving Repr, BEq, DecidableEq
 
@@ -61,52 +63,52 @@ private theorem mem_normalize (needle : Nat) (ids : List Nat) :
       rw [ih]
 
 /-- The empty dependency set. -/
-def empty (Γ : Schema) : DepSet Γ := ⟨[]⟩
+def empty (Γ : Schema.{u}) : DepSet Γ := ⟨[]⟩
 
 /-- The singleton dependency set for one typed field capability. -/
-def singleton {Γ : Schema} {α : Type} (field : Field Γ α) : DepSet Γ :=
+def singleton {Γ : Schema.{u}} {α : Type u} (field : Field Γ α) : DepSet Γ :=
   ⟨[field.index]⟩
 
 /-- Canonical union, independent of input order and duplicates. -/
-def union {Γ : Schema} (left right : DepSet Γ) : DepSet Γ :=
+def union {Γ : Schema.{u}} (left right : DepSet Γ) : DepSet Γ :=
   ⟨normalize (left.ids ++ right.ids)⟩
 
 /-- Membership by stable numeric ID. -/
-def HasId {Γ : Schema} (deps : DepSet Γ) (id : Nat) : Prop :=
+def HasId {Γ : Schema.{u}} (deps : DepSet Γ) (id : Nat) : Prop :=
   id ∈ deps.ids
 
 /-- Membership of a typed field capability. -/
-def Contains {Γ : Schema} {α : Type} (deps : DepSet Γ) (field : Field Γ α) : Prop :=
+def Contains {Γ : Schema.{u}} {α : Type u} (deps : DepSet Γ) (field : Field Γ α) : Prop :=
   deps.HasId field.index
 
-theorem hasId_empty {Γ : Schema} (id : Nat) :
+theorem hasId_empty {Γ : Schema.{u}} (id : Nat) :
     ¬(empty Γ).HasId id := by
   simp [HasId, empty]
 
-theorem hasId_singleton {Γ : Schema} {α : Type} (needle : Nat) (field : Field Γ α) :
+theorem hasId_singleton {Γ : Schema.{u}} {α : Type u} (needle : Nat) (field : Field Γ α) :
     (singleton field).HasId needle ↔ needle = field.index := by
   simp [HasId, singleton]
 
-theorem hasId_union {Γ : Schema} (needle : Nat) (left right : DepSet Γ) :
+theorem hasId_union {Γ : Schema.{u}} (needle : Nat) (left right : DepSet Γ) :
     (union left right).HasId needle ↔ left.HasId needle ∨ right.HasId needle := by
   simp [HasId, union, mem_normalize]
 
-theorem contains_singleton {Γ : Schema} {α : Type} (field : Field Γ α) :
+theorem contains_singleton {Γ : Schema.{u}} {α : Type u} (field : Field Γ α) :
     (singleton field).Contains field := by
   simp [Contains, hasId_singleton]
 
-theorem contains_union_left {Γ : Schema} {α : Type}
+theorem contains_union_left {Γ : Schema.{u}} {α : Type u}
     (field : Field Γ α) (left right : DepSet Γ) (h : left.Contains field) :
     (union left right).Contains field := by
   exact (hasId_union field.index left right).2 (Or.inl h)
 
-theorem contains_union_right {Γ : Schema} {α : Type}
+theorem contains_union_right {Γ : Schema.{u}} {α : Type u}
     (field : Field Γ α) (left right : DepSet Γ) (h : right.Contains field) :
     (union left right).Contains field := by
   exact (hasId_union field.index left right).2 (Or.inr h)
 
 /-- Stable debug form used by graph and golden fixtures. -/
-def debug {Γ : Schema} (deps : DepSet Γ) : String :=
+def debug {Γ : Schema.{u}} (deps : DepSet Γ) : String :=
   "{" ++ String.intercalate "," (deps.ids.map toString) ++ "}"
 
 end DepSet

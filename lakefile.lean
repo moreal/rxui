@@ -11,7 +11,7 @@ lean_lib LeanRx
 
 lean_lib LeanRxTest where
   roots := #[`Test.Policy.EnvironmentAudit, `Test.AxiomManifest, `Test.Core.Schema,
-    `Test.Core.Dependency]
+    `Test.Core.Dependency, `Test.Core.Store]
 
 @[default_target]
 lean_exe leanrx_test where

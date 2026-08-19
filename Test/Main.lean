@@ -1,6 +1,7 @@
 import Test.AxiomManifest
 import Test.Core.Schema
 import Test.Core.Dependency
+import Test.Core.Store
 
 private def assertEq [BEq α] [ToString α] (expected actual : α) : IO Unit :=
   unless expected == actual do
@@ -12,4 +13,5 @@ def main : IO Unit := do
   assertEq 0 LeanRx.SourceSpan.generated.start.byteOffset
   LeanRxTest.Schema.run
   LeanRxTest.Dependency.run
+  LeanRxTest.Store.run
   IO.println "LeanRx native smoke tests passed"
