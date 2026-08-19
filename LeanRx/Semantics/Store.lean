@@ -71,11 +71,19 @@ structure Program where
 
 namespace Program
 
+/-- A dependency ID denotes either a source or a declared derived node. -/
+def Declares (program : Program) (id : Nat) : Prop :=
+  id < program.sourceCount ∨ ∃ step ∈ program.derived, step.id = id
+
 /-- Abstract static-DAG conditions assumed by the central propagation theorem. -/
 structure WellFormed (program : Program) : Prop where
   derivedAfterSources : ∀ step ∈ program.derived, program.sourceCount ≤ step.id
   depsBeforeDerived : ∀ step ∈ program.derived, ∀ dep ∈ step.evaluator.deps, dep < step.id
-  derivedIdsUnique : (program.derived.map (·.id)).Nodup
+  derivedOrder : program.derived.Pairwise fun earlier later => earlier.id < later.id
+  derivedDepsDeclared : ∀ step ∈ program.derived, ∀ dep ∈ step.evaluator.deps,
+    program.Declares dep
+  sinkDepsDeclared : ∀ sink ∈ program.sinks, ∀ dep ∈ sink.evaluator.deps,
+    program.Declares dep
 
 end Program
 

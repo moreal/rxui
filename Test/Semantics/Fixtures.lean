@@ -38,7 +38,12 @@ theorem diamondSinkValid : SinkCacheValid oldStore diamondProgram.sinks oldState
   · constructor
 
 theorem diamondWellFormed : diamondProgram.WellFormed := by
-  constructor
+  refine
+    { derivedAfterSources := ?_
+      depsBeforeDerived := ?_
+      derivedOrder := by decide
+      derivedDepsDeclared := ?_
+      sinkDepsDeclared := ?_ }
   · intro step member
     simp [diamondProgram] at member
     rcases member with rfl | rfl | rfl <;> decide
@@ -54,7 +59,28 @@ theorem diamondWellFormed : diamondProgram.WellFormed := by
     · have alternatives : dep = 1 ∨ dep = 2 := by
         simpa [Eval.map₂] using depMember
       rcases alternatives with rfl | rfl <;> decide
-  · decide
+  · intro step member dep depMember
+    simp [diamondProgram] at member
+    rcases member with rfl | rfl | rfl
+    · have same : dep = 0 := by simpa [Eval.map] using depMember
+      subst dep
+      exact .inl (by decide)
+    · have same : dep = 0 := by simpa [Eval.map] using depMember
+      subst dep
+      exact .inl (by decide)
+    · have alternatives : dep = 1 ∨ dep = 2 := by
+        simpa [Eval.map₂] using depMember
+      rcases alternatives with rfl | rfl
+      · exact .inr ⟨diamondProgram.derived[0], by simp [diamondProgram], rfl⟩
+      · exact .inr ⟨diamondProgram.derived[1], by simp [diamondProgram], rfl⟩
+  · intro sink member dep depMember
+    have sinkIsTotal : sink = diamondProgram.sinks[0] := by
+      simpa [diamondProgram] using member
+    subst sink
+    have depIsTotal : dep = 3 := by
+      simpa [diamondProgram, Eval.map] using depMember
+    subst dep
+    exact .inr ⟨diamondProgram.derived[2], by simp [diamondProgram], rfl⟩
 
 def countToThree : SourceTransaction := [{ id := 0, value := 3 }]
 

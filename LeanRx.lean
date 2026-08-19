@@ -12,6 +12,7 @@ import LeanRx.Graph.Topological
 import LeanRx.Semantics.Store
 import LeanRx.Semantics.Reference
 import LeanRx.Semantics.Optimized
+import LeanRx.Proofs.PropagationSound
 
 /-! LeanRx's public library root. -/
 namespace LeanRx

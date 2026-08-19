@@ -48,6 +48,12 @@ semantic theorem `LeanRx.RxExpr.eval_congr_on_deps` has the exact footprint
 Lean axioms, not axiom-free. The audit locks that pair explicitly and rejects any
 change or additional axiom.
 
+The M2 propagation lemmas and central theorem
+`LeanRx.Abstract.optimized_equivalent_to_reference` likewise have the exact
+footprint `[propext, Quot.sound]`. These are kernel-checked proofs relative to
+those reviewed standard Lean axioms; the environment audit locks each named
+theorem and its exact footprint independently.
+
 Lean also generates `_unsafe_rec` compiler helpers for safe source definitions
 that eliminate universe-bearing schemas/fields. The source declarations remain
 kernel checked and semantic modules contain no written `unsafe` declaration.
