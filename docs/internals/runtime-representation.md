@@ -40,7 +40,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 1. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 2. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -52,8 +52,10 @@ The M4 component ABI is also explicit. A component manifest records the ordered
 runtime code for every state-array slot, the source-prefix and derived counts,
 text-sink and event counts, exact host imports, exported `mount`, graph hash,
 compiler/toolchain versions, and runtime ABI. The generated module owns the
-state array in schema order. Its private event handlers receive only that array
-and the depth-first text-node reference array; they update direct text nodes
-through `setText`. `mount(target)` owns the mounted root and listener-disposal
-closures and returns an idempotent disposer. The host modules integrate DOM and
+state array in schema order. M5 private event handlers receive a mount-local
+context containing that state, depth-first text refs, private transaction control,
+changed flags, and sink caches; they update direct text nodes through `setText`.
+`mount(target)` owns the mounted root and listener-disposal closures and returns
+an idempotent disposer whose instrumentation accessor copies counters and trace.
+The host modules integrate DOM and
 effects only: they do not discover dependencies or schedule reactive work.

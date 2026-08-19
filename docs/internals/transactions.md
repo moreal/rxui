@@ -14,7 +14,8 @@ mount-local sink cache suppresses an unchanged text value before `setText`.
 The DOM host only installs listeners and writes nodes; it does not discover
 dependencies, build the frontier, or schedule work.
 
-Each disposer exposes a live development array as `disposer.instrumentation`:
+Each disposer exposes `disposer.instrumentation()`, which returns a copied
+development snapshot:
 
 | Index | Meaning |
 |---:|---|
@@ -28,6 +29,7 @@ Each disposer exposes a live development array as `disposer.instrumentation`:
 | 7 | stable trace-event strings |
 
 Counters are cumulative for that mount and start at zero after initial mount.
+Mutating the returned array or its trace copy cannot modify transaction control.
 Trace events use declared source, derived, sink, and event names. They are a
 development observability contract, not a timing API.
 

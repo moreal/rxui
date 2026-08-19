@@ -76,7 +76,7 @@ test("batches a diamond without an intermediate fan-in value", async ({ page }) 
   ]);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
   expect(await page.evaluate(() => globalThis.totalValues)).toEqual(["Total: 19"]);
-  const instrumentation = await page.evaluate(() => globalThis.diamondDispose.instrumentation);
+  const instrumentation = await page.evaluate(() => globalThis.diamondDispose.instrumentation());
   expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 3, 3, 3, 3]);
   const trace = instrumentation[7];
   const left = trace.indexOf("derived:left:evaluated");

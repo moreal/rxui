@@ -456,9 +456,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     disposers := disposers ++ [.ident off]
   mountBody := mountBody ++ [
     .const disposer <| call runtime.makeDisposer [
-      .ident root, .array (.ofList disposers)
+      .ident root, .array (.ofList disposers), .ident tx
     ],
-    .assign (.index (.ident disposer) (.literal (.string "instrumentation"))) (.ident tx),
     .return (.ident disposer)
   ]
   let mount ← Ident.checked "mount"

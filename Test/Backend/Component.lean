@@ -20,13 +20,13 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
       readable.contains "function $lrx_event_0(context, ignored)" &&
       readable.contains "if (changed[2])" &&
       readable.contains "setText(refs[2]" &&
-      readable.contains "disposer[\"instrumentation\"] = tx" do
+      readable.contains "makeDisposer(node_0" && readable.contains ", tx)" do
     throw <| IO.userError s!"Counter output lost direct-DOM component structure:\n{readable}"
   unless ¬readable.contains "currentObserver" && ¬readable.contains "Proxy" &&
       ¬readable.contains "eval(" && ¬readable.contains "Function(" do
     throw <| IO.userError "Counter output introduced a banned runtime mechanism"
   unless emitted.manifest.moduleName == "Counter.mjs" &&
-      emitted.manifest.runtimeAbi == 1 &&
+      emitted.manifest.runtimeAbi == 2 &&
       emitted.manifest.exports == #["mount"] &&
       emitted.manifest.stateSlots == #[.int, .int, .string] &&
       emitted.manifest.sourceCount == 1 && emitted.manifest.derivedCount == 2 &&
