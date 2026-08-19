@@ -27,6 +27,7 @@ inductive Msg where
   | toggle (id : Nat)
   | delete (id : Nat)
   | clearCompleted
+  | reverse
   | setFilter (filter : Filter)
   | startEditing (id : Nat)
   | setDraft (value : String)
@@ -83,6 +84,7 @@ def update (state : State) : Msg → State
         todos := kept
         editing := state.editing.bind fun id => if containsId kept id then some id else none
         draft := state.editing.bind (titleFor kept) |>.getD "" }
+  | .reverse => { state with todos := state.todos.reverse }
   | .setFilter filter => { state with filter }
   | .startEditing id =>
       match titleFor state.todos id with

@@ -20,7 +20,10 @@ def run : IO Unit := do
   let committed := update editing .commitEditing
   unless committed.todos.map (·.title) == ["First", "Edited"] && committed.editing.isNone do
     throw <| IO.userError "Todo edit commit changed"
-  let cleared := update committed .clearCompleted
+  let reversed := update committed .reverse
+  unless reversed.todos.map (·.id) == [1, 0] do
+    throw <| IO.userError "Todo reorder action changed"
+  let cleared := update reversed .clearCompleted
   unless cleared.todos.map (·.id) == [1] && completedCount cleared == 0 do
     throw <| IO.userError "Todo clear-completed changed"
   let deletedByEmpty := update
