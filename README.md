@@ -96,6 +96,20 @@ the current derived-read restriction are documented in
 [the transaction contract](docs/internals/transactions.md). Diamond Lab runs the
 fan-in browser scenario through `./scripts/check_browser.sh`.
 
+Generate the M6 dependent-type dogfood with:
+
+```sh
+lake exe leanrx_tabs_js -- .tmp/tabs
+```
+
+Dependent Tabs accepts equal nonempty `Vector` props, stores selection and event
+payloads as `Fin`, lowers safe access to one array index, and emits no proof
+objects. Nonzero initial selection uses `TabsSpec.createAt index proof`; raw Lean
+numeric `Fin` literals are deliberately excluded from that public boundary
+because pinned Lean normalizes them modulo. See
+[ADR-0011](docs/adr/0011-fin-literal-normalization.md) and the
+[runtime representation contract](docs/internals/runtime-representation.md).
+
 ## Project boundaries
 
 LeanRx is intended to compile a restricted staged language; it will not transpile

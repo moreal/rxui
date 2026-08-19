@@ -269,3 +269,65 @@ report for M10.
 ### Follow-up issue or commit
 
 `example(diamond): add fan-in propagation lab`
+
+## Dependent Tabs — indexed props and selection
+
+### Scenario exercised
+
+The public `TabsSpec` API receives equal `Vector String (n + 1)` label and panel
+props, stores selection as `Fin (n + 1)`, and exposes one typed `select` event
+whose payload is definitionally identical to its state target. The three-tab
+dogfood starts on the second panel, lowers selection through
+`RxExpr.vectorGet → Reactive IR → validated JavaScript AST`, and generates one
+private event forwarder for each finite vector index.
+
+### What was pleasant
+
+Length equality, nonemptiness, initial selection, safe panel access, and event
+assignment compatibility are visible in ordinary Lean types. The example file
+imports only `LeanRx`; no application code describes graph edges, JavaScript, a
+scheduler, or DOM mutation. Chromium can click every generated button and never
+observe an absent panel, while the emitted evaluator remains the compact
+`panels[selected]` operation.
+
+### Friction
+
+Pinned Lean's standard numeric literal instance for `Fin` normalizes modulo:
+`(3 : Fin 3).val == 0`. The original compile-fail assumption was therefore
+false. ADR-0011 records the reproduction and changes the public initial-selection
+API to `createAt index proof`, retaining `Fin` internally without silently losing
+out-of-range intent. Indexed APIs also produce universe-level values that must be
+pattern-matched rather than monadically rebound inside `IO Unit` tests.
+
+### Missing framework capability
+
+M6 immutable props are compiler-known values embedded in the artifact; a
+general checked mount-time prop decoder is not yet exposed. Tabs intentionally
+uses native buttons instead of claiming a complete ARIA tabs/arrow-key widget.
+Dynamic keyed collections and foreign/untrusted value validation belong to later
+milestones.
+
+### Bugs found
+
+The first generated root was a `div`; axe reported missing main-landmark and
+region violations. Emitting a semantic `main` fixed both and is now covered by
+the browser gate. The false `Fin` literal assumption became a permanent native
+premise test, compile-fail boundary, and ADR rather than a fake negative fixture.
+
+### Security and accessibility checks
+
+Only `mount` is exported; the typed event function is private. Artifact checks
+reject serialized proof markers, Lean `Fin`/`Vector` runtime names, dynamic-code
+constructs, Proxy discovery, and any fourth handler for the three-tab fixture.
+Chromium verifies initial selection, all three click paths, native-button
+`Tab`/`Enter` activation, exact label/panel alignment, and zero axe violations.
+
+### Performance observations
+
+Each selection performs one array read and one direct text-node assignment. This
+is structural evidence from generated code, not an M10 wall-clock or memory
+benchmark. Vector lengths and `Fin` proofs do not appear as runtime objects.
+
+### Follow-up issue or commit
+
+`example(tabs): dogfood dependent selection`

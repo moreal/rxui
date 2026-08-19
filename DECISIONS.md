@@ -13,6 +13,7 @@
 | [0009](docs/adr/0009-m5-benchmark-smoke-scope.md) | Accepted | Treat the M5 graph runner as a pre-benchmark smoke harness | 2026-08-19 |
 | [0010](docs/adr/0010-runtime-abi-v3-dependent-values.md) | Accepted | Bump the internal runtime ABI for dependent values and typed event payloads | 2026-08-19 |
 | [0011](docs/adr/0011-fin-literal-normalization.md) | Accepted | Exclude modulo-normalized `Fin` literals from public selection construction | 2026-08-19 |
+| [0012](docs/adr/0012-poc-dogfood-set.md) | Accepted | Align the PoC dogfood set with M0–M6 and defer Temperature Converter to M7 | 2026-08-19 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

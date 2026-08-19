@@ -1825,7 +1825,9 @@ The PoC is complete only when all items are true.
 
 - [ ] Unit, property, compile-fail, golden, differential, and browser tests pass.
 - [ ] Counter parity scenario records zero unnecessary parity DOM writes.
-- [ ] At least three practical dogfood apps exist: Counter, Temperature, Dependent Tabs.
+- [ ] At least three practical PoC dogfood apps exist: Counter, Diamond Lab,
+  Dependent Tabs. Temperature Converter remains the first M7 continuation app
+  (see ADR-0012).
 - [ ] `DOGFOOD.md`, `STATUS.md`, ADRs, and upgrade notes are current.
 - [ ] Commit history is incremental and bisectable.
 - [ ] No application or proof module contains `sorry`, `admit`, or unreviewed axioms.
