@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M5 — Transactions, diamond graphs, and instrumentation
+M6 — Dependent types and proof erasure
 
 ## Last green commit
 
-`246619c fix(cli): require bundle ownership markers`
+`f20c2c5 fix(runtime): close transaction contract gaps`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -108,19 +108,41 @@ M5 — Transactions, diamond graphs, and instrumentation
   axiom uses, 53 exact generated unsafe helpers, 40 seeded graph cases, 46
   native/JavaScript cases in both printer modes, four Chromium tests, examples,
   negative and policy gates all passed, and both worktrees remained clean.
+- Completed M5's generated outermost transaction boundary, transaction-local
+  sequential writes, final lawful source comparison, rank-ordered affected
+  derived phase, equality stopping, separate sink/cache phase, and synchronous
+  nested dispatch with cycle rejection.
+- Added ABI-2 copied instrumentation snapshots with commit/source-write/derived/
+  sink/DOM counters and stable trace names. Consumer mutation cannot reach
+  private transaction control; canceled source writes and equal-output sinks have
+  dedicated Chromium regressions.
+- Added checked direct/effective transitive event summaries and a source-linked
+  `LRX-TYPE-108` derived-read rejection that names the future transaction barrier.
+- Added the public Diamond Lab, generated native-reference artifact, deterministic
+  module/manifests, and browser assertions that all derived nodes finish before
+  sinks and the fan-in text observes only the final parents.
+- Proved nested source-write application equals ordered flattening and specialized
+  optimized/reference equivalence to the flattened list. ADR-0005 records the
+  exact theorem footprints and explicitly excludes JavaScript depth/commit claims.
+- Added a correctness-gated 1,000-update small-diamond smoke harness. ADR-0009
+  reserves the complete size/build/mount/update/DOM/memory benchmark report for M10.
+- Verified `f20c2c5` in the workspace and a fresh no-hardlinks clone with
+  `./scripts/check.sh`; 142 build jobs, 742 public theorems, 189 exact reviewed
+  axiom uses, 55 exact generated unsafe helpers, 40 property cases, 46 native/JS
+  cases in both printer modes, deterministic Counter/Diamond artifacts, seven
+  Chromium tests, benchmark smoke, examples, negative and policy gates all passed.
 
 ## In progress
 
-- Transaction-local event evaluation and generated affected-closure scheduling.
+- Runtime representations and erasure contracts for `Vector` and `Fin`.
 
 ## Next
 
-- Add atomic multi-write transactions with final changed-source tracking and
-  rank-ordered derived/sink phases.
-- Add nested transaction depth, stable trace events, and evaluation/change/DOM
-  instrumentation counters.
-- Build Diamond Lab, browser glitch-freedom and batching gates, generated-vs-
-  reference differential checks, then the first small-graph benchmark harness.
+- Add proof-erased `Vector`/`Fin` representations and checked safe indexing in the
+  staged core, Reactive IR, and JavaScript backend.
+- Add typed event parameters and immutable component props needed by Dependent Tabs.
+- Build compile-pass/fail dependent Tabs fixtures, inspect proof erasure in IR/JS,
+  and run every tab interaction in Chromium.
 
 ## Known blockers
 
@@ -212,6 +234,27 @@ M5 — Transactions, diamond graphs, and instrumentation
   hostile symlink/lock, JSON/DOT, codegen determinism, public dogfood, browser,
   negative, policy, and commit-trailer checks are permanent gates.
 
+## M5 independent review notes
+
+- Lean/toolchain: PASS at `f20c2c5`; copied instrumentation, ABI 2, effective event
+  summaries, honest theorem naming, dispatch/derived-read diagnostics, and the
+  full gate were verified.
+- Type theory/proof: PASS; `apply_eq_flatten` is axiom-free, the three named nested
+  lemmas have exact reviewed `[propext, Quot.sound]` footprints, and generated
+  event evaluation/commit counts remain executable TCB evidence.
+- Compiler/backend: PASS; final-source equality, rank-ordered affected closure,
+  sink-cache suppression, immutable instrumentation access, deterministic
+  manifests/artifacts, and host separation all passed adversarial review.
+- Frontend/runtime: PASS; multi-write/nested batching, canceled source, equal sink,
+  Diamond phase order/glitch freedom, keyboard, axe, hostile text, isolation, and
+  disposal passed seven Chromium tests.
+- Test/quality: PASS after workspace and fresh-clone suites; ADR-0009 prevents the
+  smoke harness from being reported as a complete benchmark. History exception:
+  `3645aba` introduced checked `Update.dispatch` one commit before `efd4844`
+  implemented its lowering, so that intermediate commit was buildable but not a
+  behavior-complete public capability. The history is preserved rather than
+  rewritten; later public constructors and lowering must land together.
+
 ## Commands
 
 - `./scripts/check.sh`
@@ -224,6 +267,7 @@ M5 — Transactions, diamond graphs, and instrumentation
 - `./scripts/check_component_codegen.sh`
 - `./scripts/check_cli.sh`
 - `./scripts/check_browser.sh`
+- `./scripts/check_bench.sh`
 - `./scripts/check_examples.sh`
 - `./scripts/check_compile_fail.sh`
 - `./scripts/check_placeholders.sh`
