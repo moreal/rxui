@@ -258,8 +258,9 @@ all sinks after the fan-in derived node.
 The native expected artifact and optimized model agree on final total `19`; it is
 generated beside the browser module and checked in the browser gate. A 1,000-step
 alternating small-diamond smoke benchmark recorded 3,000 derived and 1,000 sink
-evaluations. Elapsed nanoseconds are printed for reproducibility but are not a CI
-performance threshold.
+evaluations. The same gate records the parity actual-change case at four reference
+evaluations versus one optimized evaluation. Elapsed nanoseconds are printed for
+reproducibility but are not a CI performance threshold.
 
 On the 2026-08-19 local debug build, that smoke run reported 1,559,792 ns for the
 1,000-update loop. This is an environment-specific observation, not a comparative
@@ -302,8 +303,9 @@ pattern-matched rather than monadically rebound inside `IO Unit` tests.
 ### Missing framework capability
 
 M6 immutable props are compiler-known values embedded in the artifact; a
-general checked mount-time prop decoder is not yet exposed. Tabs intentionally
-uses native buttons instead of claiming a complete ARIA tabs/arrow-key widget.
+general checked mount-time prop decoder is not yet exposed. Tabs uses a named
+native-button group with maintained `aria-pressed` state instead of claiming a
+complete ARIA tabs/arrow-key widget.
 Dynamic keyed collections and foreign/untrusted value validation belong to later
 milestones.
 
@@ -320,16 +322,19 @@ Only `mount` is exported; the typed event function is private. Artifact checks
 reject serialized proof markers, Lean `Fin`/`Vector` runtime names, dynamic-code
 constructs, Proxy discovery, and any fourth handler for the three-tab fixture.
 Chromium verifies initial selection, all three click paths, native-button
-`Tab`/`Enter` activation, exact label/panel alignment, and zero axe violations.
+`Tab`/`Enter` activation, maintained `aria-pressed` state, exact label/panel
+alignment, hostile name/label/panel text, and zero axe violations.
 The defining interaction snapshot records four selections as four source writes,
-four sink evaluations, four direct text writes, and four commits, with stable
+three sink evaluations, one direct text write, and four commits, with stable
 event/source/sink/DOM/commit trace entries.
 
 ### Performance observations
 
-Each selection performs one array read and one direct text-node assignment. This
-is structural evidence from generated code, not an M10 wall-clock or memory
-benchmark. Vector lengths and `Fin` proofs do not appear as runtime objects.
+Each changed selection performs one array read and at most one direct text-node
+assignment. Reselecting the active tab performs zero sink evaluations and zero
+DOM writes; equal panel output is also guarded by a sink cache. This is structural
+evidence from generated code, not an M10 wall-clock or memory benchmark. Vector
+lengths and `Fin` proofs do not appear as runtime objects.
 
 ### Follow-up issue or commit
 

@@ -1733,8 +1733,8 @@ Dogfooding begins as soon as mount/update works.
 | Example | Purpose | Required pressure on architecture |
 |---|---|---|
 | Counter | scalar graph | state, derived, event, text sinks, equality stop |
-| Temperature converter | controlled input | typed DOM event, parse/result, two-way UX without cycles |
 | Dependent Tabs | dependent types | `Vector`, `Fin`, erased proofs, typed event args |
+| Temperature converter | controlled input | typed DOM event, parse/result, two-way UX without cycles |
 | Validated form | typestate/refinement | invalid states, error rendering, submit capability |
 | TodoMVC | dynamic shape | keyed rows, filter, editing state, persistence boundary |
 | Notes | effects | local storage, cancellation/disposal, debouncing |

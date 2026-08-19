@@ -25,8 +25,9 @@ requirements cannot all be sequenced as written.
 
 The M0–M6 PoC dogfood set is Counter, Diamond Lab, and Dependent Tabs, matching
 the explicit checkpoint instruction and already-planned milestones. Temperature
-Converter remains the first M7 application. Only the inconsistent architecture
-checklist row changes; the form requirements and M7 order remain normative.
+Converter remains the first M7 application. The inconsistent architecture
+checklist row and dogfood sequence order change; the form requirements and M7
+order remain normative.
 
 ## Consequences
 
