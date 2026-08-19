@@ -13,7 +13,10 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.Schema.names._unsafe_rec,
     `LeanRx.Schema.size._unsafe_rec,
     `LeanRx.Store.get._unsafe_rec,
-    `LeanRx.Store.set._unsafe_rec
+    `LeanRx.Store.set._unsafe_rec,
+    `LeanRx.instBEqJsType.beq._unsafe_rec,
+    `LeanRx.instDecidableEqJsType.decEq._unsafe_rec,
+    `LeanRx.instReprJsType.repr._unsafe_rec
   ]
   -- Generated injectivity plus named membership/agreement lemmas use Lean's
   -- standard proposition-extensionality axiom. Each exact pair is reviewed;
@@ -31,6 +34,8 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.SourcePos.mk.injEq, #[``propext]),
     (`LeanRx.SourceSpan.mk.injEq, #[``propext]),
     (`LeanRx.Field.there.injEq, #[``propext]),
+    (`LeanRx.JsType.array.injEq, #[``propext]),
+    (`LeanRx.JsType.object.injEq, #[``propext]),
     (`LeanRx.Schema.field.injEq, #[``propext]),
     (`LeanRx.Store.agreeOn_empty, #[``propext]),
     (`LeanRx.Store.agreeOn_union_left, #[``propext]),

@@ -2,6 +2,7 @@ import LeanRx.Core.SourceInfo
 import LeanRx.Core.Schema
 import LeanRx.Core.Dependency
 import LeanRx.Core.Store
+import LeanRx.Core.RuntimeRep
 
 /-! LeanRx's public library root. -/
 namespace LeanRx
