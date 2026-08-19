@@ -23,6 +23,8 @@ jobs:
         run: lake exe leanrx_test
       - name: Run deterministic graph properties
         run: lake exe leanrx_graph_properties -- 195936478
+      - name: Run native-to-JavaScript differential tests
+        run: ./scripts/check_differential.sh
       - name: Run public examples
         run: ./scripts/check_examples.sh
       - name: Run compile-fail type contracts

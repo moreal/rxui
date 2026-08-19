@@ -31,6 +31,8 @@ inductive UnaryPrim : Type → Type → Type where
   | boolNot : UnaryPrim Bool Bool
   | intNeg : UnaryPrim Int Int
   | natToInt : UnaryPrim Nat Int
+  | intToString : UnaryPrim Int String
+  | natToString : UnaryPrim Nat String
 
 namespace UnaryPrim
 
@@ -38,12 +40,16 @@ def name : {α β : Type} → UnaryPrim α β → String
   | _, _, .boolNot => "Bool.not"
   | _, _, .intNeg => "Int.neg"
   | _, _, .natToInt => "Nat.toInt"
+  | _, _, .intToString => "Int.toString"
+  | _, _, .natToString => "Nat.toString"
 
 /-- Native semantics for unary primitives. -/
 def eval : {α β : Type} → UnaryPrim α β → α → β
   | _, _, .boolNot, value => !value
   | _, _, .intNeg, value => -value
   | _, _, .natToInt, value => Int.ofNat value
+  | _, _, .intToString, value => toString value
+  | _, _, .natToString, value => toString value
 
 end UnaryPrim
 

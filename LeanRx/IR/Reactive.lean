@@ -13,6 +13,8 @@ inductive Unary : Type → Type → Type where
   | boolNot : Unary Bool Bool
   | intNeg : Unary Int Int
   | natToInt : Unary Nat Int
+  | intToString : Unary Int String
+  | natToString : Unary Nat String
 
 inductive Binary : Type → Type → Type → Type where
   | intAdd : Binary Int Int Int
@@ -57,6 +59,8 @@ def name : {α β : Type} → Unary α β → String
   | _, _, .boolNot => "bool.not"
   | _, _, .intNeg => "int.neg"
   | _, _, .natToInt => "nat.toInt"
+  | _, _, .intToString => "int.toString"
+  | _, _, .natToString => "nat.toString"
 
 end Unary
 

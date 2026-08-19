@@ -72,10 +72,17 @@ private def literal : {α : Type} → ReactiveIR.Literal α → Js.Literal
   | _, .int value => .bigint value
   | _, .nat value => .bigint (Int.ofNat value)
 
-private def unary : {α β : Type} → ReactiveIR.Unary α β → Option UnaryOp
-  | _, _, .boolNot => some .not
-  | _, _, .intNeg => some .neg
-  | _, _, .natToInt => none
+private inductive UnaryPlan where
+  | direct (op : UnaryOp)
+  | identity
+  | displayString
+
+private def unary : {α β : Type} → ReactiveIR.Unary α β → UnaryPlan
+  | _, _, .boolNot => .direct .not
+  | _, _, .intNeg => .direct .neg
+  | _, _, .natToInt => .identity
+  | _, _, .intToString => .displayString
+  | _, _, .natToString => .displayString
 
 private def directBinary : {α β γ : Type} → ReactiveIR.Binary α β γ → Option BinaryOp
   | _, _, _, .intAdd => some .add
@@ -109,8 +116,11 @@ def expr (inputs : Array Ident) (bindings : List HelperBinding) :
   | _, .input _ index _ => do pure (.ident (← input inputs index))
   | _, .unary op value => do
       match unary op with
-      | none => expr inputs bindings value
-      | some jsOp => pure (.unary jsOp (← expr inputs bindings value))
+      | .identity => expr inputs bindings value
+      | .direct jsOp => pure (.unary jsOp (← expr inputs bindings value))
+      | .displayString =>
+          let stringName ← Ident.checked "String"
+          pure (.call (.ident stringName) <| .ofList [← expr inputs bindings value])
   | _, .binary op left right => do
       let loweredLeft ← expr inputs bindings left
       let loweredRight ← expr inputs bindings right
@@ -140,8 +150,10 @@ private def helperFunction (binding : HelperBinding) : Except Error Function := 
   let zero : Js.Expr := .literal (.bigint 0)
   let body := match binding.helper with
     | .intMod =>
-        let remainder := Js.Expr.binary .rem leftExpr rightExpr
-        let normalized := Js.Expr.binary .rem (.binary .add remainder rightExpr) rightExpr
+        let magnitude := Js.Expr.conditional (.binary .lt rightExpr zero)
+          (.unary .neg rightExpr) rightExpr
+        let remainder := Js.Expr.binary .rem leftExpr magnitude
+        let normalized := Js.Expr.binary .rem (.binary .add remainder magnitude) magnitude
         Js.Expr.conditional (.binary .eq rightExpr zero) leftExpr normalized
     | .natSub =>
         Js.Expr.conditional (.binary .le rightExpr leftExpr)

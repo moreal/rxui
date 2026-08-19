@@ -36,3 +36,6 @@ lean_exe leanrx_graph_lab where
 
 lean_exe leanrx_graph_properties where
   root := `Test.Graph.PropertyMain
+
+lean_exe leanrx_generate_differential where
+  root := `Test.Backend.GenerateDifferential

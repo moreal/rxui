@@ -18,6 +18,10 @@ def run : IO Unit := do
   expect "Bool.not" false <| evalEmpty <| .unary .boolNot (.literal (.bool true))
   expect "Int.neg" (-7 : Int) <| evalEmpty <| .unary .intNeg (.literal (.int 7))
   expect "Nat.toInt" (7 : Int) <| evalEmpty <| .unary .natToInt (.literal (.nat 7))
+  expect "Int.toString" "-9007199254740993" <| evalEmpty <|
+    .unary .intToString (.literal (.int (-9007199254740993)))
+  expect "Nat.toString" "9007199254740993" <| evalEmpty <|
+    .unary .natToString (.literal (.nat 9007199254740993))
   expect "Int.add" (12 : Int) <| evalEmpty <|
     .binary .intAdd (.literal (.int 7)) (.literal (.int 5))
   expect "Int.sub" (2 : Int) <| evalEmpty <|
