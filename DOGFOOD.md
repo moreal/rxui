@@ -198,9 +198,10 @@ the certified affected-closure schedule.
 
 ### Missing framework capability
 
-The `check`/`build`/`graph` CLI remains to complete M4. Dynamic structure,
-properties beyond the static M4
-whitelist, and non-click event payloads remain intentionally unsupported.
+The M4 CLI resolves the registered `Examples.Counter` module; general module
+discovery waits for the production module registry. Dynamic structure, properties
+beyond the static M4 whitelist, and non-click event payloads remain intentionally
+unsupported.
 
 ### Bugs found
 

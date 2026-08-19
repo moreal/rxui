@@ -21,6 +21,7 @@ lake exe leanrx_test
 lake exe leanrx_graph_properties -- 195936478
 ./scripts/check_differential.sh
 ./scripts/check_component_codegen.sh
+./scripts/check_cli.sh
 ./scripts/check_browser.sh
 ./scripts/check_examples.sh
 ./scripts/check_compile_fail.sh
@@ -66,6 +67,9 @@ Generate the explicit M4 Counter component, graph, runtime host, and manifest:
 
 ```sh
 lake exe leanrx_counter_js -- .tmp/counter
+lake exe leanrx -- check Examples.Counter
+lake exe leanrx -- graph Examples.Counter
+lake exe leanrx -- build Examples.Counter --out .tmp/counter
 ```
 
 The M4 syntax is opt-in so its declaration keywords do not pollute ordinary Lean:

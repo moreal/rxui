@@ -25,11 +25,12 @@ lean_lib LeanRxTest where
     `Test.View.Model,
     `Test.Component.Model,
     `Test.Elab.Component,
+    `Test.Cli.Model,
     `Test.Semantics.Store, `Test.Semantics.Fixtures, `Test.Semantics.Reference,
     `Test.Semantics.Optimized, `Test.Proofs.PropagationSound]
 
 lean_lib LeanRxExamples where
-  roots := #[`examples.ExpressionPlayground, `examples.Counter]
+  roots := #[`examples.ExpressionPlayground, `examples.Counter, `examples.CounterBuild]
 
 @[default_target]
 lean_exe leanrx_test where
@@ -52,3 +53,6 @@ lean_exe leanrx_generate_differential where
 
 lean_exe leanrx_counter_js where
   root := `examples.CounterMain
+
+lean_exe leanrx where
+  root := `LeanRx.Cli.Main
