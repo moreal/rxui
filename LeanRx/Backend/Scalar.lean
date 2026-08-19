@@ -24,18 +24,22 @@ deriving Repr, BEq
 private def addHelper (helper : Helper) (helpers : List Helper) : List Helper :=
   if helpers.contains helper then helpers else helpers ++ [helper]
 
+private def mergeHelpers (left right : List Helper) : List Helper :=
+  right.foldl (fun helpers helper => addHelper helper helpers) left
+
 def helpers : {α : Type} → ReactiveIR.Expr α → List Helper
   | _, .literal _ => []
   | _, .input _ _ _ => []
   | _, .unary _ value => helpers value
   | _, .binary op left right =>
-      let nested := helpers left ++ helpers right
+      let nested := mergeHelpers (helpers left) (helpers right)
       match op with
       | .intMod => addHelper .intMod nested
       | .natSub => addHelper .natSub nested
       | .natMod => addHelper .natMod nested
       | _ => nested
-  | _, .conditional condition yes no => helpers condition ++ helpers yes ++ helpers no
+  | _, .conditional condition yes no =>
+      mergeHelpers (mergeHelpers (helpers condition) (helpers yes)) (helpers no)
 
 private def helperRequested : Helper → String
   | .intMod => "$lrx_intMod"

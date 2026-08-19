@@ -27,6 +27,10 @@ def run : IO Unit := do
   let modModule ← emit "mod" #["left", "right"] intMod
   unless modModule.module.declarations.size == 2 do
     throw <| IO.userError "Int.mod did not emit exactly one semantic helper"
+  let repeatedMod : LeanRx.ReactiveIR.Expr Int := .binary .intAdd intMod intMod
+  let repeatedModule ← emit "repeatedMod" #["left", "right"] repeatedMod
+  unless repeatedModule.module.declarations.size == 2 do
+    throw <| IO.userError "repeated Int.mod emitted duplicate semantic helpers"
   let badInput : LeanRx.ReactiveIR.Expr Int := .input .int 2 "missing"
   match LeanRx.Backend.Scalar.moduleFor "bad" #["only"] badInput with
   | .ok _ => throw <| IO.userError "out-of-range Reactive IR input emitted JavaScript"

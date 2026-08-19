@@ -48,7 +48,7 @@ inductive Literal where
   | boolean (value : Bool)
   | string (value : String)
   | bigint (value : Int)
-  | number (value : Nat)
+  | number (value : UInt32)
   | null
 deriving Repr, BEq
 
