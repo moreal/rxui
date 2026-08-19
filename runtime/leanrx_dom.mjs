@@ -62,6 +62,27 @@ export function listenSubmit(node, state, context, dispatch) {
   return () => node.removeEventListener("submit", handler);
 }
 
+export function listenDelegated(node, type, state, context, dispatch) {
+  const handler = (event) => {
+    const target = event.target;
+    const actionNode = target && typeof target.closest === "function"
+      ? target.closest("[data-lrx-action]")
+      : null;
+    if (!actionNode || !node.contains(actionNode)) return;
+    dispatch(
+      state,
+      context,
+      actionNode.getAttribute("data-lrx-action") ?? "",
+      actionNode.getAttribute("data-lrx-key") ?? "",
+      typeof target.value === "string" ? target.value : "",
+      target.checked === true,
+      typeof event.key === "string" ? event.key : "",
+    );
+  };
+  node.addEventListener(type, handler);
+  return () => node.removeEventListener(type, handler);
+}
+
 export function listen(node, type, state, refs, dispatch) {
   const handler = () => dispatch(state, refs);
   node.addEventListener(type, handler);

@@ -64,7 +64,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 4. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 5. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -83,3 +83,6 @@ changed flags, and sink caches; they update direct text nodes through `setText`.
 an idempotent disposer whose instrumentation accessor copies counters and trace.
 The host modules integrate DOM and
 effects only: they do not discover dependencies or schedule reactive work.
+ABI 5 additionally exposes a fixed delegated-region event payload and a separate
+local region reconciler; neither host discovers reactive dependencies or executes
+application updates.

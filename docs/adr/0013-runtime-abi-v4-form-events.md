@@ -28,6 +28,8 @@ ABI-3 and ABI-4 artifacts/hosts must not be mixed. All existing scalar and
 component manifest consumers move to version 4. The host surface grows, but it
 does not discover dependencies or own form semantics. Later payload kinds
 require another explicit ABI review.
+ADR-0014 performs that later review and supersedes version 4 for current
+artifacts while retaining this decision as the form-adapter history.
 
 ## Validation
 
