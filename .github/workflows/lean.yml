@@ -21,6 +21,8 @@ jobs:
         run: lake build
       - name: Run native smoke tests
         run: lake exe leanrx_test
+      - name: Run deterministic graph properties
+        run: lake exe leanrx_graph_properties -- 195936478
       - name: Run public examples
         run: ./scripts/check_examples.sh
       - name: Run compile-fail type contracts
