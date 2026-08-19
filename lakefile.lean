@@ -24,6 +24,7 @@ lean_lib LeanRxTest where
     `Test.Backend.Component,
     `Test.View.Model,
     `Test.Component.Model,
+    `Test.Component.DiamondLab,
     `Test.Elab.Component,
     `Test.Cli.Model,
     `Test.Cli.AtomicOutput,
@@ -31,7 +32,8 @@ lean_lib LeanRxTest where
     `Test.Semantics.Optimized, `Test.Proofs.PropagationSound]
 
 lean_lib LeanRxExamples where
-  roots := #[`examples.ExpressionPlayground, `examples.Counter, `examples.CounterBuild]
+  roots := #[`examples.ExpressionPlayground, `examples.Counter, `examples.CounterBuild,
+    `examples.DiamondLab, `examples.DiamondLabBuild]
 
 @[default_target]
 lean_exe leanrx_test where
@@ -54,6 +56,9 @@ lean_exe leanrx_generate_differential where
 
 lean_exe leanrx_counter_js where
   root := `examples.CounterMain
+
+lean_exe leanrx_diamond_js where
+  root := `examples.DiamondLabMain
 
 lean_exe leanrx where
   root := `LeanRx.Cli.Main
