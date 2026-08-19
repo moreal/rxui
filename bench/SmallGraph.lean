@@ -1,4 +1,5 @@
 import examples.DiamondLab
+import examples.GraphFixtures
 
 namespace LeanRxBench.SmallGraph
 
@@ -30,8 +31,22 @@ def run (iterations : Nat) : IO Unit := do
     derivedEvaluations := derivedEvaluations + result.derivedEvaluations
     sinkEvaluations := sinkEvaluations + result.sinkEvaluations
   let elapsed ← IO.monoNanosNow
+  let parityChecked ← match Graph.planInt LeanRxExamples.GraphLab.paritySpec with
+    | .ok value => pure value
+    | .error error => throw <| IO.userError s!"suppression planning failed: {error.code}"
+  let parityInitial := Abstract.Reference.initState parityChecked.program fun id =>
+    if id = 0 then 1 else 0
+  let parityWrite := [Abstract.SourceWrite.mk 0 3]
+  let parityReference := Abstract.Reference.run parityChecked.program parityInitial parityWrite
+  let parityOptimized := Abstract.Optimized.run parityChecked.program parityInitial parityWrite
+  let referenceWork := parityReference.derivedEvaluations + parityReference.sinkEvaluations
+  let optimizedWork := parityOptimized.derivedEvaluations + parityOptimized.sinkEvaluations
+  unless parityReference.observations == parityOptimized.observations &&
+      referenceWork == 4 && optimizedWork == 1 do
+    throw <| IO.userError "small graph benchmark work-suppression baseline failed"
   IO.println <| s!"small-graph iterations={iterations} derived={derivedEvaluations} " ++
-    s!"sinks={sinkEvaluations} elapsedNs={elapsed - start}"
+    s!"sinks={sinkEvaluations} suppressionReference={referenceWork} " ++
+    s!"suppressionOptimized={optimizedWork} elapsedNs={elapsed - start}"
 
 end LeanRxBench.SmallGraph
 

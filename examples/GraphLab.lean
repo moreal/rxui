@@ -1,4 +1,4 @@
-import LeanRx
+import examples.GraphFixtures
 
 namespace LeanRxExamples.GraphLab
 
@@ -33,34 +33,6 @@ def diamondSpec : IntProgramSpec DiamondSchema :=
       , .derived total totalExpr
       ]
     sinks := [.observe "totalText" (RxExpr.read total)] }
-
-abbrev ParitySchema : Schema :=
-  .field "count" Int <| .field "parity" Int <| .field "downstream" Int .empty
-
-def parityCount : Field ParitySchema Int := .here
-def parity : Field ParitySchema Int := .there .here
-def downstream : Field ParitySchema Int := .there (.there .here)
-
-def parityAllInt : AllInt ParitySchema :=
-  .field (.field (.field .empty))
-
-def parityExpr := RxExpr.binary .intMod
-  (RxExpr.read parityCount) (RxExpr.literal (.int 2))
-def downstreamExpr := RxExpr.binary .intAdd
-  (RxExpr.read parity) (RxExpr.literal (.int 100))
-
-def paritySpec : IntProgramSpec ParitySchema :=
-  { allInt := parityAllInt
-    sourceCount := 1
-    values :=
-      [ .source parityCount
-      , .derived parity parityExpr
-      , .derived downstream downstreamExpr
-      ]
-    sinks :=
-      [ .observe "paritySink" (RxExpr.read parity)
-      , .observe "downstreamSink" (RxExpr.read downstream)
-      ] }
 
 private def depsText (node : Node) : String :=
   "[" ++ String.intercalate "," (node.deps.toList.map fun id => toString id.value) ++ "]"

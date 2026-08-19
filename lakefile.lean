@@ -35,7 +35,8 @@ lean_lib LeanRxTest where
     `Test.Semantics.Optimized, `Test.Proofs.PropagationSound]
 
 lean_lib LeanRxExamples where
-  roots := #[`examples.ExpressionPlayground, `examples.Counter, `examples.CounterBuild,
+  roots := #[`examples.ExpressionPlayground, `examples.GraphFixtures,
+    `examples.Counter, `examples.CounterBuild,
     `examples.DiamondLab, `examples.DiamondLabBuild, `examples.DependentTabs,
     `examples.DependentTabsBuild]
 

@@ -34,7 +34,9 @@ benchmark requirement for M10.
 
 ## Validation
 
-`./scripts/check_bench.sh` first relies on the native reference/optimized
-correctness check and then requires 1,000 alternating diamond updates to report
-exactly 3,000 derived and 1,000 sink evaluations. The command runs identically in
-local and CI gates.
+`./scripts/check_bench.sh` first relies on native reference/optimized correctness
+checks, then requires 1,000 alternating diamond updates to report exactly 3,000
+derived and 1,000 sink evaluations. It additionally locks the parity actual-change
+case at four reference evaluations versus one optimized evaluation, satisfying
+the PoC's measured work-suppression gate without turning elapsed time into a
+performance threshold. The command runs identically in local and CI gates.
