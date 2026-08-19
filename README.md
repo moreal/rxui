@@ -55,5 +55,9 @@ dependency, cache, and transaction hypotheses. Generated JavaScript and browser
 behavior remain in the documented
 trusted computing base.
 
+M2's `Graph.planInt` adapter derives graph metadata and the homogeneous proof
+program from the same dependency-indexed `RxExpr` declarations. It is the checked
+proof-subset bridge; broader heterogeneous component extraction is not claimed yet.
+
 No project license has been selected. `NOTICE.md` records prior-art provenance;
 it does not grant a license to this repository.

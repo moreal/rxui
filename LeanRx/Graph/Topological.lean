@@ -36,6 +36,7 @@ instance (schedule : Schedule) (graph : Graph) : Decidable (schedule.Valid graph
 end Schedule
 
 structure PlannedGraph where
+  private mk ::
   graph : Graph
   schedule : Schedule
   valid : schedule.Valid graph

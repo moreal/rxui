@@ -11,6 +11,7 @@ import Test.Graph.Model
 import Test.Graph.Build
 import Test.Graph.Topological
 import Test.Graph.Serialize
+import Test.Graph.IntProgram
 import Test.Semantics.Store
 import Test.Semantics.Reference
 import Test.Semantics.Optimized
@@ -36,6 +37,7 @@ def main : IO Unit := do
   LeanRxTest.Graph.Build.run
   LeanRxTest.Graph.Topological.run
   LeanRxTest.Graph.Serialize.run
+  LeanRxTest.Graph.IntProgram.run
   LeanRxTest.Semantics.Store.run
   LeanRxTest.Semantics.Reference.run
   LeanRxTest.Semantics.Optimized.run

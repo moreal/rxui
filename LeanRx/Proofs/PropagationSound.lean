@@ -40,6 +40,55 @@ theorem changedIds_tracks (program : Program) (transaction : SourceTransaction)
 
 end SourceTransaction
 
+namespace Program
+
+theorem declares_of_checked (program : Program) {id : Nat}
+    (checked : program.declaresChecked id = true) : program.Declares id := by
+  simp only [declaresChecked, Bool.or_eq_true, decide_eq_true_eq] at checked
+  rcases checked with source | derived
+  · exact .inl source
+  · have member : ∃ step, step ∈ program.derived ∧ step.id == id :=
+      List.any_eq_true.mp derived
+    rcases member with ⟨step, stepMember, same⟩
+    exact .inr ⟨step, stepMember, of_decide_eq_true same⟩
+
+theorem order_of_checked (steps : List DerivedStep)
+    (checked : orderChecked steps = true) :
+    steps.Pairwise fun earlier later => earlier.id < later.id := by
+  induction steps with
+  | nil => constructor
+  | cons step rest ih =>
+      simp only [orderChecked, Bool.and_eq_true] at checked
+      apply List.pairwise_cons.mpr
+      constructor
+      · intro later member
+        exact of_decide_eq_true <| (List.all_eq_true.mp checked.1) later member
+      · exact ih checked.2
+
+theorem wellFormed_of_check (program : Program)
+    (checked : program.checkWellFormed = true) : program.WellFormed := by
+  simp only [checkWellFormed, Bool.and_eq_true] at checked
+  refine
+    { derivedAfterSources := ?_
+      depsBeforeDerived := ?_
+      derivedOrder := order_of_checked program.derived checked.2.2.1
+      derivedDepsDeclared := ?_
+      sinkDepsDeclared := ?_ }
+  · intro step member
+    exact of_decide_eq_true <|
+      (List.all_eq_true.mp checked.1) step member
+  · intro step member dep depMember
+    have stepChecked := (List.all_eq_true.mp checked.2.1) step member
+    exact of_decide_eq_true <| (List.all_eq_true.mp stepChecked) dep depMember
+  · intro step member dep depMember
+    have stepChecked := (List.all_eq_true.mp checked.2.2.2.1) step member
+    exact declares_of_checked program <| (List.all_eq_true.mp stepChecked) dep depMember
+  · intro sink member dep depMember
+    have sinkChecked := (List.all_eq_true.mp checked.2.2.2.2) sink member
+    exact declares_of_checked program <| (List.all_eq_true.mp sinkChecked) dep depMember
+
+end Program
+
 namespace Reference
 
 theorem runDerived_preserves_below (steps : List DerivedStep) (store : Store)

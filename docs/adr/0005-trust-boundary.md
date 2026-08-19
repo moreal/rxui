@@ -54,6 +54,11 @@ footprint `[propext, Quot.sound]`. These are kernel-checked proofs relative to
 those reviewed standard Lean axioms; the environment audit locks each named
 theorem and its exact footprint independently.
 
+The M2 checked well-formedness checker and all-`Int` `RxExpr`-to-abstract-evaluator
+bridge are also kernel checked. Their named proof terms use exact reviewed
+`[propext, Quot.sound]` footprints where list/dependency equations require them;
+the exhaustive environment audit rejects any footprint change.
+
 Lean also generates `_unsafe_rec` compiler helpers for safe source definitions
 that eliminate universe-bearing schemas/fields. The source declarations remain
 kernel checked and semantic modules contain no written `unsafe` declaration.

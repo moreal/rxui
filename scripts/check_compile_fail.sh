@@ -5,11 +5,13 @@ fixtures=(
   Test/fixtures/compile-fail/ForgeDepSet.lean
   Test/fixtures/compile-fail/UnsupportedRead.lean
   Test/fixtures/compile-fail/MisrepresentInt.lean
+  Test/fixtures/compile-fail/ForgePlannedGraph.lean
 )
 fragments=(
   "Constructor for"
   "LeanRx.RuntimeRep HostOnly"
   "LeanRx.RuntimeType Int"
+  'constructor for `LeanRx.PlannedGraph` is marked as private'
 )
 
 for index in "${!fixtures[@]}"; do

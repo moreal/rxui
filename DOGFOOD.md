@@ -91,10 +91,11 @@ visible without browser instrumentation.
 
 ### Friction
 
-M2 intentionally keeps the executable typed graph and homogeneous abstract proof
-model separate, so Graph Lab declares corresponding graph metadata and abstract
-evaluators explicitly. Later component extraction must generate both rather than
-asking application authors to duplicate them.
+The first Graph Lab version declared executable graph metadata and homogeneous
+proof evaluators separately. Independent M2 review rejected that drift risk. The
+all-`Int` proof subset now declares staged `RxExpr` values once and derives both
+the planned graph and abstract program through `Graph.planInt`; general
+heterogeneous component extraction remains future work.
 
 ### Missing framework capability
 
@@ -105,7 +106,10 @@ JavaScript lowering, browser host, or DOM sink yet. Those begin in M3–M5.
 
 The first fixture review showed that graph validation allowed another node to
 depend on a sink. `LRX-GRAPH-012` now rejects that invalid scalar-graph shape, and
-the case is a permanent regression test.
+the case is a permanent regression test. A later review found that validated
+planned graphs were forgeable and Graph Lab duplicated its semantic program;
+private planned constructors, a checked typed bridge, and compile-fail/connection
+tests now cover both defects.
 
 ### Performance observations
 

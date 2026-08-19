@@ -5,53 +5,62 @@ namespace LeanRxExamples.GraphLab
 open LeanRx
 open LeanRx.Abstract
 
-def diamondSpecs : Array NodeSpec := #[
-  .source "count" .int,
-  .derived "left" .int #[{ id := ⟨0⟩, valueType := .int }] "count + 10",
-  .derived "right" .int #[{ id := ⟨0⟩, valueType := .int }] "count * 2",
-  .derived "total" .int #[{ id := ⟨1⟩, valueType := .int }, { id := ⟨2⟩, valueType := .int }]
-    "left + right",
-  .sink "totalText" #[{ id := ⟨3⟩, valueType := .int }] "observe total"
-]
+abbrev DiamondSchema : Schema :=
+  .field "count" Int <| .field "left" Int <| .field "right" Int <|
+    .field "total" Int .empty
 
-def diamondProgram : Program :=
-  { sourceCount := 1
-    derived :=
-      [ { id := 1, evaluator := .map 0 (· + 10) }
-      , { id := 2, evaluator := .map 0 (· * 2) }
-      , { id := 3, evaluator := .map₂ 1 2 (· + ·) }
+def count : Field DiamondSchema Int := .here
+def left : Field DiamondSchema Int := .there .here
+def right : Field DiamondSchema Int := .there (.there .here)
+def total : Field DiamondSchema Int := .there (.there (.there .here))
+
+def diamondAllInt : AllInt DiamondSchema :=
+  .field (.field (.field (.field .empty)))
+
+def leftExpr := RxExpr.binary .intAdd
+  (RxExpr.read count) (RxExpr.literal (.int 10))
+def rightExpr := RxExpr.binary .intMul
+  (RxExpr.read count) (RxExpr.literal (.int 2))
+def totalExpr := RxExpr.binary .intAdd (RxExpr.read left) (RxExpr.read right)
+
+def diamondSpec : IntProgramSpec DiamondSchema :=
+  { allInt := diamondAllInt
+    sourceCount := 1
+    values :=
+      [ .source count
+      , .derived left leftExpr
+      , .derived right rightExpr
+      , .derived total totalExpr
       ]
-    sinks := [{ name := "total", evaluator := .map 3 (fun value => value) }] }
+    sinks := [.observe "totalText" (RxExpr.read total)] }
 
-def diamondOldStore : Store := fun id =>
-  match id with
-  | 0 => 1
-  | 1 => 11
-  | 2 => 2
-  | 3 => 13
-  | _ => 0
+abbrev ParitySchema : Schema :=
+  .field "count" Int <| .field "parity" Int <| .field "downstream" Int .empty
 
-def diamondOld : State := { store := diamondOldStore, sinkCache := [13] }
+def parityCount : Field ParitySchema Int := .here
+def parity : Field ParitySchema Int := .there .here
+def downstream : Field ParitySchema Int := .there (.there .here)
 
-def parityProgram : Program :=
-  { sourceCount := 1
-    derived :=
-      [ { id := 1, evaluator := .map 0 (fun value => value % 2) }
-      , { id := 2, evaluator := .map 1 (· + 100) }
+def parityAllInt : AllInt ParitySchema :=
+  .field (.field (.field .empty))
+
+def parityExpr := RxExpr.binary .intMod
+  (RxExpr.read parityCount) (RxExpr.literal (.int 2))
+def downstreamExpr := RxExpr.binary .intAdd
+  (RxExpr.read parity) (RxExpr.literal (.int 100))
+
+def paritySpec : IntProgramSpec ParitySchema :=
+  { allInt := parityAllInt
+    sourceCount := 1
+    values :=
+      [ .source parityCount
+      , .derived parity parityExpr
+      , .derived downstream downstreamExpr
       ]
     sinks :=
-      [ { name := "parity", evaluator := .map 1 (fun value => value) }
-      , { name := "downstream", evaluator := .map 2 (fun value => value) }
+      [ .observe "paritySink" (RxExpr.read parity)
+      , .observe "downstreamSink" (RxExpr.read downstream)
       ] }
-
-def parityStore : Store := fun id =>
-  match id with
-  | 0 => 1
-  | 1 => 1
-  | 2 => 101
-  | _ => 0
-
-def parityOld : State := { store := parityStore, sinkCache := [1, 101] }
 
 private def depsText (node : Node) : String :=
   "[" ++ String.intercalate "," (node.deps.toList.map fun id => toString id.value) ++ "]"
@@ -63,17 +72,22 @@ private def nodeLine (node : Node) : String :=
 private def edgeLines (node : Node) : List String :=
   node.deps.toList.map fun dependency => s!"edge {dependency.value}->{node.id.value}"
 
+private def mustPlan (spec : IntProgramSpec Γ) : IO CheckedIntProgram :=
+  match Graph.planInt spec with
+  | .ok checked => pure checked
+  | .error error => throw <| IO.userError s!"Graph Lab planning failed: {error.code}"
+
 def run : IO Unit := do
-  let planned ← match Graph.plan diamondSpecs with
-    | .ok planned => pure planned
-    | .error error => throw <| IO.userError s!"Graph Lab planning failed: {error.code}"
+  let diamond ← mustPlan diamondSpec
+  let planned := diamond.planned
+  let diamondOld := Reference.initState diamond.program fun id => if id = 0 then 1 else 0
   let graphLines := planned.graph.nodes.toList.map nodeLine ++
     planned.graph.nodes.toList.flatMap edgeLines
   IO.println <| String.intercalate "\n" graphLines
 
   let transaction : SourceTransaction := [{ id := 0, value := 3 }]
-  let reference := Reference.run diamondProgram diamondOld transaction
-  let optimized := Optimized.run diamondProgram diamondOld transaction
+  let reference := Reference.run diamond.program diamondOld transaction
+  let optimized := Optimized.run diamond.program diamondOld transaction
   unless reference.store 3 == 19 && reference.observations == [19] do
     throw <| IO.userError "Graph Lab reference result changed"
   unless optimized.store 3 == reference.store 3 &&
@@ -82,9 +96,11 @@ def run : IO Unit := do
   IO.println s!"reference total={reference.store 3} derived={reference.derivedEvaluations} sinks={reference.sinkEvaluations}"
   IO.println s!"optimized total={optimized.store 3} derived={optimized.derivedEvaluations} sinks={optimized.sinkEvaluations}"
 
+  let parityPlan ← mustPlan paritySpec
+  let parityOld := Reference.initState parityPlan.program fun id => if id = 0 then 1 else 0
   let parityTransaction : SourceTransaction := [{ id := 0, value := 3 }]
-  let parityReference := Reference.run parityProgram parityOld parityTransaction
-  let parityOptimized := Optimized.run parityProgram parityOld parityTransaction
+  let parityReference := Reference.run parityPlan.program parityOld parityTransaction
+  let parityOptimized := Optimized.run parityPlan.program parityOld parityTransaction
   unless parityReference.observations == parityOptimized.observations do
     throw <| IO.userError "Graph Lab parity observations disagree"
   unless parityOptimized.derivedEvaluations == 1 && parityOptimized.sinkEvaluations == 0 do

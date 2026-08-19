@@ -85,6 +85,32 @@ structure WellFormed (program : Program) : Prop where
   sinkDepsDeclared : ∀ sink ∈ program.sinks, ∀ dep ∈ sink.evaluator.deps,
     program.Declares dep
 
+def declaresChecked (program : Program) (id : Nat) : Bool :=
+  decide (id < program.sourceCount) || program.derived.any (·.id == id)
+
+def derivedAfterChecked (program : Program) : Bool :=
+  program.derived.all fun step => decide (program.sourceCount ≤ step.id)
+
+def depsBeforeChecked (program : Program) : Bool :=
+  program.derived.all fun step =>
+    step.evaluator.deps.all fun dep => decide (dep < step.id)
+
+def orderChecked : List DerivedStep → Bool
+  | [] => true
+  | step :: rest => rest.all (fun later => decide (step.id < later.id)) && orderChecked rest
+
+def derivedDeclaredChecked (program : Program) : Bool :=
+  program.derived.all fun step => step.evaluator.deps.all program.declaresChecked
+
+def sinksDeclaredChecked (program : Program) : Bool :=
+  program.sinks.all fun sink => sink.evaluator.deps.all program.declaresChecked
+
+def checkWellFormed (program : Program) : Bool :=
+  program.derivedAfterChecked &&
+    (program.depsBeforeChecked &&
+      (orderChecked program.derived &&
+        (program.derivedDeclaredChecked && program.sinksDeclaredChecked)))
+
 end Program
 
 structure SourceWrite where
