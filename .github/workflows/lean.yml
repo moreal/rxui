@@ -41,6 +41,8 @@ jobs:
         run: ./scripts/check_browser.sh
       - name: Run small graph benchmark smoke gate
         run: ./scripts/check_bench.sh
+      - name: Run data-grid benchmark correctness gate
+        run: ./scripts/check_grid_bench.sh
       - name: Run public examples
         run: ./scripts/check_examples.sh
       - name: Run compile-fail type contracts

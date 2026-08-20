@@ -115,5 +115,8 @@ lean_exe leanrx_data_grid_js where
 lean_exe leanrx_graph_bench where
   root := `bench.SmallGraph
 
+lean_exe leanrx_grid_bench where
+  root := `bench.DataGrid
+
 lean_exe leanrx where
   root := `LeanRx.Cli.Main
