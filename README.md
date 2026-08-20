@@ -39,6 +39,12 @@ lake exe leanrx_graph_properties -- 195936478
 The same commands run in CI. See [STATUS.md](STATUS.md) for the current
 milestone, exact baseline, and the latest green commit.
 
+New readers should start with the [documentation index](docs/README.md), then the
+[language guide](docs/guides/language.md) and
+[tooling guide](docs/guides/tooling.md). The
+[backend matrix](docs/guides/backend-support.md) distinguishes native Lean code
+from constructs the controlled browser backend actually supports.
+
 Install the exact browser-test dependencies and Chromium once before running the
 browser gate:
 
@@ -170,6 +176,23 @@ an explicit-cost-model hybrid on the same 10,000-row trace. Measurements support
 keeping delta opt-in rather than making it a default language feature; see the
 [performance report](docs/performance/m10-data-grid.md) and
 [ADR-0017](docs/adr/0017-structural-delta-remains-opt-in.md).
+
+M11 adds learnability commands and a self-hosted documentation dogfood:
+
+```sh
+lake exe leanrx -- doctor
+lake exe leanrx -- scaffold --out .tmp/starter
+lake exe leanrx -- explain LRX-GRAPH-001
+lake exe leanrx -- graph Examples.Counter --format html > .tmp/Counter.graph.html
+lake exe leanrx -- build Examples.LeanRxDocs --out .tmp/docs
+```
+
+The seven-page site uses LeanRx state, derived values, events, text sinks, graphs,
+and atomic output. It records rather than hides missing routing, semantic content
+tags, typed CSS, SSR, and hydration. See the
+[case studies](docs/guides/dogfood-case-studies.md),
+[accessibility guide](docs/guides/accessibility.md), and
+[trust model](docs/guides/trust-model.md).
 
 ## Project boundaries
 
