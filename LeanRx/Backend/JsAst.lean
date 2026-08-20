@@ -256,7 +256,7 @@ def validate (module : Module) : Except Error Unit := do
         unless value.body.toList.all (stmtBound bound) do
           throw {
             code := "LRX-BE-018"
-            message := "JavaScript function has an unbound identifier or invalid nested lexical scope"
+            message := s!"JavaScript function '{value.name.raw}' has an unbound identifier or invalid nested lexical scope"
           }
   if duplicate? (module.exports.toList.map (·.exportName)) then
     throw { code := "LRX-BE-010", message := "JavaScript module has duplicate export names" }

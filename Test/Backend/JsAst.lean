@@ -16,6 +16,13 @@ private def expectError (code : String) (result : Except Error Unit) : IO Unit :
       unless error.code == code do
         throw <| IO.userError s!"expected {code}, got {error.code}"
 
+private def expectErrorContains (code needle : String) (result : Except Error Unit) : IO Unit :=
+  match result with
+  | .ok _ => throw <| IO.userError s!"expected JavaScript AST error {code}"
+  | .error error =>
+      unless error.code == code && error.message.contains needle do
+        throw <| IO.userError s!"expected {code} mentioning {needle}, got {error.code}: {error.message}"
+
 def run : IO Unit := do
   for value in ["value", "_value", "$value", "value2"] do
     match Ident.checked value with
@@ -88,7 +95,7 @@ def run : IO Unit := do
     }]
     exports := #[]
   } : Module).validate
-  expectError "LRX-BE-018" ({
+  expectErrorContains "LRX-BE-018" "evaluate" ({
     declarations := #[.function {
       name := evaluate
       params := #[]
