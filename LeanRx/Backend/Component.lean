@@ -381,7 +381,7 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
     graphHash := toString hash
     runtimeAbi := LeanRx.runtimeAbi
     exports := #["mount"]
-    stateSlots := checked.spec.values.map ValueSpec.valueType
+    stateSlots := checked.spec.values.map (ManifestTypeId.ofRuntime ∘ ValueSpec.valueType)
     sourceCount := checked.sourceCount
     derivedCount := checked.spec.values.size - checked.sourceCount
     textSinkCount := checked.view.textSinks.length

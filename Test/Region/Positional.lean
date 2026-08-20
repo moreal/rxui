@@ -11,13 +11,12 @@ def run : IO Unit := do
   unless mounted.mounted.map (·.token) == [20, 21] && mounted.nextToken == 22 &&
       mounted.created == 2 do
     throw <| IO.userError "positional mount tokens changed"
-  let appended := reconcilePositional mounted.mounted [text "a", text "B", text "c"]
-    mounted.nextToken
+  let appended := reconcilePositional mounted [text "a", text "B", text "c"]
   unless appended.mounted.map (·.token) == [20, 21, 22] &&
       positionalLogical appended.mounted == [text "a", text "B", text "c"] &&
       appended.created == 1 && appended.scalarUpdates == 1 && appended.disposed == [] do
     throw <| IO.userError "positional append/update behavior changed"
-  let removed := reconcilePositional appended.mounted [text "A"] appended.nextToken
+  let removed := reconcilePositional appended [text "A"]
   unless removed.mounted.map (·.token) == [20] &&
       positionalLogical removed.mounted == [text "A"] &&
       removed.disposed == [21, 22] && removed.created == 0 &&

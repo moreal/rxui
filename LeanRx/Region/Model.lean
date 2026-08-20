@@ -24,6 +24,7 @@ structure ConditionalInstance where
 deriving Repr, BEq
 
 structure ConditionalResult where
+  private mk ::
   mounted : ConditionalInstance
   nextToken : Nat
   disposed : List Nat
@@ -45,25 +46,25 @@ def mountConditional (branch : Bool) (whenTrue whenFalse : LogicalNode)
 
 /-- Reuse the branch identity for stable-shape scalar updates; replace and
 dispose exactly once when the branch changes. -/
-def reconcileConditional (current : ConditionalInstance) (nextBranch : Bool)
-    (whenTrue whenFalse : LogicalNode) (nextToken : Nat) : ConditionalResult :=
+def reconcileConditional (current : ConditionalResult) (nextBranch : Bool)
+    (whenTrue whenFalse : LogicalNode) : ConditionalResult :=
   let nextNode := conditionalReference nextBranch whenTrue whenFalse
-  if current.branch == nextBranch then
-    { mounted := { current with node := nextNode }
-      nextToken
+  if current.mounted.branch == nextBranch then
+    { mounted := { current.mounted with node := nextNode }
+      nextToken := current.nextToken
       disposed := []
       replacements := 0
-      scalarUpdates := if current.node == nextNode then 0 else 1 }
+      scalarUpdates := if current.mounted.node == nextNode then 0 else 1 }
   else
-    { mounted := { token := nextToken, branch := nextBranch, node := nextNode }
-      nextToken := nextToken + 1
-      disposed := [current.token]
+    { mounted := { token := current.nextToken, branch := nextBranch, node := nextNode }
+      nextToken := current.nextToken + 1
+      disposed := [current.mounted.token]
       replacements := 1
       scalarUpdates := 0 }
 
-theorem reconcileConditional_logical (current : ConditionalInstance) (nextBranch : Bool)
-    (whenTrue whenFalse : LogicalNode) (nextToken : Nat) :
-    (reconcileConditional current nextBranch whenTrue whenFalse nextToken).mounted.node =
+theorem reconcileConditional_logical (current : ConditionalResult) (nextBranch : Bool)
+    (whenTrue whenFalse : LogicalNode) :
+    (reconcileConditional current nextBranch whenTrue whenFalse).mounted.node =
       conditionalReference nextBranch whenTrue whenFalse := by
   unfold reconcileConditional
   split <;> rfl

@@ -13,8 +13,6 @@ def erasedStaticEvidence : RuntimeTypeId → List StaticEvidence
   | .bool | .string | .int | .nat => []
   | .vector element length => erasedStaticEvidence element ++ [.vectorLength length]
   | .fin bound => [.finBound bound]
-  | .record _ => []
-  | .list element => erasedStaticEvidence element
 
 /-- Result of traversing typed Reactive IR. `inspections` is deliberately
 separate: backend emission is forbidden when it is nonempty. -/

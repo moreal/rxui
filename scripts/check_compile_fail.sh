@@ -26,6 +26,9 @@ fixtures=(
   Test/fixtures/compile-fail/ForgeStateControlBinding.lean
   Test/fixtures/compile-fail/ForgeTemperatureUpdate.lean
   Test/fixtures/compile-fail/ForgeKeyedList.lean
+  Test/fixtures/compile-fail/ForgeConditionalResult.lean
+  Test/fixtures/compile-fail/ForgePositionalResult.lean
+  Test/fixtures/compile-fail/ForgeRegionResult.lean
   Test/fixtures/compile-fail/ForgeTodoState.lean
 )
 fragments=(
@@ -53,6 +56,9 @@ fragments=(
   'Constructor for `LeanRx.Form.StateControlBinding` is marked as private'
   'Constructor for `LeanRx.Form.TemperatureSpec.UpdatePlan` is marked as private'
   'Constructor for `LeanRx.Region.KeyedList` is marked as private'
+  'constructor for `ConditionalResult` is marked as private'
+  'constructor for `PositionalResult` is marked as private'
+  'constructor for `KeyedResult` is marked as private'
   'Constructor for `LeanRx.Todo.State` is marked as private'
 )
 

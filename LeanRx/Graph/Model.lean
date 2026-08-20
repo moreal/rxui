@@ -16,7 +16,6 @@ def RuntimeTypeId.equalityPlan : RuntimeTypeId → JsEqPlan
   | .nat => .bigint
   | .vector _ _ => .structural
   | .fin _ => .strict
-  | .record _ | .list _ => .structural
 
 inductive NodeKind where
   | source

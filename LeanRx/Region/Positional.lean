@@ -8,6 +8,7 @@ structure PositionalInstance where
 deriving Repr, BEq
 
 structure PositionalResult where
+  private mk ::
   mounted : List PositionalInstance
   nextToken : Nat
   disposed : List Nat
@@ -55,9 +56,9 @@ private def reconcilePositionalAux (current : List PositionalInstance) :
 
 /-- Reconcile by position. Existing prefix tokens are retained, a removed suffix
 is disposed, and an appended suffix receives fresh tokens. -/
-def reconcilePositional (current : List PositionalInstance) (nodes : List LogicalNode)
-    (nextToken : Nat) : PositionalResult :=
-  reconcilePositionalAux current nodes nextToken
+def reconcilePositional (current : PositionalResult) (nodes : List LogicalNode) :
+    PositionalResult :=
+  reconcilePositionalAux current.mounted nodes current.nextToken
 
 def positionalLogical (mounted : List PositionalInstance) : List LogicalNode :=
   mounted.map (·.node)
@@ -76,9 +77,9 @@ private theorem reconcilePositionalAux_logical (current : List PositionalInstanc
           simp only [reconcilePositionalAux, positionalLogical, List.map_cons]
           exact congrArg (fun tail => node :: tail) (ih rest nextToken)
 
-theorem reconcilePositional_logical (current : List PositionalInstance)
-    (nodes : List LogicalNode) (nextToken : Nat) :
-    positionalLogical (reconcilePositional current nodes nextToken).mounted = nodes := by
-  exact reconcilePositionalAux_logical current nodes nextToken
+theorem reconcilePositional_logical (current : PositionalResult)
+    (nodes : List LogicalNode) :
+    positionalLogical (reconcilePositional current nodes).mounted = nodes := by
+  exact reconcilePositionalAux_logical current.mounted nodes current.nextToken
 
 end LeanRx.Region

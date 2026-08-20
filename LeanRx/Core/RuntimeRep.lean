@@ -37,8 +37,6 @@ inductive RuntimeTypeId where
   | nat
   | vector (element : RuntimeTypeId) (length : Nat)
   | fin (bound : Nat)
-  | record (name : String)
-  | list (element : RuntimeTypeId)
 deriving Repr, BEq, DecidableEq, Ord
 
 def RuntimeType.id : {α : Type} → RuntimeType α → RuntimeTypeId
@@ -57,8 +55,6 @@ def RuntimeTypeId.debug : RuntimeTypeId → String
   | .nat => "nat"
   | .vector element length => s!"vector<{element.debug},{length}>"
   | .fin bound => s!"fin<{bound}>"
-  | .record name => s!"record<{name}>"
-  | .list element => s!"list<{element.debug}>"
 
 def RuntimeType.jsType : {α : Type} → RuntimeType α → JsType
   | _, .bool => .boolean

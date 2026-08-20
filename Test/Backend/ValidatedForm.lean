@@ -25,7 +25,8 @@ def run : IO Unit := do
           source.contains "command:fakeSubmit" && ¬source.contains "innerHTML" do
         throw <| IO.userError s!"validated form lowering changed:\n{source}"
       unless emitted.manifest.stateSlots ==
-          #[RuntimeTypeId.string, RuntimeTypeId.string, RuntimeTypeId.bool] &&
+          #[Backend.ManifestTypeId.string, Backend.ManifestTypeId.string,
+            Backend.ManifestTypeId.bool] &&
           emitted.manifest.derivedCount == 0 && emitted.manifest.textSinkCount == 4 &&
           emitted.manifest.eventCount == 8 do
         throw <| IO.userError "validated form manifest changed"

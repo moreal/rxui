@@ -87,8 +87,10 @@ ABI 5 additionally exposes a fixed delegated-region event payload and a separate
 local region reconciler; neither host discovers reactive dependencies or executes
 application updates.
 
-Dynamic-region manifests may use erased metadata-only `record<name>` and
-`list<element>` codes. These do not create public `RuntimeRep` instances or make
-arbitrary Lean structures browser-lowerable; a specialized checked backend must
-own and document each actual array/record layout. Todo items use the M8-specific
-array layout documented with the Todo backend.
+Dynamic-region manifests use a separate `ManifestTypeId` for metadata-only
+`record<name>` and `list<element>` slot descriptions. Those constructors cannot
+enter `RuntimeTypeId`, graph equality planning, or Reactive IR. They do not
+create public `RuntimeRep` instances or make arbitrary Lean structures
+browser-lowerable; a specialized checked backend must own and document each
+actual array/record layout. Todo items use the M8-specific array layout
+documented with the Todo backend.

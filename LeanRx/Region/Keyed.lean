@@ -38,6 +38,7 @@ structure KeyedInstance where
 deriving Repr, BEq
 
 structure KeyedResult where
+  private mk ::
   mounted : List KeyedInstance
   nextToken : Nat
   disposed : List Nat
@@ -90,11 +91,10 @@ def mountKeyed (target : KeyedList) (nextToken : Nat := 0) : KeyedResult :=
 
 /-- Reconcile by key. Retained keys keep tokens across reorders; only absent keys
 are disposed and only new keys receive fresh tokens. -/
-def reconcileKeyed (current : List KeyedInstance) (target : KeyedList)
-    (nextToken : Nat) : KeyedResult :=
-  let result := reconcileKeyedAux current target.items nextToken 0
+def reconcileKeyed (current : KeyedResult) (target : KeyedList) : KeyedResult :=
+  let result := reconcileKeyedAux current.mounted target.items current.nextToken 0
   { result with
-    disposed := (current.filter fun entry => ¬targetContains target.items entry.key).map
+    disposed := (current.mounted.filter fun entry => ¬targetContains target.items entry.key).map
       (·.token) }
 
 def keyedLogical (mounted : List KeyedInstance) : List KeyedItem :=
@@ -111,9 +111,8 @@ private theorem reconcileKeyedAux_logical (current : List KeyedInstance)
       · exact congrArg (fun tail => item :: tail) (ih (nextToken + 1) (targetIndex + 1))
       · exact congrArg (fun tail => item :: tail) (ih nextToken (targetIndex + 1))
 
-theorem reconcileKeyed_logical (current : List KeyedInstance) (target : KeyedList)
-    (nextToken : Nat) :
-    keyedLogical (reconcileKeyed current target nextToken).mounted = target.toList := by
-  exact reconcileKeyedAux_logical current target.items nextToken 0
+theorem reconcileKeyed_logical (current : KeyedResult) (target : KeyedList) :
+    keyedLogical (reconcileKeyed current target).mounted = target.toList := by
+  exact reconcileKeyedAux_logical current.mounted target.items current.nextToken 0
 
 end LeanRx.Region

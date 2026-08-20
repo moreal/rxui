@@ -4,6 +4,38 @@ import LeanRx.Core.Version
 
 namespace LeanRx.Backend
 
+/-- Component state-slot metadata. The scalar/vector/Fin cases mirror sealed
+runtime codes; `record` and `list` are manifest-only layout descriptions owned
+by specialized checked backends and never enter graph equality validation. -/
+inductive ManifestTypeId where
+  | bool
+  | string
+  | int
+  | nat
+  | vector (element : ManifestTypeId) (length : Nat)
+  | fin (bound : Nat)
+  | record (name : String)
+  | list (element : ManifestTypeId)
+deriving Repr, BEq, DecidableEq
+
+def ManifestTypeId.ofRuntime : RuntimeTypeId → ManifestTypeId
+  | .bool => .bool
+  | .string => .string
+  | .int => .int
+  | .nat => .nat
+  | .vector element length => .vector (ofRuntime element) length
+  | .fin bound => .fin bound
+
+def ManifestTypeId.debug : ManifestTypeId → String
+  | .bool => "bool"
+  | .string => "string"
+  | .int => "int"
+  | .nat => "nat"
+  | .vector element length => s!"vector<{element.debug},{length}>"
+  | .fin bound => s!"fin<{bound}>"
+  | .record name => s!"record<{name}>"
+  | .list element => s!"list<{element.debug}>"
+
 structure ComponentManifest where
   compilerVersion : String
   leanToolchain : String
@@ -11,7 +43,7 @@ structure ComponentManifest where
   graphHash : String
   runtimeAbi : Nat
   exports : Array String
-  stateSlots : Array RuntimeTypeId
+  stateSlots : Array ManifestTypeId
   sourceCount : Nat
   derivedCount : Nat
   textSinkCount : Nat
@@ -27,7 +59,7 @@ private def quoted (value : String) : String := Js.Printer.stringLiteral value
 private def strings (values : Array String) : String :=
   "[" ++ String.intercalate "," (values.toList.map quoted) ++ "]"
 
-private def types (values : Array RuntimeTypeId) : String :=
+private def types (values : Array ManifestTypeId) : String :=
   strings (values.map (·.debug))
 
 /-- Stable component ABI metadata. Field order is deliberately fixed. -/

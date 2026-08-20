@@ -22,7 +22,8 @@ def run : IO Unit := do
           ¬source.contains "eval(" && ¬source.contains "Function(" do
         throw <| IO.userError s!"temperature lowering changed:\n{source}"
       unless emitted.manifest.stateSlots ==
-          #[RuntimeTypeId.string, RuntimeTypeId.string, RuntimeTypeId.bool] &&
+          #[Backend.ManifestTypeId.string, Backend.ManifestTypeId.string,
+            Backend.ManifestTypeId.bool] &&
           emitted.manifest.sourceCount == 3 && emitted.manifest.derivedCount == 0 &&
           emitted.manifest.textSinkCount == 1 && emitted.manifest.eventCount == 2 &&
           emitted.manifest.runtimeAbi == LeanRx.runtimeAbi do

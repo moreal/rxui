@@ -22,15 +22,15 @@ def run : IO Unit := do
   unless mounted.mounted.map (·.token) == [100, 101, 102] && mounted.created == 3 &&
       mounted.nextToken == 103 do
     throw <| IO.userError "keyed mount tokens changed"
-  let reordered := reconcileKeyed mounted.mounted
-    (← checked [item 3 "c", item 1 "a", item 2 "B"]) mounted.nextToken
+  let reordered := reconcileKeyed mounted
+    (← checked [item 3 "c", item 1 "a", item 2 "B"])
   unless reordered.mounted.map (·.token) == [102, 100, 101] &&
       keyedLogical reordered.mounted == [item 3 "c", item 1 "a", item 2 "B"] &&
       reordered.created == 0 && reordered.disposed == [] && reordered.moved == 3 &&
       reordered.scalarUpdates == 1 do
     throw <| IO.userError "keyed reorder lost identity or direct updates"
-  let replaced := reconcileKeyed reordered.mounted
-    (← checked [item 3 "c", item 2 "B", item 4 "d"]) reordered.nextToken
+  let replaced := reconcileKeyed reordered
+    (← checked [item 3 "c", item 2 "B", item 4 "d"])
   unless replaced.mounted.map (·.token) == [102, 101, 103] &&
       replaced.disposed == [100] && replaced.created == 1 && replaced.nextToken == 104 do
     throw <| IO.userError "keyed removal/insertion ownership changed"
