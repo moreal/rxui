@@ -4,6 +4,10 @@ import {
 } from "../../runtime/leanrx_effects.mjs";
 import { decodeIssueResponse } from "../../runtime/leanrx_issue_ports.mjs";
 
+const unhandled = [];
+const captureUnhandled = (reason) => unhandled.push(reason);
+process.on("unhandledRejection", captureUnhandled);
+
 const metrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
 const storageValues = new Map([["present", "saved"]]);
 const storage = {
@@ -58,9 +62,9 @@ await drain();
 const resultFor = (name) => delivered.find((entry) => entry.name === name)?.result;
 if (delivered.length !== 6 || resultFor("read").value.value !== "saved" ||
     resultFor("missing").value.kind !== "missing" ||
-    resultFor("read-fail").error.code !== "LRX-STORAGE-001" ||
+    resultFor("read-fail").error.code !== "LRX-PORT-201" ||
     storageValues.get("draft") !== "text" ||
-    resultFor("write-fail").error.code !== "LRX-STORAGE-002" ||
+    resultFor("write-fail").error.code !== "LRX-PORT-202" ||
     resultFor("upper").value !== "LEANRX") {
   throw new Error(`effect adapter result drifted: ${JSON.stringify(delivered)}`);
 }
@@ -128,5 +132,83 @@ if (JSON.stringify(decoded) !==
     statusFailure.error.code !== "LRX-HTTP-STATUS-001") {
   throw new Error("issue decoder port drifted from its typed wire contract");
 }
+
+let replacementCancels = 0;
+const replacementResolvers = [];
+const replacementMetrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
+const replacementRuntime = createEffectRuntime(replacementMetrics, { ports: {
+  replacement: {
+    run: () => ({
+      promise: new Promise((resolve) => replacementResolvers.push(resolve)),
+      cancel: () => { replacementCancels += 1; },
+    }),
+  },
+} });
+const replacementDelivered = [];
+const replacementDeliver = (_, __, ___, result) => replacementDelivered.push(result.value);
+replacementRuntime.foreign("same", "replacement", "old", null, null, replacementDeliver);
+replacementRuntime.foreign("same", "replacement", "new", null, null, replacementDeliver);
+replacementResolvers[0]("stale");
+await drain();
+replacementResolvers[1]("fresh");
+await drain();
+if (replacementCancels !== 1 || JSON.stringify(replacementDelivered) !== '["fresh"]' ||
+    JSON.stringify(replacementRuntime.instrumentation()) !== "[2,1]") {
+  throw new Error("same-handle replacement accepted a stale operation completion");
+}
+
+const failureMetrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
+const failureRuntime = createEffectRuntime(failureMetrics, {
+  fetch: () => Promise.reject(new Error("network down")),
+  ports: { rejecting: { run: () => Promise.reject(Object.create(null)) } },
+});
+const failures = [];
+const failureDeliver = (_, __, handle, result) => failures.push([handle, result]);
+failureRuntime.foreign("missing", "absent", null, null, null, failureDeliver);
+failureRuntime.foreign("rejecting", "rejecting", null, null, null, failureDeliver);
+failureRuntime.http("network", "GET", "/network", [], null, null, null, failureDeliver);
+await drain();
+const failureCodes = failures.map(([, result]) => result.error.code).sort();
+if (JSON.stringify(failureCodes) !==
+      '["LRX-PORT-301","LRX-PORT-401","LRX-PORT-402"]' ||
+    unhandled.length !== 0) {
+  throw new Error(`effect failures escaped or drifted: ${JSON.stringify(failureCodes)}`);
+}
+
+let cleanupRuntime;
+let cleanupBaseCalls = 0;
+const cleanupMetrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
+const never = () => new Promise(() => {});
+cleanupRuntime = createEffectRuntime(cleanupMetrics, { ports: {
+  throwingCancel: { run: () => ({ promise: never(), cancel: () => { throw new Error("boom"); } }) },
+  reentrantCancel: {
+    run: () => ({ promise: never(), cancel: () => cleanupRuntime.cancel("reentrant") }),
+  },
+  rejectingCancel: {
+    run: () => ({ promise: never(), cancel: () => Promise.reject(Object.create(null)) }),
+  },
+} });
+cleanupRuntime.foreign("throwing", "throwingCancel", null, null, null, () => {});
+cleanupRuntime.foreign("reentrant", "reentrantCancel", null, null, null, () => {});
+cleanupRuntime.foreign("rejecting", "rejectingCancel", null, null, null, () => {});
+const cleanupState = [false];
+const cleanupBase = () => { cleanupBaseCalls += 1; };
+cleanupBase.instrumentation = () => [];
+cleanupBase.regionInstrumentation = () => [];
+const cleanup = makeEffectDisposer(cleanupBase, cleanupState, 0, cleanupRuntime);
+cleanup();
+cleanup();
+await drain();
+const cleanupErrors = cleanup.effectErrors();
+cleanupErrors.push({ code: "consumer", message: "mutation" });
+if (!cleanupState[0] || cleanupBaseCalls !== 1 ||
+    JSON.stringify(cleanup.effectInstrumentation()) !== "[3,3]" ||
+    cleanup.effectErrors().length !== 2 ||
+    cleanup.effectErrors().some((error) => error.code !== "LRX-PORT-403") ||
+    unhandled.length !== 0) {
+  throw new Error("effect cancellation was reentrant, mutable, or cleanup-unsafe");
+}
+
+process.off("unhandledRejection", captureUnhandled);
 
 console.log("effect runtime contract passed");
