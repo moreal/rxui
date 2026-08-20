@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M10 — Structural deltas and the 10k-row data-grid experiment
+M11 — Documentation, tooling, and self-hosting
 
 ## Last green commit
 
-`26b362e docs(port): record bounded issue number grammar`
+`d445bfe docs(grid): record corrected structural measurements`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -244,19 +244,48 @@ M10 — Structural deltas and the 10k-row data-grid experiment
   modes, deterministic eight-application artifacts, region/effect host checks,
   sixteen Chromium tests, benchmark, compile-fail, 146-file placeholder, and
   67-file semantic-safety gates passed; the clone remained clean.
+- Completed M10's closed `ListDelta` vocabulary, total checked application,
+  proof-carrying `PlannedDeltas`, full-recomputation reference, explicit delta,
+  and configurable pure hybrid cost model. Reset targets use the architecture's
+  `Array` representation and any reset-bearing batch is classified visibly.
+- Sealed Grid state/spec/checked construction and built the public 10,000-row
+  Data Grid through a fixed checked browser cost model. Full/delta/hybrid run the
+  same seven actions from the empty state; the native oracle and Chromium compare
+  every one of the 5,000 final keys, texts, positions, and selection bits.
+- Added ABI-7 whole-batch structural validation, fail-before-mutation fake-DOM
+  coverage, exact manifest/runtime representation checks, copied standard/region/
+  Grid instrumentation, deterministic artifacts, hostile-text safety, named
+  read-only table semantics, native controls, keyboard, axe, and disposal tests.
+- Review permanently regressed reverse-as-sort, unlowered public cost parameters,
+  same-key swap corruption, invalid action-order crashes, a nonempty generated
+  initial state, endpoint-only oracle comparison, false instrumentation labels,
+  strategy representation drift, retained listener closures, and incomplete
+  delta-validation branches.
+- Measured native latency/model work, six position-balanced Chromium operation
+  latency, sampled V8 allocations, process heap observations, exact generated
+  work, artifact size, clean build/generation cost, and API complexity. ADR-0017
+  keeps structural delta opt-in: retained row work falls for small keyed changes,
+  but emitted DOM writes are identical and native trace time is effectively tied.
+- Verified `d445bfe` in the workspace and a fresh no-hardlinks clone with
+  `./scripts/check.sh`: 246 Lean jobs, 1365 public theorems, 304 exact reviewed
+  axiom uses, 77 exact generated unsafe helpers, 40 seeded graph cases, 49
+  native/JavaScript cases in both printer modes, deterministic nine-application
+  artifacts, region/effect host checks, sixteen standard plus one Grid Chromium
+  test, both benchmarks, forty compile-fail fixtures, 158-file placeholder, and
+  73-file semantic-safety gates passed; both checkouts remained clean.
 
 ## In progress
 
-- M10 starts from the measured structural-delta comparison required by the plan:
-  full collection recomputation plus keyed reconciliation, explicit `ListDelta`,
-  and a hybrid strategy, followed by the public 10k-row data-grid dogfood.
+- M11 adds learnability/tooling gates, complete guides, and a public-API LeanRx
+  documentation site without hiding unsupported capabilities behind another
+  frontend framework.
 
 ## Next
 
-- Implement the pure M10 collection model and deterministic operation traces with
-  exact logical-agreement and cost instrumentation before any timing comparison.
-- Build and browser-test the 10k-row data grid through public APIs, record complete
-  measurements and ergonomics, then make the structural-delta decision in an ADR.
+- Add scaffold, explain, doctor, richer graph artifacts, and editor-friendly
+  generated declarations with deterministic CLI regressions.
+- Write the language/architecture/backend/trust/accessibility/case-study guides,
+  then build and browser-test the seven-page LeanRx documentation dogfood.
 
 ## Known blockers
 
@@ -456,6 +485,27 @@ M10 — Structural deltas and the 10k-row data-grid experiment
   regressions. All 21 M9 implementation commits have exactly one required
   assistance trailer and remain reviewable and bisectable.
 
+## M10 independent review notes
+
+- Lean/toolchain: PASS at `d445bfe`; sealed state/spec/planned-delta boundaries,
+  exact ABI-7 metadata, full native/generated row agreement, fixed cost-model
+  scope, reproducible measurements, exact policy gates, and history trailers were
+  independently verified.
+- Type theory/proof: PASS; `PlannedDeltas` target/reset laws and
+  `Grid.plannedDeltas_correct` retain their exact disclosed footprints, while
+  lowering, runtime identity, browser behavior, instrumentation, and performance
+  stay explicitly inside executable evidence and the TCB.
+- Compiler/backend: PASS; typed-JavaScript-AST lowering matches checked sort/swap/
+  action/cost semantics, the manifest is exact, all 5,000 final rows match the
+  native oracle, structural validation is atomic, and artifacts are deterministic.
+- Frontend/runtime: PASS; the named read-only table, native/disabled controls,
+  keyboard, hostile text, populated axe, invalid action ordering, copied metrics,
+  batch validation, disposer ownership, and six rotated strategy runs passed.
+- Test/quality: PASS after workspace and fresh no-hardlinks suites; exact logical/
+  work snapshots, malformed deltas, six-position benchmark math, commands,
+  limitations, negative conclusions, history bisectability, and the single exact
+  assistance trailer on every M10 commit were independently checked.
+
 ## Commands
 
 - `./scripts/check.sh`
@@ -471,6 +521,7 @@ M10 — Structural deltas and the 10k-row data-grid experiment
 - `./scripts/check_cli.sh`
 - `./scripts/check_browser.sh`
 - `./scripts/check_bench.sh`
+- `./scripts/check_grid_bench.sh`
 - `./scripts/check_examples.sh`
 - `./scripts/check_compile_fail.sh`
 - `./scripts/check_placeholders.sh`
