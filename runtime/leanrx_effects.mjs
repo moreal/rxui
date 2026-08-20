@@ -20,88 +20,89 @@ export function createEffectRuntime(metrics, adapters = {}) {
   const clearTimer = adapters.clearTimeout ?? globalThis.clearTimeout;
   let disposed = false;
 
-  function begin(handle, cancel) {
+  function begin(handle, cancel, state, context, deliver) {
     if (disposed) return false;
     cancelHandle(handle);
-    owned.set(handle, cancel);
+    owned.set(handle, { cancel, state, context, deliver });
     metrics[8] += 1;
     return true;
   }
 
   function finish(handle, deliver, result) {
     if (disposed || !owned.has(handle)) return;
+    const entry = owned.get(handle);
     owned.delete(handle);
-    deliver(result);
+    (deliver ?? entry.deliver)(entry.state, entry.context, handle, result);
   }
 
   function cancelHandle(handle) {
-    const cancel = owned.get(handle);
-    if (!cancel) return false;
+    const entry = owned.get(handle);
+    if (!entry) return false;
     owned.delete(handle);
-    cancel();
+    entry.cancel();
     metrics[9] += 1;
     return true;
   }
 
-  function timeout(handle, delayMs, deliver) {
+  function timeout(handle, delayMs, state, context, deliver) {
     let timer = null;
-    if (!begin(handle, () => clearTimer(timer))) return;
-    timer = setTimer(() => finish(handle, deliver, { ok: true, value: null }), delayMs);
+    if (!begin(handle, () => clearTimer(timer), state, context, deliver)) return;
+    timer = setTimer(() => finish(handle, null, { ok: true, value: null }), delayMs);
   }
 
-  function storageGet(handle, key, deliver) {
-    if (!begin(handle, () => {})) return;
+  function storageGet(handle, key, state, context, deliver) {
+    if (!begin(handle, () => {}, state, context, deliver)) return;
     Promise.resolve()
       .then(() => storage.getItem(key))
-      .then((value) => finish(handle, deliver, {
+      .then((value) => finish(handle, null, {
         ok: true,
         value: value === null ? { kind: "missing" } : { kind: "found", value },
       }))
-      .catch((error) => finish(handle, deliver, {
+      .catch((error) => finish(handle, null, {
         ok: false,
         error: effectError("LRX-STORAGE-001", error),
       }));
   }
 
-  function storageSet(handle, key, value, deliver) {
-    if (!begin(handle, () => {})) return;
+  function storageSet(handle, key, value, state, context, deliver) {
+    if (!begin(handle, () => {}, state, context, deliver)) return;
     Promise.resolve()
       .then(() => storage.setItem(key, value))
-      .then(() => finish(handle, deliver, { ok: true, value: null }))
-      .catch((error) => finish(handle, deliver, {
+      .then(() => finish(handle, null, { ok: true, value: null }))
+      .catch((error) => finish(handle, null, {
         ok: false,
         error: effectError("LRX-STORAGE-002", error),
       }));
   }
 
-  function http(handle, request, deliver) {
+  function http(handle, request, state, context, deliver) {
     const controller = new AbortController();
-    if (!begin(handle, () => controller.abort())) return;
+    if (!begin(handle, () => controller.abort(), state, context, deliver)) return;
     Promise.resolve()
       .then(() => fetchImpl(queryUrl(request), {
         method: request.method ?? "GET",
         signal: controller.signal,
       }))
       .then(async (response) => ({ status: response.status, body: await response.text() }))
-      .then((value) => finish(handle, deliver, { ok: true, value }))
+      .then((value) => finish(handle, null, { ok: true, value }))
       .catch((error) => {
         if (error?.name === "AbortError") return;
-        finish(handle, deliver, { ok: false, error: effectError("LRX-HTTP-001", error) });
+        finish(handle, null, { ok: false, error: effectError("LRX-HTTP-001", error) });
       });
   }
 
-  function foreign(handle, name, input, deliver) {
+  function foreign(handle, name, input, state, context, deliver) {
     const port = ports[name];
     if (!port || typeof port.run !== "function") {
-      if (!begin(handle, () => {})) return;
-      finish(handle, deliver, {
+      if (!begin(handle, () => {}, state, context, deliver)) return;
+      finish(handle, null, {
         ok: false,
         error: effectError("LRX-PORT-004", `foreign port ${JSON.stringify(name)} is unavailable`),
       });
       return;
     }
     let cancel = () => {};
-    if (!begin(handle, () => cancel())) return;
+    if (!begin(handle, () => cancel(), state, context, deliver)) return;
     let operation;
     try {
       operation = port.run(input);
@@ -110,12 +111,12 @@ export function createEffectRuntime(metrics, adapters = {}) {
         operation = operation.promise;
       }
     } catch (error) {
-      finish(handle, deliver, { ok: false, error: effectError("LRX-PORT-005", error) });
+      finish(handle, null, { ok: false, error: effectError("LRX-PORT-005", error) });
       return;
     }
     Promise.resolve(operation)
-      .then((value) => finish(handle, deliver, { ok: true, value }))
-      .catch((error) => finish(handle, deliver, {
+      .then((value) => finish(handle, null, { ok: true, value }))
+      .catch((error) => finish(handle, null, {
         ok: false,
         error: effectError("LRX-PORT-005", error),
       }));
@@ -124,8 +125,8 @@ export function createEffectRuntime(metrics, adapters = {}) {
   function dispose() {
     if (disposed) return;
     disposed = true;
-    for (const cancel of owned.values()) {
-      cancel();
+    for (const entry of owned.values()) {
+      entry.cancel();
       metrics[9] += 1;
     }
     owned.clear();

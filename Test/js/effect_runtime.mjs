@@ -36,19 +36,19 @@ const ports = {
 
 const runtime = createEffectRuntime(metrics, { storage, fetch: fetchMock, ports });
 const delivered = [];
-const deliver = (name) => (result) => delivered.push({ name, result });
+const deliver = (name) => (_, __, handle, result) => delivered.push({ name, handle, result });
 const drain = async () => {
   await Promise.resolve();
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
-runtime.storageGet("read", "present", deliver("read"));
-runtime.storageGet("missing", "absent", deliver("missing"));
-runtime.storageGet("read-fail", "read-error", deliver("read-fail"));
-runtime.storageSet("write", "draft", "text", deliver("write"));
-runtime.storageSet("write-fail", "write-error", "text", deliver("write-fail"));
-runtime.foreign("upper", "uppercase", "leanrx", deliver("upper"));
+runtime.storageGet("read", "present", null, null, deliver("read"));
+runtime.storageGet("missing", "absent", null, null, deliver("missing"));
+runtime.storageGet("read-fail", "read-error", null, null, deliver("read-fail"));
+runtime.storageSet("write", "draft", "text", null, null, deliver("write"));
+runtime.storageSet("write-fail", "write-error", "text", null, null, deliver("write-fail"));
+runtime.foreign("upper", "uppercase", "leanrx", null, null, deliver("upper"));
 await drain();
 
 const resultFor = (name) => delivered.find((entry) => entry.name === name)?.result;
@@ -65,7 +65,7 @@ runtime.http("old", {
   method: "GET",
   url: "/api/issues",
   query: [["q", "old & unsafe"], ["page", "1"]],
-}, deliver("old"));
+}, null, null, deliver("old"));
 await drain();
 if (!pending.has("/api/issues?q=old+%26+unsafe&page=1")) {
   throw new Error("HTTP query was not encoded by the owned adapter");
@@ -74,7 +74,7 @@ runtime.cancel("old");
 await drain();
 if (delivered.length !== 6) throw new Error("cancelled HTTP request delivered a result");
 
-runtime.foreign("deferred", "deferred", null, deliver("deferred"));
+runtime.foreign("deferred", "deferred", null, null, null, deliver("deferred"));
 runtime.cancel("deferred");
 resolveForeign("late");
 await drain();
@@ -83,8 +83,8 @@ if (foreignCancelled !== 1 || delivered.length !== 6) {
 }
 
 runtime.http("dispose-http", { method: "GET", url: "/dispose", query: [] },
-  deliver("dispose-http"));
-runtime.foreign("dispose-port", "deferred", null, deliver("dispose-port"));
+  null, null, deliver("dispose-http"));
+runtime.foreign("dispose-port", "deferred", null, null, null, deliver("dispose-port"));
 await drain();
 runtime.dispose();
 runtime.dispose();
@@ -94,7 +94,7 @@ if (delivered.length !== 6 || JSON.stringify(runtime.instrumentation()) !== "[10
   throw new Error(`disposal/counters drifted: ${JSON.stringify(runtime.instrumentation())}`);
 }
 
-runtime.storageGet("after-dispose", "present", deliver("after-dispose"));
+runtime.storageGet("after-dispose", "present", null, null, deliver("after-dispose"));
 await drain();
 if (delivered.length !== 6) throw new Error("post-disposal command was started");
 
