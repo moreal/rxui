@@ -34,6 +34,7 @@ fixtures=(
   Test/fixtures/compile-fail/MismatchedStructuredPort.lean
   Test/fixtures/compile-fail/ForgeNotesState.lean
   Test/fixtures/compile-fail/ForgeIssueBrowserState.lean
+  Test/fixtures/compile-fail/ForgeGridSpec.lean
 )
 fragments=(
   "Constructor for"
@@ -68,6 +69,7 @@ fragments=(
   "Application type mismatch"
   'constructor for `State` is marked as private'
   'constructor for `State` is marked as private'
+  'Constructor for `LeanRx.Grid.Spec` is marked as private'
 )
 
 for index in "${!fixtures[@]}"; do

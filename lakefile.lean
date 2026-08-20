@@ -43,6 +43,7 @@ lean_lib LeanRxTest where
     `Test.Region.Keyed,
     `Test.Collection.Delta,
     `Test.Grid.Model,
+    `Test.Grid.Component,
     `Test.Todo.Model,
     `Test.Effect.Command,
     `Test.Effect.Resource,

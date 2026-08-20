@@ -46,6 +46,7 @@ import LeanRx.Region.Positional
 import LeanRx.Region.Keyed
 import LeanRx.Collection.Delta
 import LeanRx.Grid.Model
+import LeanRx.Grid.Component
 import LeanRx.Todo.Model
 import LeanRx.Effect.Model
 import LeanRx.Effect.Command
