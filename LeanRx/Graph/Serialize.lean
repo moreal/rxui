@@ -27,6 +27,18 @@ private def escapeChar (char : Char) : String :=
 def jsonString (value : String) : String :=
   "\"" ++ String.join (value.toList.map escapeChar) ++ "\""
 
+private def htmlChar : Char → String
+  | '&' => "&amp;"
+  | '<' => "&lt;"
+  | '>' => "&gt;"
+  | '"' => "&quot;"
+  | '\'' => "&#39;"
+  | char => char.toString
+
+/-- Escape untrusted graph metadata for HTML text and quoted attributes. -/
+def htmlText (value : String) : String :=
+  String.join (value.toList.map htmlChar)
+
 def nodeKind : NodeKind → String
   | .source => "source"
   | .derived => "derived"
@@ -78,6 +90,23 @@ private def dotEdges (node : Node) : List String :=
   node.deps.toList.map fun dependency =>
     s!"  n{dependency.value} -> n{node.id.value};"
 
+private def htmlNode (node : Node) : String :=
+  let deps := if node.deps.isEmpty then "none" else
+    String.intercalate ", " (node.deps.toList.map fun id => s!"n{id.value}")
+  let equality := node.equality.map GraphSerialize.equality |>.getD "none"
+  let source := if node.span.file.isEmpty then "&lt;generated&gt;" else
+    htmlText s!"{node.span.file}:{node.span.start.line}:{node.span.start.column}"
+  "<li class=\"leanrx-node leanrx-node--" ++ nodeKind node.kind ++
+    "\" data-node-id=\"" ++ toString node.id.value ++ "\">" ++
+    "<h2>n" ++ toString node.id.value ++ " · " ++ htmlText node.name ++ "</h2>" ++
+    "<dl><dt>Kind</dt><dd>" ++ nodeKind node.kind ++
+    "</dd><dt>Runtime type</dt><dd>" ++ htmlText (runtimeType node.valueType) ++
+    "</dd><dt>Dependencies</dt><dd>" ++ deps ++
+    "</dd><dt>Rank</dt><dd>" ++ toString node.rank ++
+    "</dd><dt>Equality</dt><dd>" ++ htmlText equality ++
+    "</dd><dt>Evaluator</dt><dd>" ++ htmlText node.evaluator ++
+    "</dd><dt>Source</dt><dd>" ++ source ++ "</dd></dl></li>"
+
 end GraphSerialize
 
 namespace PlannedGraph
@@ -95,6 +124,24 @@ def toDot (planned : PlannedGraph) : String :=
   let nodes := planned.graph.nodes.toList.map GraphSerialize.dotNode
   let edges := planned.graph.nodes.toList.flatMap GraphSerialize.dotEdges
   String.intercalate "\n" (["digraph LeanRx {", "  rankdir=LR;"] ++ nodes ++ edges ++ ["}"])
+
+/-- Self-contained, script-free, accessible HTML graph inspection artifact. -/
+def toHtml (planned : PlannedGraph) : String :=
+  let nodes := String.join (planned.graph.nodes.toList.map GraphSerialize.htmlNode)
+  let schedule := String.intercalate " → " <|
+    planned.schedule.order.toList.map fun id => s!"n{id.value}"
+  "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" ++
+    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" ++
+    "<title>LeanRx reactive graph</title><style>" ++
+    "body{font-family:system-ui,sans-serif;max-width:72rem;margin:auto;padding:2rem}" ++
+    ".leanrx-schedule{font-family:ui-monospace,monospace;overflow-wrap:anywhere}" ++
+    ".leanrx-nodes{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;padding:0}" ++
+    ".leanrx-node{list-style:none;border:1px solid #888;border-radius:.5rem;padding:1rem}" ++
+    ".leanrx-node h2{font-size:1rem;margin-top:0}.leanrx-node dl{margin:0}" ++
+    ".leanrx-node dt{font-weight:700}.leanrx-node dd{margin:0 0 .5rem}</style></head>" ++
+    "<body><main><h1>LeanRx reactive graph</h1><p class=\"leanrx-schedule\">" ++
+    "<strong>Certified schedule:</strong> " ++
+    schedule ++ "</p><ol class=\"leanrx-nodes\">" ++ nodes ++ "</ol></main></body></html>"
 
 end PlannedGraph
 

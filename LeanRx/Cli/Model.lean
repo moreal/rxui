@@ -1,7 +1,7 @@
 namespace LeanRx.Cli
 
 inductive GraphFormat where
-  | json | dot
+  | json | dot | html
 deriving Repr, BEq
 
 inductive Command where
@@ -20,13 +20,14 @@ def parse : List String → Except Error Command
   | ["check", moduleName] => .ok (.check moduleName)
   | ["graph", moduleName, "--format", "json"] => .ok (.graph moduleName .json)
   | ["graph", moduleName, "--format", "dot"] => .ok (.graph moduleName .dot)
+  | ["graph", moduleName, "--format", "html"] => .ok (.graph moduleName .html)
   | ["build", moduleName, "--out", output] =>
       if output.isEmpty then
         .error { code := "LRX-SYN-001", message := "build output directory must not be empty" }
       else .ok (.build moduleName output)
   | _ => .error {
       code := "LRX-SYN-001"
-      message := "usage: leanrx (check MODULE | graph MODULE --format json|dot | build MODULE --out DIRECTORY)"
+      message := "usage: leanrx (check MODULE | graph MODULE --format json|dot|html | build MODULE --out DIRECTORY)"
     }
 
 end LeanRx.Cli

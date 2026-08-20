@@ -12,7 +12,8 @@ private def plan (specs : Array LeanRx.NodeSpec) : IO LeanRx.PlannedGraph :=
 def run : IO Unit := do
   let first ← plan LeanRxTest.Graph.Build.validSpecs
   let second ← plan LeanRxTest.Graph.Build.validSpecs
-  unless first.toJson == second.toJson && first.toDot == second.toDot do
+  unless first.toJson == second.toJson && first.toDot == second.toDot &&
+      first.toHtml == second.toHtml do
     throw <| IO.userError "repeated graph serialization was not byte deterministic"
   let expectedJson :=
     "{\"nodes\":[{\"id\":0,\"name\":\"count\",\"kind\":\"source\",\"valueType\":\"int\"," ++
@@ -47,11 +48,17 @@ def run : IO Unit := do
   ]
   let hostileJson := hostile.toJson
   let hostileDot := hostile.toDot
+  let hostileHtml := hostile.toHtml
   unless hostileJson.contains "count\\\"\\\\\\n" &&
       hostileJson.contains "line\\n\\t\\\"\\\\" do
     throw <| IO.userError s!"JSON graph text was not escaped: {hostileJson}"
   unless hostileDot.contains "</script>\\nnext\\nkind=sink" do
     throw <| IO.userError s!"DOT graph label was not escaped: {hostileDot}"
+  unless hostileHtml.startsWith "<!doctype html>" &&
+      hostileHtml.contains "count&quot;\\" &&
+      hostileHtml.contains "&lt;/script&gt;" &&
+      !hostileHtml.contains "</script>" do
+    throw <| IO.userError s!"HTML graph text was not escaped: {hostileHtml}"
   match Lean.Json.parse hostileJson with
   | .ok _ => pure ()
   | .error error => throw <| IO.userError s!"graph JSON was invalid: {error}"

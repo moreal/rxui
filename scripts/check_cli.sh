@@ -36,6 +36,18 @@ for fragment in "valueType=int" "deps=[0]" "equality=bigint" "source=examples/Co
   fi
 done
 
+lake exe leanrx -- graph Examples.Counter --format html > "$output/cli.graph.html"
+if ! diff -u "$output/Counter.graph.html" "$output/cli.graph.html"; then
+  echo "leanrx HTML graph differs from the build artifact" >&2
+  exit 1
+fi
+for fragment in "<!doctype html>" "Certified schedule:" "count" "doubled"; do
+  if [[ "$(<"$output/cli.graph.html")" != *"$fragment"* ]]; then
+    echo "leanrx HTML graph lost required content: $fragment" >&2
+    exit 1
+  fi
+done
+
 if unknown_output="$(lake exe leanrx -- check Missing.Component 2>&1)"; then
   echo "leanrx check accepted an unknown module" >&2
   exit 1

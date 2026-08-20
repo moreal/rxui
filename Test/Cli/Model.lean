@@ -14,6 +14,9 @@ def run : IO Unit := do
   match parse ["graph", "Examples.Counter", "--format", "dot"] with
   | .ok (.graph "Examples.Counter" .dot) => pure ()
   | _ => throw <| IO.userError "CLI DOT parsing changed"
+  match parse ["graph", "Examples.Counter", "--format", "html"] with
+  | .ok (.graph "Examples.Counter" .html) => pure ()
+  | _ => throw <| IO.userError "CLI HTML graph parsing changed"
   match parse ["build", "Examples.Counter", "--out", "dist"] with
   | .ok (.build "Examples.Counter" "dist") => pure ()
   | _ => throw <| IO.userError "CLI build parsing changed"

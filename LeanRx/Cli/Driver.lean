@@ -37,6 +37,7 @@ private def graphCounter (format : Cli.GraphFormat)
   IO.println <| match format with
     | .json => checked.graph.toJson
     | .dot => checked.graph.toDot
+    | .html => checked.graph.toHtml
   pure 0
 
 private def runKnown : Cli.Command → IO UInt32

@@ -18,6 +18,7 @@ private def generateChecked (directory : System.FilePath)
   IO.FS.writeFile (directory / "Counter.mjs.manifest.json") emitted.manifest.json
   IO.FS.writeFile (directory / "Counter.graph.json") (checked.graph.toJson ++ "\n")
   IO.FS.writeFile (directory / "Counter.graph.dot") (checked.graph.toDot ++ "\n")
+  IO.FS.writeFile (directory / "Counter.graph.html") (checked.graph.toHtml ++ "\n")
   IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")
   IO.FS.writeFile (directory / "leanrx_host.mjs") (← IO.FS.readFile "runtime/leanrx_host.mjs")
 
