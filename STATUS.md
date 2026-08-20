@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M8 — Conditional and keyed dynamic regions
+M9 — Commands, resources, and foreign ports
 
 ## Last green commit
 
-`51a412a fix(form): make observations state-complete`
+`7b7ecae fix(todo): align reference and browser semantics`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -185,16 +185,46 @@ M8 — Conditional and keyed dynamic regions
   printer modes, deterministic five-application artifacts, twelve Chromium tests,
   benchmark, compile-fail, 114-file placeholder, and 49-file semantic-safety gates
   passed; the clone remained clean.
+- Completed M8's sealed conditional, positional, keyed, and owned local-region
+  reference models. Reconciliation consumes only private-constructor reachable
+  state with internal fresh-token counters; public callers cannot forge duplicate
+  current entries or stale allocation state.
+- Added a tiny explicit local-region host with fail-before-mutation duplicate-key
+  checks, retained keyed identity, scoped structural ownership, copied metrics,
+  and idempotent disposal. Static scalar sinks remain direct writes; no root-wide
+  Virtual DOM, dependency discovery, or runtime scheduler was introduced.
+- Built TodoMVC through public APIs with a closed pure update algebra, canonical
+  native logical-DOM oracle, typed delegated actions, manifest-only dynamic layout
+  metadata, deterministic generated artifacts, and explicit reference propagation.
+- Chromium permanently covers hostile titles, populated accessibility, every
+  filter, keyed reorder/focus/routing, conditional edit/view replacement,
+  clear-during-edit draft retention, adversarial toggle events, exact work counts,
+  post-disposal suppression, and logical agreement with the native oracle.
+- Review permanently regressed forged reconciliation state, native/generated draft
+  drift, graph-equality leakage from record/list metadata, unscoped Enter/Escape,
+  unlabeled checkboxes, click-only spans, browser-payload-dependent toggle semantics,
+  and incomplete nested-write instrumentation.
+- Verified `7b7ecae` from the workspace and the no-hardlinks clone at
+  `/private/tmp/leanrx-m8-clean.dj1gDm/repo`, both with `./scripts/check.sh`: 204
+  Lean jobs, 1043 public theorems, 241 exact reviewed axiom uses, 71 exact generated
+  unsafe helpers, 40 seeded graph cases, 49 native/JavaScript cases in both printer
+  modes, deterministic six-application artifacts, local-region host checks, fourteen
+  Chromium tests, benchmark, compile-fail, 127-file placeholder, and 56-file
+  semantic-safety gates passed; the clone remained clean.
 
 ## In progress
 
-- M8 conditional, positional-list, keyed-list, and child-ownership regions.
+- M9 command/resource/foreign-port type and lifecycle design, beginning with pure
+  commands-as-data, owned cancellation handles, and deterministic native mocks.
 
 ## Next
 
-- Add conditional region reference and optimized semantics.
-- Add positional then keyed list regions with explicit identity and disposal.
-- Build TodoMVC through public APIs without introducing a global Virtual DOM.
+- Add typed command batching, timers, local storage, HTTP request/response, and
+  explicit resource loading/success/failure/cancel state.
+- Add foreign-port declarations with runtime representations, error/cancellation
+  contracts, native test doubles, and browser integration tests.
+- Build Notes and Issue Browser through public APIs, including stale-response
+  suppression and disposal-owned cancellation.
 
 ## Known blockers
 
@@ -349,6 +379,27 @@ M8 — Conditional and keyed dynamic regions
   are permanently regressed. History note: `e407ce9` fixed validator messages
   before the distinguishing lexical/upper-bound browser fixtures landed; history
   is preserved rather than rewritten.
+
+## M8 independent review notes
+
+- Lean/toolchain: PASS at `7b7ecae`; reachable private reconciliation state,
+  manifest/runtime type separation, exhaustive closed Todo actions, exact write
+  instrumentation, native logical oracle, and the full clean-clone gate were verified.
+- Type theory/proof: PASS; conditional projection is axiom-free, positional/keyed
+  projection use only exact reviewed `[propext]`, and browser identity/disposal,
+  specialized extraction, JavaScript, and DOM remain explicitly inside the TCB.
+- Compiler/backend: PASS; lowering consumes compiler-owned action tags, pure and
+  generated Todo semantics agree, artifacts are deterministic, the region host is
+  local and non-scheduling, and reference propagation is named without an
+  actual-change claim.
+- Frontend/runtime: PASS; hostile text, populated axe, native-control keyboard
+  routing, keyed identity/focus, branch and row disposal, filter/reorder routing,
+  copied metrics, isolation, and post-disposal behavior passed fourteen Chromium
+  tests.
+- Test/quality: PASS after workspace and fresh no-hardlinks suites; all/active/
+  completed views, canonical logical-DOM comparison, retained drafts, adversarial
+  toggle payloads, forged-result compile failures, exact instrumentation, and
+  deterministic artifacts are permanent regressions.
 
 ## Commands
 

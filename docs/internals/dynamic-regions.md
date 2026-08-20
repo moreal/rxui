@@ -9,6 +9,13 @@ is not a browser representation and is never serialized into generated runtime
 state. Optimized region models retain opaque mount tokens so tests can distinguish
 logical equality from DOM identity.
 
+Each pure reconciler accepts only the prior result returned by its own mount or
+reconcile operation. Result constructors and next-token counters are private,
+so callers cannot supply duplicate current entries or reuse a stale token.
+Logical instances remain inspectable as observations, but they cannot be fed
+back as forged reconciliation state. Compile-fail and multi-step native tests
+lock this reachability boundary.
+
 The first conditional model has two operations:
 
 - a same-branch update retains its token and records at most one direct scalar
@@ -18,7 +25,7 @@ The first conditional model has two operations:
 
 Lean proves that the optimized conditional result has exactly the reference
 logical node. Browser lowering and DOM identity/disposal remain in the TCB and
-will be covered when the local region host lands.
+are covered by the deterministic local-host and Chromium gates.
 
 The positional model retains mount tokens for the common prefix, performs direct
 logical-node updates at those positions, creates only an appended suffix, and
@@ -45,8 +52,11 @@ TodoMVC begins from a private pure `Todo.State` and closed `Todo.Msg` update
 algebra. Add/toggle/delete/filter/edit/clear operations are total and preserve
 monotonic unique natural keys; empty titles are rejected on add and delete the
 edited item on commit. The native logical renderer and checked keyed projection
-form the M8 differential reference. The browser backend must consume this public
-model rather than moving Todo semantics into the region host.
+form the M8 differential reference. Artifact generation serializes
+`Todo.logical` itself, and Chromium extracts the same normalized main/title/input,
+keyed-row, filter, remaining, and completion observation from the generated DOM.
+This is a test-only oracle, not a shipped Virtual DOM. The browser backend must
+consume the public model rather than moving Todo semantics into the region host.
 
 The generated Todo representation is explicit and backend-owned:
 
@@ -55,7 +65,14 @@ The generated Todo representation is explicit and backend-owned:
   `-1n` as the checked backend's no-edit sentinel;
 - keyed render payloads extend an item with `editing : Bool` and `draft : String`.
 
-The manifest describes this as `list<record<TodoItem>>` plus five scalar slots.
-That metadata does not create a general arbitrary-record lowering. The pure Todo
+The separate manifest-only type vocabulary describes this as
+`list<record<TodoItem>>` plus five scalar slots. Those constructors cannot enter
+the graph/runtime equality vocabulary and do not create a general arbitrary-record lowering. The pure Todo
 update/logical model, specialized extractor, JavaScript AST backend, region host,
 DOM, and delegated event adapter remain distinguished at the TCB boundary.
+
+Todo uses an explicitly named reference-propagation pass after each committed
+action rather than claiming M5 actual-change pruning. Standard instrumentation
+counts every evaluated state-slot write and every compiler-emitted text,
+property, or attribute host call. Separate region counters record mounts,
+updates, moves, and disposals.

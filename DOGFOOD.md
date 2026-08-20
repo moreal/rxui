@@ -493,7 +493,7 @@ status. This is work instrumentation, not a throughput claim.
 ### Scenario exercised
 
 TodoMVC creates hostile and ordinary titles, toggles completion, switches
-all/active filters, enters and commits local editing state, reverses row order,
+all/active/completed filters, enters and commits local editing state, reverses row order,
 deletes a keyed row, and clears completed items. A pure `Todo.update` model and
 native expected artifact drive the generated-browser logical DOM comparison.
 Only public LeanRx/Todo APIs declare the application; there is no handwritten
@@ -528,6 +528,20 @@ instrumentation also reused depth/DOM slots for render/event counts; standard
 indices are restored and local structural metrics are exposed separately. The
 browser identity assertion originally compared automation handles rather than
 in-page nodes, so it now checks actual DOM object identity.
+An independent differential review then found the inverse edge case: the native
+model replaced a surviving unsaved draft while the generated backend retained
+it. Both now preserve that draft, with native and Chromium regressions. The same
+review found stale-token forgery in the public reference reconciler API, so only
+private-constructor result states can be reconciled. Browser review caught
+unscoped delegated Enter/Escape handling, an unlabeled dynamic checkbox, and a
+clickable non-control title span; the key path is input-only, checkbox names are
+maintained from safe title text, and only native controls carry actions. Backend
+review also found that toggle lowering trusted the browser's `checked` payload
+instead of implementing the closed native `Msg.toggle` operation, and that a
+nested title assignment was absent from source-write instrumentation. Generated
+toggle now negates stored state, an adversarial unchanged-property event
+distinguishes that behavior, and a focused nonempty-save assertion locks all four
+evaluated writes.
 
 ### Security and accessibility checks
 
@@ -541,10 +555,11 @@ and axe is green.
 ### Performance observations
 
 The defining scenario records the standard snapshot
-`[0,15,15,0,0,33,13]`: zero depth/derived work, fifteen commits/source writes,
-thirty-three scalar/region sink evaluations, and thirteen direct scalar DOM
-writes. The keyed region records `[3,13,4,3]` mounts/updates/moves/disposals; the
-positional filter region records `[3,33,0]`. These are deterministic work counts,
+`[0,17,26,0,0,39,203]`: zero depth/derived work, seventeen commits,
+twenty-six evaluated state writes, thirty-nine region/status sink
+evaluations, and 203 compiler-emitted text/property/attribute host writes. The
+keyed region records `[4,15,5,4]` mounts/updates/moves/disposals; the
+positional filter region records `[3,39,0]`. These are deterministic work counts,
 not a timing benchmark. Root/row/input identity and zero child-list work for one
 toggle provide the important structural evidence.
 
