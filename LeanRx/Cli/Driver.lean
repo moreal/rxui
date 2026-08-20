@@ -112,7 +112,9 @@ private def scaffold (output : String) : IO UInt32 := do
 private def toolVersion (command : String) (args : Array String) : IO (Option String) := do
   try
     let output ← IO.Process.output { cmd := command, args }
-    if output.exitCode == 0 then pure (some output.stdout.trimAscii.toString)
+    if output.exitCode == 0 then
+      let value := output.stdout.trimAscii.toString
+      pure (if value.isEmpty then none else some value)
     else pure none
   catch _ => pure none
 
@@ -125,6 +127,7 @@ private def doctor : IO UInt32 := do
   catch _ => pure "<missing>"
   let node ← toolVersion "node" #["--version"]
   let pnpm ← toolVersion "corepack" #["pnpm", "--version"]
+  let playwright ← toolVersion "corepack" #["pnpm", "exec", "playwright", "--version"]
   let mut hostsOk := true
   for host in ["runtime/leanrx_dom.mjs", "runtime/leanrx_host.mjs",
       "runtime/leanrx_region.mjs", "runtime/leanrx_effects.mjs",
@@ -134,15 +137,28 @@ private def doctor : IO UInt32 := do
     | .ok checked => (checkBackend checked).isOk
     | .error _ => false
   let toolchainOk := toolchain == LeanRx.leanToolchain
-  let nodeOk := node.isSome
-  let pnpmOk := pnpm.isSome
-  let ready := toolchainOk && nodeOk && pnpmOk && hostsOk && compilerOk
+  let nodeOk := node.any Cli.nodeVersionCompatible
+  let pnpmOk := pnpm.any Cli.pnpmVersionCompatible
+  let playwrightOk := playwright.any Cli.playwrightVersionCompatible
+  let chromium ← if nodeOk && playwrightOk then
+    toolVersion "node" #["-e", String.intercalate "" [
+      "const fs=require('node:fs');",
+      "const {chromium}=require('@playwright/test');",
+      "const p=chromium.executablePath();",
+      "if(!fs.existsSync(p))process.exit(1);process.stdout.write(p);"
+    ]]
+  else pure none
+  let chromiumOk := chromium.isSome
+  let ready := toolchainOk && nodeOk && pnpmOk && playwrightOk && chromiumOk &&
+    hostsOk && compilerOk
   IO.println "LeanRx doctor"
   doctorLine true "compiler" LeanRx.version
   doctorLine toolchainOk "toolchain" toolchain
   doctorLine true "runtime ABI" (toString LeanRx.runtimeAbi)
   doctorLine nodeOk "node" (node.getD "unavailable")
   doctorLine pnpmOk "pnpm" (pnpm.getD "unavailable")
+  doctorLine playwrightOk "playwright" (playwright.getD "unavailable")
+  doctorLine chromiumOk "chromium" (if chromiumOk then "installed" else "unavailable")
   doctorLine hostsOk "browser hosts" (if hostsOk then "present" else "missing")
   doctorLine compilerOk "backend smoke" (if compilerOk then "valid" else "failed")
   IO.println s!"  result: {if ready then "ready" else "not ready"}"
@@ -200,7 +216,9 @@ private def runKnown : Cli.Command → IO UInt32
 
 def run (args : List String) : IO UInt32 :=
   match Cli.parse args with
-  | .ok command => runKnown command
+  | .ok command => try runKnown command catch error => do
+      IO.eprintln error.toString
+      pure 1
   | .error error => do
       IO.eprintln s!"error[{error.code}]: {error.message}"
       pure 2

@@ -27,14 +27,16 @@ the scalar `RuntimeTypeId` or reactive equality mapping.
 | control | typed `ifThenElse` |
 | Bool | equality, and/or/not |
 | String | append, equality |
-| Int | add, subtract, multiply, comparisons, equality, Lean-compatible modulo, truncating division, string conversion |
+| Int | add, subtract, multiply, comparisons, equality, Lean-compatible modulo, string conversion |
 | Nat | add, clamped subtraction, multiply, comparisons, equality, zero-safe modulo, string conversion |
 | dependent | checked `Vector` access by `Fin` |
 
-Every primitive has native/generated differential coverage. JavaScript BigInt
-helpers preserve Lean's signed modulo, zero-divisor, truncating division, and Nat
-clamping behavior. Input signatures are validated so one IR input index cannot be
-used at conflicting runtime types.
+Every listed scalar primitive has native/generated differential coverage.
+JavaScript BigInt helpers preserve Lean's signed modulo, zero-divisor, and Nat
+clamping behavior. The specialized Temperature backend separately lowers and
+tests `Int.tdiv`; division is not a generic staged scalar primitive. Input
+signatures are validated so one IR input index cannot be used at conflicting
+runtime types.
 
 ## Static view vocabulary
 

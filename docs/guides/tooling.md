@@ -10,9 +10,10 @@ modules.
 lake exe leanrx -- doctor
 ```
 
-`doctor` reports compiler version, exact Lean toolchain, runtime ABI, Node,
-Corepack/pnpm, required browser hosts, and a pure Counter backend smoke check.
-It returns nonzero when a required item is unavailable.
+`doctor` reports compiler version, exact Lean toolchain, runtime ABI, Node 22+,
+exact Corepack/pnpm and Playwright versions, installed Chromium, required browser
+hosts, and a pure Counter backend smoke check. It returns nonzero when a required
+item is unavailable or incompatible.
 
 ## Scaffold a public-API starter
 

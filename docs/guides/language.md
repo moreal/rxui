@@ -98,7 +98,7 @@ The scalar view is a small static tree. Dynamic interpolation creates or updates
 text nodes. Raw HTML has no constructor.
 
 ```lean
-def view : View CounterSchema := View.node .main [
+def counterView : View CounterSchema := View.node .main [
   View.node .h1 [.text "Counter"],
   View.node .button [.text "Increment"]
     (attrs := [.buttonType .button])
@@ -120,7 +120,7 @@ def spec : ComponentSpec CounterSchema :=
   { name := "Counter"
     values
     events := #[increment]
-    view }
+    view := counterView }
 
 def checked := spec.check
 ```
@@ -141,11 +141,12 @@ component CounterSyntax (schema := CounterSchema) where {
   state count := ValueSpec.state count (.int 1);
   derived label := ValueSpec.computed label countText;
   event increment := increment;
-  view := view;
+  view := counterView;
 }
 ```
 
-This generates `CounterSyntax_schema`, `CounterSyntax_declarations`,
+The complete form of this canonical snippet is compiled in
+`Test/Docs/LanguageGuide.lean`. This generates `CounterSyntax_schema`, `CounterSyntax_declarations`,
 `CounterSyntax_spec`, and `CounterSyntax_check`. The generated declaration
 inventory is checked against the actual roles and names; it is not decorative.
 Builds may emit a small `.generated.lean` alias module for editor inspection.

@@ -37,6 +37,17 @@ def run : IO Unit := do
   | none => throw <| IO.userError "known diagnostic explanation disappeared"
   unless (explanation? "LRX-UNKNOWN-999").isNone do
     throw <| IO.userError "unknown diagnostic acquired a guessed explanation"
+  unless nodeVersionCompatible "v22.0.0" && nodeVersionCompatible "v30.1.2" &&
+      !nodeVersionCompatible "v21.99.0" && !nodeVersionCompatible "" &&
+      !nodeVersionCompatible "not-a-version" do
+    throw <| IO.userError "Node doctor compatibility changed"
+  unless pnpmVersionCompatible "10.33.0\n" && !pnpmVersionCompatible "10.32.0" &&
+      playwrightVersionCompatible "Version 1.62.1" &&
+      !playwrightVersionCompatible "Version 1.61.0" do
+    throw <| IO.userError "pinned browser-tool doctor compatibility changed"
+  for code in ["LRX-PORT-001", "LRX-PORT-002", "LRX-PORT-003", "LRX-PORT-004"] do
+    unless (explanation? code).isSome do
+      throw <| IO.userError s!"atomic output diagnostic {code} lost its explanation"
   match parse ["build", "Examples.Counter"] with
   | .ok _ => throw <| IO.userError "incomplete CLI build was accepted"
   | .error error =>

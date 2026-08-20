@@ -103,9 +103,56 @@ doctor_output="$(lake exe leanrx -- doctor)"
 for fragment in "LeanRx doctor" "[ok] compiler: 0.1.0-dev" \
     "[ok] toolchain: leanprover/lean4:v4.33.0" "[ok] runtime ABI: 7" \
     "[ok] node:" "[ok] pnpm: 10.33.0" "[ok] browser hosts: present" \
+    "[ok] playwright: Version 1.62.1" "[ok] chromium: installed" \
     "[ok] backend smoke: valid" "result: ready"; do
   if [[ "$doctor_output" != *"$fragment"* ]]; then
     echo "leanrx doctor lost required result: $fragment" >&2
+    exit 1
+  fi
+done
+
+incompatible_path="$PWD/Test/fixtures/cli/incompatible:$PATH"
+if incompatible_doctor="$(PATH="$incompatible_path" lake exe leanrx -- doctor 2>&1)"; then
+  echo "leanrx doctor accepted incompatible browser tooling" >&2
+  exit 1
+fi
+for fragment in "[error] node: v21.99.0" "[error] pnpm: 9.99.0" \
+    "[error] playwright: Version 1.61.0" "[error] chromium: unavailable" \
+    "result: not ready"; do
+  if [[ "$incompatible_doctor" != *"$fragment"* ]]; then
+    echo "leanrx doctor lost incompatible-tool result: $fragment" >&2
+    exit 1
+  fi
+done
+
+unmanaged="$workspace/unmanaged"
+mkdir "$unmanaged"
+if unmanaged_output="$(lake exe leanrx -- build Examples.Counter --out "$unmanaged" 2>&1)"; then
+  echo "leanrx build replaced an unmanaged output" >&2
+  exit 1
+fi
+if [[ "$unmanaged_output" != *"error[LRX-PORT-003]"* ||
+      "$unmanaged_output" == *"uncaught exception"* ]]; then
+  echo "leanrx build did not normalize atomic output failure: $unmanaged_output" >&2
+  exit 1
+fi
+unmanaged_scaffold="$workspace/unmanaged-scaffold"
+mkdir "$unmanaged_scaffold"
+if scaffold_error="$(lake exe leanrx -- scaffold --out "$unmanaged_scaffold" 2>&1)"; then
+  echo "leanrx scaffold replaced an unmanaged output" >&2
+  exit 1
+fi
+if [[ "$scaffold_error" != *"error[LRX-PORT-003]"* ||
+      "$scaffold_error" == *"uncaught exception"* ]]; then
+  echo "leanrx scaffold did not normalize atomic output failure: $scaffold_error" >&2
+  exit 1
+fi
+
+for code in LRX-PORT-002 LRX-PORT-003 LRX-PORT-004; do
+  atomic_explain="$(lake exe leanrx -- explain "$code")"
+  if [[ "$atomic_explain" != *"phase: atomic CLI publication"* ||
+        "$atomic_explain" != *"next:"* ]]; then
+    echo "leanrx explain lost atomic output help for $code" >&2
     exit 1
   fi
 done

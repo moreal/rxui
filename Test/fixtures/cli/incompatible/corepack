@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "$*" in
+  "pnpm --version") echo "9.99.0" ;;
+  "pnpm exec playwright --version") echo "Version 1.61.0" ;;
+  *) exit 1 ;;
+esac

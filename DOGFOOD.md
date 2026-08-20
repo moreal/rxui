@@ -173,8 +173,8 @@ performance. No benchmark claim is made before the correctness baseline closes.
 
 ### Scenario exercised
 
-One `Int` state field, `doubled` and `parity` derived values, two click events,
-four scalar text sinks (including hostile generated text), deterministic graph/ESM/manifest output, two independent
+One `Int` state field, `doubled` and `parity` derived values, four click events,
+five scalar text sinks (including hostile generated text), deterministic graph/ESM/manifest output, two independent
 mounts, and idempotent disposal in real Chromium. The example imports only the
 public `LeanRx` root. Its browser artifact is generated through the scoped
 `component` command and JSX-like view, while the same declarations also exercise
@@ -810,9 +810,10 @@ reactivity or another frontend framework sits between the component and browser.
 ### What was pleasant
 
 Static page selection is ordinary dependency-indexed scalar code, so all content
-changes have an explicit graph and deterministic work trace. The same checked
-graph feeds the embedded inert DOT page, CLI output, and accessible standalone
-HTML card viewer. Generated declaration aliases make the syntax-produced schema,
+changes have an explicit graph and deterministic work trace. The docs component's
+checked graph feeds its CLI output and accessible standalone HTML card viewer;
+the embedded inert DOT page deliberately displays Counter's separate public
+checked graph. Generated declaration aliases make the syntax-produced schema,
 surface inventory, spec, and validation result inspectable in an editor. Atomic
 publication and the closed text-node path made a small production-shaped bundle
 possible without widening the runtime.

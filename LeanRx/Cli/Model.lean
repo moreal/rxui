@@ -31,6 +31,25 @@ def Explanation.render (value : Explanation) : String :=
     "  meaning: " ++ value.summary ++ "\n" ++
     "  next: " ++ value.nextAction
 
+/-- Doctor accepts the documented Node major and later, with the ordinary
+`node --version` spelling. Kept pure so incompatible-tool regressions need no
+process or PATH mutation. -/
+def nodeVersionCompatible (value : String) : Bool :=
+  let trimmed := value.trimAscii.toString
+  let version : String :=
+    if trimmed.startsWith "v" then (trimmed.drop 1).toString else trimmed
+  match version.splitOn "." with
+  | major :: _ => match major.toNat? with
+    | some major => 22 ≤ major
+    | none => false
+  | [] => false
+
+def pnpmVersionCompatible (value : String) : Bool :=
+  value.trimAscii.toString == "10.33.0"
+
+def playwrightVersionCompatible (value : String) : Bool :=
+  value.trimAscii.toString == "Version 1.62.1"
+
 /-- Stable help for the most important public diagnostic boundaries. -/
 def explanation? : String → Option Explanation
   | "LRX-SYN-001" => some {
@@ -74,6 +93,24 @@ def explanation? : String → Option Explanation
       phase := "CLI file output"
       summary := "The requested output path does not name a publishable directory."
       nextAction := "Pass a concrete directory path outside an unmanaged existing output."
+    }
+  | "LRX-PORT-002" => some {
+      code := "LRX-PORT-002"
+      phase := "atomic CLI publication"
+      summary := "The output symbolic link points outside LeanRx-managed bundle storage."
+      nextAction := "Choose an absent output path; do not retarget or reuse a foreign symbolic link."
+    }
+  | "LRX-PORT-003" => some {
+      code := "LRX-PORT-003"
+      phase := "atomic CLI publication"
+      summary := "An existing output is not a LeanRx-managed atomic bundle pointer."
+      nextAction := "Choose an absent output path or intentionally move the unmanaged file/directory elsewhere."
+    }
+  | "LRX-PORT-004" => some {
+      code := "LRX-PORT-004"
+      phase := "atomic CLI publication"
+      summary := "The per-output publication lock is not a regular file."
+      nextAction := "Inspect the sibling .leanrx.lock path and remove the unexpected entry only if you own it."
     }
   | _ => none
 

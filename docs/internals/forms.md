@@ -22,8 +22,8 @@ Temperature parsing currently accepts signed ASCII integer text. Digit separator
 such as `1_000` and `-0_1`, leading `+`, whitespace, decimals, and locale-specific
 digits are rejected before Lean's standard numeric parser is called; this closed
 grammar is exactly the browser regex grammar. Conversion uses
-truncating integer division (`Int.tdiv`) so the future BigInt browser lowering can
-match native Lean for negative values. Invalid raw text remains an explicit
+truncating integer division (`Int.tdiv`); the specialized BigInt browser lowering
+matches native Lean for negative values in native-derived Chromium cases. Invalid raw text remains an explicit
 `LRX-TYPE-201` error. Decimal/locale-aware temperature input is a future parser,
 not silently accepted by the integer contract.
 
