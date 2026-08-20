@@ -6,7 +6,7 @@ if (( $# > 0 )); then
 else
   roots=(LeanRx/Core LeanRx/Graph LeanRx/Semantics LeanRx/Proofs LeanRx/IR LeanRx/Lower
     LeanRx/Component LeanRx/View LeanRx/Form LeanRx/Region LeanRx/Todo LeanRx/Effect
-    LeanRx/Notes LeanRx/IssueBrowser examples)
+    LeanRx/Notes LeanRx/IssueBrowser LeanRx/Collection LeanRx/Grid examples)
 fi
 
 files=()
