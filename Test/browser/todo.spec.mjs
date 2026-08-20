@@ -17,6 +17,30 @@ const files = new Set([
 let server;
 let origin;
 
+function logicalProjection(root) {
+  const element = (tag, attributes, children) => ({ kind: "element", tag, attributes, children });
+  const text = (value) => ({ kind: "text", value });
+  const rows = [...root.querySelectorAll("ul > li")];
+  const selectedFilter = root.querySelector('[aria-label="Todo filters"] [aria-pressed="true"]');
+  return element("main", [["class", root.getAttribute("class")]], [
+    element("h1", [], [text(root.querySelector("h1").textContent)]),
+    element("input", [["value", root.querySelector('[aria-label="New todo"]').value]], []),
+    element("ul", [], rows.map((row) => {
+      const editInput = row.querySelector('[aria-label="Edit todo"]');
+      const title = editInput?.value ?? row.querySelector("span")?.textContent ?? "";
+      return element("li", [
+        ["data-key", row.getAttribute("data-todo-id")],
+        ["class", row.getAttribute("class")],
+        ["data-editing", editInput ? "true" : "false"],
+      ], [text(title)]);
+    })),
+    element("footer", [["filter", selectedFilter?.getAttribute("data-lrx-key") ?? ""]], [
+      text(root.querySelector('[role="status"]').textContent),
+      text(`${rows.filter((row) => row.classList.contains("completed")).length} completed`),
+    ]),
+  ]);
+}
+
 test.beforeAll(async () => {
   server = createServer(async (request, response) => {
     try {
@@ -73,8 +97,13 @@ test("preserves keyed identity, focus, routing, and local region ownership", asy
   await root.getByRole("button", { name: "Add" }).click();
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0).locator("span")).toHaveText(hostile);
+  await expect(rows.nth(0).getByRole("checkbox", { name: hostile })).toBeVisible();
   await expect(root.locator("img")).toHaveCount(0);
   expect(await page.evaluate(() => globalThis.todoXss)).toBeUndefined();
+  expect(await root.locator("[data-lrx-action]").evaluateAll((nodes) =>
+    nodes.every((node) => node.matches("button, input")))).toBe(true);
+  const populatedAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(populatedAccessibility.violations).toEqual([]);
 
   await rows.nth(0).evaluate((node) => { globalThis.todoFirstRow = node; });
   await rows.nth(1).evaluate((node) => { globalThis.todoSecondRow = node; });
@@ -101,7 +130,11 @@ test("preserves keyed identity, focus, routing, and local region ownership", asy
   await expect(rows).toHaveCount(2);
   expect(await rows.nth(1).evaluate((node) => node === globalThis.todoSecondRow)).toBe(true);
 
+  await rows.nth(1).locator(".todo-view").evaluate((node) => {
+    globalThis.todoOldViewBranch = node;
+  });
   await rows.nth(1).getByRole("button", { name: "Edit" }).click();
+  expect(await page.evaluate(() => globalThis.todoOldViewBranch.isConnected)).toBe(false);
   const editInput = rows.nth(1).locator('input[aria-label="Edit todo"]');
   await editInput.focus();
   await editInput.fill(" Edited ");
@@ -114,19 +147,24 @@ test("preserves keyed identity, focus, routing, and local region ownership", asy
   )).toBe(true);
   expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")))
     .toBe("Edit todo");
+  const writesBeforeSave = await page.evaluate(() => globalThis.todoDispose.instrumentation()[2]);
   await rows.nth(0).locator('input[aria-label="Edit todo"]').press("Enter");
+  const writesAfterSave = await page.evaluate(() => globalThis.todoDispose.instrumentation()[2]);
+  expect(writesAfterSave - writesBeforeSave).toBe(4);
+  expect(await page.evaluate(() => globalThis.todoEditInput.isConnected)).toBe(false);
   await expect(rows.nth(0).locator("span")).toHaveText("Edited");
 
-  const logicalRows = await rows.evaluateAll((nodes) => nodes.map((node) => ({
-    id: Number(node.getAttribute("data-todo-id")),
-    title: node.querySelector("span")?.textContent ?? "",
-    completed: node.classList.contains("completed"),
-  })));
-  expect(logicalRows).toEqual(expected.rows);
-  await expect(status).toHaveText(`${expected.remaining} items left`);
+  expect(await root.evaluate(logicalProjection)).toEqual(expected.logical);
+  await expect(status).toHaveText("1 items left");
   await expect(filters.filter({ hasText: "All" })).toHaveAttribute("aria-pressed", "true");
 
-  await rows.nth(1).getByRole("button", { name: "Delete" }).click();
+  await filters.filter({ hasText: "Completed" }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.nth(0)).toHaveAttribute("data-todo-id", "0");
+  await filters.filter({ hasText: "All" }).click();
+  await expect(rows).toHaveCount(2);
+
+  await root.locator('li[data-todo-id="0"]').getByRole("button", { name: "Delete" }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows.nth(0)).toHaveAttribute("data-todo-id", "1");
   await rows.nth(0).locator('input[type="checkbox"]').check();
@@ -135,16 +173,56 @@ test("preserves keyed identity, focus, routing, and local region ownership", asy
   await expect(status).toHaveText("0 items left");
 
   const instrumentation = await page.evaluate(() => globalThis.todoDispose.instrumentation());
-  expect(instrumentation.slice(0, 7)).toEqual([0, 15, 15, 0, 0, 33, 13]);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 17, 26, 0, 0, 39, 203]);
   const regions = await page.evaluate(() => globalThis.todoDispose.regionInstrumentation());
-  expect(regions).toEqual([[3, 13, 4, 3], [3, 33, 0]]);
+  expect(regions).toEqual([[4, 15, 5, 4], [3, 39, 0]]);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 
-  await page.evaluate(() => {
+  const disposal = await page.evaluate(() => {
     globalThis.todoObserver.disconnect();
+    const detachedFilter = document.querySelector('[aria-label="Todo filters"] button');
+    const before = globalThis.todoDispose.instrumentation();
     globalThis.todoDispose();
     globalThis.todoDispose();
+    detachedFilter.click();
+    return { before, after: globalThis.todoDispose.instrumentation() };
   });
+  expect(disposal.after).toEqual(disposal.before);
   await expect(root).toHaveCount(0);
+});
+
+test("scopes delegated keyboard edits and preserves retained drafts", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    const { mount } = await import("/TodoMVC.mjs");
+    globalThis.todoDispose = mount(document.getElementById("app"));
+  });
+  const root = page.locator(".leanrx-todo");
+  const input = root.getByRole("textbox", { name: "New todo" });
+  const rows = root.locator("li");
+  await input.fill("Completed");
+  await root.getByRole("button", { name: "Add" }).click();
+  await input.fill("Active");
+  await root.getByRole("button", { name: "Add" }).click();
+  const completed = rows.nth(0).getByRole("checkbox", { name: "Completed" });
+  await completed.evaluate((node) => node.dispatchEvent(new Event("change", { bubbles: true })));
+  await expect(completed).toBeChecked();
+  await completed.evaluate((node) => node.dispatchEvent(new Event("change", { bubbles: true })));
+  await expect(completed).not.toBeChecked();
+  await completed.check();
+
+  await rows.nth(1).getByRole("button", { name: "Edit" }).press("Enter");
+  await expect(rows).toHaveCount(2);
+  const edit = rows.nth(1).getByRole("textbox", { name: "Edit todo" });
+  await edit.focus();
+  await edit.fill("Unsaved draft");
+  await root.getByRole("button", { name: "Clear completed" }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.nth(0)).toHaveAttribute("data-todo-id", "1");
+  await expect(rows.nth(0).getByRole("textbox", { name: "Edit todo" }))
+    .toHaveValue("Unsaved draft");
+  await rows.nth(0).getByRole("textbox", { name: "Edit todo" }).press("Escape");
+  await expect(rows.nth(0).locator("span")).toHaveText("Active");
+  await page.evaluate(() => globalThis.todoDispose());
 });

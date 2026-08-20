@@ -51,6 +51,29 @@ private def incrementAt (array : Ident) (index : Nat) : Stmt :=
 private def trace (metrics : Ident) (message : String) : Stmt :=
   .expr <| method (arrayAt metrics 7) "push" [.literal (.string message)]
 
+/-- Closed compiler-owned DOM routing vocabulary. Generated data attributes are
+strings, but no backend branch may introduce an unchecked action spelling. -/
+private inductive DomAction where
+  | toggle
+  | edit
+  | delete
+  | save
+  | cancel
+  | editInput
+  | filter
+
+private def DomAction.slug : DomAction → String
+  | .toggle => "toggle"
+  | .edit => "edit"
+  | .delete => "delete"
+  | .save => "save"
+  | .cancel => "cancel"
+  | .editInput => "edit-input"
+  | .filter => "filter"
+
+private def DomAction.expr (action : DomAction) : Expr :=
+  .literal (.string action.slug)
+
 private def setAttribute (runtime : RuntimeNames) (node : Expr) (name : String)
     (value : Expr) : Stmt :=
   .expr <| call runtime.setAttribute [node, .literal (.string name), value]
@@ -80,11 +103,15 @@ private def runtimeNames : Except Error RuntimeNames := do
     bigInt := ← Ident.checked "BigInt"
   }
 
-private def actionAttrs (runtime : RuntimeNames) (node : Ident) (action : String)
+private def actionAttrs (runtime : RuntimeNames) (node : Ident) (action : DomAction)
     (key : Expr) : List Stmt := [
-  setAttribute runtime (.ident node) "data-lrx-action" (.literal (.string action)),
+  setAttribute runtime (.ident node) "data-lrx-action" action.expr,
   setAttribute runtime (.ident node) "data-lrx-key" key
 ]
+
+private def countedActionAttrs (runtime : RuntimeNames) (metrics node : Ident)
+    (action : DomAction) (key : Expr) : List Stmt :=
+  actionAttrs runtime node action key ++ [incrementAt metrics 6, incrementAt metrics 6]
 
 private def branchMountFunction (runtime : RuntimeNames) : Except Error Function := do
   let name ← Ident.checked "$lrx_mountTodoBranch"
@@ -103,57 +130,70 @@ private def branchMountFunction (runtime : RuntimeNames) : Except Error Function
   let saveText ← Ident.checked "saveText"
   let cancel ← Ident.checked "cancel"
   let cancelText ← Ident.checked "cancelText"
+  let metrics ← Ident.checked "metrics"
   let key := call runtime.string [indexAt (.ident item) 0]
   pure {
     name
     params := #[editing, item]
     body := #[
+      .const metrics (indexAt (.ident item) 5),
       .const root (call runtime.createElement [.literal (.string "div")]),
       setAttribute runtime (.ident root) "class"
         (.conditional (.ident editing) (.literal (.string "todo-edit"))
           (.literal (.string "todo-view"))),
+      incrementAt metrics 6,
       .ifThen (.unary .not <| .ident editing) <| .ofList <| [
         .const checkbox (call runtime.createElement [.literal (.string "input")]),
         setAttribute runtime (.ident checkbox) "type" (.literal (.string "checkbox")),
-        setProperty runtime (.ident checkbox) DomProperty.checked (indexAt (.ident item) 2)
-      ] ++ actionAttrs runtime checkbox "toggle" key ++ [
+        incrementAt metrics 6,
+        setAttribute runtime (.ident checkbox) "aria-label" (indexAt (.ident item) 1),
+        incrementAt metrics 6,
+        setProperty runtime (.ident checkbox) DomProperty.checked (indexAt (.ident item) 2),
+        incrementAt metrics 6
+      ] ++ countedActionAttrs runtime metrics checkbox .toggle key ++ [
         .expr <| call runtime.append [.ident root, .ident checkbox],
         .const label (call runtime.createElement [.literal (.string "span")]),
         .const labelText (call runtime.createText [indexAt (.ident item) 1]),
-        .expr <| call runtime.append [.ident label, .ident labelText]
-      ] ++ actionAttrs runtime label "edit" key ++ [
+        .expr <| call runtime.append [.ident label, .ident labelText],
         .expr <| call runtime.append [.ident root, .ident label],
         .const edit (call runtime.createElement [.literal (.string "button")]),
         setAttribute runtime (.ident edit) "type" (.literal (.string "button")),
+        incrementAt metrics 6,
         .const editText (call runtime.createText [.literal (.string "Edit")]),
         .expr <| call runtime.append [.ident edit, .ident editText]
-      ] ++ actionAttrs runtime edit "edit" key ++ [
+      ] ++ countedActionAttrs runtime metrics edit .edit key ++ [
         .expr <| call runtime.append [.ident root, .ident edit],
         .const remove (call runtime.createElement [.literal (.string "button")]),
         setAttribute runtime (.ident remove) "type" (.literal (.string "button")),
+        incrementAt metrics 6,
         .const removeText (call runtime.createText [.literal (.string "Delete")]),
         .expr <| call runtime.append [.ident remove, .ident removeText]
-      ] ++ actionAttrs runtime remove "delete" key ++ [
+      ] ++ countedActionAttrs runtime metrics remove .delete key ++ [
         .expr <| call runtime.append [.ident root, .ident remove]
       ],
       .ifThen (.ident editing) <| .ofList <| [
         .const input (call runtime.createElement [.literal (.string "input")]),
         setAttribute runtime (.ident input) "type" (.literal (.string "text")),
+        incrementAt metrics 6,
         setAttribute runtime (.ident input) "aria-label" (.literal (.string "Edit todo")),
-        setProperty runtime (.ident input) DomProperty.value (indexAt (.ident item) 4)
-      ] ++ actionAttrs runtime input "edit-input" key ++ [
+        incrementAt metrics 6,
+        setProperty runtime (.ident input) DomProperty.value (indexAt (.ident item) 4),
+        incrementAt metrics 6
+      ] ++ countedActionAttrs runtime metrics input .editInput key ++ [
         .expr <| call runtime.append [.ident root, .ident input],
         .const save (call runtime.createElement [.literal (.string "button")]),
         setAttribute runtime (.ident save) "type" (.literal (.string "button")),
+        incrementAt metrics 6,
         .const saveText (call runtime.createText [.literal (.string "Save")]),
         .expr <| call runtime.append [.ident save, .ident saveText]
-      ] ++ actionAttrs runtime save "save" key ++ [
+      ] ++ countedActionAttrs runtime metrics save .save key ++ [
         .expr <| call runtime.append [.ident root, .ident save],
         .const cancel (call runtime.createElement [.literal (.string "button")]),
         setAttribute runtime (.ident cancel) "type" (.literal (.string "button")),
+        incrementAt metrics 6,
         .const cancelText (call runtime.createText [.literal (.string "Cancel")]),
         .expr <| call runtime.append [.ident cancel, .ident cancelText]
-      ] ++ actionAttrs runtime cancel "cancel" key ++ [
+      ] ++ countedActionAttrs runtime metrics cancel .cancel key ++ [
         .expr <| call runtime.append [.ident root, .ident cancel]
       ],
       .return (.ident root)
@@ -169,23 +209,28 @@ private def branchUpdateFunction (runtime : RuntimeNames) : Except Error Functio
   let label ← Ident.checked "label"
   let labelText ← Ident.checked "labelText"
   let input ← Ident.checked "editInput"
-  let key := call runtime.string [indexAt (.ident item) 0]
+  let metrics ← Ident.checked "metrics"
   pure {
     name
     params := #[root, editing, item]
     body := #[
+      .const metrics (indexAt (.ident item) 5),
       .ifThen (.unary .not <| .ident editing) <| .ofList <| [
         .const checkbox (call runtime.childAt [.ident root, uint 0]),
-        setProperty runtime (.ident checkbox) DomProperty.checked (indexAt (.ident item) 2)
-      ] ++ actionAttrs runtime checkbox "toggle" key ++ [
+        setAttribute runtime (.ident checkbox) "aria-label" (indexAt (.ident item) 1),
+        incrementAt metrics 6,
+        setProperty runtime (.ident checkbox) DomProperty.checked (indexAt (.ident item) 2),
+        incrementAt metrics 6,
         .const label (call runtime.childAt [.ident root, uint 1]),
         .const labelText (call runtime.childAt [.ident label, uint 0]),
-        .expr <| call runtime.setText [.ident labelText, indexAt (.ident item) 1]
-      ] ++ actionAttrs runtime label "edit" key,
+        .expr <| call runtime.setText [.ident labelText, indexAt (.ident item) 1],
+        incrementAt metrics 6
+      ],
       .ifThen (.ident editing) <| .ofList <| [
         .const input (call runtime.childAt [.ident root, uint 0]),
-        setProperty runtime (.ident input) DomProperty.value (indexAt (.ident item) 4)
-      ] ++ actionAttrs runtime input "edit-input" key,
+        setProperty runtime (.ident input) DomProperty.value (indexAt (.ident item) 4),
+        incrementAt metrics 6
+      ],
       .return (.literal .null)
     ]
   }
@@ -212,15 +257,19 @@ private def rowMountFunction (runtime : RuntimeNames) (mountBranch updateBranch 
   let index ← Ident.checked "index"
   let row ← Ident.checked "row"
   let region ← Ident.checked "branchRegion"
+  let metrics ← Ident.checked "metrics"
   pure {
     name
     params := #[item, index]
     body := #[
+      .const metrics (indexAt (.ident item) 5),
       .const row (call runtime.createElement [.literal (.string "li")]),
       setAttribute runtime (.ident row) "data-todo-id" (call runtime.string [indexAt (.ident item) 0]),
+      incrementAt metrics 6,
       setAttribute runtime (.ident row) "class"
         (.conditional (indexAt (.ident item) 2) (.literal (.string "completed"))
           (.literal (.string "active"))),
+      incrementAt metrics 6,
       .const region (call runtime.createConditionalRegion [
         .ident row, .ident mountBranch, .ident updateBranch, .ident disposeBranch]),
       .expr <| method (.ident region) "update" [indexAt (.ident item) 3, .ident item],
@@ -234,16 +283,20 @@ private def rowUpdateFunction (runtime : RuntimeNames) : Except Error Function :
   let index ← Ident.checked "index"
   let row ← Ident.checked "row"
   let region ← Ident.checked "branchRegion"
+  let metrics ← Ident.checked "metrics"
   pure {
     name := ← Ident.checked "$lrx_updateTodoRow"
     params := #[handle, item, index]
     body := #[
+      .const metrics (indexAt (.ident item) 5),
       .const row (indexAt (.ident handle) 0),
       .const region (indexAt (.ident handle) 1),
       setAttribute runtime (.ident row) "data-todo-id" (call runtime.string [indexAt (.ident item) 0]),
+      incrementAt metrics 6,
       setAttribute runtime (.ident row) "class"
         (.conditional (indexAt (.ident item) 2) (.literal (.string "completed"))
           (.literal (.string "active"))),
+      incrementAt metrics 6,
       .expr <| method (.ident region) "update" [indexAt (.ident item) 3, .ident item],
       .return (.literal .null)
     ]
@@ -266,17 +319,23 @@ private def filterMountFunction (runtime : RuntimeNames) : Except Error Function
   let index ← Ident.checked "index"
   let button ← Ident.checked "button"
   let text ← Ident.checked "text"
+  let metrics ← Ident.checked "metrics"
   pure {
     name := ← Ident.checked "$lrx_mountFilter"
     params := #[item, index]
     body := #[
+      .const metrics (indexAt (.ident item) 3),
       .const button (call runtime.createElement [.literal (.string "button")]),
       setAttribute runtime (.ident button) "type" (.literal (.string "button")),
-      setAttribute runtime (.ident button) "data-lrx-action" (.literal (.string "filter")),
+      incrementAt metrics 6,
+      setAttribute runtime (.ident button) "data-lrx-action" DomAction.filter.expr,
+      incrementAt metrics 6,
       setAttribute runtime (.ident button) "data-lrx-key" (indexAt (.ident item) 0),
+      incrementAt metrics 6,
       setAttribute runtime (.ident button) "aria-pressed"
         (.conditional (indexAt (.ident item) 2) (.literal (.string "true"))
           (.literal (.string "false"))),
+      incrementAt metrics 6,
       .const text (call runtime.createText [indexAt (.ident item) 1]),
       .expr <| call runtime.append [.ident button, .ident text],
       .return (.ident button)
@@ -287,13 +346,16 @@ private def filterUpdateFunction (runtime : RuntimeNames) : Except Error Functio
   let button ← Ident.checked "button"
   let item ← Ident.checked "item"
   let index ← Ident.checked "index"
+  let metrics ← Ident.checked "metrics"
   pure {
     name := ← Ident.checked "$lrx_updateFilter"
     params := #[button, item, index]
     body := #[
+      .const metrics (indexAt (.ident item) 3),
       setAttribute runtime (.ident button) "aria-pressed"
         (.conditional (indexAt (.ident item) 2) (.literal (.string "true"))
           (.literal (.string "false"))),
+      incrementAt metrics 6,
       .return (.literal .null)
     ]
   }
@@ -328,14 +390,15 @@ private def renderFunction (runtime : RuntimeNames) : Except Error Function := d
         (indexAt (.ident todo) 2))
   let rowItem := .array <| .ofList [
     indexAt (.ident todo) 0, indexAt (.ident todo) 1, indexAt (.ident todo) 2,
-    .binary .eq (arrayAt state 3) (indexAt (.ident todo) 0), arrayAt state 4]
+    .binary .eq (arrayAt state 3) (indexAt (.ident todo) 0), arrayAt state 4,
+    .ident metrics]
   let filterItems := .array <| .ofList [
     .array <| .ofList [.literal (.string "all"), .literal (.string "All"),
-      .binary .eq (arrayAt state 2) (.literal (.string "all"))],
+      .binary .eq (arrayAt state 2) (.literal (.string "all")), .ident metrics],
     .array <| .ofList [.literal (.string "active"), .literal (.string "Active"),
-      .binary .eq (arrayAt state 2) (.literal (.string "active"))],
+      .binary .eq (arrayAt state 2) (.literal (.string "active")), .ident metrics],
     .array <| .ofList [.literal (.string "completed"), .literal (.string "Completed"),
-      .binary .eq (arrayAt state 2) (.literal (.string "completed"))]
+      .binary .eq (arrayAt state 2) (.literal (.string "completed")), .ident metrics]
   ]
   pure {
     name
@@ -372,7 +435,6 @@ private def renderFunction (runtime : RuntimeNames) : Except Error Function := d
   }
 
 private def eventFinish (render state context metrics : Ident) (name : String) : List Stmt := [
-  incrementAt metrics 2,
   incrementAt metrics 1,
   trace metrics s!"event:{name}",
   .expr <| call render [.ident state, .ident context],
@@ -418,6 +480,9 @@ private def addFunction (runtime : RuntimeNames) : Except Error Function := do
             .literal (.boolean false)]],
         .assign (.index (.ident state) (uint 1)) (.binary .add (arrayAt state 1) (bigint 1)),
         .assign (.index (.ident state) (uint 5)) (.literal (.string "")),
+        incrementAt metrics 2,
+        incrementAt metrics 2,
+        incrementAt metrics 2,
         setProperty runtime (arrayAt context 3) DomProperty.value (.literal (.string "")),
         incrementAt metrics 6
       ]
@@ -482,30 +547,35 @@ private def clickFunction (runtime : RuntimeNames) : Except Error Function := do
       .const names.metrics (arrayAt names.context 4),
       .const names.id idExpr,
       .ifThen (.binary .or
-          (.binary .eq (.ident names.action) (.literal (.string "toggle")))
-          (.binary .eq (.ident names.action) (.literal (.string "edit-input")))) <|
+          (.binary .eq (.ident names.action) DomAction.toggle.expr)
+          (.binary .eq (.ident names.action) DomAction.editInput.expr)) <|
         .ofList [.return (.literal .null)],
-      .ifThen (.binary .eq (.ident names.action) (.literal (.string "edit"))) <| .ofList [
+      .ifThen (.binary .eq (.ident names.action) DomAction.edit.expr) <| .ofList [
         .forOf todo (arrayAt names.state 0) <| .ofList [
           .ifThen (.binary .eq (indexAt (.ident todo) 0) (.ident names.id)) <| .ofList [
             .assign (.index (.ident names.state) (uint 3)) (.ident names.id),
-            .assign (.index (.ident names.state) (uint 4)) (indexAt (.ident todo) 1)
+            .assign (.index (.ident names.state) (uint 4)) (indexAt (.ident todo) 1),
+            incrementAt names.metrics 2,
+            incrementAt names.metrics 2
           ]
         ]
       ],
-      .ifThen (.binary .eq (.ident names.action) (.literal (.string "delete"))) <| .ofList [
+      .ifThen (.binary .eq (.ident names.action) DomAction.delete.expr) <| .ofList [
         .const nextTodos (.array .nil),
         .forOf todo (arrayAt names.state 0) <| .ofList [
           .ifThen (.unary .not <| .binary .eq (indexAt (.ident todo) 0) (.ident names.id)) <|
             .ofList [.expr <| method (.ident nextTodos) "push" [.ident todo]]
         ],
         .assign (.index (.ident names.state) (uint 0)) (.ident nextTodos),
+        incrementAt names.metrics 2,
         .ifThen (.binary .eq (arrayAt names.state 3) (.ident names.id)) <| .ofList [
           .assign (.index (.ident names.state) (uint 3)) (bigint (-1)),
-          .assign (.index (.ident names.state) (uint 4)) (.literal (.string ""))
+          .assign (.index (.ident names.state) (uint 4)) (.literal (.string "")),
+          incrementAt names.metrics 2,
+          incrementAt names.metrics 2
         ]
       ],
-      .ifThen (.binary .eq (.ident names.action) (.literal (.string "save"))) <| .ofList [
+      .ifThen (.binary .eq (.ident names.action) DomAction.save.expr) <| .ofList [
         .const title (method (arrayAt names.state 4) "replace"
           [.literal .asciiTrimPattern, .literal (.string "")]),
         .const nextTodos (.array .nil),
@@ -515,18 +585,24 @@ private def clickFunction (runtime : RuntimeNames) : Except Error Function := do
               (.unary .not <| .binary .eq (.ident title) (.literal (.string "")))) <|
             .ofList [
               .ifThen (.binary .eq (indexAt (.ident todo) 0) (.ident names.id)) <| .ofList [
-                .assign (.index (.ident todo) (uint 1)) (.ident title)
+                .assign (.index (.ident todo) (uint 1)) (.ident title),
+                incrementAt names.metrics 2
               ],
               .expr <| method (.ident nextTodos) "push" [.ident todo]
             ]
         ],
         .assign (.index (.ident names.state) (uint 0)) (.ident nextTodos),
         .assign (.index (.ident names.state) (uint 3)) (bigint (-1)),
-        .assign (.index (.ident names.state) (uint 4)) (.literal (.string ""))
+        .assign (.index (.ident names.state) (uint 4)) (.literal (.string "")),
+        incrementAt names.metrics 2,
+        incrementAt names.metrics 2,
+        incrementAt names.metrics 2
       ],
-      .ifThen (.binary .eq (.ident names.action) (.literal (.string "cancel"))) <| .ofList [
+      .ifThen (.binary .eq (.ident names.action) DomAction.cancel.expr) <| .ofList [
         .assign (.index (.ident names.state) (uint 3)) (bigint (-1)),
-        .assign (.index (.ident names.state) (uint 4)) (.literal (.string ""))
+        .assign (.index (.ident names.state) (uint 4)) (.literal (.string "")),
+        incrementAt names.metrics 2,
+        incrementAt names.metrics 2
       ]
     ] ++ (eventFinish render names.state names.context names.metrics "todoClick").toArray
   }
@@ -541,10 +617,12 @@ private def changeFunction (runtime : RuntimeNames) : Except Error Function := d
     body := #[
       .const names.metrics (arrayAt names.context 4),
       .const names.id (call runtime.bigInt [.ident names.keyText]),
-      .ifThen (.binary .eq (.ident names.action) (.literal (.string "toggle"))) <| .ofList [
+      .ifThen (.binary .eq (.ident names.action) DomAction.toggle.expr) <| .ofList [
         .forOf todo (arrayAt names.state 0) <| .ofList [
           .ifThen (.binary .eq (indexAt (.ident todo) 0) (.ident names.id)) <| .ofList [
-            .assign (.index (.ident todo) (uint 2)) (.ident names.checked)
+            .assign (.index (.ident todo) (uint 2))
+              (.unary .not <| indexAt (.ident todo) 2)
+            , incrementAt names.metrics 2
           ]
         ]
       ]
@@ -558,7 +636,7 @@ private def inputFunction : Except Error Function := do
     params := delegatedParams names
     body := #[
       .const names.metrics (arrayAt names.context 4),
-      .ifThen (.binary .eq (.ident names.action) (.literal (.string "edit-input"))) <| .ofList [
+      .ifThen (.binary .eq (.ident names.action) DomAction.editInput.expr) <| .ofList [
         .assign (.index (.ident names.state) (uint 4)) (.ident names.value),
         incrementAt names.metrics 2,
         incrementAt names.metrics 1,
@@ -570,20 +648,25 @@ private def inputFunction : Except Error Function := do
 
 private def keyFunction (click : Ident) : Except Error Function := do
   let names ← delegatedNames
-  let save := .literal (.string "save")
-  let cancel := .literal (.string "cancel")
+  let save := DomAction.save.expr
+  let cancel := DomAction.cancel.expr
   pure {
     name := ← Ident.checked "$lrx_todoKey"
     params := delegatedParams names
     body := #[
-      .ifThen (.binary .eq (.ident names.keyName) (.literal (.string "Enter"))) <| .ofList [
-        .expr <| call click [.ident names.state, .ident names.context, save,
-          .ident names.keyText, .ident names.value, .ident names.checked, .ident names.keyName]
-      ],
-      .ifThen (.binary .eq (.ident names.keyName) (.literal (.string "Escape"))) <| .ofList [
-        .expr <| call click [.ident names.state, .ident names.context, cancel,
-          .ident names.keyText, .ident names.value, .ident names.checked, .ident names.keyName]
-      ],
+      .ifThen (.binary .eq (.ident names.action) DomAction.editInput.expr) <|
+        .ofList [
+          .ifThen (.binary .eq (.ident names.keyName) (.literal (.string "Enter"))) <| .ofList [
+            .expr <| call click [.ident names.state, .ident names.context, save,
+              .ident names.keyText, .ident names.value, .ident names.checked,
+              .ident names.keyName]
+          ],
+          .ifThen (.binary .eq (.ident names.keyName) (.literal (.string "Escape"))) <| .ofList [
+            .expr <| call click [.ident names.state, .ident names.context, cancel,
+              .ident names.keyText, .ident names.value, .ident names.checked,
+              .ident names.keyName]
+          ]
+        ],
       .return (.literal .null)
     ]
   }
@@ -596,8 +679,9 @@ private def filterFunction : Except Error Function := do
     params := delegatedParams names
     body := #[
       .const names.metrics (arrayAt names.context 4),
-      .ifThen (.binary .eq (.ident names.action) (.literal (.string "filter"))) <| .ofList [
-        .assign (.index (.ident names.state) (uint 2)) (.ident names.keyText)
+      .ifThen (.binary .eq (.ident names.action) DomAction.filter.expr) <| .ofList [
+        .assign (.index (.ident names.state) (uint 2)) (.ident names.keyText),
+        incrementAt names.metrics 2
       ]
     ] ++ (eventFinish render names.state names.context names.metrics "filter").toArray
   }
@@ -626,9 +710,12 @@ private def clearFunction : Except Error Function := do
         ]
       ],
       .assign (.index (.ident state) (uint 0)) (.ident todos),
+      incrementAt metrics 2,
       .ifThen (.unary .not <| indexAt (.ident editingKept) 0) <| .ofList [
         .assign (.index (.ident state) (uint 3)) (bigint (-1)),
-        .assign (.index (.ident state) (uint 4)) (.literal (.string ""))
+        .assign (.index (.ident state) (uint 4)) (.literal (.string "")),
+        incrementAt metrics 2,
+        incrementAt metrics 2
       ]
     ] ++ (eventFinish render state context metrics "clearCompleted").toArray
   }
@@ -644,7 +731,8 @@ private def reverseFunction : Except Error Function := do
     body := #[
       .const metrics (arrayAt context 4),
       .assign (.index (.ident state) (uint 0)) (method (arrayAt state 0) "slice" []),
-      .expr <| method (arrayAt state 0) "reverse" []
+      .expr <| method (arrayAt state 0) "reverse" [],
+      incrementAt metrics 2
     ] ++ (eventFinish render state context metrics "reverse").toArray
   }
 
@@ -667,7 +755,8 @@ private def manifest (moduleName : String) (checked : LeanRx.Todo.Spec.Checked) 
     eventCount := 10
     hostImports := #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_host.mjs"]
     features := #["dynamic-regions", "conditional", "positional", "keyed",
-      "delegated-events", "typed-form-properties", "actual-change", "instrumentation", "trace"] }
+      "delegated-events", "typed-form-properties", "reference-propagation",
+      "instrumentation", "trace"] }
 
 def emit (moduleName : String) (checked : LeanRx.Todo.Spec.Checked) : Except Error Emitted := do
   let runtime ← runtimeNames

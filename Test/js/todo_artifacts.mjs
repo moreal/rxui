@@ -20,6 +20,8 @@ if (
   !manifest.features.includes("keyed") ||
   !manifest.features.includes("conditional") ||
   !manifest.features.includes("positional") ||
+  !manifest.features.includes("reference-propagation") ||
+  manifest.features.includes("actual-change") ||
   !manifest.hostImports.includes("./leanrx_region.mjs")
 ) {
   throw new Error("generated TodoMVC manifest is invalid");

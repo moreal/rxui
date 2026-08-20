@@ -33,6 +33,13 @@ Mutating the returned array or its trace copy cannot modify transaction control.
 Trace events use declared source, derived, sink, and event names. They are a
 development observability contract, not a timing API.
 
+Dynamic-region emitters count every compiler-emitted `setText`, `setProperty`,
+and `setAttribute` call in index 6. Region insertion, removal, reorder, and
+branch replacement are structural operations reported separately by
+`regionInstrumentation()`; they are not silently folded into the DOM-write
+counter. Todo currently uses reference-style propagation after each action, so
+its manifest says `reference-propagation` rather than `actual-change`.
+
 Specialized form emitters preserve the same indices. Parser/validator execution
 is event-local update work, not a graph-derived node, so it never increments
 indices 3 or 4 when the manifest reports `derivedCount: 0`. Index 2 includes

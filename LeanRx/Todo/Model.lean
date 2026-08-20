@@ -83,7 +83,8 @@ def update (state : State) : Msg → State
       { state with
         todos := kept
         editing := state.editing.bind fun id => if containsId kept id then some id else none
-        draft := state.editing.bind (titleFor kept) |>.getD "" }
+        draft := (state.editing.bind fun id =>
+          if containsId kept id then some state.draft else none).getD "" }
   | .reverse => { state with todos := state.todos.reverse }
   | .setFilter filter => { state with filter }
   | .startEditing id =>
@@ -128,13 +129,13 @@ def keyedVisible (state : State) : Except Error KeyedList :=
   KeyedList.create <| visible state |>.map fun todo =>
     { key := todo.id, node := rowLogical state todo }
 
-def logical (state : State) : LogicalNode :=
+def logical (componentName : String) (state : State) : LogicalNode :=
   .element "main" [("class", "leanrx-todo")] [
-    .element "h1" [] [.text "Todos"],
+    .element "h1" [] [.text componentName],
     .element "input" [("value", state.newTitle)] [],
     .element "ul" [] (visible state |>.map (rowLogical state)),
     .element "footer" [("filter", state.filter.slug)] [
-      .text s!"{remaining state} remaining",
+      .text s!"{remaining state} items left",
       .text s!"{completedCount state} completed"
     ]
   ]

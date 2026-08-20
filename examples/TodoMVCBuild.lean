@@ -13,16 +13,21 @@ private def scenario : State :=
   let editing := update (update toggled (.startEditing 1)) (.setDraft " Edited ")
   update (update editing .commitEditing) .reverse
 
-private def itemJson (item : Item) : String :=
-  "{\"id\":" ++ toString item.id ++
-    ",\"title\":" ++ Js.Printer.stringLiteral item.title ++
-    ",\"completed\":" ++ (if item.completed then "true" else "false") ++ "}"
+private def attributesJson (attributes : List (String × String)) : String :=
+  "[" ++ String.intercalate "," (attributes.map fun (name, value) =>
+    "[" ++ GraphSerialize.jsonString name ++ "," ++ GraphSerialize.jsonString value ++ "]") ++
+    "]"
+
+private def logicalJson : Region.LogicalNode → String
+  | .text value =>
+      "{\"kind\":\"text\",\"value\":" ++ GraphSerialize.jsonString value ++ "}"
+  | .element tag attributes children =>
+      "{\"kind\":\"element\",\"tag\":" ++ GraphSerialize.jsonString tag ++
+        ",\"attributes\":" ++ attributesJson attributes ++
+        ",\"children\":[" ++ String.intercalate "," (children.map logicalJson) ++ "]}"
 
 private def expectedJson : String :=
-  let state := scenario
-  "{\"rows\":[" ++ String.intercalate "," (state.todos.map itemJson) ++
-    "],\"remaining\":" ++ toString (remaining state) ++
-    ",\"filter\":" ++ Js.Printer.stringLiteral state.filter.slug ++ "}\n"
+  "{\"logical\":" ++ logicalJson (logical spec.name scenario) ++ "}\n"
 
 private def generateChecked (directory : System.FilePath) (checked : Spec.Checked) : IO Unit := do
   let emitted ← match Backend.Todo.emit "TodoMVC.mjs" checked with

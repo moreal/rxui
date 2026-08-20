@@ -17,6 +17,10 @@ def run : IO Unit := do
   unless (visible active).map (·.id) == [1] do
     throw <| IO.userError "Todo active filter changed"
   let editing := update (update active (.startEditing 1)) (.setDraft " Edited ")
+  let clearedWhileEditing := update editing .clearCompleted
+  unless clearedWhileEditing.todos.map (·.id) == [1] &&
+      clearedWhileEditing.editing == some 1 && clearedWhileEditing.draft == " Edited " do
+    throw <| IO.userError "clear-completed discarded a retained edit draft"
   let committed := update editing .commitEditing
   unless committed.todos.map (·.title) == ["First", "Edited"] && committed.editing.isNone do
     throw <| IO.userError "Todo edit commit changed"
@@ -40,5 +44,15 @@ def run : IO Unit := do
   | .ok keyed =>
       unless keyed.keys == [0, 1] do
         throw <| IO.userError "Todo keyed projection changed"
+  unless logical "LeanRx TodoMVC" reversed ==
+      .element "main" [("class", "leanrx-todo")] [
+        .element "h1" [] [.text "LeanRx TodoMVC"],
+        .element "input" [("value", "")] [],
+        .element "ul" [] [
+          .element "li" [("data-key", "1"), ("class", "active"),
+            ("data-editing", "false")] [.text "Edited"]],
+        .element "footer" [("filter", "active")] [
+          .text "1 items left", .text "1 completed"]] do
+    throw <| IO.userError "Todo logical DOM projection changed"
 
 end LeanRxTest.Todo.Model
