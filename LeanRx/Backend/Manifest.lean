@@ -1,6 +1,7 @@
 import LeanRx.Backend.Scalar
 import LeanRx.Backend.JsPrinter
 import LeanRx.Core.Version
+import LeanRx.Effect.Model
 
 namespace LeanRx.Backend
 
@@ -36,6 +37,34 @@ def ManifestTypeId.debug : ManifestTypeId → String
   | .record name => s!"record<{name}>"
   | .list element => s!"list<{element.debug}>"
 
+/-- Deterministic disclosure of a foreign boundary consumed by a generated
+component. This is manifest metadata, not a reactive runtime type. -/
+structure PortManifest where
+  name : String
+  inputType : Effect.PortTypeId
+  outputType : Effect.PortTypeId
+  mode : Effect.PortMode
+  cancellation : Effect.PortCancellation
+  errors : Array String
+  trust : String
+  security : String
+deriving Repr, BEq
+
+namespace PortManifest
+
+def ofForeign (port : Effect.ForeignPort ι ο) : PortManifest := {
+  name := port.name
+  inputType := port.inputType
+  outputType := port.outputType
+  mode := port.mode
+  cancellation := port.cancellation
+  errors := port.errors
+  trust := port.trust
+  security := port.security
+}
+
+end PortManifest
+
 structure ComponentManifest where
   compilerVersion : String
   leanToolchain : String
@@ -49,6 +78,7 @@ structure ComponentManifest where
   textSinkCount : Nat
   eventCount : Nat
   hostImports : Array String
+  ports : Array PortManifest := #[]
   features : Array String
 deriving Repr, BEq
 
@@ -61,6 +91,19 @@ private def strings (values : Array String) : String :=
 
 private def types (values : Array ManifestTypeId) : String :=
   strings (values.map (·.debug))
+
+private def portJson (value : PortManifest) : String :=
+  "{\"name\":" ++ quoted value.name ++
+    ",\"input\":" ++ quoted value.inputType.debug ++
+    ",\"output\":" ++ quoted value.outputType.debug ++
+    ",\"mode\":" ++ quoted value.mode.debug ++
+    ",\"cancellation\":" ++ quoted value.cancellation.debug ++
+    ",\"errors\":" ++ strings value.errors ++
+    ",\"trust\":" ++ quoted value.trust ++
+    ",\"security\":" ++ quoted value.security ++ "}"
+
+private def portListJson (values : Array PortManifest) : String :=
+  "[" ++ String.intercalate "," (values.toList.map portJson) ++ "]"
 
 /-- Stable component ABI metadata. Field order is deliberately fixed. -/
 def json (value : ComponentManifest) : String :=
@@ -76,6 +119,7 @@ def json (value : ComponentManifest) : String :=
     ",\"textSinkCount\":" ++ toString value.textSinkCount ++
     ",\"eventCount\":" ++ toString value.eventCount ++
     ",\"hostImports\":" ++ strings value.hostImports ++
+    ",\"ports\":" ++ portListJson value.ports ++
     ",\"features\":" ++ strings value.features ++ "}\n"
 
 end ComponentManifest

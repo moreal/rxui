@@ -29,6 +29,7 @@ lean_lib LeanRxTest where
     `Test.Backend.ValidatedForm,
     `Test.Backend.Todo,
     `Test.Backend.Notes,
+    `Test.Backend.IssueBrowser,
     `Test.View.Model,
     `Test.Component.Model,
     `Test.Component.Dependent,

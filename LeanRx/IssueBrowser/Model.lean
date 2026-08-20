@@ -179,12 +179,15 @@ structure Checked where
   private mk ::
   spec : Spec
   initial : State
+  decoder : ForeignPort String Page
 
-def check (spec : Spec) : Except Error Checked :=
-  if spec.name.isEmpty then .error {
+def check (spec : Spec) : Except Error Checked := do
+  if spec.name.isEmpty then throw {
     code := "LRX-EFFECT-002"
     message := "Issue Browser component name must not be empty"
-  } else .ok ⟨spec, IssueBrowser.initial⟩
+  }
+  let decoder ← decoderPort
+  pure ⟨spec, IssueBrowser.initial, decoder⟩
 
 end Spec
 

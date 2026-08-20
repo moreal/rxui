@@ -62,6 +62,19 @@ inductive PortTypeId where
   | record (name : String)
 deriving Repr, BEq, DecidableEq
 
+def PortTypeId.debug : PortTypeId → String
+  | .runtime value => value.debug
+  | .array element => s!"array<{element.debug}>"
+  | .record name => s!"record<{name}>"
+
+def PortMode.debug : PortMode → String
+  | .sync => "sync"
+  | .async => "async"
+
+def PortCancellation.debug : PortCancellation → String
+  | .none => "none"
+  | .owned => "owned"
+
 /-- A typed foreign boundary. Construction requires explicit runtime
 representations, operational metadata, trust/security notes, and a native mock.
 It does not contain JavaScript source. -/
