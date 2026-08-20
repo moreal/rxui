@@ -42,6 +42,7 @@ lean_lib LeanRxTest where
     `Test.Todo.Model,
     `Test.Effect.Command,
     `Test.Effect.Resource,
+    `Test.Notes.Model,
     `Test.Elab.Component,
     `Test.Cli.Model,
     `Test.Cli.AtomicOutput,

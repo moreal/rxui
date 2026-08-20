@@ -31,6 +31,7 @@ fixtures=(
   Test/fixtures/compile-fail/ForgeRegionResult.lean
   Test/fixtures/compile-fail/ForgeTodoState.lean
   Test/fixtures/compile-fail/ForgeForeignPort.lean
+  Test/fixtures/compile-fail/ForgeNotesState.lean
 )
 fragments=(
   "Constructor for"
@@ -62,6 +63,7 @@ fragments=(
   'constructor for `KeyedResult` is marked as private'
   'Constructor for `LeanRx.Todo.State` is marked as private'
   'constructor for `ForeignPort` is marked as private'
+  'constructor for `State` is marked as private'
 )
 
 for index in "${!fixtures[@]}"; do
