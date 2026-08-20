@@ -58,7 +58,7 @@ private def runMock (host : MockHost) : Cmd Msg → MockResult
       if isCancelled host handle then suppressed host handle else
         let result : Except Error StorageResult :=
           if host.storageReadFailures.contains key then .error {
-            code := "LRX-STORAGE-001"
+            code := "LRX-PORT-201"
             message := s!"mock storage read failed for {key.quote}"
           } else match storageValue host key with
           | none => .ok .missing
@@ -71,7 +71,7 @@ private def runMock (host : MockHost) : Cmd Msg → MockResult
         if host.storageWriteFailures.contains key then
           { host
             messages := [onResult (.error {
-              code := "LRX-STORAGE-002"
+              code := "LRX-PORT-202"
               message := s!"mock storage write failed for {key.quote}"
             })]
             trace := [s!"storageSet:error:{handle.debug}:{key}"] }

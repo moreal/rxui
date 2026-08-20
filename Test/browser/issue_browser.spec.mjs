@@ -117,7 +117,7 @@ test("loads, paginates, retries, suppresses stale HTTP, and cancels disposal", a
   const status = root.getByRole("status");
   const issues = root.getByRole("list", { name: "Issues" }).getByRole("listitem");
 
-  await expect(status).toHaveText("Loaded 1 issues");
+  await expect(status).toHaveText(expected.loadedStatus);
   await expect(issues).toHaveCount(1);
   await expect(issues.first()).toHaveText(expected.firstIssue.title);
   await expect(root.locator("img")).toHaveCount(0);
@@ -142,7 +142,7 @@ test("loads, paginates, retries, suppresses stale HTTP, and cancels disposal", a
   await expect(retry).toBeEnabled();
 
   await input.fill("failure");
-  await expect(status).toHaveText("Request failed: issue request returned HTTP 503");
+  await expect(status).toHaveText(expected.httpFailureStatus);
   await retry.click();
   await expect(status).toHaveText("Loaded 1 issues");
   await expect(issues.first()).toHaveText("Recovered issue");

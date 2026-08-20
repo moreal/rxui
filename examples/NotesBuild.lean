@@ -7,17 +7,30 @@ open LeanRx LeanRx.Effect LeanRx.Notes LeanRxExamples.Notes
 
 private def expectedJson : Except String String := do
   let restore := update initial .restore
-  let key ← match restore.command with
-    | .storageGet _ key _ => .ok key
+  let (restoreHandle, key) ← match restore.command with
+    | .storageGet handle key _ => .ok (handle, key)
     | _ => .error "Notes restore did not produce storageGet"
   let edited := update restore.state (.edit "expected")
-  let delay ← match edited.command with
-    | .batch #[.cancel _, .none, .timeout _ delay _] => .ok delay
+  let (debounceHandle, delay) ← match edited.command with
+    | .batch #[.cancel _, .none, .timeout handle delay _] => .ok (handle, delay)
     | _ => .error "Notes edit did not cancel restore and schedule timeout"
+  let saving := update edited.state (.debounceFired debounceHandle)
+  let saveHandle ← match saving.command with
+    | .storageSet handle _ _ _ => .ok handle
+    | _ => .error "Notes debounce did not produce storageSet"
+  let saveFailed := update saving.state (.stored saveHandle (.error {
+    code := "LRX-PORT-202", message := "quota exceeded"
+  }))
+  let restoreFailed := update restore.state (.restored restoreHandle (.error {
+    code := "LRX-PORT-201", message := "restore broke"
+  }))
   pure <| "{\"storageKey\":" ++ GraphSerialize.jsonString key ++
     ",\"debounceMs\":" ++ toString delay.toNat ++
     ",\"initialStatus\":" ++ GraphSerialize.jsonString (statusText initial) ++
-    ",\"waitingStatus\":" ++ GraphSerialize.jsonString (statusText edited.state) ++ "}\n"
+    ",\"waitingStatus\":" ++ GraphSerialize.jsonString (statusText edited.state) ++
+    ",\"saveFailureStatus\":" ++ GraphSerialize.jsonString (statusText saveFailed.state) ++
+    ",\"restoreFailureStatus\":" ++
+      GraphSerialize.jsonString (statusText restoreFailed.state) ++ "}\n"
 
 private def generateChecked (directory : System.FilePath) (checked : Spec.Checked) : IO Unit := do
   let emitted ← match Backend.Notes.emit "Notes.mjs" checked with

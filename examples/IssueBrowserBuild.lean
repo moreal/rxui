@@ -10,23 +10,29 @@ private def fixtureBody : String :=
 
 private def expectedJson : Except String String := do
   let transition := update initial .search
-  let (handle, request) ← match transition.command with
-    | .batch #[.none, .http handle request _] => .ok (handle, request)
+  let (handle, request, onResult) ← match transition.command with
+    | .batch #[.none, .http handle request onResult] => .ok (handle, request, onResult)
     | _ => .error "Issue Browser search did not produce the initial HTTP command"
   let (query, page) ← match request.query with
     | #[("q", query), ("page", page)] => .ok (query, page)
     | _ => .error "Issue Browser HTTP query shape drifted"
-  let decoded ← decodePage fixtureBody |>.mapError (fun error => error.message)
+  let (key, decoded) ← match onResult (.ok { status := 200, body := fixtureBody }) with
+    | .received key (.ok decoded) => .ok (key, decoded)
+    | _ => .error "Issue Browser decoder callback rejected the native fixture"
   let issue ← match decoded.issues[0]? with
     | some issue => .ok issue
     | none => .error "Issue Browser native decoder produced no fixture issue"
+  let loaded := update transition.state (.received key (.ok decoded))
+  let failed := update transition.state <| onResult (.ok { status := 503, body := "{}" })
   pure <| "{\"url\":" ++ GraphSerialize.jsonString request.url ++
     ",\"query\":" ++ GraphSerialize.jsonString query ++
     ",\"page\":" ++ GraphSerialize.jsonString page ++
     ",\"handle\":" ++ GraphSerialize.jsonString handle.debug ++
     ",\"firstIssue\":{\"id\":" ++ toString issue.id ++
     ",\"title\":" ++ GraphSerialize.jsonString issue.title ++ "}" ++
-    ",\"hasMore\":" ++ (if decoded.hasMore then "true" else "false") ++ "}\n"
+    ",\"hasMore\":" ++ (if decoded.hasMore then "true" else "false") ++
+    ",\"loadedStatus\":" ++ GraphSerialize.jsonString (statusText loaded.state) ++
+    ",\"httpFailureStatus\":" ++ GraphSerialize.jsonString (statusText failed.state) ++ "}\n"
 
 private def generateChecked (directory : System.FilePath) (checked : Spec.Checked) : IO Unit := do
   let emitted ← match Backend.IssueBrowser.emit "IssueBrowser.mjs" checked with

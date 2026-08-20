@@ -88,7 +88,7 @@ test("restores, debounces, reports storage errors, and cancels owned work", asyn
     Storage.prototype.setItem = function setItem() { throw new Error("quota exceeded"); };
   });
   await input.fill("cannot save");
-  await expect(status).toHaveText("Save failed: quota exceeded", {
+  await expect(status).toHaveText(expected.saveFailureStatus, {
     timeout: expected.debounceMs * 4,
   });
   await page.evaluate(() => { Storage.prototype.setItem = globalThis.notesOriginalSetItem; });
@@ -134,10 +134,10 @@ test("restores, debounces, reports storage errors, and cancels owned work", asyn
   const third = page.locator("#third .leanrx-notes");
   const thirdInput = third.getByRole("textbox", { name: "Note" });
   const thirdStatus = third.getByRole("status");
-  await expect(thirdStatus).toHaveText("Restore failed: restore broke");
+  await expect(thirdStatus).toHaveText(expected.restoreFailureStatus);
   await thirdInput.fill("saved despite restore failure");
   await page.waitForTimeout(expected.debounceMs * 2);
-  await expect(thirdStatus).toHaveText("Restore failed: restore broke");
+  await expect(thirdStatus).toHaveText(expected.restoreFailureStatus);
   expect(await page.evaluate(({ storageKey }) => localStorage.getItem(storageKey), expected))
     .toBe("saved despite restore failure");
   await page.evaluate(() => globalThis.thirdNotesDispose());

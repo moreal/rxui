@@ -51,7 +51,9 @@ if (
   expected.page !== "1" ||
   expected.handle !== "cmd-0" ||
   expected.firstIssue.id !== 1 ||
-  expected.hasMore !== true
+  expected.hasMore !== true ||
+  expected.loadedStatus !== "Loaded 1 issues" ||
+  expected.httpFailureStatus !== "Request failed: issue request returned HTTP 503"
 ) {
   throw new Error("native Issue Browser request/decoder artifact drifted");
 }

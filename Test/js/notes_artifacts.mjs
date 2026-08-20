@@ -33,7 +33,9 @@ if (
   expected.storageKey !== "leanrx.notes" ||
   expected.debounceMs !== 250 ||
   expected.initialStatus !== "Not saved" ||
-  expected.waitingStatus !== "Waiting to save"
+  expected.waitingStatus !== "Waiting to save" ||
+  expected.saveFailureStatus !== "Save failed: quota exceeded" ||
+  expected.restoreFailureStatus !== "Restore failed: restore broke"
 ) {
   throw new Error("native Notes command artifact drifted");
 }
