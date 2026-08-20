@@ -70,8 +70,10 @@ status, JSON shape, unique IDs in the JavaScript safe-integer range, string
 titles, and pagination metadata. The browser decoder preserves JSON number
 lexemes before ordinary parsing so fractional values cannot round into accepted
 integer IDs; paired native/JavaScript fixtures include exponents, decimal forms,
-precision boundaries, and the maximum safe ID. The reducer checks uniqueness
-again after cross-page concatenation before committing keyed state.
+precision boundaries, and the maximum safe ID. Both decoders reject an exponent
+magnitude above 16 before invoking their general JSON parser, preventing hostile
+zero/exponent inputs from reaching unbounded native exponentiation. The reducer
+checks uniqueness again after cross-page concatenation before committing keyed state.
 
 ## Evidence and remaining TCB
 

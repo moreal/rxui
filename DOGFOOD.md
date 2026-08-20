@@ -674,7 +674,10 @@ IDs that rounded to integers, reentrant replacement could orphan a nested
 same-handle command, and eagerly reading blocked Web Storage could abort mount.
 The decoder now preserves number lexemes, replacement installs an ownership
 reservation before cancellation, and storage acquisition occurs inside the
-owned error path. Exact native, fake-host, and Chromium regressions cover these
+owned error path. A follow-up native counterexample found that enormous zero
+exponents could consume seconds or panic inside Lean's general JSON parser; both
+ports now reject exponent magnitudes above 16 before parsing. Exact native,
+fake-host, and Chromium regressions cover these
 contracts. Ownership is removed before cancellation, completion is bound to its
 exact entry, and cleanup failures are normalized without skipping the base disposer.
 
