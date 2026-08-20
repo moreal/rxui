@@ -6,7 +6,7 @@ Complete — M0 through M11
 
 ## Last green commit
 
-`6ebc43f fix(cli): validate learnability prerequisites`
+`d9c85ab test(docs): align final evidence claims`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -299,14 +299,15 @@ Complete — M0 through M11
   framework: no URL/history router, semantic navigation/link/code/list vocabulary,
   typed CSS, general VDOM, arbitrary Lean compiler, raw HTML/URL context, SSR,
   hydration, or formal JavaScript/DOM proof.
-- Verified `6ebc43f` with `./scripts/check.sh`: 254 Lean jobs, 1376 public
+- Verified `d9c85ab` with the complete `./scripts/check.sh` from a new
+  no-hardlinks clone: 254 Lean jobs, 1376 public
   theorems, 307 exact reviewed axiom uses, 77 exact generated unsafe helpers, 40
   seeded graph cases, 49 native/JavaScript cases in both printer modes,
   deterministic ten-application artifacts, region/effect and CLI negative gates,
   eighteen standard plus one Grid Chromium test, both benchmarks, 37
   compile-fail fixtures plus four focused diagnostic checks, 163-file placeholder,
-  and 76-file semantic-safety gates passed. Quality also verified build/native/CLI
-  from a fresh no-hardlinks clone.
+  and 76-file semantic-safety gates passed. The clone and source workspace
+  remained clean.
 
 ## In progress
 
@@ -540,7 +541,7 @@ Complete — M0 through M11
 
 ## M11 independent review notes
 
-- Lean/toolchain: PASS at `6ebc43f`; staged/native support claims, exact runtime
+- Lean/toolchain: PASS at `d9c85ab`; staged/native support claims, exact runtime
   prerequisites, explicit and scoped guide snippets, generated declarations,
   source policy, and the complete local gate were independently verified.
 - Type theory/proof: PASS; graph HTML consumes sealed planned graphs, new tooling
@@ -555,10 +556,11 @@ Complete — M0 through M11
   keyboard controls, responsive shell, populated docs and standalone-viewer axe,
   exact work snapshot, mount isolation, disposal, script-free graph HTML, and
   pinned supply chain passed Chromium and static review.
-- Test/quality: PASS after exact workspace full-suite and fresh no-hardlinks
-  build/native/CLI checks; all local Markdown links resolve, incompatible-tool
+- Test/quality: PASS after the exact `d9c85ab` full suite in a fresh no-hardlinks
+  clone; all local Markdown links resolve, incompatible-tool
   shims and canonical guide compilation are effective regressions, history is
-  conventional/bisectable, and every M11 commit has one exact assistance trailer.
+  conventional/bisectable, and every commit through the final audit has one exact
+  assistance trailer.
 
 ## Commands
 
