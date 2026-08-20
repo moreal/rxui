@@ -37,6 +37,7 @@ import Test.Form.Validated
 import Test.Region.Conditional
 import Test.Region.Positional
 import Test.Region.Keyed
+import Test.Collection.Delta
 import Test.Todo.Model
 import Test.Effect.Command
 import Test.Effect.Resource
@@ -96,6 +97,7 @@ def main : IO Unit := do
   LeanRxTest.Region.Conditional.run
   LeanRxTest.Region.Positional.run
   LeanRxTest.Region.Keyed.run
+  LeanRxTest.Collection.Delta.run
   LeanRxTest.Todo.Model.run
   LeanRxTest.Effect.Command.run
   LeanRxTest.Effect.Resource.run

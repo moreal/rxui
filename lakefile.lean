@@ -41,6 +41,7 @@ lean_lib LeanRxTest where
     `Test.Region.Conditional,
     `Test.Region.Positional,
     `Test.Region.Keyed,
+    `Test.Collection.Delta,
     `Test.Todo.Model,
     `Test.Effect.Command,
     `Test.Effect.Resource,

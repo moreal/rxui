@@ -85,6 +85,10 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.Effect.instReprPortTypeId.repr._unsafe_rec,
     `LeanRx.Effect.PortTypeId.debug._unsafe_rec,
     `LeanRx.Effect.PortRep.typeId._unsafe_rec,
+    -- Generated universe-polymorphic list-delta recursion. The written
+    -- definition is pure and total; this helper is compiler implementation
+    -- detail and is not part of the theorem statement.
+    `LeanRx.Collection.ListDelta.applyAll._unsafe_rec,
   ]
   -- Generated injectivity plus named membership/agreement lemmas use Lean's
   -- standard proposition-extensionality axiom. Each exact pair is reviewed;
@@ -173,6 +177,12 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Region.KeyedItem.mk.injEq, #[``propext]),
     (`LeanRx.Region.KeyedInstance.mk.injEq, #[``propext]),
     (`LeanRx.Region.reconcileKeyed_logical, #[``propext]),
+    (`LeanRx.Collection.Error.mk.injEq, #[``propext]),
+    (`LeanRx.Collection.ListDelta.insert.injEq, #[``propext]),
+    (`LeanRx.Collection.ListDelta.move.injEq, #[``propext]),
+    (`LeanRx.Collection.ListDelta.remove.injEq, #[``propext]),
+    (`LeanRx.Collection.ListDelta.reset.injEq, #[``propext]),
+    (`LeanRx.Collection.ListDelta.update.injEq, #[``propext]),
     (`LeanRx.Todo.Item.mk.injEq, #[``propext]),
     (`LeanRx.Todo.Msg.setNewTitle.injEq, #[``propext]),
     (`LeanRx.Todo.Msg.toggle.injEq, #[``propext]),
