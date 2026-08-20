@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M11 — Documentation, tooling, and self-hosting
+Complete — M0 through M11
 
 ## Last green commit
 
-`d445bfe docs(grid): record corrected structural measurements`
+`6ebc43f fix(cli): validate learnability prerequisites`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -95,7 +95,7 @@ M11 — Documentation, tooling, and self-hosting
 - Added pure `check`, JSON/DOT `graph`, and atomic `build` CLI paths. ADR-0007
   records locked versioned sibling publication through one symlink rename;
   unmanaged outputs and hostile bundle/lock symlinks fail without mutation.
-- Built Counter entirely through public APIs with two events, derived fan-out,
+- Built Counter entirely through public APIs with four events, derived fan-out,
   direct scalar text sinks, generated hostile text, separate instances, and
   idempotent disposal. Chromium covers mount, updates, same-value write
   suppression, keyboard activation, isolation, disposal, hostile text, and axe.
@@ -273,23 +273,53 @@ M11 — Documentation, tooling, and self-hosting
   artifacts, region/effect host checks, sixteen standard plus one Grid Chromium
   test, both benchmarks, forty compile-fail fixtures, 158-file placeholder, and
   73-file semantic-safety gates passed; both checkouts remained clean.
+- Added deterministic self-contained accessible HTML graph artifacts alongside
+  JSON/DOT, including hostile-metadata escaping, script exclusion, exact CLI/build
+  equality, and native/browser accessibility regressions.
+- Added an explicit learnability CLI registry with clearer pure `check`, atomic
+  `build`, JSON/DOT/HTML `graph`, `scaffold`, `explain`, and fail-closed `doctor`.
+  Doctor enforces Node 22+, exact pnpm 10.33.0 and Playwright 1.62.1, installed
+  Chromium, exact toolchain/runtime hosts, and backend smoke; incompatible PATH
+  fixtures and unmanaged output failures are permanent regressions.
+- Added compile-checked editor declaration aliases and a compile-executed public
+  language-guide component covering both explicit and scoped surface APIs.
+- Published the language, tooling, architecture, backend support, trust,
+  accessibility, and dogfood case-study guides, linked to the existing
+  performance, internals, ADR, and Lean-upgrade references. Documentation
+  distinguishes named kernel theorems from pure checks, executable evidence,
+  measurements, and the remaining JavaScript/browser/platform TCB.
+- Built the seven-page LeanRx documentation site entirely through public
+  component APIs. One page source drives three derived page values and three text
+  sinks; seven native buttons cover introduction, Counter, graph, dependent Tabs,
+  effects/resources, limitations, and an inert Counter graph. The atomic bundle
+  includes its deterministic manifest, graph data/DOT/HTML viewer, editor aliases,
+  production shell, stylesheet, and two tiny hosts.
+- Recorded self-hosting limitations rather than hiding them behind another
+  framework: no URL/history router, semantic navigation/link/code/list vocabulary,
+  typed CSS, general VDOM, arbitrary Lean compiler, raw HTML/URL context, SSR,
+  hydration, or formal JavaScript/DOM proof.
+- Verified `6ebc43f` with `./scripts/check.sh`: 254 Lean jobs, 1376 public
+  theorems, 307 exact reviewed axiom uses, 77 exact generated unsafe helpers, 40
+  seeded graph cases, 49 native/JavaScript cases in both printer modes,
+  deterministic ten-application artifacts, region/effect and CLI negative gates,
+  eighteen standard plus one Grid Chromium test, both benchmarks, forty
+  compile-fail fixtures, 163-file placeholder, and 76-file semantic-safety gates
+  passed. Quality also verified build/native/CLI from a fresh no-hardlinks clone.
 
 ## In progress
 
-- M11 adds learnability/tooling gates, complete guides, and a public-API LeanRx
-  documentation site without hiding unsupported capabilities behind another
-  frontend framework.
+- None. The planned M0–M11 implementation is complete.
 
 ## Next
 
-- Add scaffold, explain, doctor, richer graph artifacts, and editor-friendly
-  generated declarations with deterministic CLI regressions.
-- Write the language/architecture/backend/trust/accessibility/case-study guides,
-  then build and browser-test the seven-page LeanRx documentation dogfood.
+- No next milestone is authorized by `PLAN.md`. A release would first require a
+  selected license, package/public compatibility policy, and explicit release
+  criteria; the current repository remains an unreleased experiment.
 
 ## Known blockers
 
-- None.
+- None for the M0–M11 plan. Release prerequisites above remain intentionally
+  unresolved and are not hidden by the implementation status.
 
 ## M0 independent review notes
 
@@ -505,6 +535,28 @@ M11 — Documentation, tooling, and self-hosting
   work snapshots, malformed deltas, six-position benchmark math, commands,
   limitations, negative conclusions, history bisectability, and the single exact
   assistance trailer on every M10 commit were independently checked.
+
+## M11 independent review notes
+
+- Lean/toolchain: PASS at `6ebc43f`; staged/native support claims, exact runtime
+  prerequisites, explicit and scoped guide snippets, generated declarations,
+  source policy, and the complete local gate were independently verified.
+- Type theory/proof: PASS; graph HTML consumes sealed planned graphs, new tooling
+  adds no semantic shortcut, exact theorem/axiom/unsafe audits remain green, and
+  HTML/CLI/compiler/browser behavior stays executable TCB evidence rather than a
+  formal claim.
+- Compiler/backend: PASS; deterministic JSON/DOT/HTML graphs, explicit registry,
+  version-aware doctor, normalized atomic errors, diagnostic explanations,
+  editor aliases, docs lowering, manifest, artifacts, and host separation passed
+  positive and adversarial checks.
+- Frontend/runtime: PASS; all seven pages, hostile Limitations text, native
+  keyboard controls, responsive shell, populated docs and standalone-viewer axe,
+  exact work snapshot, mount isolation, disposal, script-free graph HTML, and
+  pinned supply chain passed Chromium and static review.
+- Test/quality: PASS after exact workspace full-suite and fresh no-hardlinks
+  build/native/CLI checks; all local Markdown links resolve, incompatible-tool
+  shims and canonical guide compilation are effective regressions, history is
+  conventional/bisectable, and every M11 commit has one exact assistance trailer.
 
 ## Commands
 
