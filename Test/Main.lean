@@ -26,6 +26,7 @@ import Test.Backend.ValidatedForm
 import Test.Backend.Todo
 import Test.Backend.Notes
 import Test.Backend.IssueBrowser
+import Test.Backend.Grid
 import Test.View.Model
 import Test.Component.Model
 import Test.Component.Dependent
@@ -88,6 +89,7 @@ def main : IO Unit := do
   LeanRxTest.Backend.Todo.run
   LeanRxTest.Backend.Notes.run
   LeanRxTest.Backend.IssueBrowser.run
+  LeanRxTest.Backend.Grid.run
   LeanRxTest.View.Model.run
   LeanRxTest.Component.Model.run
   LeanRxTest.Component.Dependent.run
