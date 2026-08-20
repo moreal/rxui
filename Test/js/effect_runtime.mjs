@@ -142,7 +142,19 @@ const exponentIds = decodeIssueResponse({
   status: 200,
   body: '{"issues":[{"id":1e3,"title":"exponent"},{"id":-0,"title":"zero"}],"hasMore":false}',
 });
-const fractionalIds = ["1.0", "1.0000000000000001", "9007199254740990.5"].map((id) =>
+const boundedExponentIds = decodeIssueResponse({
+  status: 200,
+  body: '{"issues":[{"id":0e16,"title":"bounded zero"},{"id":1e15,"title":"bounded value"}],"hasMore":false}',
+});
+const fractionalIds = [
+  "1.0",
+  "1.0000000000000001",
+  "9007199254740990.5",
+  "0e9999999999999999999999999999999",
+  "-0e9999999999999999999999999999999",
+  "0e17",
+  "0e-17",
+].map((id) =>
   decodeIssueResponse({
     status: 200,
     body: `{"issues":[{"id":${id},"title":"fractional"}],"hasMore":false}`,
@@ -155,6 +167,8 @@ if (JSON.stringify(decoded) !==
     unsafeId.error.code !== "LRX-PORT-302" ||
     duplicateId.error.code !== "LRX-PORT-304" ||
     JSON.stringify(exponentIds.value[0].map(([id]) => id)) !== "[1000,0]" ||
+    JSON.stringify(boundedExponentIds.value[0].map(([id]) => id)) !==
+      "[0,1000000000000000]" ||
     fractionalIds.some((result) => result.error?.code !== "LRX-PORT-302")) {
   throw new Error("issue decoder port drifted from its typed wire contract");
 }

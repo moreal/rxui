@@ -54,10 +54,18 @@ def run : IO Unit := do
       "{\"issues\":[{\"id\":1e3,\"title\":\"exponent\"},{\"id\":-0,\"title\":\"zero\"}],\"hasMore\":false}" with
     | .ok page => page.issues.map (·.id) == #[1000, 0]
     | .error _ => false) "exact natural exponent or negative-zero issue ID was rejected"
+  assertTrue (match decodePage
+      "{\"issues\":[{\"id\":0e16,\"title\":\"bounded zero\"},{\"id\":1e15,\"title\":\"bounded value\"}],\"hasMore\":false}" with
+    | .ok page => page.issues.map (·.id) == #[0, 1000000000000000]
+    | .error _ => false) "bounded exact exponent issue IDs were rejected"
   for body in [
       "{\"issues\":[{\"id\":1.0,\"title\":\"decimal\"}],\"hasMore\":false}",
       "{\"issues\":[{\"id\":1.0000000000000001,\"title\":\"rounded\"}],\"hasMore\":false}",
-      "{\"issues\":[{\"id\":9007199254740990.5,\"title\":\"rounded max\"}],\"hasMore\":false}"
+      "{\"issues\":[{\"id\":9007199254740990.5,\"title\":\"rounded max\"}],\"hasMore\":false}",
+      "{\"issues\":[{\"id\":0e9999999999999999999999999999999,\"title\":\"huge exponent\"}],\"hasMore\":false}",
+      "{\"issues\":[{\"id\":-0e9999999999999999999999999999999,\"title\":\"negative zero exponent\"}],\"hasMore\":false}",
+      "{\"issues\":[{\"id\":0e17,\"title\":\"exponent above bound\"}],\"hasMore\":false}",
+      "{\"issues\":[{\"id\":0e-17,\"title\":\"negative exponent above bound\"}],\"hasMore\":false}"
     ] do
     assertTrue (match decodePage body with
       | .error error => error.code == "LRX-PORT-302"

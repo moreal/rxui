@@ -63,6 +63,42 @@ private def duplicateIssueError : Error := {
 
 def maxSafeIssueId : Nat := 9007199254740991
 
+private def asciiDigit? (character : Char) : Option Nat :=
+  if '0' ≤ character && character ≤ '9' then
+    some (character.toNat - '0'.toNat)
+  else none
+
+private def exponentWithinBound : List Char → Bool
+  | '+' :: rest | '-' :: rest => exponentWithinBound rest
+  | chars =>
+      let rec loop (value : Nat) : List Char → Bool
+        | [] => true
+        | character :: rest =>
+            match asciiDigit? character with
+            | none => true
+            | some digit =>
+                let next := value * 10 + digit
+                next ≤ 16 && loop next rest
+      loop 0 chars
+
+/-- Bound every JSON-number exponent before calling Lean's general parser. This
+keeps the application decoder total on hostile input and is mirrored exactly by
+the browser port. Characters inside JSON strings are ignored. -/
+private def jsonExponentsBounded (body : String) : Bool :=
+  let rec loop : List Char → Bool → Bool → Bool
+    | [], _, _ => true
+    | character :: rest, inString, escaped =>
+        if inString then
+          if escaped then loop rest true false
+          else if character == '\\' then loop rest true true
+          else if character == '"' then loop rest false false
+          else loop rest true false
+        else if character == '"' then loop rest true false
+        else if character == 'e' || character == 'E' then
+          exponentWithinBound rest && loop rest false false
+        else loop rest false false
+  loop body.toList false false
+
 private def uniqueIssueList : List Issue → List Nat → Bool
   | [], _ => true
   | issue :: rest, seen =>
@@ -81,6 +117,8 @@ private def decodeIssue (value : Lean.Json) : Except Error Issue := do
   pure { id, title }
 
 def decodePage (body : String) : Except Error Page := do
+  unless jsonExponentsBounded body do
+    throw <| decodeError "numeric exponent magnitude must be at most 16"
   let json ← Lean.Json.parse body |>.mapError decodeError
   let issuesValue ← json.getObjVal? "issues" |>.mapError decodeError
   let hasMoreValue ← json.getObjVal? "hasMore" |>.mapError decodeError

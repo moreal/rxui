@@ -7,6 +7,15 @@ function decodeError(message) {
 
 const NUMBER_PREFIX = "\u0000leanrx-json-number:";
 const MAX_SAFE_ID = 9007199254740991n;
+const MAX_ISSUE_EXPONENT = 16n;
+
+function exponentWithinBound(token) {
+  const exponent = token.match(/[eE][+-]?([0-9]+)$/)?.[1];
+  if (!exponent) return true;
+  const normalized = exponent.replace(/^0+/, "") || "0";
+  return normalized.length < 2 ||
+    (normalized.length === 2 && BigInt(normalized) <= MAX_ISSUE_EXPONENT);
+}
 
 function preserveNumberLexemes(body) {
   let output = "";
@@ -28,6 +37,7 @@ function preserveNumberLexemes(body) {
       /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/,
     );
     if (number) {
+      if (!exponentWithinBound(number[0])) return null;
       output += JSON.stringify(`${NUMBER_PREFIX}${number[0]}`);
       index += number[0].length;
     } else {
@@ -46,6 +56,7 @@ function exactNaturalId(value) {
   if (!parts) return null;
   const fraction = parts[3] ?? "";
   const exponent = BigInt(parts[4] ?? "0");
+  if (exponent > MAX_ISSUE_EXPONENT || exponent < -MAX_ISSUE_EXPONENT) return null;
   const scale = exponent - BigInt(fraction.length);
   if (scale < 0n) return null;
   const coefficient = BigInt(`${parts[2]}${fraction}`);
@@ -70,8 +81,12 @@ export function decodeIssueResponse(response) {
   let value;
   let lexicalValue;
   try {
+    const preserved = preserveNumberLexemes(response.body);
+    if (preserved === null) {
+      return decodeError("numeric exponent magnitude must be at most 16");
+    }
     value = JSON.parse(response.body);
-    lexicalValue = JSON.parse(preserveNumberLexemes(response.body));
+    lexicalValue = JSON.parse(preserved);
   } catch (error) {
     return decodeError(error instanceof Error ? error.message : String(error));
   }
