@@ -214,17 +214,20 @@ M9 — Commands, resources, and foreign ports
 
 ## In progress
 
-- M9 command/resource/foreign-port type and lifecycle design, beginning with pure
-  commands-as-data, owned cancellation handles, and deterministic native mocks.
+- M9 technical candidate: typed commands/batches, private cancellation handles,
+  explicit resources, stale-result lemmas, deterministic native mocks, injected
+  timer/storage/HTTP/foreign adapters, structured port manifests, ABI 6 effect
+  counters, and public Notes/Issue Browser dogfoods are implemented.
+- Workspace native, differential, deterministic codegen, effect-runtime, and all
+  sixteen Chromium tests are green. Independent review and the full/fresh-clone
+  milestone gates remain before M9 closure.
 
 ## Next
 
-- Add typed command batching, timers, local storage, HTTP request/response, and
-  explicit resource loading/success/failure/cancel state.
-- Add foreign-port declarations with runtime representations, error/cancellation
-  contracts, native test doubles, and browser integration tests.
-- Build Notes and Issue Browser through public APIs, including stale-response
-  suppression and disposal-owned cancellation.
+- Perform all five independent M9 review roles and resolve every actionable
+  finding.
+- Run the complete workspace and fresh no-hardlinks checkout suites, update the
+  exact green commit/results/review notes, and close M9 only when both pass.
 
 ## Known blockers
 
@@ -412,6 +415,7 @@ M9 — Commands, resources, and foreign ports
 - `./scripts/check_differential.sh`
 - `./scripts/check_component_codegen.sh`
 - `./scripts/check_region_runtime.sh`
+- `./scripts/check_effect_runtime.sh`
 - `./scripts/check_cli.sh`
 - `./scripts/check_browser.sh`
 - `./scripts/check_bench.sh`

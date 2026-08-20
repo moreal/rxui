@@ -138,6 +138,21 @@ controls, and keyed rows. Key identity survives reorder, stable rows update in
 place, removed rows dispose their nested branch, and no root-wide Virtual DOM is
 present. See [the dynamic-region contract](docs/internals/dynamic-regions.md).
 
+Generate the M9 effect dogfoods with:
+
+```sh
+lake exe leanrx_notes_js -- .tmp/notes
+lake exe leanrx_issue_browser_js -- .tmp/issues
+```
+
+Notes owns storage restore, a replaceable debounce timer, persistence errors,
+and disposal cancellation. Issue Browser owns HTTP requests, typed decode,
+loading/failure/success resource state, pagination, retry, stale-result
+suppression, and abort-on-replacement/disposal. Foreign ports disclose their
+wire types, errors, trust, and security contracts in deterministic manifests.
+See [the effects and ports contract](docs/internals/effects.md) and
+[ADR-0015](docs/adr/0015-runtime-abi-v6-owned-effects.md).
+
 ## Project boundaries
 
 LeanRx is intended to compile a restricted staged language; it will not transpile

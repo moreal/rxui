@@ -80,6 +80,14 @@ footprint. It proves the key/token model's mounted projection equals the checked
 target list; DOM node retention, focus, event routing, and disposal still require
 separate browser evidence.
 
+M9's named `Effect.Resource.settle_stale` and
+`Effect.Resource.cancel_stale` lemmas each have the exact reviewed `[propext]`
+footprint. They prove that a mismatched handle cannot settle or cancel the pure
+loading resource. Notes/Issue Browser reducer behavior is executable pure Lean;
+specialized command lowering, native test doubles, timers, storage, fetch,
+`AbortController`, foreign decoders, JavaScript promises, and browser delivery
+remain separately tested parts of the documented TCB.
+
 The M2 checked well-formedness checker and all-`Int` `RxExpr`-to-abstract-evaluator
 bridge are also kernel checked. Their named proof terms use exact reviewed
 `[propext, Quot.sound]` footprints where list/dependency equations require them;
