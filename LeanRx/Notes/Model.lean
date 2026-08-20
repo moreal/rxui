@@ -134,7 +134,7 @@ structure Checked where
 
 def check (spec : Spec) : Except Error Checked :=
   if spec.name.isEmpty then .error {
-    code := "LRX-EFFECT-001"
+    code := "LRX-PORT-501"
     message := "Notes component name must not be empty"
   } else .ok ⟨spec, Notes.initial⟩
 

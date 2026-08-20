@@ -19,13 +19,22 @@ if (
   !manifest.features.includes("timer") ||
   !manifest.features.includes("storage") ||
   !manifest.features.includes("owned-cancellation") ||
-  !manifest.hostImports.includes("leanrx_effects.mjs")
+  JSON.stringify(manifest.hostImports) !== JSON.stringify([
+    "./leanrx_dom.mjs",
+    "./leanrx_host.mjs",
+    "./leanrx_effects.mjs",
+  ])
 ) {
   throw new Error("generated Notes manifest is invalid");
 }
 
 const expected = JSON.parse(await readFile(path.join(directory, "Notes.expected.json"), "utf8"));
-if (expected.storageKey !== "leanrx.notes" || expected.debounceMs !== 250) {
+if (
+  expected.storageKey !== "leanrx.notes" ||
+  expected.debounceMs !== 250 ||
+  expected.initialStatus !== "Not saved" ||
+  expected.waitingStatus !== "Waiting to save"
+) {
   throw new Error("native Notes command artifact drifted");
 }
 

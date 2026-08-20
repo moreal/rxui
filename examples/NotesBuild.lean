@@ -15,7 +15,9 @@ private def expectedJson : Except String String := do
     | .batch #[.cancel _, .none, .timeout _ delay _] => .ok delay
     | _ => .error "Notes edit did not cancel restore and schedule timeout"
   pure <| "{\"storageKey\":" ++ GraphSerialize.jsonString key ++
-    ",\"debounceMs\":" ++ toString delay.toNat ++ "}\n"
+    ",\"debounceMs\":" ++ toString delay.toNat ++
+    ",\"initialStatus\":" ++ GraphSerialize.jsonString (statusText initial) ++
+    ",\"waitingStatus\":" ++ GraphSerialize.jsonString (statusText edited.state) ++ "}\n"
 
 private def generateChecked (directory : System.FilePath) (checked : Spec.Checked) : IO Unit := do
   let emitted ← match Backend.Notes.emit "Notes.mjs" checked with

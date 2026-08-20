@@ -54,6 +54,43 @@ def run : IO Unit := do
   }))
   assertTrue (statusText failed.state == "Save failed: quota exceeded")
     "storage failure was not user-visible"
+  let retryEdit := update failed.state (.edit "retry")
+  assertTrue (statusText retryEdit.state == "Waiting to save")
+    "a new edit did not clear the stale save failure"
+  let retryHandle ← match pendingHandle retryEdit.state with
+    | some handle => pure handle
+    | none => throw <| IO.userError "retry edit did not schedule persistence"
+  let retrySaving := update retryEdit.state (.debounceFired retryHandle)
+  let retrySaveHandle ← match retrySaving.command with
+    | .storageSet handle "leanrx.notes" "retry" _ => pure handle
+    | _ => throw <| IO.userError "retry debounce did not return storageSet"
+  let retrySaved := update retrySaving.state (.stored retrySaveHandle (.ok ()))
+  assertTrue (statusText retrySaved.state == "Saved")
+    "successful retry did not clear the stale save failure"
+
+  let failingRestore := update initial .restore
+  let failingRestoreHandle ← match failingRestore.command with
+    | .storageGet handle "leanrx.notes" _ => pure handle
+    | _ => throw <| IO.userError "failing restore did not return storageGet"
+  let restoreFailed := update failingRestore.state (.restored failingRestoreHandle (.error {
+    code := "READ", message := "restore broke"
+  }))
+  let editAfterRestoreFailure := update restoreFailed.state (.edit "local")
+  let restoreRetryHandle ← match pendingHandle editAfterRestoreFailure.state with
+    | some handle => pure handle
+    | none => throw <| IO.userError "edit after restore failure did not schedule persistence"
+  let restoreRetrySaving := update editAfterRestoreFailure.state
+    (.debounceFired restoreRetryHandle)
+  let restoreSaveHandle ← match restoreRetrySaving.command with
+    | .storageSet handle "leanrx.notes" "local" _ => pure handle
+    | _ => throw <| IO.userError "restore-failure retry did not return storageSet"
+  let restoreRetrySaved := update restoreRetrySaving.state (.stored restoreSaveHandle (.ok ()))
+  assertTrue (statusText restoreRetrySaved.state == "Restore failed: restore broke")
+    "successful save incorrectly hid the independent restore failure"
+
+  assertTrue (match (Spec.create "").check with
+    | .error error => error.code == "LRX-PORT-501"
+    | .ok _ => false) "empty Notes spec returned the wrong diagnostic"
 
   let disposed := update saving.state .dispose
   assertTrue (disposed.state.disposed && match disposed.command with

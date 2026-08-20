@@ -23,7 +23,7 @@ test.beforeAll(async () => {
       const requested = new URL(request.url, "http://localhost").pathname.slice(1);
       if (requested === "") {
         response.setHeader("content-type", "text/html; charset=utf-8");
-        response.end("<!doctype html><html lang=\"en\"><head><title>Notes</title></head><body><div id=\"app\"></div><div id=\"second\"></div></body></html>");
+        response.end("<!doctype html><html lang=\"en\"><head><title>Notes</title></head><body><div id=\"app\"></div><div id=\"second\"></div><div id=\"third\"></div></body></html>");
       } else if (files.has(requested)) {
         response.setHeader(
           "content-type",
@@ -64,7 +64,7 @@ test("restores, debounces, reports storage errors, and cancels owned work", asyn
   const input = root.getByRole("textbox", { name: "Note" });
   const status = root.getByRole("status");
   await expect(input).toHaveValue("restored note");
-  await expect(status).toHaveText("Not saved");
+  await expect(status).toHaveText(expected.initialStatus);
   await expect(root.locator("img")).toHaveCount(0);
   expect(await page.evaluate(() => globalThis.notesXss)).toBeUndefined();
   const accessibility = await new AxeBuilder({ page }).analyze();
@@ -73,7 +73,7 @@ test("restores, debounces, reports storage errors, and cancels owned work", asyn
   await input.fill("first draft");
   await page.waitForTimeout(Math.floor(expected.debounceMs / 2));
   await input.fill("final draft");
-  await expect(status).toHaveText("Waiting to save");
+  await expect(status).toHaveText(expected.waitingStatus);
   expect(await page.evaluate(({ storageKey }) => localStorage.getItem(storageKey), expected))
     .toBe("restored note");
   await expect(status).toHaveText("Saved", { timeout: expected.debounceMs * 4 });
@@ -92,6 +92,9 @@ test("restores, debounces, reports storage errors, and cancels owned work", asyn
     timeout: expected.debounceMs * 4,
   });
   await page.evaluate(() => { Storage.prototype.setItem = globalThis.notesOriginalSetItem; });
+  await input.fill("recovered save");
+  await expect(status).toHaveText(expected.waitingStatus);
+  await expect(status).toHaveText("Saved", { timeout: expected.debounceMs * 4 });
 
   await page.evaluate(async () => {
     let resolveRestore;
@@ -105,6 +108,7 @@ test("restores, debounces, reports storage errors, and cancels owned work", asyn
   });
   const second = page.locator("#second .leanrx-notes");
   const secondInput = second.getByRole("textbox", { name: "Note" });
+  await expect(second.getByRole("status")).toHaveText(expected.initialStatus);
   await secondInput.fill("local wins");
   await page.evaluate(() => globalThis.resolveNotesRestore("stale restore"));
   await page.waitForTimeout(0);
@@ -118,5 +122,24 @@ test("restores, debounces, reports storage errors, and cancels owned work", asyn
     .toBe(beforeDispose);
   expect(await page.evaluate(() => globalThis.secondNotesDispose.effectInstrumentation()[1]))
     .toBeGreaterThanOrEqual(2);
+
+  await page.evaluate(async () => {
+    const storage = {
+      getItem: () => { throw new Error("restore broke"); },
+      setItem: (key, value) => localStorage.setItem(key, value),
+    };
+    const { mount } = await import("/Notes.mjs");
+    globalThis.thirdNotesDispose = mount(document.getElementById("third"), { storage });
+  });
+  const third = page.locator("#third .leanrx-notes");
+  const thirdInput = third.getByRole("textbox", { name: "Note" });
+  const thirdStatus = third.getByRole("status");
+  await expect(thirdStatus).toHaveText("Restore failed: restore broke");
+  await thirdInput.fill("saved despite restore failure");
+  await page.waitForTimeout(expected.debounceMs * 2);
+  await expect(thirdStatus).toHaveText("Restore failed: restore broke");
+  expect(await page.evaluate(({ storageKey }) => localStorage.getItem(storageKey), expected))
+    .toBe("saved despite restore failure");
+  await page.evaluate(() => globalThis.thirdNotesDispose());
   expect(pageErrors).toEqual([]);
 });
