@@ -601,6 +601,13 @@ storage read was pending. Editing now cancels the restore resource and transitio
 it out of loading, with native and Chromium regressions. Runtime prototyping also
 showed that single-argument promise callbacks would require generated closures;
 the host now delivers explicit state, context, handle, and typed result values.
+Independent review found that the first emitter shared one error slot between
+restore and save: a new edit retained a stale save failure, while a later save
+could erase a restore failure that the pure reducer retained. Restore and save
+errors now have independent slots and native-derived status artifacts drive the
+browser assertions. The same review caught cancellation calls occurring before
+state/render; generated handlers now finish the pure phase before interpreting
+the ordered cancel-and-start command batch.
 
 ### Security and accessibility checks
 
@@ -657,10 +664,14 @@ behavior.
 The first foreign-port draft assumed every input and output had a scalar runtime
 representation, which could not describe `IssuePage` without weakening the
 reactive ABI. Structured wire metadata is now isolated from reactive equality,
-and the generated manifest locks the exact decoder contract. The focused browser
-path also made cancellation semantics concrete: removing an owned handle before
-aborting ensures even an adapter that resolves after cancellation cannot deliver
-stale data.
+and type-indexed `PortRep` evidence plus nominal wrappers prevent mismatched wire
+metadata. The generated manifest now locks the exact response-to-page decoder
+contract. Independent review also found native/JavaScript safe-ID drift,
+same-page and cross-page duplicate keys, stale completion after numeric-handle
+reuse, reentrant/throwing cancellation, and partial cleanup after a cancel throw.
+Exact native, fake-host, and Chromium regressions now cover each case. Ownership
+is removed before cancellation, completion is bound to its exact entry, and
+cleanup failures are normalized without skipping the base disposer.
 
 ### Security and accessibility checks
 
@@ -674,11 +685,12 @@ and no promise rejection reaches the page.
 
 ### Performance observations
 
-The defining scenario records the exact effect snapshot `[10,2]`: ten HTTP
+The defining scenario records the exact effect snapshot `[13,2]`: thirteen HTTP
 commands start, one delayed request is cancelled by a newer query, and one is
-cancelled by component disposal. Pagination retains the first keyed issue and
-mounts only the new page. These are deterministic ownership/work counters, not a
-network throughput claim.
+cancelled by component disposal. The additional requests exercise same-page and
+cross-page duplicate rejection without committing invalid keyed state.
+Pagination retains the first keyed issue and mounts only the new page. These are
+deterministic ownership/work counters, not a network throughput claim.
 
 ### Follow-up issue or commit
 

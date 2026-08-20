@@ -24,7 +24,10 @@ result, and generated delivery function. HTTP requests carry method, URL, and
 query pairs separately until the host applies `URLSearchParams`. Foreign ports
 declare deterministic input/output wire metadata, sync/async mode, cancellation,
 errors, trust, and security notes. Structured port types are deliberately
-separate from `RuntimeTypeId` and reactive equality.
+separate from `RuntimeTypeId` and reactive equality, and type-indexed `PortRep`
+evidence prevents a caller from attaching record/array metadata to an unrelated
+Lean payload. Generated update handlers commit state and render before
+interpreting the returned ordered command batch.
 
 ## Consequences
 
@@ -38,7 +41,10 @@ a formal backend proof.
 ## Validation
 
 Runtime tests cover success, error, replacement, abort, missing foreign ports,
-rejected promises, and disposal without unhandled rejection. Notes and Issue
-Browser cover owned commands through public APIs in Chromium. Every generated
-artifact is built twice and byte-compared, and every manifest consumer requires
-ABI 6.
+hostile rejected promises, reentrant/throwing/rejected cancellation callbacks,
+delivery failure, and disposal without unhandled rejection. Entry-identity tests
+also ensure stale completion from a reused numeric handle cannot affect its
+replacement. Notes and Issue Browser cover owned commands through public APIs in
+Chromium, including independent persistence failures and duplicate keyed data.
+Every generated artifact is built twice and byte-compared, and every manifest
+consumer requires ABI 6.

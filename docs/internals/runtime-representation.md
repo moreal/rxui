@@ -90,7 +90,9 @@ application updates.
 ABI 6 appends owned-command start and cancellation counters to the standard
 copied instrumentation snapshot. Effect adapters receive explicit state,
 context, handle, decoder, and delivery functions; structured foreign-port wire
-types remain manifest-only and cannot enter the scalar reactive ABI.
+types remain manifest-only and cannot enter the scalar reactive ABI. Their
+type-indexed `PortRep` evidence and nominal `PortRecord` wrappers keep manifest
+metadata aligned with the Lean input/output signature.
 
 Dynamic-region manifests use a separate `ManifestTypeId` for metadata-only
 `record<name>` and `list<element>` slot descriptions. Those constructors cannot

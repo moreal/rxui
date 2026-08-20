@@ -14,7 +14,12 @@ older operation with the same handle; replacement, explicit cancellation, and
 component disposal remove ownership before invoking the platform cancel action.
 Any promise that resolves afterward finds no owned entry and cannot deliver.
 Every rejection becomes an `Effect.Error`; no promise rejection is intentionally
-left unobserved.
+left unobserved. Completion is bound to the exact owned entry, not only its
+numeric handle, so a non-cooperative replaced operation cannot delete or deliver
+through a newer operation that reused the handle. Cancel callbacks run only
+after ownership removal. Throws and rejected cancel promises are normalized into
+the effect host's copied `errors()` observation rather than interrupting cleanup;
+the ordinary DOM/region disposer still runs.
 
 `Resource α` explicitly represents idle, loading, success, failure, and
 cancelled states. `settle` and `cancel` change a loading resource only for the
@@ -53,22 +58,31 @@ constructor and declares:
 - deterministic native mock.
 
 `PortTypeId` is deliberately separate from sealed reactive `RuntimeTypeId`.
-Structured array/record wire descriptions therefore cannot create new reactive
-equality plans or make arbitrary Lean structures browser-lowerable. Component
+Callers supply a type-indexed `PortRep α`; nominal `PortRecord name α` wrappers
+tie record metadata to the corresponding Lean payload, and a compile-fail gate
+rejects mismatched descriptions. Structured array/record wire descriptions
+therefore cannot create new reactive equality plans, lie about the declared Lean
+signature, or make arbitrary Lean structures browser-lowerable. Component
 manifests serialize the complete consumed-port declaration in stable field order.
-The Issue Browser decoder port validates response status, JSON shape, safe
-natural IDs, string titles, and pagination metadata before returning the
-backend-owned issue-array layout.
+The Issue Browser decoder port consumes an explicit `record<HttpResponse>` and
+produces `record<IssuePage>`. Native and JavaScript validation agree on response
+status, JSON shape, unique IDs in the JavaScript safe-integer range, string
+titles, and pagination metadata; the reducer checks uniqueness again after
+cross-page concatenation before committing keyed state.
 
 ## Evidence and remaining TCB
 
 The test-owned native command interpreter covers every `Cmd` constructor with
 deterministic storage, HTTP, foreign, batch, cancellation, and timeout behavior.
-Pure Notes and Issue Browser tests cover restore/debounce/error, stale results,
-pagination, retry, and disposal. Fake-host JavaScript tests cover fulfilled and
-rejected promises, missing ports, explicit cancellation, abort, and disposal.
-Generated artifacts are byte-deterministic; Chromium exercises public Notes and
-Issue Browser applications with hostile text and accessibility assertions.
+Pure Notes and Issue Browser tests cover restore/debounce/error, independent
+restore/save failures, stale results, pagination, duplicate-key rejection, retry,
+and disposal. Native-derived artifacts expose representative status transitions
+that Chromium consumes. Fake-host JavaScript tests cover fulfilled and hostile
+rejected promises, same-handle replacement, missing ports, explicit/reentrant/
+throwing cancellation, rejected cancel promises, abort, delivery failure, and
+disposal without unhandled rejection. Generated artifacts are byte-deterministic;
+Chromium exercises public Notes and Issue Browser applications with hostile text,
+duplicate page data, and accessibility assertions.
 
 These gates do not constitute a formal proof of command extraction or browser
 behavior. Specialized backend state-machine agreement, JavaScript array/object
