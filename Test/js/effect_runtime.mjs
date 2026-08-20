@@ -138,13 +138,24 @@ const duplicateId = decodeIssueResponse({
   status: 200,
   body: '{"issues":[{"id":1,"title":"a"},{"id":1,"title":"b"}],"hasMore":false}',
 });
+const exponentIds = decodeIssueResponse({
+  status: 200,
+  body: '{"issues":[{"id":1e3,"title":"exponent"},{"id":-0,"title":"zero"}],"hasMore":false}',
+});
+const fractionalIds = ["1.0", "1.0000000000000001", "9007199254740990.5"].map((id) =>
+  decodeIssueResponse({
+    status: 200,
+    body: `{"issues":[{"id":${id},"title":"fractional"}],"hasMore":false}`,
+  }));
 if (JSON.stringify(decoded) !==
     '{"ok":true,"value":[[[7,"typed"]],true]}' ||
     invalid.error.code !== "LRX-PORT-302" ||
     statusFailure.error.code !== "LRX-PORT-303" ||
     maximumId.value[0][0][0] !== Number.MAX_SAFE_INTEGER ||
     unsafeId.error.code !== "LRX-PORT-302" ||
-    duplicateId.error.code !== "LRX-PORT-304") {
+    duplicateId.error.code !== "LRX-PORT-304" ||
+    JSON.stringify(exponentIds.value[0].map(([id]) => id)) !== "[1000,0]" ||
+    fractionalIds.some((result) => result.error?.code !== "LRX-PORT-302")) {
   throw new Error("issue decoder port drifted from its typed wire contract");
 }
 
@@ -172,22 +183,89 @@ if (replacementCancels !== 1 || JSON.stringify(replacementDelivered) !== '["fres
   throw new Error("same-handle replacement accepted a stale operation completion");
 }
 
+let reentrantReplacementRuntime;
+let oldReplacementCancelled = 0;
+let nestedReplacementCancelled = 0;
+let replacementRuns = 0;
+const reentrantReplacementMetrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
+const neverSettles = () => new Promise(() => {});
+reentrantReplacementRuntime = createEffectRuntime(reentrantReplacementMetrics, { ports: {
+  old: { run: () => ({
+    promise: neverSettles(),
+    cancel: () => {
+      oldReplacementCancelled += 1;
+      reentrantReplacementRuntime.foreign(
+        "same", "nested", null, null, null, () => {},
+      );
+    },
+  }) },
+  nested: { run: () => ({
+    promise: neverSettles(),
+    cancel: () => { nestedReplacementCancelled += 1; },
+  }) },
+  replacement: { run: () => {
+    replacementRuns += 1;
+    return neverSettles();
+  } },
+} });
+reentrantReplacementRuntime.foreign("same", "old", null, null, null, () => {});
+reentrantReplacementRuntime.foreign("same", "replacement", null, null, null, () => {});
+reentrantReplacementRuntime.dispose();
+if (oldReplacementCancelled !== 1 || nestedReplacementCancelled !== 1 ||
+    replacementRuns !== 0 ||
+    JSON.stringify(reentrantReplacementRuntime.instrumentation()) !== "[3,3]") {
+  throw new Error("reentrant same-handle replacement orphaned an owned operation");
+}
+
 const failureMetrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
 const failureRuntime = createEffectRuntime(failureMetrics, {
   fetch: () => Promise.reject(new Error("network down")),
-  ports: { rejecting: { run: () => Promise.reject(Object.create(null)) } },
+  setTimeout: () => { throw new Error("timer unavailable"); },
+  ports: {
+    rejecting: { run: () => Promise.reject(Object.create(null)) },
+    throwing: { run: () => { throw Object.create(null); } },
+    delivery: { run: () => "delivered" },
+  },
 });
 const failures = [];
 const failureDeliver = (_, __, handle, result) => failures.push([handle, result]);
 failureRuntime.foreign("missing", "absent", null, null, null, failureDeliver);
 failureRuntime.foreign("rejecting", "rejecting", null, null, null, failureDeliver);
+failureRuntime.foreign("throwing", "throwing", null, null, null, failureDeliver);
 failureRuntime.http("network", "GET", "/network", [], null, null, null, failureDeliver);
+failureRuntime.foreign("delivery", "delivery", null, null, null, () => {
+  throw new Error("delivery exploded");
+});
+failureRuntime.timeout("timer", 1, null, null, failureDeliver);
 await drain();
 const failureCodes = failures.map(([, result]) => result.error.code).sort();
 if (JSON.stringify(failureCodes) !==
-      '["LRX-PORT-301","LRX-PORT-401","LRX-PORT-402"]' ||
+      '["LRX-PORT-301","LRX-PORT-401","LRX-PORT-402","LRX-PORT-402"]' ||
+    JSON.stringify(failureRuntime.errors().map((error) => error.code).sort()) !==
+      '["LRX-PORT-203","LRX-PORT-901"]' ||
     unhandled.length !== 0) {
   throw new Error(`effect failures escaped or drifted: ${JSON.stringify(failureCodes)}`);
+}
+
+const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  get: () => { throw new DOMException("blocked", "SecurityError"); },
+});
+const blockedStorageMetrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
+const blockedStorageRuntime = createEffectRuntime(blockedStorageMetrics);
+let blockedStorageResult;
+blockedStorageRuntime.storageGet("blocked", "leanrx.notes", null, null,
+  (_, __, ___, result) => { blockedStorageResult = result; });
+await drain();
+if (localStorageDescriptor) {
+  Object.defineProperty(globalThis, "localStorage", localStorageDescriptor);
+} else {
+  delete globalThis.localStorage;
+}
+if (blockedStorageResult?.error?.code !== "LRX-PORT-201" ||
+    blockedStorageResult.error.message !== "blocked") {
+  throw new Error("blocked Web Storage did not become a visible owned error result");
 }
 
 let cleanupRuntime;

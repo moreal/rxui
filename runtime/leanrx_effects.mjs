@@ -22,12 +22,12 @@ function queryUrl(request) {
 
 export function createEffectRuntime(metrics, adapters = {}) {
   const owned = new Map();
-  const storage = adapters.storage ?? globalThis.localStorage;
-  const fetchImpl = adapters.fetch ?? globalThis.fetch;
-  const ports = adapters.ports ?? {};
-  const setTimer = adapters.setTimeout ?? globalThis.setTimeout;
-  const clearTimer = adapters.clearTimeout ?? globalThis.clearTimeout;
-  const onError = typeof adapters.onError === "function" ? adapters.onError : null;
+  let onError = null;
+  try {
+    if (typeof adapters.onError === "function") onError = adapters.onError;
+  } catch {
+    // A hostile optional observer cannot prevent construction of the owned host.
+  }
   const errors = [];
   let disposed = false;
 
@@ -53,11 +53,15 @@ export function createEffectRuntime(metrics, adapters = {}) {
 
   function begin(handle, cancel, state, context, deliver) {
     if (disposed) return null;
-    cancelHandle(handle);
+    const previous = owned.get(handle);
     const entry = { cancel, state, context, deliver };
     owned.set(handle, entry);
     metrics[8] += 1;
-    return entry;
+    if (previous) {
+      metrics[9] += 1;
+      invokeCancel(previous);
+    }
+    return !disposed && owned.get(handle) === entry ? entry : null;
   }
 
   function finish(handle, entry, deliver, result) {
@@ -81,9 +85,13 @@ export function createEffectRuntime(metrics, adapters = {}) {
 
   function timeout(handle, delayMs, state, context, deliver) {
     let timer = null;
-    const entry = begin(handle, () => clearTimer(timer), state, context, deliver);
+    const entry = begin(handle, () => {
+      const clearTimer = adapters.clearTimeout ?? globalThis.clearTimeout;
+      clearTimer(timer);
+    }, state, context, deliver);
     if (!entry) return;
     try {
+      const setTimer = adapters.setTimeout ?? globalThis.setTimeout;
       timer = setTimer(() => finish(handle, entry, null, { ok: true, value: null }), delayMs);
     } catch (error) {
       if (owned.get(handle) === entry) owned.delete(handle);
@@ -95,7 +103,7 @@ export function createEffectRuntime(metrics, adapters = {}) {
     const entry = begin(handle, () => {}, state, context, deliver);
     if (!entry) return;
     Promise.resolve()
-      .then(() => storage.getItem(key))
+      .then(() => (adapters.storage ?? globalThis.localStorage).getItem(key))
       .then((value) => finish(handle, entry, null, {
         ok: true,
         value: value === null ? { kind: "missing" } : { kind: "found", value },
@@ -110,7 +118,7 @@ export function createEffectRuntime(metrics, adapters = {}) {
     const entry = begin(handle, () => {}, state, context, deliver);
     if (!entry) return;
     Promise.resolve()
-      .then(() => storage.setItem(key, value))
+      .then(() => (adapters.storage ?? globalThis.localStorage).setItem(key, value))
       .then(() => finish(handle, entry, null, { ok: true, value: null }))
       .catch((error) => finish(handle, entry, null, {
         ok: false,
@@ -123,7 +131,7 @@ export function createEffectRuntime(metrics, adapters = {}) {
     const entry = begin(handle, () => controller.abort(), state, context, deliver);
     if (!entry) return;
     Promise.resolve()
-      .then(() => fetchImpl(queryUrl({ url, query }), {
+      .then(() => (adapters.fetch ?? globalThis.fetch)(queryUrl({ url, query }), {
         method,
         signal: controller.signal,
       }))
@@ -146,7 +154,17 @@ export function createEffectRuntime(metrics, adapters = {}) {
   }
 
   function foreign(handle, name, input, state, context, deliver) {
-    const port = ports[name];
+    let port;
+    try {
+      port = (adapters.ports ?? {})[name];
+    } catch (error) {
+      const entry = begin(handle, () => {}, state, context, deliver);
+      if (entry) finish(handle, entry, null, {
+        ok: false,
+        error: effectError("LRX-PORT-402", error),
+      });
+      return;
+    }
     if (!port || typeof port.run !== "function") {
       const entry = begin(handle, () => {}, state, context, deliver);
       if (!entry) return;

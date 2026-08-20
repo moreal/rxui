@@ -51,6 +51,18 @@ def run : IO Unit := do
     | .error error => error.code == "LRX-PORT-302"
     | .ok _ => false) "unsafe JavaScript issue ID was accepted natively"
   assertTrue (match decodePage
+      "{\"issues\":[{\"id\":1e3,\"title\":\"exponent\"},{\"id\":-0,\"title\":\"zero\"}],\"hasMore\":false}" with
+    | .ok page => page.issues.map (·.id) == #[1000, 0]
+    | .error _ => false) "exact natural exponent or negative-zero issue ID was rejected"
+  for body in [
+      "{\"issues\":[{\"id\":1.0,\"title\":\"decimal\"}],\"hasMore\":false}",
+      "{\"issues\":[{\"id\":1.0000000000000001,\"title\":\"rounded\"}],\"hasMore\":false}",
+      "{\"issues\":[{\"id\":9007199254740990.5,\"title\":\"rounded max\"}],\"hasMore\":false}"
+    ] do
+    assertTrue (match decodePage body with
+      | .error error => error.code == "LRX-PORT-302"
+      | .ok _ => false) s!"fractional issue ID was accepted natively: {body}"
+  assertTrue (match decodePage
       "{\"issues\":[{\"id\":1,\"title\":\"a\"},{\"id\":1,\"title\":\"b\"}],\"hasMore\":false}" with
     | .error error => error.code == "LRX-PORT-304"
     | .ok _ => false) "duplicate issue IDs were accepted within one page"
