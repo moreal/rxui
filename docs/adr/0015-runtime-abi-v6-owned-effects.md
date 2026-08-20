@@ -44,7 +44,9 @@ Runtime tests cover success, error, replacement, abort, missing foreign ports,
 hostile rejected promises, reentrant/throwing/rejected cancellation callbacks,
 delivery failure, and disposal without unhandled rejection. Entry-identity tests
 also ensure stale completion from a reused numeric handle cannot affect its
-replacement. Notes and Issue Browser cover owned commands through public APIs in
-Chromium, including independent persistence failures and duplicate keyed data.
+replacement, and that a cancel callback cannot orphan reentrant same-handle work.
+Blocked Web Storage access is delivered as a typed error. Notes and Issue Browser
+cover owned commands through public APIs in Chromium, including independent
+persistence failures and duplicate keyed data.
 Every generated artifact is built twice and byte-compared, and every manifest
 consumer requires ABI 6.

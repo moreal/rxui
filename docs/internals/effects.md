@@ -67,8 +67,11 @@ manifests serialize the complete consumed-port declaration in stable field order
 The Issue Browser decoder port consumes an explicit `record<HttpResponse>` and
 produces `record<IssuePage>`. Native and JavaScript validation agree on response
 status, JSON shape, unique IDs in the JavaScript safe-integer range, string
-titles, and pagination metadata; the reducer checks uniqueness again after
-cross-page concatenation before committing keyed state.
+titles, and pagination metadata. The browser decoder preserves JSON number
+lexemes before ordinary parsing so fractional values cannot round into accepted
+integer IDs; paired native/JavaScript fixtures include exponents, decimal forms,
+precision boundaries, and the maximum safe ID. The reducer checks uniqueness
+again after cross-page concatenation before committing keyed state.
 
 ## Evidence and remaining TCB
 
@@ -80,7 +83,8 @@ and disposal. Native-derived artifacts expose representative status transitions
 that Chromium consumes. Fake-host JavaScript tests cover fulfilled and hostile
 rejected promises, same-handle replacement, missing ports, explicit/reentrant/
 throwing cancellation, rejected cancel promises, abort, delivery failure, and
-disposal without unhandled rejection. Generated artifacts are byte-deterministic;
+disposal without unhandled rejection. Blocked Web Storage acquisition becomes a
+visible restore error rather than aborting mount. Generated artifacts are byte-deterministic;
 Chromium exercises public Notes and Issue Browser applications with hostile text,
 duplicate page data, and accessibility assertions.
 

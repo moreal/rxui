@@ -669,9 +669,14 @@ metadata. The generated manifest now locks the exact response-to-page decoder
 contract. Independent review also found native/JavaScript safe-ID drift,
 same-page and cross-page duplicate keys, stale completion after numeric-handle
 reuse, reentrant/throwing cancellation, and partial cleanup after a cancel throw.
-Exact native, fake-host, and Chromium regressions now cover each case. Ownership
-is removed before cancellation, completion is bound to its exact entry, and
-cleanup failures are normalized without skipping the base disposer.
+Review then sharpened those cases: lossy `JSON.parse` numbers admitted fractional
+IDs that rounded to integers, reentrant replacement could orphan a nested
+same-handle command, and eagerly reading blocked Web Storage could abort mount.
+The decoder now preserves number lexemes, replacement installs an ownership
+reservation before cancellation, and storage acquisition occurs inside the
+owned error path. Exact native, fake-host, and Chromium regressions cover these
+contracts. Ownership is removed before cancellation, completion is bound to its
+exact entry, and cleanup failures are normalized without skipping the base disposer.
 
 ### Security and accessibility checks
 
