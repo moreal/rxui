@@ -793,3 +793,68 @@ complexity, and limitations are recorded in
 ### Follow-up issue or commit
 
 `docs(delta): keep structural deltas opt-in`
+
+## LeanRx documentation site — self-hosting and learnability
+
+### Scenario exercised
+
+The public component API builds a seven-page documentation application covering
+the introduction, Counter, static graphs, dependent Tabs, effects/resources,
+limitations, and a generated graph viewer. One checked page source drives three
+derived text values and three direct text sinks. Seven native buttons traverse
+the complete defining scenario, and the build atomically publishes its module,
+manifest, JSON/DOT/script-free HTML graphs, editor declarations, production HTML
+shell, stylesheet, and the two required host modules. No application handwritten
+reactivity or another frontend framework sits between the component and browser.
+
+### What was pleasant
+
+Static page selection is ordinary dependency-indexed scalar code, so all content
+changes have an explicit graph and deterministic work trace. The same checked
+graph feeds the embedded inert DOT page, CLI output, and accessible standalone
+HTML card viewer. Generated declaration aliases make the syntax-produced schema,
+surface inventory, spec, and validation result inspectable in an editor. Atomic
+publication and the closed text-node path made a small production-shaped bundle
+possible without widening the runtime.
+
+### Friction and missing features
+
+LeanRx has no URL/history router, so page selection is component state and a
+reload returns to the introduction. The closed view vocabulary has no semantic
+`nav`, links, code/preformatted blocks, lists, sections, or typed CSS capability;
+the dogfood therefore uses a `main`, a layout `div`, native buttons, paragraphs,
+and a deliberately small external stylesheet. There is no general Virtual DOM,
+arbitrary Lean transpiler, raw HTML, URL attribute, SSR, hydration, or formal
+proof of the JavaScript/DOM connection. The generated graph viewer is static and
+script-free rather than an interactive graph explorer. These boundaries are
+shown on the Limitations page instead of being hidden behind another framework.
+
+### Bugs found
+
+The first component surface used `view` as both the declaration keyword and the
+local value name, which the scoped macro grammar rejected. Renaming the value to
+`docsView` keeps the generated surface unambiguous. The first browser assertion
+also applied a strict single-element attribute matcher to all seven buttons;
+the permanent regression now checks every button explicitly. No framework
+runtime defect was required to complete the site.
+
+### Security and accessibility checks
+
+All navigation actions are native `type=button` controls and keyboard activation
+opens Counter. The site has one `main`/`h1` content structure, visible focus, a
+responsive layout, and a populated axe scan with zero automated violations.
+Hostile Limitations text containing an image/onerror payload stays literal,
+creates no element, and executes nothing. The standalone graph HTML contains no
+script, generated modules contain no raw-HTML/dynamic-code escape, two mounts are
+isolated, and disposal removes listeners idempotently.
+
+### Performance observations
+
+The defining seven-page traversal has the exact standard snapshot
+`[0,7,7,21,21,21,21]`: seven outer transactions/source writes, three derived
+evaluations and changes per real page change, and three sink evaluations/DOM
+writes per page. This is a deterministic work contract, not a latency claim.
+
+### Follow-up issue or commit
+
+`example(docs): dogfood LeanRx documentation site`

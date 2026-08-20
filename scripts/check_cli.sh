@@ -3,6 +3,7 @@ set -euo pipefail
 
 workspace="$(mktemp -d)"
 output="$workspace/dist"
+docs_output="$workspace/docs"
 trap 'rm -rf -- "$workspace"' EXIT
 
 check_output="$(lake exe leanrx -- check Examples.Counter)"
@@ -25,6 +26,23 @@ if [[ "$build_output" != *"build Examples.Counter"* ||
 fi
 node Test/js/component_artifacts.mjs "$output"
 lake env lean "$output/Counter.generated.lean"
+
+docs_check_output="$(lake exe leanrx -- check Examples.LeanRxDocs)"
+if [[ "$docs_check_output" != *"graph: 7 nodes / 7 scheduled"* ||
+      "$docs_check_output" != *"values: 1 source / 3 derived"* ||
+      "$docs_check_output" != *"view: 3 text sinks / 7 events"* ||
+      "$docs_check_output" != *"result: ok"* ]]; then
+  echo "LeanRx docs check output changed: $docs_check_output" >&2
+  exit 1
+fi
+lake exe leanrx -- build Examples.LeanRxDocs --out "$docs_output"
+node Test/js/docs_artifacts.mjs "$docs_output"
+lake env lean "$docs_output/LeanRxDocs.generated.lean"
+lake exe leanrx -- graph Examples.LeanRxDocs --format html > "$docs_output/cli.graph.html"
+if ! diff -u "$docs_output/LeanRxDocs.graph.html" "$docs_output/cli.graph.html"; then
+  echo "LeanRx docs CLI graph differs from its build artifact" >&2
+  exit 1
+fi
 
 lake exe leanrx -- graph Examples.Counter --format json > "$output/cli.graph.json"
 if ! diff -u "$output/Counter.graph.json" "$output/cli.graph.json"; then

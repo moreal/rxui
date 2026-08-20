@@ -31,6 +31,7 @@ import Test.View.Model
 import Test.Component.Model
 import Test.Component.Dependent
 import Test.Component.DiamondLab
+import Test.Component.DocsSite
 import Test.Form.Validation
 import Test.Form.Dom
 import Test.Form.Temperature
@@ -94,6 +95,7 @@ def main : IO Unit := do
   LeanRxTest.Component.Model.run
   LeanRxTest.Component.Dependent.run
   LeanRxTest.Component.DiamondLab.run
+  LeanRxTest.Component.DocsSite.run
   LeanRxTest.Form.Validation.run
   LeanRxTest.Form.Dom.run
   LeanRxTest.Form.Temperature.run

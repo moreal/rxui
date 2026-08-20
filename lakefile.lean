@@ -35,6 +35,7 @@ lean_lib LeanRxTest where
     `Test.Component.Model,
     `Test.Component.Dependent,
     `Test.Component.DiamondLab,
+    `Test.Component.DocsSite,
     `Test.Form.Validation,
     `Test.Form.Dom,
     `Test.Form.Temperature,
@@ -64,7 +65,8 @@ lean_lib LeanRxExamples where
     `examples.TemperatureConverterBuild, `examples.ValidatedForm,
     `examples.ValidatedFormBuild, `examples.TodoMVC, `examples.TodoMVCBuild,
     `examples.Notes, `examples.NotesBuild, `examples.IssueBrowser,
-    `examples.IssueBrowserBuild, `examples.DataGrid, `examples.DataGridBuild]
+    `examples.IssueBrowserBuild, `examples.DataGrid, `examples.DataGridBuild,
+    `examples.LeanRxDocs, `examples.LeanRxDocsBuild]
 
 @[default_target]
 lean_exe leanrx_test where
@@ -111,6 +113,9 @@ lean_exe leanrx_issue_browser_js where
 
 lean_exe leanrx_data_grid_js where
   root := `examples.DataGridMain
+
+lean_exe leanrx_docs_js where
+  root := `examples.LeanRxDocsMain
 
 lean_exe leanrx_graph_bench where
   root := `bench.SmallGraph

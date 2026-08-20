@@ -11,6 +11,7 @@ todo_output="$workspace/todo"
 notes_output="$workspace/notes"
 issue_browser_output="$workspace/issues"
 grid_output="$workspace/grid"
+docs_output="$workspace/docs"
 trap 'rm -rf -- "$workspace"' EXIT
 
 lake exe leanrx_counter_js -- "$output"
@@ -22,6 +23,7 @@ lake exe leanrx_todo_js -- "$todo_output"
 lake exe leanrx_notes_js -- "$notes_output"
 lake exe leanrx_issue_browser_js -- "$issue_browser_output"
 lake exe leanrx_data_grid_js -- "$grid_output"
+lake exe leanrx_docs_js -- "$docs_output"
 LEANRX_BROWSER_DIST="$output" LEANRX_DIAMOND_DIST="$diamond_output" \
   LEANRX_TABS_DIST="$tabs_output" \
   LEANRX_TEMPERATURE_DIST="$temperature_output" \
@@ -30,6 +32,7 @@ LEANRX_BROWSER_DIST="$output" LEANRX_DIAMOND_DIST="$diamond_output" \
   LEANRX_NOTES_DIST="$notes_output" \
   LEANRX_ISSUE_BROWSER_DIST="$issue_browser_output" \
   LEANRX_GRID_DIST="$grid_output" \
+  LEANRX_DOCS_DIST="$docs_output" \
   corepack pnpm exec playwright test --grep-invert "@grid"
 # The 10k workload gets a fresh Chromium process so its DOM/GC pressure cannot
 # make unrelated browser acceptance tests depend on execution order.

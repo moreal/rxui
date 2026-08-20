@@ -1,13 +1,12 @@
 import LeanRx.Cli.AtomicOutput
 import LeanRx.Cli.Model
 import examples.CounterBuild
+import examples.LeanRxDocsBuild
 
 namespace LeanRx.Cli.Driver
 
 open LeanRxExamples.Counter
-
-private def knownModule (moduleName : String) : Bool :=
-  moduleName == "Examples.Counter"
+open LeanRxExamples.LeanRxDocs
 
 private def unknownModule (moduleName : String) : IO UInt32 := do
   IO.eprintln s!"error[LRX-ELAB-020]: unknown component module {moduleName}"
@@ -38,8 +37,8 @@ private def checkComponent (moduleName : String) (checked : CheckedComponent Γ)
       IO.println "  result: ok"
       pure 0
 
-private def graphCounter (format : Cli.GraphFormat)
-    (checked : CheckedComponent CounterSchema) : IO UInt32 := do
+private def graphComponent (format : Cli.GraphFormat)
+    (checked : CheckedComponent Γ) : IO UInt32 := do
   IO.println <| match format with
     | .json => checked.graph.toJson
     | .dot => checked.graph.toDot
@@ -160,20 +159,35 @@ private def explain (code : String) : IO UInt32 :=
 
 private def runKnown : Cli.Command → IO UInt32
   | .check moduleName =>
-      if knownModule moduleName then
+      if moduleName == "Examples.Counter" then
         match CounterSyntax_check with
+        | .ok checked => checkComponent moduleName checked
+        | .error error => componentError error
+      else if moduleName == "Examples.LeanRxDocs" then
+        match LeanRxDocsSyntax_check with
         | .ok checked => checkComponent moduleName checked
         | .error error => componentError error
       else unknownModule moduleName
   | .graph moduleName format =>
-      if knownModule moduleName then
+      if moduleName == "Examples.Counter" then
         match CounterSyntax_check with
-        | .ok checked => graphCounter format checked
+        | .ok checked => graphComponent format checked
+        | .error error => componentError error
+      else if moduleName == "Examples.LeanRxDocs" then
+        match LeanRxDocsSyntax_check with
+        | .ok checked => graphComponent format checked
         | .error error => componentError error
       else unknownModule moduleName
   | .build moduleName output =>
-      if knownModule moduleName then do
+      if moduleName == "Examples.Counter" then do
         LeanRxExamples.CounterBuild.generate ⟨output⟩
+        IO.println s!"build {moduleName}"
+        IO.println s!"  output: {output}"
+        IO.println "  publication: atomic versioned bundle"
+        IO.println "  result: ok"
+        pure 0
+      else if moduleName == "Examples.LeanRxDocs" then do
+        LeanRxExamples.LeanRxDocsBuild.generate ⟨output⟩
         IO.println s!"build {moduleName}"
         IO.println s!"  output: {output}"
         IO.println "  publication: atomic versioned bundle"
