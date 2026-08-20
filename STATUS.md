@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-M9 — Commands, resources, and foreign ports
+M10 — Structural deltas and the 10k-row data-grid experiment
 
 ## Last green commit
 
-`7b7ecae fix(todo): align reference and browser semantics`
+`26b362e docs(port): record bounded issue number grammar`
 
 ## Baseline (2026-08-19, Asia/Seoul)
 
@@ -211,23 +211,52 @@ M9 — Commands, resources, and foreign ports
   modes, deterministic six-application artifacts, local-region host checks, fourteen
   Chromium tests, benchmark, compile-fail, 127-file placeholder, and 56-file
   semantic-safety gates passed; the clone remained clean.
+- Completed M9's typed commands and ordered batches, opaque cancellation handles,
+  explicit resource ownership, stale-result rejection lemmas, deterministic native
+  mocks, injected timer/storage/HTTP/foreign adapters, and ABI-6 copied effect
+  instrumentation.
+- Added indexed port representation evidence and nominal structured wire types
+  without weakening the closed reactive runtime/equality ABI. Generated manifests
+  name exact input/output records, host imports, error codes, ownership features,
+  and versioned runtime contracts.
+- Built Notes and Issue Browser entirely through public APIs. Notes exercises
+  restore, debounced replacement, persistence errors, late-result suppression,
+  ordered cancellation, and disposal. Issue Browser exercises encoded queries,
+  retry, pagination, keyed append, non-200/decoder failures, replacement, stale
+  delivery suppression, and abort-on-disposal.
+- Hardened the effect host against same-handle replacement, reentrant/throwing/
+  rejected cancellation, hostile rejection values, blocked storage acquisition,
+  throwing delivery, throwing timer setup, and synchronous/rejected foreign ports.
+  Ownership is removed before cleanup and every base disposer still runs once.
+- Added exact native/JavaScript Issue decoder agreement for integer JSON lexemes,
+  safe-ID bounds, fractional rounding cases, same-page/cross-page uniqueness, and
+  pagination BigInts. Both sides reject exponent magnitudes above 16 before the
+  general JSON parser, preventing the reviewed Lean exponentiation panic/DoS path.
+- Review permanently regressed shared Notes lifecycle errors, cancel-before-render
+  ordering, false port manifests, unsafe IDs, duplicate keyed issues, stale numeric
+  handle completion, orphaned reentrant replacement, partial cleanup, lossy JSON
+  numbers, throwing Web Storage getters, missing delivery evidence, and unbounded
+  zero exponents.
+- Verified `26b362e` in the workspace and the fresh no-hardlinks clone at
+  `/private/tmp/leanrx-m9-exact.mYFds7/repo`, both with `./scripts/check.sh`: 230
+  Lean jobs, 1199 public theorems, 283 exact reviewed axiom uses, 76 exact generated
+  unsafe helpers, 40 seeded graph cases, 49 native/JavaScript cases in both printer
+  modes, deterministic eight-application artifacts, region/effect host checks,
+  sixteen Chromium tests, benchmark, compile-fail, 146-file placeholder, and
+  67-file semantic-safety gates passed; the clone remained clean.
 
 ## In progress
 
-- M9 technical candidate: typed commands/batches, private cancellation handles,
-  explicit resources, stale-result lemmas, deterministic native mocks, injected
-  timer/storage/HTTP/foreign adapters, structured port manifests, ABI 6 effect
-  counters, and public Notes/Issue Browser dogfoods are implemented.
-- Workspace native, differential, deterministic codegen, effect-runtime, and all
-  sixteen Chromium tests are green. Independent review and the full/fresh-clone
-  milestone gates remain before M9 closure.
+- M10 starts from the measured structural-delta comparison required by the plan:
+  full collection recomputation plus keyed reconciliation, explicit `ListDelta`,
+  and a hybrid strategy, followed by the public 10k-row data-grid dogfood.
 
 ## Next
 
-- Perform all five independent M9 review roles and resolve every actionable
-  finding.
-- Run the complete workspace and fresh no-hardlinks checkout suites, update the
-  exact green commit/results/review notes, and close M9 only when both pass.
+- Implement the pure M10 collection model and deterministic operation traces with
+  exact logical-agreement and cost instrumentation before any timing comparison.
+- Build and browser-test the 10k-row data grid through public APIs, record complete
+  measurements and ergonomics, then make the structural-delta decision in an ADR.
 
 ## Known blockers
 
@@ -403,6 +432,29 @@ M9 — Commands, resources, and foreign ports
   completed views, canonical logical-DOM comparison, retained drafts, adversarial
   toggle payloads, forged-result compile failures, exact instrumentation, and
   deterministic artifacts are permanent regressions.
+
+## M9 independent review notes
+
+- Lean/toolchain: PASS at `26b362e`; indexed port evidence, private resource
+  handles, reentrant replacement ownership, exact-number grammar, native/JS
+  decoder matrices, and every local policy gate were verified.
+- Type theory/proof: PASS; stale-result/resource lemmas retain their exact reviewed
+  `[propext]` footprints, pure effect state remains total, the bounded native JSON
+  pre-parser prevents the former panic path, and browser/foreign behavior remains
+  explicitly inside the trusted computing base.
+- Compiler/backend: PASS; manifests match the actual `HttpResponse → IssuePage`
+  boundary, command interpretation follows update/render, generation is
+  deterministic, pagination uses BigInt, and replacement/delivery/cancellation
+  paths fail closed under adversarial inputs.
+- Frontend/runtime: PASS; blocked storage, stale/reentrant work, cleanup failures,
+  duplicate issues, hostile text, encoded queries, native-control keyboard paths,
+  populated axe scans, copied metrics, and post-disposal suppression passed sixteen
+  Chromium tests and focused fake-host probes.
+- Test/quality: PASS after workspace and fresh no-hardlinks suites; exponent,
+  fractional-rounding, safe-ID, uniqueness, delivery-901, timer-203, synchronous-
+  402, replacement, cancellation, and unhandled-rejection branches are permanent
+  regressions. All 21 M9 implementation commits have exactly one required
+  assistance trailer and remain reviewable and bisectable.
 
 ## Commands
 
