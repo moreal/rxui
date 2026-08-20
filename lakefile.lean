@@ -57,7 +57,8 @@ lean_lib LeanRxExamples where
     `examples.DiamondLab, `examples.DiamondLabBuild, `examples.DependentTabs,
     `examples.DependentTabsBuild, `examples.TemperatureConverter,
     `examples.TemperatureConverterBuild, `examples.ValidatedForm,
-    `examples.ValidatedFormBuild, `examples.TodoMVC, `examples.TodoMVCBuild]
+    `examples.ValidatedFormBuild, `examples.TodoMVC, `examples.TodoMVCBuild,
+    `examples.Notes, `examples.NotesBuild]
 
 @[default_target]
 lean_exe leanrx_test where
@@ -95,6 +96,9 @@ lean_exe leanrx_validated_form_js where
 
 lean_exe leanrx_todo_js where
   root := `examples.TodoMVCMain
+
+lean_exe leanrx_notes_js where
+  root := `examples.NotesMain
 
 lean_exe leanrx_graph_bench where
   root := `bench.SmallGraph

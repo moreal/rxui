@@ -566,3 +566,57 @@ toggle provide the important structural evidence.
 ### Follow-up issue or commit
 
 `example(todo): dogfood keyed dynamic regions`
+
+## Notes — debounced owned persistence
+
+### Scenario exercised
+
+Notes restores a value from local storage on mount, accepts controlled text
+edits, cancels and replaces a 250 ms debounce timer, writes only the final edit,
+surfaces storage failures, ignores a late restore after a local edit, and cancels
+owned restore/timer/storage work on disposal. The application imports only
+public LeanRx APIs; generated handlers consume the pure `Notes.update` lifecycle
+through the typed-JavaScript-AST backend and the explicit effect host.
+
+### What was pleasant
+
+Command handles made restore, debounce, save, and disposal races explicit in the
+pure reducer before browser work. The same cancellation vocabulary maps directly
+to timer IDs, fetch abort controllers, and foreign cancel callbacks without
+putting scheduling in the DOM host. Passing state/context explicitly to effect
+callbacks kept generated JavaScript first-order and validity-checkable.
+
+### Friction
+
+The current backend is specialized because extracting arbitrary Lean callback
+closures would cross the controlled Reactive IR boundary. Command constructors
+remain typed public data, while the Notes emitter recognizes this checked
+application model explicitly. Browser error objects and storage missing/found
+values use a versioned tagged adapter ABI that remains inside the TCB.
+
+### Bugs found
+
+The first pure model allowed a late restore to overwrite text edited while the
+storage read was pending. Editing now cancels the restore resource and transitions
+it out of loading, with native and Chromium regressions. Runtime prototyping also
+showed that single-argument promise callbacks would require generated closures;
+the host now delivers explicit state, context, handle, and typed result values.
+
+### Security and accessibility checks
+
+The hostile component title is emitted through a text node and creates no image
+or handler execution. The textarea has a programmatic name, persistence status is
+a polite status region, axe is green, storage/query values never become code or
+HTML, all promise rejections become error results, and post-disposal delivery is
+suppressed.
+
+### Performance observations
+
+The defining successful restore-plus-two-edit scenario starts four commands
+(restore, two timers, one storage write), cancels the first timer, and persists
+only the final draft. These are deterministic work counts, not a latency claim;
+the browser test waits relative to the native-derived 250 ms debounce artifact.
+
+### Follow-up issue or commit
+
+`example(notes): dogfood owned persistence`
