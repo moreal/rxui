@@ -143,3 +143,18 @@ export function createEffectRuntime(metrics, adapters = {}) {
     instrumentation: () => [metrics[8], metrics[9]],
   };
 }
+
+export function makeEffectDisposer(baseDisposer, state, disposedIndex, effects) {
+  let disposed = false;
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    state[disposedIndex] = true;
+    effects.dispose();
+    baseDisposer();
+  }
+  dispose.instrumentation = baseDisposer.instrumentation;
+  dispose.regionInstrumentation = baseDisposer.regionInstrumentation;
+  dispose.effectInstrumentation = effects.instrumentation;
+  return dispose;
+}

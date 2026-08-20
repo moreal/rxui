@@ -28,6 +28,7 @@ lean_lib LeanRxTest where
     `Test.Backend.Temperature,
     `Test.Backend.ValidatedForm,
     `Test.Backend.Todo,
+    `Test.Backend.Notes,
     `Test.View.Model,
     `Test.Component.Model,
     `Test.Component.Dependent,

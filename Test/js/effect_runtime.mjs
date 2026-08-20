@@ -1,4 +1,7 @@
-import { createEffectRuntime } from "../../runtime/leanrx_effects.mjs";
+import {
+  createEffectRuntime,
+  makeEffectDisposer,
+} from "../../runtime/leanrx_effects.mjs";
 
 const metrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
 const storageValues = new Map([["present", "saved"]]);
@@ -97,5 +100,22 @@ if (delivered.length !== 6 || JSON.stringify(runtime.instrumentation()) !== "[10
 runtime.storageGet("after-dispose", "present", null, null, deliver("after-dispose"));
 await drain();
 if (delivered.length !== 6) throw new Error("post-disposal command was started");
+
+const wrapperMetrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
+const wrapperRuntime = createEffectRuntime(wrapperMetrics, { storage, fetch: fetchMock, ports });
+const wrapperState = [false];
+let baseDisposed = 0;
+const baseDisposer = () => { baseDisposed += 1; };
+baseDisposer.instrumentation = () => ["base"];
+baseDisposer.regionInstrumentation = () => [];
+wrapperRuntime.foreign("owned", "deferred", null, null, null, deliver("owned"));
+const wrapped = makeEffectDisposer(baseDisposer, wrapperState, 0, wrapperRuntime);
+wrapped();
+wrapped();
+if (!wrapperState[0] || baseDisposed !== 1 || foreignCancelled !== 3 ||
+    JSON.stringify(wrapped.instrumentation()) !== '["base"]' ||
+    JSON.stringify(wrapped.effectInstrumentation()) !== "[1,1]") {
+  throw new Error("effect disposer did not cancel and delegate exactly once");
+}
 
 console.log("effect runtime contract passed");

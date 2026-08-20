@@ -24,6 +24,7 @@ import Test.Backend.Tabs
 import Test.Backend.Temperature
 import Test.Backend.ValidatedForm
 import Test.Backend.Todo
+import Test.Backend.Notes
 import Test.View.Model
 import Test.Component.Model
 import Test.Component.Dependent
@@ -81,6 +82,7 @@ def main : IO Unit := do
   LeanRxTest.Backend.Temperature.run
   LeanRxTest.Backend.ValidatedForm.run
   LeanRxTest.Backend.Todo.run
+  LeanRxTest.Backend.Notes.run
   LeanRxTest.View.Model.run
   LeanRxTest.Component.Model.run
   LeanRxTest.Component.Dependent.run

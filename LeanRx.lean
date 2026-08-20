@@ -26,6 +26,7 @@ import LeanRx.Backend.Tabs
 import LeanRx.Backend.Temperature
 import LeanRx.Backend.ValidatedForm
 import LeanRx.Backend.Todo
+import LeanRx.Backend.Notes
 import LeanRx.View.Model
 import LeanRx.Component.Model
 import LeanRx.Component.Dependent
