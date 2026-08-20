@@ -130,8 +130,8 @@ def run : IO Unit :=
         "storageSet:cmd-1:draft", "http:cmd-2:/issues?page=1",
         "foreign:cmd-3:uppercase", "cancel:cmd-4", "suppressed:cmd-4"])
         "command test-double trace drifted"
-      assertTrue (ForeignPort.inputType port == LeanRx.RuntimeTypeId.string &&
-        ForeignPort.outputType port == LeanRx.RuntimeTypeId.string)
+      assertTrue (port.inputType == .runtime .string &&
+        port.outputType == .runtime .string)
         "foreign port runtime signature drifted"
       assertTrue (match ForeignPort.create (ι := String) (ο := String) "" .sync .none #[]
           "trust" "security" .ok with

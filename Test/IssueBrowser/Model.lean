@@ -24,6 +24,14 @@ private def requestKey (transition : Transition) : Except String RequestKey :=
   | _ => .error "request transition did not return cancel-plus-http batch"
 
 def run : IO Unit := do
+  assertTrue (match decoderPort with
+    | .ok port => port.inputType == .runtime .string &&
+        port.outputType == .record "IssuePage" &&
+        (match port.runMock
+          "{\"issues\":[{\"id\":4,\"title\":\"port\"}],\"hasMore\":false}" with
+        | .ok _ => true
+        | .error _ => false)
+    | .error _ => false) "issue decoder foreign-port declaration drifted"
   assertTrue (match decodePage
       "{\"issues\":[{\"id\":1,\"title\":\"one\"}],\"hasMore\":true}" with
     | .ok decoded => decoded == { issues := #[{ id := 1, title := "one" }], hasMore := true }

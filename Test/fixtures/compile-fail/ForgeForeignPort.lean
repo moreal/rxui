@@ -4,8 +4,8 @@ open LeanRx LeanRx.Effect
 
 def forged : ForeignPort String String := {
   name := "unchecked"
-  inputRuntime := inferInstance
-  outputRuntime := inferInstance
+  inputType := .runtime .string
+  outputType := .runtime .string
   mode := .sync
   cancellation := .none
   errors := #[]

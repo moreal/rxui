@@ -2,6 +2,7 @@ import {
   createEffectRuntime,
   makeEffectDisposer,
 } from "../../runtime/leanrx_effects.mjs";
+import { decodeIssueResponse } from "../../runtime/leanrx_issue_ports.mjs";
 
 const metrics = [0, 0, 0, 0, 0, 0, 0, [], 0, 0];
 const storageValues = new Map([["present", "saved"]]);
@@ -64,11 +65,8 @@ if (delivered.length !== 6 || resultFor("read").value.value !== "saved" ||
   throw new Error(`effect adapter result drifted: ${JSON.stringify(delivered)}`);
 }
 
-runtime.http("old", {
-  method: "GET",
-  url: "/api/issues",
-  query: [["q", "old & unsafe"], ["page", "1"]],
-}, null, null, deliver("old"));
+runtime.http("old", "GET", "/api/issues",
+  [["q", "old & unsafe"], ["page", "1"]], null, null, null, deliver("old"));
 await drain();
 if (!pending.has("/api/issues?q=old+%26+unsafe&page=1")) {
   throw new Error("HTTP query was not encoded by the owned adapter");
@@ -85,7 +83,7 @@ if (foreignCancelled !== 1 || delivered.length !== 6) {
   throw new Error("cancelled foreign operation delivered or skipped its cancel handle");
 }
 
-runtime.http("dispose-http", { method: "GET", url: "/dispose", query: [] },
+runtime.http("dispose-http", "GET", "/dispose", [], null,
   null, null, deliver("dispose-http"));
 runtime.foreign("dispose-port", "deferred", null, null, null, deliver("dispose-port"));
 await drain();
@@ -116,6 +114,19 @@ if (!wrapperState[0] || baseDisposed !== 1 || foreignCancelled !== 3 ||
     JSON.stringify(wrapped.instrumentation()) !== '["base"]' ||
     JSON.stringify(wrapped.effectInstrumentation()) !== "[1,1]") {
   throw new Error("effect disposer did not cancel and delegate exactly once");
+}
+
+const decoded = decodeIssueResponse({
+  status: 200,
+  body: '{"issues":[{"id":7,"title":"typed"}],"hasMore":true}',
+});
+const invalid = decodeIssueResponse({ status: 200, body: '{"issues":"wrong"}' });
+const statusFailure = decodeIssueResponse({ status: 503, body: "{}" });
+if (JSON.stringify(decoded) !==
+    '{"ok":true,"value":[[[7,"typed"]],true]}' ||
+    invalid.error.code !== "LRX-HTTP-DECODE-001" ||
+    statusFailure.error.code !== "LRX-HTTP-STATUS-001") {
+  throw new Error("issue decoder port drifted from its typed wire contract");
 }
 
 console.log("effect runtime contract passed");

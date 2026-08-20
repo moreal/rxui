@@ -75,16 +75,17 @@ export function createEffectRuntime(metrics, adapters = {}) {
       }));
   }
 
-  function http(handle, request, state, context, deliver) {
+  function http(handle, method, url, query, decoder, state, context, deliver) {
     const controller = new AbortController();
     if (!begin(handle, () => controller.abort(), state, context, deliver)) return;
     Promise.resolve()
-      .then(() => fetchImpl(queryUrl(request), {
-        method: request.method ?? "GET",
+      .then(() => fetchImpl(queryUrl({ url, query }), {
+        method,
         signal: controller.signal,
       }))
       .then(async (response) => ({ status: response.status, body: await response.text() }))
-      .then((value) => finish(handle, null, { ok: true, value }))
+      .then((value) => decoder ? decoder(value) : { ok: true, value })
+      .then((result) => finish(handle, null, result))
       .catch((error) => {
         if (error?.name === "AbortError") return;
         finish(handle, null, { ok: false, error: effectError("LRX-HTTP-001", error) });

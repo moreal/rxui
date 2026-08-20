@@ -72,6 +72,16 @@ def decodePage (body : String) : Except Error Page := do
   let hasMore ← hasMoreValue.getBool? |>.mapError decodeError
   pure { issues, hasMore }
 
+/-- Explicit browser JSON-decoder port. Its structured output is wire metadata,
+not a reactive runtime/equality type. -/
+def decoderPort : Except Error (ForeignPort String Page) :=
+  ForeignPort.createStructured "decodeIssuePage" (.runtime .string)
+    (.record "IssuePage") .sync .none
+    #["LRX-HTTP-DECODE-001"]
+    "browser JSON parsing and object validation remain in the backend TCB"
+    "JSON is parsed as data; titles are returned as strings and never HTML"
+    decodePage
+
 def decodeResponse : Except Error HttpResponse → Except Error Page
   | .error error => .error error
   | .ok response =>

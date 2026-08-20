@@ -80,6 +80,9 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.instOrdRuntimeTypeId.ord._unsafe_rec,
     `LeanRx.Region.instBEqLogicalNode.beq._unsafe_rec,
     `LeanRx.Region.instReprLogicalNode.repr._unsafe_rec,
+    `LeanRx.Effect.instBEqPortTypeId.beq._unsafe_rec,
+    `LeanRx.Effect.instDecidableEqPortTypeId.decEq._unsafe_rec,
+    `LeanRx.Effect.instReprPortTypeId.repr._unsafe_rec,
   ]
   -- Generated injectivity plus named membership/agreement lemmas use Lean's
   -- standard proposition-extensionality axiom. Each exact pair is reviewed;
@@ -198,6 +201,9 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.Effect.Resource.loading.injEq, #[``propext]),
     (`LeanRx.Effect.Resource.success.injEq, #[``propext]),
     (`LeanRx.Effect.StorageResult.found.injEq, #[``propext]),
+    (`LeanRx.Effect.PortTypeId.array.injEq, #[``propext]),
+    (`LeanRx.Effect.PortTypeId.record.injEq, #[``propext]),
+    (`LeanRx.Effect.PortTypeId.runtime.injEq, #[``propext]),
     (`LeanRx.Notes.Msg.debounceFired.injEq, #[``propext]),
     (`LeanRx.Notes.Msg.edit.injEq, #[``propext]),
     (`LeanRx.Notes.Msg.restored.injEq, #[``propext]),

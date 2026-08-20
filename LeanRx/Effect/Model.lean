@@ -53,14 +53,23 @@ inductive PortCancellation where
   | owned
 deriving Repr, BEq, DecidableEq
 
+/-- Wire types for explicit foreign boundaries. Structured wire metadata is
+kept separate from `RuntimeTypeId`, so it cannot enter reactive equality or the
+scalar graph ABI. -/
+inductive PortTypeId where
+  | runtime (value : RuntimeTypeId)
+  | array (element : PortTypeId)
+  | record (name : String)
+deriving Repr, BEq, DecidableEq
+
 /-- A typed foreign boundary. Construction requires explicit runtime
 representations, operational metadata, trust/security notes, and a native mock.
 It does not contain JavaScript source. -/
 structure ForeignPort (ι ο : Type) where
   private mk ::
   name : String
-  inputRuntime : RuntimeRep ι
-  outputRuntime : RuntimeRep ο
+  inputType : PortTypeId
+  outputType : PortTypeId
   mode : PortMode
   cancellation : PortCancellation
   errors : Array String
@@ -85,8 +94,8 @@ def create [inputRuntime : RuntimeRep ι] [outputRuntime : RuntimeRep ο]
     message := s!"foreign port {name.quote} must declare security behavior"
   } else .ok {
     name
-    inputRuntime
-    outputRuntime
+    inputType := .runtime inputRuntime.runtimeType.id
+    outputType := .runtime outputRuntime.runtimeType.id
     mode
     cancellation
     errors
@@ -95,11 +104,30 @@ def create [inputRuntime : RuntimeRep ι] [outputRuntime : RuntimeRep ο]
     nativeMock
   }
 
-def inputType (port : ForeignPort ι ο) : RuntimeTypeId :=
-  port.inputRuntime.runtimeType.id
-
-def outputType (port : ForeignPort ι ο) : RuntimeTypeId :=
-  port.outputRuntime.runtimeType.id
+def createStructured (name : String) (inputType outputType : PortTypeId)
+    (mode : PortMode) (cancellation : PortCancellation) (errors : Array String)
+    (trust security : String) (nativeMock : ι → Except Error ο) :
+    Except Error (ForeignPort ι ο) :=
+  if name.isEmpty then .error {
+    code := "LRX-PORT-001"
+    message := "foreign port name must not be empty"
+  } else if trust.isEmpty then .error {
+    code := "LRX-PORT-002"
+    message := s!"foreign port {name.quote} must declare its trust boundary"
+  } else if security.isEmpty then .error {
+    code := "LRX-PORT-003"
+    message := s!"foreign port {name.quote} must declare security behavior"
+  } else .ok {
+    name
+    inputType
+    outputType
+    mode
+    cancellation
+    errors
+    trust
+    security
+    nativeMock
+  }
 
 def runMock (port : ForeignPort ι ο) (input : ι) : Except Error ο :=
   port.nativeMock input
