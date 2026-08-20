@@ -5,7 +5,7 @@ if (( $# > 0 )); then
   roots=("$@")
 else
   roots=(LeanRx/Core LeanRx/Graph LeanRx/Semantics LeanRx/Proofs LeanRx/IR LeanRx/Lower
-    LeanRx/Component LeanRx/View LeanRx/Form LeanRx/Region LeanRx/Todo examples)
+    LeanRx/Component LeanRx/View LeanRx/Form LeanRx/Region LeanRx/Todo LeanRx/Effect examples)
 fi
 
 files=()

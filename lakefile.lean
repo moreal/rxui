@@ -40,6 +40,8 @@ lean_lib LeanRxTest where
     `Test.Region.Positional,
     `Test.Region.Keyed,
     `Test.Todo.Model,
+    `Test.Effect.Command,
+    `Test.Effect.Resource,
     `Test.Elab.Component,
     `Test.Cli.Model,
     `Test.Cli.AtomicOutput,
