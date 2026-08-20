@@ -1,7 +1,7 @@
 # LeanRx
 
-LeanRx is a Lean 4-hosted frontend language and compiler experiment. It is being
-implemented milestone by milestone against [ARCHITECTURE.md](ARCHITECTURE.md)
+LeanRx is a Lean 4-hosted frontend language and compiler experiment. The planned
+M0–M11 milestones have been implemented against [ARCHITECTURE.md](ARCHITECTURE.md)
 and [PLAN.md](PLAN.md). The repository is not yet a released framework.
 
 ## Prerequisites

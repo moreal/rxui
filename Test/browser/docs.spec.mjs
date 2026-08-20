@@ -95,6 +95,12 @@ test("dogfoods all seven pages with safe text, keyboard access, and exact work",
   expect(graphHtml).toContain("<!doctype html>");
   expect(graphHtml).toContain("Certified schedule");
   expect(graphHtml).not.toContain("<script");
+
+  await page.goto(`${origin}/LeanRxDocs.graph.html`);
+  await expect(page.locator("main h1")).toHaveText("LeanRx reactive graph");
+  await expect(page.locator(".leanrx-node")).toHaveCount(7);
+  const graphAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(graphAccessibility.violations).toEqual([]);
 });
 
 test("mounts independently and disposes listeners idempotently", async ({ page }) => {

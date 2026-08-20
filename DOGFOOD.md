@@ -210,7 +210,7 @@ Adding a real `<h1>` to the public view fixed the defect and made the automated
 scan a permanent browser gate. An early hostile-text test called the DOM host
 directly and therefore bypassed component lowering; moving it into Counter's
 public `scalarText` view made the full Component → JavaScript AST → browser path
-the permanent regression and proves `<img ... onerror>` remains a text node.
+the permanent regression and demonstrates that `<img ... onerror>` remains a text node.
 The first CLI publisher moved the old directory aside before renaming the new
 one, leaving a brief absent-path window. Counter's CLI regression now publishes
 locked versioned siblings through one pointer rename and rejects unmanaged
@@ -431,8 +431,8 @@ stale-state window.
 `ValidatedForm` has a private constructor, so application/native code can call
 `submit` only from the `.valid` branch. The fake command payload therefore needs
 no optional fields or defensive defaults. The same expected payload is generated
-by native Lean and observed in Chromium after a synthetic invalid submit proves
-that disabled-button state is not the sole guard.
+by native Lean and observed in Chromium after a synthetic invalid submit,
+demonstrating that disabled-button state is not the sole guard.
 
 ### Friction
 

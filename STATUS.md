@@ -271,8 +271,9 @@ Complete — M0 through M11
   axiom uses, 77 exact generated unsafe helpers, 40 seeded graph cases, 49
   native/JavaScript cases in both printer modes, deterministic nine-application
   artifacts, region/effect host checks, sixteen standard plus one Grid Chromium
-  test, both benchmarks, forty compile-fail fixtures, 158-file placeholder, and
-  73-file semantic-safety gates passed; both checkouts remained clean.
+  test, both benchmarks, 37 compile-fail fixtures plus four focused diagnostic
+  checks, 158-file placeholder, and 73-file semantic-safety gates passed; both
+  checkouts remained clean.
 - Added deterministic self-contained accessible HTML graph artifacts alongside
   JSON/DOT, including hostile-metadata escaping, script exclusion, exact CLI/build
   equality, and native/browser accessibility regressions.
@@ -302,9 +303,10 @@ Complete — M0 through M11
   theorems, 307 exact reviewed axiom uses, 77 exact generated unsafe helpers, 40
   seeded graph cases, 49 native/JavaScript cases in both printer modes,
   deterministic ten-application artifacts, region/effect and CLI negative gates,
-  eighteen standard plus one Grid Chromium test, both benchmarks, forty
-  compile-fail fixtures, 163-file placeholder, and 76-file semantic-safety gates
-  passed. Quality also verified build/native/CLI from a fresh no-hardlinks clone.
+  eighteen standard plus one Grid Chromium test, both benchmarks, 37
+  compile-fail fixtures plus four focused diagnostic checks, 163-file placeholder,
+  and 76-file semantic-safety gates passed. Quality also verified build/native/CLI
+  from a fresh no-hardlinks clone.
 
 ## In progress
 

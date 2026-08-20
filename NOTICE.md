@@ -1,6 +1,6 @@
 # Notices and provenance
 
-LeanRx is a greenfield implementation. As of 2026-08-19, no source code has been
+LeanRx is a greenfield implementation. As of 2026-08-21, no source code has been
 copied or adapted from Qed or another third-party project.
 
 Qed is documented as prior art in `docs/prior-art/qed.md`. Its repository is
@@ -11,7 +11,7 @@ modified files, and nature of the adaptation before that code is committed.
 
 No license has yet been selected for LeanRx itself.
 
-M4 browser acceptance tests use the following development-only packages; no
+Browser acceptance tests use the following development-only packages; no
 package source is copied into LeanRx:
 
 - `@playwright/test` 1.62.1 and Playwright/Chromium test tooling,
