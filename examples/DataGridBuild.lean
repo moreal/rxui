@@ -1,5 +1,6 @@
 import examples.DataGrid
 import LeanRx.Cli.AtomicOutput
+import LeanRx.Graph.Serialize
 
 namespace LeanRxExamples.DataGridBuild
 
@@ -9,11 +10,16 @@ private def expectedJson (checked : Spec.Checked) : String :=
   let visible := visibleRows checked.finalState
   let firstId := visible.head?.map (·.id) |>.getD 0
   let lastId := visible.reverse.head?.map (·.id) |>.getD 0
+  let rows := String.intercalate "," <| visible.map fun row =>
+    "[" ++ toString row.id ++ "," ++
+      GraphSerialize.jsonString s!"{row.label} value {row.value}" ++ "," ++
+      (if row.selected then "true" else "false") ++ "]"
   "{\"sourceCount\":" ++ toString checked.finalState.rows.length ++
     ",\"visibleCount\":" ++ toString visible.length ++
     ",\"firstId\":" ++ toString firstId ++
     ",\"lastId\":" ++ toString lastId ++
     ",\"selected\":" ++ toString (checked.finalState.selected.getD 0) ++
+    ",\"rows\":[" ++ rows ++ "]" ++
     ",\"operationCount\":" ++ toString checked.spec.operations.length ++
     ",\"strategies\":[\"full\",\"delta\",\"hybrid\"]}\n"
 

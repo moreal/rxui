@@ -21,8 +21,9 @@ namespace Spec
 
 def create (name : String) (rowCount : Nat := 10000) (updateId : Nat := 5000)
     (removeDivisor : Nat := 10) (swapFirst : Nat := 1) (swapSecond : Nat := 9998)
-    (selectId : Nat := 7777) (costModel : CostModel := defaultCostModel) : Spec :=
-  ⟨name, rowCount, updateId, removeDivisor, swapFirst, swapSecond, selectId, costModel⟩
+    (selectId : Nat := 7777) : Spec :=
+  ⟨name, rowCount, updateId, removeDivisor, swapFirst, swapSecond, selectId,
+    defaultCostModel⟩
 
 def operations (spec : Spec) : List Operation := [
   .createRows spec.rowCount,
@@ -57,10 +58,10 @@ def check (spec : Spec) : Except Error Checked := do
     message := "the M10 data-grid experiment requires exactly 10000 source rows"
     path := ["rows"]
   }
-  if spec.costModel.maxDeltaEdits == 0 || spec.costModel.fullRowCost == 0 then throw {
+  if spec.swapFirst == spec.swapSecond then throw {
     code := "LRX-TYPE-302"
-    message := "hybrid cost parameters must have positive edit and full-row bounds"
-    path := ["costModel"]
+    message := "the two swapped row keys must be distinct"
+    path := ["swap"]
   }
   let finalState ← runOperations empty spec.operations
   pure ⟨spec, empty, finalState⟩

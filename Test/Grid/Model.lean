@@ -47,6 +47,7 @@ def run : IO Unit := do
   assertEq true filterPlan.usedReset
   let sorted ← expectOk <| update filtered (.setSort .descending)
   assertEq (some 9999) ((visibleRows sorted).head?.map (·.id))
+  assertEq true <| (visibleRows sorted).Pairwise fun left right => left.id > right.id
   let selected ← expectOk <| update sorted (.select 7777)
   assertEq (some true) ((visibleRows selected).find? (fun row => row.id == 7777) |>.map (·.selected))
   let selectedPlan := plannedDeltas sorted (.select 7777) selected
@@ -66,6 +67,9 @@ def run : IO Unit := do
   assertEq true (delta.work.deltaEdits > 0)
   assertEq true (hybrid.modes.contains .deltaBatch)
   assertEq true (hybrid.modes.contains .keyedFull)
+  let expensive := { defaultCostModel with deltaFixedCost := 1000000 }
+  let expensiveHybrid ← expectOk <| runTrace .hybrid expensive
+  assertEq 7 (expensiveHybrid.modes.filter (· == .keyedFull)).length
   expectError "LRX-GRID-001" ["rows"] (update empty (.createRows 0))
   expectError "LRX-GRID-002" ["rows"] (update empty (.createRows 100001))
   expectError "LRX-GRID-003" ["row:10001"] (update created (.updateOne 10001))

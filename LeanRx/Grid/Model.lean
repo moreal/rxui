@@ -27,14 +27,15 @@ inductive Filter where
 deriving Repr, BEq, DecidableEq
 
 inductive SortOrder where
-  | ascending
+  | source
   | descending
 deriving Repr, BEq, DecidableEq
 
 structure State where
+  private mk ::
   rows : List Row
   filter : Filter := .all
-  sortOrder : SortOrder := .ascending
+  sortOrder : SortOrder := .source
   selected : Option Nat := none
 deriving Repr, BEq, DecidableEq
 
@@ -97,7 +98,7 @@ def update (state : State) : Operation → Except Error State
       } else .ok {
         rows := createRows count
         filter := .all
-        sortOrder := .ascending
+        sortOrder := .source
         selected := none
       }
   | .updateOne id =>
@@ -144,8 +145,8 @@ def visibleRows (state : State) : List Row :=
     | .all => state.rows
     | .odd => state.rows.filter fun row => row.id % 2 == 1
   let ordered := match state.sortOrder with
-    | .ascending => filtered
-    | .descending => filtered.reverse
+    | .source => filtered
+    | .descending => filtered.mergeSort fun left right => left.id >= right.id
   ordered.map (withSelection state.selected)
 
 private def updateCandidates : List Row → List Row → Nat → Option (List (ListDelta Row))
@@ -183,10 +184,10 @@ private def removalCandidates (divisor : Nat) : List Row → Nat → List (ListD
 private def candidate (operation : Operation) (current target : List Row) : List (ListDelta Row) :=
   match operation with
   | .updateOne _ | .select _ =>
-      (updateCandidates current target 0).getD [.reset target]
+      (updateCandidates current target 0).getD [.reset target.toArray]
   | .removeEvery divisor => removalCandidates divisor current 0
   | .swap first second => swapCandidates current first second
-  | .createRows _ | .setFilter _ | .setSort _ => [.reset target]
+  | .createRows _ | .setFilter _ | .setSort _ => [.reset target.toArray]
 
 def plannedDeltas (state : State) (operation : Operation) (next : State) :
     PlannedDeltas (visibleRows state) (visibleRows next) :=
@@ -263,11 +264,11 @@ private def deltaAllocationUnits : List (ListDelta Row) → Nat
   | [] => 0
   | .insert _ _ :: rest | .update _ _ :: rest => 1 + deltaAllocationUnits rest
   | .remove _ :: rest | .move _ _ :: rest => deltaAllocationUnits rest
-  | .reset values :: rest => values.length + deltaAllocationUnits rest
+  | .reset values :: rest => values.size + deltaAllocationUnits rest
 
 private def deltaRegionVisits (currentSize : Nat) : List (ListDelta Row) → Nat
   | [] => 0
-  | .reset values :: rest => currentSize + values.length + deltaRegionVisits values.length rest
+  | .reset values :: rest => currentSize + values.size + deltaRegionVisits values.size rest
   | _ :: rest => 1 + deltaRegionVisits currentSize rest
 
 private def chooseHybrid (model : CostModel) (currentSize targetSize : Nat)

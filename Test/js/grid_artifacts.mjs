@@ -12,7 +12,7 @@ const compact = fs.readFileSync(path.join(directory, "DataGrid.min.mjs"), "utf8"
 
 if (manifest.runtimeAbi !== 7 || manifest.module !== "DataGrid.mjs" ||
     JSON.stringify(manifest.exports) !== '["mountFull","mountDelta","mountHybrid"]' ||
-    manifest.graphHash !== "grid:10000:5000:10:1:9998:7777:256" ||
+    manifest.graphHash !== "grid:10000:5000:10:1:9998:7777:256:8:3:1" ||
     !manifest.features.includes("structural-delta") ||
     !manifest.features.includes("hybrid-cost-model") ||
     manifest.eventCount !== 7 || manifest.sourceCount !== 4 || manifest.derivedCount !== 1) {
@@ -23,13 +23,17 @@ if (JSON.stringify(manifest.hostImports) !==
   throw new Error("data-grid host import contract changed");
 }
 if (expected.sourceCount !== 9000 || expected.visibleCount !== 5000 ||
-    expected.firstId !== 9999 || expected.lastId !== 3 || expected.selected !== 7777 ||
-    expected.operationCount !== 7) {
+    expected.firstId !== 9999 || expected.lastId !== 1 || expected.selected !== 7777 ||
+    expected.operationCount !== 7 || expected.rows.length !== 5000 ||
+    !expected.rows.every((row, index) => row[0] === 9999 - index * 2 &&
+      row[1] === `Row ${row[0]} value ${row[0] * 10}` && row[2] === (row[0] === 7777))) {
   throw new Error("native data-grid oracle changed");
 }
 if (!readable.includes("createDeltaKeyedRegion") || !readable.includes("mountHybrid") ||
-    !readable.includes('"gridcell"') ||
-    compact.length >= readable.length || /eval\(|Function\(|currentObserver|new Proxy/.test(readable)) {
+    !readable.includes('"table"') || !readable.includes('"cell"') ||
+    !readable.includes("256") || !readable.includes("8") || !readable.includes("3") ||
+    !readable.includes("0n") || compact.length >= readable.length ||
+    /eval\(|Function\(|currentObserver|new Proxy|innerHTML/.test(readable)) {
   throw new Error("data-grid JavaScript artifact boundary changed");
 }
 

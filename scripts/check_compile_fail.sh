@@ -35,6 +35,10 @@ fixtures=(
   Test/fixtures/compile-fail/ForgeNotesState.lean
   Test/fixtures/compile-fail/ForgeIssueBrowserState.lean
   Test/fixtures/compile-fail/ForgeGridSpec.lean
+  Test/fixtures/compile-fail/ForgePlannedDeltas.lean
+  Test/fixtures/compile-fail/ForgeGridChecked.lean
+  Test/fixtures/compile-fail/ForgeGridState.lean
+  Test/fixtures/compile-fail/CustomGridCostModel.lean
 )
 fragments=(
   "Constructor for"
@@ -70,6 +74,10 @@ fragments=(
   'constructor for `State` is marked as private'
   'constructor for `State` is marked as private'
   'Constructor for `LeanRx.Grid.Spec` is marked as private'
+  'Constructor for `LeanRx.Collection.PlannedDeltas` is marked as private'
+  'Constructor for `LeanRx.Grid.Spec.Checked` is marked as private'
+  'Constructor for `LeanRx.Grid.State` is marked as private'
+  'Invalid argument name `costModel`'
 )
 
 for index in "${!fixtures[@]}"; do

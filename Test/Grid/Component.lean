@@ -23,9 +23,7 @@ def run : IO Unit := do
   assertEq (some 7777) checked.finalState.selected
   expectError "LRX-ELAB-301" (Spec.create "" |>.check)
   expectError "LRX-TYPE-301" (Spec.create "wrong-size" 9999 |>.check)
-  expectError "LRX-TYPE-302" (Spec.create "bad-cost" (costModel := {
-    defaultCostModel with maxDeltaEdits := 0
-  }) |>.check)
+  expectError "LRX-TYPE-302" (Spec.create "same-swap" (swapSecond := 1) |>.check)
   expectError "LRX-GRID-004" (Spec.create "bad-remove" (removeDivisor := 0) |>.check)
   expectError "LRX-GRID-005" (Spec.create "bad-swap" (swapSecond := 10001) |>.check)
   expectError "LRX-GRID-006" (Spec.create "bad-select" (selectId := 10001) |>.check)

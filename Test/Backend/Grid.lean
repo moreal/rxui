@@ -31,7 +31,7 @@ def run : IO Unit := do
     | .ok source => pure source
     | .error error => throw <| IO.userError error.code
   unless readable.contains "createDeltaKeyedRegion" && readable.contains "mountHybrid" &&
-      readable.contains "10000" && readable.contains "gridcell" &&
+      readable.contains "10000" && readable.contains "table" && readable.contains "cell" &&
       compact.length < readable.length do
     throw <| IO.userError "grid printer output lost checked strategy lowering"
 

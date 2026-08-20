@@ -88,6 +88,16 @@ specialized command lowering, native test doubles, timers, storage, fetch,
 `AbortController`, foreign decoders, JavaScript promises, and browser delivery
 remain separately tested parts of the documented TCB.
 
+M10's `Collection.PlannedDeltas.apply_eq_target` and the single-reset laws are
+axiom-free. The generated fallback-construction helper
+`Collection.PlannedDeltas.create._proof_2` has exact footprint `[propext]`.
+`Grid.plannedDeltas_correct` has the exact reviewed footprint
+`[propext, Quot.sound]`; the latter arises through the checked Array-to-List
+reset bridge used by the public structural-delta vocabulary. It proves only
+that the pure planned batch reaches the independent target list. JavaScript
+lowering, the delta host, keyed DOM identity, instrumentation, and browser
+measurements remain executable evidence in the TCB.
+
 The M2 checked well-formedness checker and all-`Int` `RxExpr`-to-abstract-evaluator
 bridge are also kernel checked. Their named proof terms use exact reviewed
 `[propext, Quot.sound]` footprints where list/dependency equations require them;

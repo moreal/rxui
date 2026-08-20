@@ -4,6 +4,7 @@ import {
   createKeyedRegion,
   createPositionalRegion,
 } from "../../runtime/leanrx_region.mjs";
+import { makeDisposer } from "../../runtime/leanrx_host.mjs";
 
 class FakeNode {
   constructor(value) {
@@ -54,6 +55,31 @@ globalThis.document = {
 function values(parent) {
   return parent.children.filter((node) => !node.value.startsWith("leanrx:"))
     .map((node) => node.value);
+}
+
+{
+  const listeners = [];
+  const calls = [];
+  listeners.push(() => { calls.push("first"); throw new Error("listener failed"); });
+  listeners.push(() => calls.push("second"));
+  const root = { remove() { calls.push("root"); } };
+  const metrics = [0, 1, 2, 3, 4, 5, 6, ["trace"], 8, 9];
+  const gridWork = [10, 20, 30];
+  const dispose = makeDisposer(root, listeners, metrics, [], gridWork);
+  let failed = false;
+  try {
+    dispose();
+  } catch (error) {
+    failed = String(error).includes("listener failed");
+  }
+  if (!failed || JSON.stringify(calls) !== '["first","second","root"]' || listeners.length !== 0) {
+    throw new Error("host disposal did not clear retained listener closures after complete cleanup");
+  }
+  const snapshot = dispose.gridInstrumentation();
+  snapshot[0] = 999;
+  if (dispose.gridInstrumentation()[0] !== 10) throw new Error("grid work snapshot is mutable");
+  dispose();
+  if (calls.length !== 3) throw new Error("host disposal lost idempotence after cleanup failure");
 }
 
 {
@@ -175,6 +201,29 @@ function values(parent) {
   if (!invalidFailed || JSON.stringify(values(parent)) !== JSON.stringify(beforeInvalid)) {
     throw new Error("invalid delta batch mutated before validation completed");
   }
+  function expectDeltaFailure(batch, code) {
+    const before = JSON.stringify(values(parent));
+    let failed = false;
+    try {
+      region.apply(batch);
+    } catch (error) {
+      failed = String(error).includes(code);
+    }
+    if (!failed || JSON.stringify(values(parent)) !== before) {
+      throw new Error(`${code} delta validator branch mutated or accepted its batch`);
+    }
+  }
+  expectDeltaFailure([["insert", 9, [8, "bad"]]], "LRX-DELTA-001");
+  expectDeltaFailure([["insert", 0, [4, "duplicate"]]], "LRX-REGION-001");
+  expectDeltaFailure([["remove", -1]], "LRX-DELTA-002");
+  expectDeltaFailure([["move", 9, 0]], "LRX-DELTA-004");
+  expectDeltaFailure([["move", 0, 9]], "LRX-DELTA-005");
+  expectDeltaFailure({}, "LRX-DELTA-006");
+  expectDeltaFailure([[]], "LRX-DELTA-006");
+  expectDeltaFailure([["insert", 0, []]], "LRX-DELTA-006");
+  expectDeltaFailure([["reset", {}]], "LRX-DELTA-006");
+  expectDeltaFailure([["reset", [[8, "a"], [8, "b"]]]], "LRX-REGION-001");
+  expectDeltaFailure([["unknown"]], "LRX-DELTA-006");
   let keyChangeFailed = false;
   try {
     region.apply([["update", 0, [99, "bad"]]]);
@@ -196,6 +245,26 @@ function values(parent) {
   region.dispose();
   region.apply([["insert", 0, [7, "ignored"]]]);
   if (parent.children.length !== 0) throw new Error("delta region disposal leaked nodes");
+}
+
+{
+  const parent = new FakeParent();
+  const region = createDeltaKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}:${item[1]}`)],
+    (handle, item) => { handle[0].value = `${item[0]}:${item[1]}`; },
+    () => {},
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"], [3, "c"], [4, "d"]]);
+  const first = parent.children[0];
+  const last = parent.children[3];
+  region.apply([["move", 3, 0], ["move", 1, 3]]);
+  if (JSON.stringify(values(parent)) !== '["4:d","2:b","3:c","1:a"]' ||
+      parent.children[0] !== last || parent.children[3] !== first) {
+    throw new Error("two-move swap batch lost its order or keyed identity");
+  }
+  region.dispose();
 }
 
 console.log("dynamic region runtime contract passed");

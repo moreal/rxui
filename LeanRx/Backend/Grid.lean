@@ -15,6 +15,7 @@ private structure RuntimeNames where
   createElement : Ident
   createText : Ident
   setAttribute : Ident
+  setProperty : Ident
   append : Ident
   setText : Ident
   listenDelegated : Ident
@@ -55,6 +56,7 @@ private def runtimeNames : Except Error RuntimeNames := do
     createElement := ← Ident.checked "createElement"
     createText := ← Ident.checked "createText"
     setAttribute := ← Ident.checked "setAttribute"
+    setProperty := ← Ident.checked "setProperty"
     append := ← Ident.checked "append"
     setText := ← Ident.checked "setText"
     listenDelegated := ← Ident.checked "listenDelegated"
@@ -84,18 +86,22 @@ private def GridAction.slug : GridAction → String
   | .sortRows => "sort"
   | .selectRow => "select"
 
-private def GridAction.label : GridAction → String
-  | .createRows => "Create 10,000 rows"
+private def GridAction.label (spec : LeanRx.Grid.Spec) : GridAction → String
+  | .createRows => s!"Create {spec.rowCount} rows"
   | .updateOne => "Update one row"
-  | .removeRows => "Remove every tenth row"
-  | .swapRows => "Swap two rows"
+  | .removeRows => s!"Remove rows divisible by {spec.removeDivisor}"
+  | .swapRows => s!"Swap rows {spec.swapFirst} and {spec.swapSecond}"
   | .filterRows => "Toggle odd rows"
   | .sortRows => "Toggle sort order"
-  | .selectRow => "Select row 7777"
+  | .selectRow => s!"Select row {spec.selectId}"
 
 private def setAttribute (runtime : RuntimeNames) (node : Expr) (name : String)
     (value : Expr) : Stmt :=
   .expr <| call runtime.setAttribute [node, .literal (.string name), value]
+
+private def setProperty (runtime : RuntimeNames) (node : Expr) (name : String)
+    (value : Expr) : Stmt :=
+  .expr <| call runtime.setProperty [node, .literal (.string name), value]
 
 private def createRowsFunction (runtime : RuntimeNames) : Except Error Function := do
   let name ← Ident.checked "$lrx_gridCreateRows"
@@ -155,31 +161,43 @@ private def projectRowFunction : Except Error Function := do
     ]]
   }
 
-private def visibleFunction (projectRow : Ident) : Except Error Function := do
+private def compareRowsFunction : Except Error Function := do
+  let name ← Ident.checked "$lrx_gridCompareRows"
+  let left ← Ident.checked "left"
+  let right ← Ident.checked "right"
+  pure {
+    name
+    params := #[left, right]
+    body := #[.return <| .conditional (equals (arrayAt left 0) (arrayAt right 0)) (uint 0)
+      (.conditional (.binary .lt (arrayAt left 0) (arrayAt right 0)) (uint 1) negativeOne)]
+  }
+
+private def visibleFunction (projectRow compareRows : Ident) : Except Error Function := do
   let name ← Ident.checked "$lrx_gridVisible"
   let rows ← Ident.checked "rows"
   let oddOnly ← Ident.checked "oddOnly"
   let descending ← Ident.checked "descending"
   let selected ← Ident.checked "selected"
   let metrics ← Ident.checked "metrics"
+  let work ← Ident.checked "work"
   let visible ← Ident.checked "visible"
   let row ← Ident.checked "row"
   let includeRow := .binary .or (.unary .not <| .ident oddOnly)
     (equals (.binary .rem (arrayAt row 0) (bigint 2)) (bigint 1))
   pure {
     name
-    params := #[rows, oddOnly, descending, selected, metrics]
+    params := #[rows, oddOnly, descending, selected, metrics, work]
     body := #[
       .const visible (.array .nil),
       .forOf row (.ident rows) <| .ofList [
-        incrementAt metrics 3,
+        incrementAt work 0,
         .ifThen includeRow <| .ofList [
           .expr <| method (.ident visible) "push" [
             call projectRow [.ident row, .ident selected, .ident metrics]]
         ]
       ],
       .ifThen (.ident descending) <| .ofList [
-        .expr <| method (.ident visible) "reverse" []
+        .expr <| method (.ident visible) "sort" [.ident compareRows]
       ],
       .return (.ident visible)
     ]
@@ -189,16 +207,16 @@ private def findIndexFunction : Except Error Function := do
   let name ← Ident.checked "$lrx_gridFindIndex"
   let rows ← Ident.checked "rows"
   let key ← Ident.checked "key"
-  let metrics ← Ident.checked "metrics"
+  let work ← Ident.checked "work"
   let found ← Ident.checked "found"
   let index ← Ident.checked "index"
   pure {
     name
-    params := #[rows, key, metrics]
+    params := #[rows, key, work]
     body := #[
       .const found (.array <| .ofList [negativeOne]),
       .forOf index (method (.ident rows) "keys" []) <| .ofList [
-        incrementAt metrics 3,
+        incrementAt work 1,
         .ifThen (equals (.index (.index (.ident rows) (.ident index)) (uint 0)) (.ident key)) <|
           .ofList [.assign (.index (.ident found) (uint 0)) (.ident index)]
       ],
@@ -223,13 +241,13 @@ private def mountRowFunction (runtime : RuntimeNames) (rowText : Ident) : Except
       .const root (call runtime.createElement [.literal (.string "div")]),
       setAttribute runtime (.ident root) "role" (.literal (.string "row")),
       setAttribute runtime (.ident root) "data-row-id" (call runtime.string [arrayAt item 0]),
-      setAttribute runtime (.ident root) "aria-selected" selectedValue,
+      setAttribute runtime (.ident root) "aria-current" selectedValue,
       .const cell (call runtime.createElement [.literal (.string "div")]),
-      setAttribute runtime (.ident cell) "role" (.literal (.string "gridcell")),
+      setAttribute runtime (.ident cell) "role" (.literal (.string "cell")),
       .const text (call runtime.createText [call rowText [.ident item]]),
       .expr <| call runtime.append [.ident cell, .ident text],
       .expr <| call runtime.append [.ident root, .ident cell],
-      addAt metrics 6 (uint 6),
+      addAt metrics 6 (uint 4),
       .return <| .array <| .ofList [.ident root, .ident text, arrayAt item 2, arrayAt item 3]
     ]
   }
@@ -252,7 +270,7 @@ private def updateRowFunction (runtime : RuntimeNames) (rowText : Ident) : Excep
         incrementAt metrics 6
       ],
       .ifThen (notEquals (arrayAt handle 3) (arrayAt item 3)) <| .ofList [
-        setAttribute runtime (arrayAt handle 0) "aria-selected"
+        setAttribute runtime (arrayAt handle 0) "aria-current"
           (.conditional (arrayAt item 3) (.literal (.string "true")) (.literal (.string "false"))),
         .assign (.index (.ident handle) (uint 3)) (arrayAt item 3),
         incrementAt metrics 6
@@ -292,6 +310,7 @@ private def finishFunction (runtime : RuntimeNames) : Except Error Function := d
       .const metrics (arrayAt context 2),
       .const statusText (arrayAt context 1),
       incrementAt metrics 1,
+      incrementAt metrics 3,
       incrementAt metrics 4,
       .expr <| method (arrayAt metrics 7) "push" [.ident action],
       .const nextStatus statusExpr,
@@ -311,12 +330,14 @@ private def fullCommitFunction (visible finish : Ident) : Except Error Function 
   let context ← Ident.checked "context"
   let action ← Ident.checked "action"
   let target ← Ident.checked "target"
+  let work ← Ident.checked "work"
   pure {
     name
     params := #[state, context, action]
     body := #[
+      .const work (arrayAt context 3),
       .const target (call visible [arrayAt state 0, arrayAt state 1, arrayAt state 2,
-        arrayAt state 3, arrayAt context 2]),
+        arrayAt state 3, arrayAt context 2, .ident work]),
       .assign (.index (.ident state) (uint 4)) (.ident target),
       .expr <| method (arrayAt context 0) "update" [.ident target],
       .expr <| call finish [.ident state, .ident context, .ident action],
@@ -324,7 +345,7 @@ private def fullCommitFunction (visible finish : Ident) : Except Error Function 
     ]
   }
 
-private def plannedCommitFunction (maxDeltaEdits : Nat) (fullCommit finish : Ident) :
+private def plannedCommitFunction (costModel : LeanRx.Grid.CostModel) (fullCommit finish : Ident) :
     Except Error Function := do
   let name ← Ident.checked "$lrx_gridPlannedCommit"
   let state ← Ident.checked "state"
@@ -332,6 +353,8 @@ private def plannedCommitFunction (maxDeltaEdits : Nat) (fullCommit finish : Ide
   let action ← Ident.checked "action"
   let deltas ← Ident.checked "deltas"
   let forceFull ← Ident.checked "forceFull"
+  let deltaCost ← Ident.checked "deltaCost"
+  let fullCost ← Ident.checked "fullCost"
   let strategy := arrayAt state 5
   let applyAndFinish : List Stmt := [
     .expr <| method (arrayAt context 0) "apply" [.ident deltas],
@@ -342,13 +365,18 @@ private def plannedCommitFunction (maxDeltaEdits : Nat) (fullCommit finish : Ide
     name
     params := #[state, context, action, deltas, forceFull]
     body := #[
-      .ifThen (equals strategy (uint 0)) <| .ofList [
+      .ifThen (equals strategy (bigint 0)) <| .ofList [
         .expr <| call fullCommit [.ident state, .ident context, .ident action],
         .return null
       ],
-      .ifThen (equals strategy (uint 1)) (.ofList applyAndFinish),
-      .ifThen (.binary .or (.ident forceFull)
-          (.binary .lt (uint maxDeltaEdits) (property (.ident deltas) "length"))) <| .ofList [
+      .ifThen (equals strategy (bigint 1)) (.ofList applyAndFinish),
+      .const deltaCost (.binary .add (uint costModel.deltaFixedCost)
+        (.binary .mul (property (.ident deltas) "length") (uint costModel.deltaEditCost))),
+      .const fullCost (.binary .mul (property (arrayAt state 4) "length")
+        (uint costModel.fullRowCost)),
+      .ifThen (.binary .or (.ident forceFull) <| .binary .or
+          (.binary .lt (uint costModel.maxDeltaEdits) (property (.ident deltas) "length"))
+          (.unary .not <| .binary .lt (.ident deltaCost) (.ident fullCost))) <| .ofList [
         .expr <| call fullCommit [.ident state, .ident context, .ident action],
         .return null
       ],
@@ -358,12 +386,16 @@ private def plannedCommitFunction (maxDeltaEdits : Nat) (fullCommit finish : Ide
     ]
   }
 
-private def createOperationFunction (spec : LeanRx.Grid.Spec)
+private def createOperationFunction (runtime : RuntimeNames) (spec : LeanRx.Grid.Spec)
     (createRows visible fullCommit finish : Ident) : Except Error Function := do
   let name ← Ident.checked "$lrx_gridCreate"
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
+  let work ← Ident.checked "work"
+  let updateButton ← Ident.checked "updateButton"
+  let swapButton ← Ident.checked "swapButton"
+  let selectButton ← Ident.checked "selectButton"
   let target ← Ident.checked "target"
   let deltas ← Ident.checked "deltas"
   let action := .literal (.string GridAction.createRows.slug)
@@ -372,18 +404,33 @@ private def createOperationFunction (spec : LeanRx.Grid.Spec)
     params := #[state, context]
     body := #[
       .const metrics (arrayAt context 2),
-      incrementAt metrics 0,
+      .const work (arrayAt context 3),
+      .const updateButton (arrayAt context 4),
+      .const swapButton (arrayAt context 5),
+      .const selectButton (arrayAt context 6),
       .assign (.index (.ident state) (uint 0)) (call createRows [uint spec.rowCount]),
       .assign (.index (.ident state) (uint 1)) (bool false),
       .assign (.index (.ident state) (uint 2)) (bool false),
       .assign (.index (.ident state) (uint 3)) null,
+      .ifThen (notEquals (property (.ident updateButton) "disabled") (bool false)) <| .ofList [
+        setProperty runtime (.ident updateButton) "disabled" (bool false),
+        incrementAt metrics 6
+      ],
+      .ifThen (notEquals (property (.ident swapButton) "disabled") (bool false)) <| .ofList [
+        setProperty runtime (.ident swapButton) "disabled" (bool false),
+        incrementAt metrics 6
+      ],
+      .ifThen (notEquals (property (.ident selectButton) "disabled") (bool false)) <| .ofList [
+        setProperty runtime (.ident selectButton) "disabled" (bool false),
+        incrementAt metrics 6
+      ],
       addAt metrics 2 (uint 4),
-      .ifThen (notEquals (arrayAt state 5) (uint 1)) <| .ofList [
+      .ifThen (notEquals (arrayAt state 5) (bigint 1)) <| .ofList [
         .expr <| call fullCommit [.ident state, .ident context, action],
         .return null
       ],
       .const target (call visible [arrayAt state 0, arrayAt state 1, arrayAt state 2,
-        arrayAt state 3, .ident metrics]),
+        arrayAt state 3, .ident metrics, .ident work]),
       .assign (.index (.ident state) (uint 4)) (.ident target),
       .const deltas (.array <| .ofList [.array <| .ofList [
         .literal (.string "reset"), .ident target]]),
@@ -399,6 +446,7 @@ private def updateOperationFunction (spec : LeanRx.Grid.Spec) (findIndex project
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
+  let work ← Ident.checked "work"
   let rawIndex ← Ident.checked "rawIndex"
   let row ← Ident.checked "row"
   let next ← Ident.checked "nextRow"
@@ -411,19 +459,20 @@ private def updateOperationFunction (spec : LeanRx.Grid.Spec) (findIndex project
     params := #[state, context]
     body := #[
       .const metrics (arrayAt context 2),
-      incrementAt metrics 0,
-      .const rawIndex (call findIndex [arrayAt state 0, bigint spec.updateId, .ident metrics]),
+      .const work (arrayAt context 3),
+      .const rawIndex (call findIndex [arrayAt state 0, bigint spec.updateId, .ident work]),
+      .ifThen (.binary .lt (.ident rawIndex) (uint 0)) <| .ofList [.return null],
       .const row (.index (arrayAt state 0) (.ident rawIndex)),
       .const next (.array <| .ofList [arrayAt row 0, arrayAt row 1,
         .binary .add (arrayAt row 2) (bigint 1), bool false]),
       .assign (.index (arrayAt state 0) (.ident rawIndex)) (.ident next),
       incrementAt metrics 2,
-      .ifThen (equals (arrayAt state 5) (uint 0)) <| .ofList [
+      .ifThen (equals (arrayAt state 5) (bigint 0)) <| .ofList [
         .expr <| call fullCommit [.ident state, .ident context, action],
         .return null
       ],
       .const deltas (.array .nil),
-      .const visibleIndex (call findIndex [arrayAt state 4, bigint spec.updateId, .ident metrics]),
+      .const visibleIndex (call findIndex [arrayAt state 4, bigint spec.updateId, .ident work]),
       .ifThen (.binary .le (uint 0) (.ident visibleIndex)) <| .ofList [
         .const projected (call projectRow [.ident next, arrayAt state 3, .ident metrics]),
         .assign (.index (arrayAt state 4) (.ident visibleIndex)) (.ident projected),
@@ -435,12 +484,15 @@ private def updateOperationFunction (spec : LeanRx.Grid.Spec) (findIndex project
     ]
   }
 
-private def removeOperationFunction (spec : LeanRx.Grid.Spec) (keepRow fullCommit plannedCommit : Ident) :
+private def removeOperationFunction (runtime : RuntimeNames) (spec : LeanRx.Grid.Spec)
+    (keepRow fullCommit plannedCommit : Ident) :
     Except Error Function := do
   let name ← Ident.checked "$lrx_gridRemove"
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
+  let work ← Ident.checked "work"
+  let updateButton ← Ident.checked "updateButton"
   let deltas ← Ident.checked "deltas"
   let nextVisible ← Ident.checked "nextVisible"
   let item ← Ident.checked "item"
@@ -455,22 +507,29 @@ private def removeOperationFunction (spec : LeanRx.Grid.Spec) (keepRow fullCommi
     params := #[state, context]
     body := #[
       .const metrics (arrayAt context 2),
-      incrementAt metrics 0,
+      .const work (arrayAt context 3),
+      .const updateButton (arrayAt context 4),
       .const nextRows (method (arrayAt state 0) "filter" [.ident keepRow]),
       .assign (.index (.ident state) (uint 0)) (.ident nextRows),
+      .ifThen (notEquals (property (.ident updateButton) "disabled")
+          (bool (spec.updateId % spec.removeDivisor == 0))) <| .ofList [
+        setProperty runtime (.ident updateButton) "disabled"
+          (bool (spec.updateId % spec.removeDivisor == 0)),
+        incrementAt metrics 6
+      ],
       incrementAt metrics 2,
       .ifThen selectedRemoved <| .ofList [
         .assign (.index (.ident state) (uint 3)) null,
         incrementAt metrics 2
       ],
-      .ifThen (equals (arrayAt state 5) (uint 0)) <| .ofList [
+      .ifThen (equals (arrayAt state 5) (bigint 0)) <| .ofList [
         .expr <| call fullCommit [.ident state, .ident context, action],
         .return null
       ],
       .const deltas (.array .nil),
       .const nextVisible (.array .nil),
       .forOf item (arrayAt state 4) <| .ofList [
-        incrementAt metrics 3,
+        incrementAt work 2,
         .const currentIndex (property (.ident nextVisible) "length"),
         .ifThen removed <| .ofList [
           .expr <| method (.ident deltas) "push" [.array <| .ofList [
@@ -492,6 +551,7 @@ private def swapOperationFunction (spec : LeanRx.Grid.Spec) (findIndex visible f
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
+  let work ← Ident.checked "work"
   let firstIndex ← Ident.checked "firstIndex"
   let secondIndex ← Ident.checked "secondIndex"
   let firstRow ← Ident.checked "firstRow"
@@ -511,25 +571,27 @@ private def swapOperationFunction (spec : LeanRx.Grid.Spec) (findIndex visible f
     params := #[state, context]
     body := #[
       .const metrics (arrayAt context 2),
-      incrementAt metrics 0,
-      .const firstIndex (call findIndex [arrayAt state 0, bigint spec.swapFirst, .ident metrics]),
-      .const secondIndex (call findIndex [arrayAt state 0, bigint spec.swapSecond, .ident metrics]),
+      .const work (arrayAt context 3),
+      .const firstIndex (call findIndex [arrayAt state 0, bigint spec.swapFirst, .ident work]),
+      .const secondIndex (call findIndex [arrayAt state 0, bigint spec.swapSecond, .ident work]),
+      .ifThen (.binary .or (.binary .lt (.ident firstIndex) (uint 0))
+          (.binary .lt (.ident secondIndex) (uint 0))) <| .ofList [.return null],
       .const firstRow (.index (arrayAt state 0) (.ident firstIndex)),
       .const secondRow (.index (arrayAt state 0) (.ident secondIndex)),
       .assign (.index (arrayAt state 0) (.ident firstIndex)) (.ident secondRow),
       .assign (.index (arrayAt state 0) (.ident secondIndex)) (.ident firstRow),
       addAt metrics 2 (uint 2),
-      .ifThen (equals (arrayAt state 5) (uint 0)) <| .ofList [
+      .ifThen (equals (arrayAt state 5) (bigint 0)) <| .ofList [
         .expr <| call fullCommit [.ident state, .ident context, action],
         .return null
       ],
-      .const visibleFirst (call findIndex [arrayAt state 4, bigint spec.swapFirst, .ident metrics]),
-      .const visibleSecond (call findIndex [arrayAt state 4, bigint spec.swapSecond, .ident metrics]),
+      .const visibleFirst (call findIndex [arrayAt state 4, bigint spec.swapFirst, .ident work]),
+      .const visibleSecond (call findIndex [arrayAt state 4, bigint spec.swapSecond, .ident work]),
       .ifThen (.unary .not <| .binary .and
           (.binary .le (uint 0) (.ident visibleFirst))
           (.binary .le (uint 0) (.ident visibleSecond))) <| .ofList [
         .const resetTarget (call visible [arrayAt state 0, arrayAt state 1, arrayAt state 2,
-          arrayAt state 3, .ident metrics]),
+          arrayAt state 3, .ident metrics, .ident work]),
         .assign (.index (.ident state) (uint 4)) (.ident resetTarget),
         .const resetDeltas (.array <| .ofList [.array <| .ofList [
           .literal (.string "reset"), .ident resetTarget]]),
@@ -564,6 +626,7 @@ private def resetProjectionOperationFunction (functionName : String)
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
+  let work ← Ident.checked "work"
   let target ← Ident.checked "target"
   let deltas ← Ident.checked "deltas"
   let action := .literal (.string actionValue.slug)
@@ -572,15 +635,15 @@ private def resetProjectionOperationFunction (functionName : String)
     params := #[state, context]
     body := #[
       .const metrics (arrayAt context 2),
-      incrementAt metrics 0,
+      .const work (arrayAt context 3),
       .assign (.index (.ident state) (uint stateIndex)) (.unary .not <| arrayAt state stateIndex),
       incrementAt metrics 2,
-      .ifThen (notEquals (arrayAt state 5) (uint 1)) <| .ofList [
+      .ifThen (notEquals (arrayAt state 5) (bigint 1)) <| .ofList [
         .expr <| call fullCommit [.ident state, .ident context, action],
         .return null
       ],
       .const target (call visible [arrayAt state 0, arrayAt state 1, arrayAt state 2,
-        arrayAt state 3, .ident metrics]),
+        arrayAt state 3, .ident metrics, .ident work]),
       .assign (.index (.ident state) (uint 4)) (.ident target),
       .const deltas (.array <| .ofList [.array <| .ofList [
         .literal (.string "reset"), .ident target]]),
@@ -596,7 +659,9 @@ private def selectOperationFunction (spec : LeanRx.Grid.Spec) (findIndex project
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
+  let work ← Ident.checked "work"
   let previous ← Ident.checked "previous"
+  let rawIndex ← Ident.checked "rawIndex"
   let deltas ← Ident.checked "deltas"
   let previousIndex ← Ident.checked "previousIndex"
   let previousRow ← Ident.checked "previousRow"
@@ -609,7 +674,9 @@ private def selectOperationFunction (spec : LeanRx.Grid.Spec) (findIndex project
     params := #[state, context]
     body := #[
       .const metrics (arrayAt context 2),
-      incrementAt metrics 0,
+      .const work (arrayAt context 3),
+      .const rawIndex (call findIndex [arrayAt state 0, selected, .ident work]),
+      .ifThen (.binary .lt (.ident rawIndex) (uint 0)) <| .ofList [.return null],
       incrementAt metrics 2,
       .ifThen (equals (arrayAt state 3) selected) <| .ofList [
         incrementAt metrics 1,
@@ -618,13 +685,13 @@ private def selectOperationFunction (spec : LeanRx.Grid.Spec) (findIndex project
       ],
       .const previous (arrayAt state 3),
       .assign (.index (.ident state) (uint 3)) selected,
-      .ifThen (equals (arrayAt state 5) (uint 0)) <| .ofList [
+      .ifThen (equals (arrayAt state 5) (bigint 0)) <| .ofList [
         .expr <| call fullCommit [.ident state, .ident context, action],
         .return null
       ],
       .const deltas (.array .nil),
       .ifThen (notEquals (.ident previous) null) <| .ofList [
-        .const previousIndex (call findIndex [arrayAt state 4, .ident previous, .ident metrics]),
+        .const previousIndex (call findIndex [arrayAt state 4, .ident previous, .ident work]),
         .ifThen (.binary .le (uint 0) (.ident previousIndex)) <| .ofList [
           .const previousRow (call projectRow [
             .index (arrayAt state 4) (.ident previousIndex), null, .ident metrics]),
@@ -633,7 +700,7 @@ private def selectOperationFunction (spec : LeanRx.Grid.Spec) (findIndex project
             .literal (.string "update"), .ident previousIndex, .ident previousRow]]
         ]
       ],
-      .const nextIndex (call findIndex [arrayAt state 4, selected, .ident metrics]),
+      .const nextIndex (call findIndex [arrayAt state 4, selected, .ident work]),
       .ifThen (.binary .le (uint 0) (.ident nextIndex)) <| .ofList [
         .const nextRow (call projectRow [
           .index (arrayAt state 4) (.ident nextIndex), selected, .ident metrics]),
@@ -665,7 +732,7 @@ private def dispatchFunction (operations : List (GridAction × Ident)) : Except 
       ]).toArray ++ #[.return null]
   }
 
-private def buttonBody (runtime : RuntimeNames) (controls metrics : Ident)
+private def buttonBody (runtime : RuntimeNames) (spec : LeanRx.Grid.Spec) (controls metrics : Ident)
     (action : GridAction) (index : Nat) : Except Error (Ident × List Stmt) := do
   let button ← Ident.checked s!"gridButton{index}"
   let text ← Ident.checked s!"gridButtonText{index}"
@@ -674,14 +741,14 @@ private def buttonBody (runtime : RuntimeNames) (controls metrics : Ident)
     setAttribute runtime (.ident button) "type" (.literal (.string "button")),
     setAttribute runtime (.ident button) "data-lrx-action" (.literal (.string action.slug)),
     setAttribute runtime (.ident button) "data-lrx-key" (.literal (.string "")),
-    .const text (call runtime.createText [.literal (.string action.label)]),
+    .const text (call runtime.createText [.literal (.string (action.label spec))]),
     .expr <| call runtime.append [.ident button, .ident text],
     .expr <| call runtime.append [.ident controls, .ident button],
-    addAt metrics 6 (uint 4)
+    addAt metrics 6 (uint 3)
   ])
 
 private def mountStrategyFunction (runtime : RuntimeNames) (checked : LeanRx.Grid.Spec.Checked)
-    (createRows visible mountRow updateRow disposeRow rowRoot dispatch : Ident) :
+    (mountRow updateRow disposeRow rowRoot dispatch : Ident) :
     Except Error Function := do
   let name ← Ident.checked "$lrx_mountGridStrategy"
   let target ← Ident.checked "target"
@@ -694,22 +761,26 @@ private def mountStrategyFunction (runtime : RuntimeNames) (checked : LeanRx.Gri
   let status ← Ident.checked "status"
   let statusText ← Ident.checked "statusText"
   let metrics ← Ident.checked "metrics"
+  let work ← Ident.checked "work"
   let rows ← Ident.checked "rows"
   let state ← Ident.checked "state"
   let region ← Ident.checked "region"
   let context ← Ident.checked "context"
-  let visibleRows ← Ident.checked "visibleRows"
   let offControls ← Ident.checked "offControls"
   let disposer ← Ident.checked "disposer"
   let actions : List GridAction := [.createRows, .updateOne, .removeRows, .swapRows,
     .filterRows, .sortRows, .selectRow]
-  let buttons ← actions.zipIdx.mapM fun (action, index) => buttonBody runtime controls metrics action index
+  let buttons ← actions.zipIdx.mapM fun (action, index) =>
+    buttonBody runtime checked.spec controls metrics action index
   let buttonStatements := buttons.flatMap (·.2)
+  let updateButton ← Ident.checked "gridButton1"
+  let swapButton ← Ident.checked "gridButton3"
+  let selectButton ← Ident.checked "gridButton6"
   let resetMetrics := (List.range 10).map fun index =>
     .assign (.index (.ident metrics) (uint index)) (if index == 7 then .array .nil else uint 0)
-  let selectedRegion := .conditional (equals (.ident strategy) (uint 0))
+  let selectedRegion := .conditional (equals (.ident strategy) (bigint 0))
     (.ident runtime.createKeyedRegion) (.ident runtime.createDeltaKeyedRegion)
-  let initialStatus := s!"{checked.spec.rowCount} visible / {checked.spec.rowCount} source"
+  let initialStatus := "0 visible / 0 source"
   let body : List Stmt := [
     .const root (call runtime.createElement [.literal (.string "main")]),
     setAttribute runtime (.ident root) "class" (.literal (.string "leanrx-grid")),
@@ -718,10 +789,11 @@ private def mountStrategyFunction (runtime : RuntimeNames) (checked : LeanRx.Gri
     .expr <| call runtime.append [.ident title, .ident titleText],
     .expr <| call runtime.append [.ident root, .ident title],
     .const controls (call runtime.createElement [.literal (.string "div")]),
+    setAttribute runtime (.ident controls) "role" (.literal (.string "group")),
     setAttribute runtime (.ident controls) "aria-label" (.literal (.string "Grid operations")),
     .expr <| call runtime.append [.ident root, .ident controls],
     .const grid (call runtime.createElement [.literal (.string "div")]),
-    setAttribute runtime (.ident grid) "role" (.literal (.string "grid")),
+    setAttribute runtime (.ident grid) "role" (.literal (.string "table")),
     setAttribute runtime (.ident grid) "aria-label" (.literal (.string "10,000 row experiment")),
     .expr <| call runtime.append [.ident root, .ident grid],
     .const status (call runtime.createElement [.literal (.string "p")]),
@@ -730,27 +802,33 @@ private def mountStrategyFunction (runtime : RuntimeNames) (checked : LeanRx.Gri
     .expr <| call runtime.append [.ident status, .ident statusText],
     .expr <| call runtime.append [.ident root, .ident status],
     .const metrics (.array <| .ofList [uint 0, uint 0, uint 0, uint 0, uint 0,
-      uint 0, uint 0, .array .nil, uint 0, uint 0])
+      uint 0, uint 0, .array .nil, uint 0, uint 0]),
+    .const work (.array <| .ofList [uint 0, uint 0, uint 0])
   ] ++ buttonStatements ++ [
-    .const rows (call createRows [uint checked.spec.rowCount]),
+    setProperty runtime (.ident updateButton) "disabled" (bool true),
+    setProperty runtime (.ident swapButton) "disabled" (bool true),
+    setProperty runtime (.ident selectButton) "disabled" (bool true),
+    .const rows (.array .nil),
     .const state (.array <| .ofList [
       .ident rows, bool false, bool false, null, .array .nil, .ident strategy,
       .literal (.string initialStatus)]),
     .const region (callExpr selectedRegion [
       .ident grid, .ident mountRow, .ident updateRow, .ident disposeRow, .ident rowRoot]),
-    .const context (.array <| .ofList [.ident region, .ident statusText, .ident metrics]),
-    .const visibleRows (call visible [.ident rows, bool false, bool false, null, .ident metrics]),
-    .assign (.index (.ident state) (uint 4)) (.ident visibleRows),
-    .expr <| method (.ident region) "update" [.ident visibleRows],
+    .const context (.array <| .ofList [.ident region, .ident statusText, .ident metrics,
+      .ident work, .ident updateButton, .ident swapButton, .ident selectButton]),
     .expr <| call runtime.append [.ident target, .ident root]
   ] ++ resetMetrics ++ [
+    .assign (.index (.ident work) (uint 0)) (uint 0),
+    .assign (.index (.ident work) (uint 1)) (uint 0),
+    .assign (.index (.ident work) (uint 2)) (uint 0),
     .const offControls (call runtime.listenDelegated [
       .ident controls, .literal (.string "click"), .ident state, .ident context, .ident dispatch]),
     .const disposer (call runtime.makeDisposer [
       .ident root,
       .array <| .ofList [.ident offControls, property (.ident region) "dispose"],
       .ident metrics,
-      .array <| .ofList [.ident region]]),
+      .array <| .ofList [.ident region],
+      .ident work]),
     .return (.ident disposer)
   ]
   pure { name, params := #[target, strategy], body := body.toArray }
@@ -762,7 +840,7 @@ private def mountWrapper (nameValue : String) (strategyValue : Nat) (mountStrate
   pure {
     name
     params := #[target]
-    body := #[.return <| call mountStrategy [.ident target, uint strategyValue]]
+    body := #[.return <| call mountStrategy [.ident target, bigint strategyValue]]
   }
 
 private def manifest (moduleName : String) (checked : LeanRx.Grid.Spec.Checked) : ComponentManifest := {
@@ -771,7 +849,8 @@ private def manifest (moduleName : String) (checked : LeanRx.Grid.Spec.Checked) 
   moduleName
   graphHash := s!"grid:{checked.spec.rowCount}:{checked.spec.updateId}:{checked.spec.removeDivisor}:" ++
     s!"{checked.spec.swapFirst}:{checked.spec.swapSecond}:{checked.spec.selectId}:" ++
-    s!"{checked.spec.costModel.maxDeltaEdits}"
+    s!"{checked.spec.costModel.maxDeltaEdits}:{checked.spec.costModel.deltaFixedCost}:" ++
+    s!"{checked.spec.costModel.deltaEditCost}:{checked.spec.costModel.fullRowCost}"
   runtimeAbi := LeanRx.runtimeAbi
   exports := #["mountFull", "mountDelta", "mountHybrid"]
   stateSlots := #[
@@ -793,7 +872,8 @@ def emit (moduleName : String) (checked : LeanRx.Grid.Spec.Checked) : Except Err
   let keepRow ← keepRowFunction checked.spec.removeDivisor
   let rowText ← rowTextFunction runtime
   let projectRow ← projectRowFunction
-  let visible ← visibleFunction projectRow.name
+  let compareRows ← compareRowsFunction
+  let visible ← visibleFunction projectRow.name compareRows.name
   let findIndex ← findIndexFunction
   let mountRow ← mountRowFunction runtime rowText.name
   let updateRow ← updateRowFunction runtime rowText.name
@@ -801,13 +881,14 @@ def emit (moduleName : String) (checked : LeanRx.Grid.Spec.Checked) : Except Err
   let rowRoot ← rowRootFunction
   let finish ← finishFunction runtime
   let fullCommit ← fullCommitFunction visible.name finish.name
-  let plannedCommit ← plannedCommitFunction checked.spec.costModel.maxDeltaEdits
+  let plannedCommit ← plannedCommitFunction checked.spec.costModel
     fullCommit.name finish.name
-  let create ← createOperationFunction checked.spec createRows.name visible.name
+  let create ← createOperationFunction runtime checked.spec createRows.name visible.name
     fullCommit.name finish.name
   let updateOne ← updateOperationFunction checked.spec findIndex.name projectRow.name
     fullCommit.name plannedCommit.name
-  let remove ← removeOperationFunction checked.spec keepRow.name fullCommit.name plannedCommit.name
+  let remove ← removeOperationFunction runtime checked.spec keepRow.name fullCommit.name
+    plannedCommit.name
   let swap ← swapOperationFunction checked.spec findIndex.name visible.name fullCommit.name
     plannedCommit.name
   let filter ← resetProjectionOperationFunction "$lrx_gridFilter" .filterRows 1
@@ -820,14 +901,15 @@ def emit (moduleName : String) (checked : LeanRx.Grid.Spec.Checked) : Except Err
     (.createRows, create.name), (.updateOne, updateOne.name), (.removeRows, remove.name),
     (.swapRows, swap.name), (.filterRows, filter.name), (.sortRows, sort.name),
     (.selectRow, select.name)]
-  let mountStrategy ← mountStrategyFunction runtime checked createRows.name visible.name
+  let mountStrategy ← mountStrategyFunction runtime checked
     mountRow.name updateRow.name disposeRow.name rowRoot.name dispatch.name
   let mountFull ← mountWrapper "mountFull" 0 mountStrategy.name
   let mountDelta ← mountWrapper "mountDelta" 1 mountStrategy.name
   let mountHybrid ← mountWrapper "mountHybrid" 2 mountStrategy.name
   let declarations : Array Decl := #[
     .function createRows, .function keepRow, .function rowText, .function projectRow,
-    .function visible, .function findIndex, .function mountRow, .function updateRow,
+    .function compareRows, .function visible, .function findIndex, .function mountRow,
+    .function updateRow,
     .function disposeRow, .function rowRoot, .function finish, .function fullCommit,
     .function plannedCommit, .function create, .function updateOne, .function remove,
     .function swap, .function filter, .function sort, .function select, .function dispatch,
@@ -840,6 +922,7 @@ def emit (moduleName : String) (checked : LeanRx.Grid.Spec.Checked) : Except Err
           (runtime.createElement, runtime.createElement),
           (runtime.createText, runtime.createText),
           (runtime.setAttribute, runtime.setAttribute),
+          (runtime.setProperty, runtime.setProperty),
           (runtime.append, runtime.append),
           (runtime.setText, runtime.setText),
           (runtime.listenDelegated, runtime.listenDelegated)

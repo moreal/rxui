@@ -243,12 +243,12 @@ export function createDeltaKeyedRegion(
 ) {
   const marker = anchor(parent, "leanrx:delta-keyed");
   const metrics = [0, 0, 0, 0, 0, 0, 0];
-  // mounts/updates/moves/disposals/fullResets/deltaOps/validationVisits
+  // mounts/updates/moves/disposals/fullResets/deltaOps/acceptedValidationUnits
   let entries = [];
   let disposed = false;
 
-  function reconcile(items) {
-    validateUniqueItems(items);
+  function reconcile(items, alreadyValidated = false) {
+    if (!alreadyValidated) validateUniqueItems(items);
     metrics[6] += items.length;
     const oldByKey = new Map(entries.map((entry) => [entry.key, entry]));
     const next = [];
@@ -317,7 +317,7 @@ export function createDeltaKeyedRegion(
         metrics[2] += 1;
       }
     } else {
-      reconcile(delta[1]);
+      reconcile(delta[1], true);
     }
     metrics[5] += 1;
   }

@@ -44,7 +44,7 @@ def run (iterations : Nat) : IO Unit := do
     throw <| IO.userError "data-grid strategy correctness baseline failed"
   let visible := visibleRows full.finalState
   unless visible.length == 5000 && visible.head?.map (·.id) == some 9999 &&
-      visible.getLast?.map (·.id) == some 3 && full.finalState.selected == some 7777 do
+      visible.getLast?.map (·.id) == some 1 && full.finalState.selected == some 7777 do
     throw <| IO.userError "data-grid defining observation changed"
   printMeasurement iterations .full full
   printMeasurement iterations .delta delta

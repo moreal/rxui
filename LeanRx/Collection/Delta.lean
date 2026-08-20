@@ -7,7 +7,7 @@ inductive ListDelta (α : Type u) where
   | remove (index : Nat)
   | update (index : Nat) (value : α)
   | move (fromIndex toIndex : Nat)
-  | reset (values : List α)
+  | reset (values : Array α)
 deriving Repr
 
 /-- Source-linked lowering may wrap this pure diagnostic later. The collection
@@ -88,18 +88,18 @@ def apply (values : List α) : ListDelta α → Except Error (List α)
   | .remove index => removeAt values index
   | .update index value => updateAt values index value
   | .move fromIndex toIndex => moveAt values fromIndex toIndex
-  | .reset target => .ok target
+  | .reset target => .ok target.toList
 
 def applyAll : List (ListDelta α) → List α → Except Error (List α)
   | [], values => .ok values
   | delta :: rest, values => do
       applyAll rest (← delta.apply values)
 
-@[simp] theorem apply_reset (values target : List α) :
-    (ListDelta.reset target).apply values = .ok target := rfl
+@[simp] theorem apply_reset (values : List α) (target : Array α) :
+    (ListDelta.reset target).apply values = .ok target.toList := rfl
 
-@[simp] theorem applyAll_reset (values target : List α) :
-    applyAll [ListDelta.reset target] values = .ok target := rfl
+@[simp] theorem applyAll_reset (values : List α) (target : Array α) :
+    applyAll [ListDelta.reset target] values = .ok target.toList := rfl
 
 end ListDelta
 
@@ -123,14 +123,14 @@ def create [DecidableEq α] (current target : List α)
       if h : actual = target then
         ⟨candidate, hApply.trans (congrArg Except.ok h)⟩
       else
-        ⟨[.reset target], ListDelta.applyAll_reset current target⟩
+        ⟨[.reset target.toArray], by simp⟩
   | .error _ =>
-      ⟨[.reset target], ListDelta.applyAll_reset current target⟩
+      ⟨[.reset target.toArray], by simp⟩
 
 def usedReset (plan : PlannedDeltas current target) : Bool :=
-  match plan.deltas with
-  | [.reset _] => true
-  | _ => false
+  plan.deltas.any fun delta => match delta with
+    | .reset _ => true
+    | _ => false
 
 theorem apply_eq_target (plan : PlannedDeltas current target) :
     ListDelta.applyAll plan.deltas current = .ok target := plan.correct
