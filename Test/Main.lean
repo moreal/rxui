@@ -39,6 +39,7 @@ import Test.Todo.Model
 import Test.Effect.Command
 import Test.Effect.Resource
 import Test.Notes.Model
+import Test.IssueBrowser.Model
 import Test.Elab.Component
 import Test.Cli.Model
 import Test.Cli.AtomicOutput
@@ -95,6 +96,7 @@ def main : IO Unit := do
   LeanRxTest.Effect.Command.run
   LeanRxTest.Effect.Resource.run
   LeanRxTest.Notes.Model.run
+  LeanRxTest.IssueBrowser.Model.run
   LeanRxTest.Elab.Component.run
   LeanRxTest.Cli.Model.run
   LeanRxTest.Cli.AtomicOutput.run

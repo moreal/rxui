@@ -47,5 +47,6 @@ import LeanRx.Effect.Model
 import LeanRx.Effect.Command
 import LeanRx.Effect.Resource
 import LeanRx.Notes.Model
+import LeanRx.IssueBrowser.Model
 
 /-! LeanRx's public library root. -/

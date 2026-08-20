@@ -35,6 +35,7 @@ deriving Repr, BEq, DecidableEq
 structure HttpRequest where
   method : HttpMethod := .get
   url : String
+  query : Array (String × String) := #[]
 deriving Repr, BEq
 
 structure HttpResponse where
