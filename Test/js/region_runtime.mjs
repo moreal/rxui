@@ -1,5 +1,6 @@
 import {
   createConditionalRegion,
+  createDeltaKeyedRegion,
   createKeyedRegion,
   createPositionalRegion,
 } from "../../runtime/leanrx_region.mjs";
@@ -142,6 +143,59 @@ function values(parent) {
   if (region.instrumentation()[0] !== 4) throw new Error("region instrumentation is mutable");
   region.dispose();
   if (parent.children.length !== 0) throw new Error("keyed region disposal leaked nodes");
+}
+
+{
+  const parent = new FakeParent();
+  const region = createDeltaKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}:${item[1]}`)],
+    (handle, item) => { handle[0].value = `${item[0]}:${item[1]}`; },
+    (handle) => { handle[0].disposals += 1; },
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"], [3, "c"], [4, "d"]]);
+  const identities = new Map(parent.children.slice(0, 4).map((node) => [node.value[0], node]));
+  region.apply([["update", 2, [3, "C"]]]);
+  if (parent.children[2] !== identities.get("3") || values(parent)[2] !== "3:C") {
+    throw new Error("delta update lost keyed identity");
+  }
+  region.apply([["move", 3, 0], ["remove", 2], ["insert", 1, [5, "e"]]]);
+  if (parent.children[0] !== identities.get("4") ||
+      JSON.stringify(values(parent)) !== '["4:d","5:e","1:a","3:C"]') {
+    throw new Error("delta move/remove/insert produced the wrong order");
+  }
+  const beforeInvalid = values(parent);
+  let invalidFailed = false;
+  try {
+    region.apply([["remove", 0], ["update", 9, [3, "bad"]]]);
+  } catch (error) {
+    invalidFailed = String(error).includes("LRX-DELTA-003");
+  }
+  if (!invalidFailed || JSON.stringify(values(parent)) !== JSON.stringify(beforeInvalid)) {
+    throw new Error("invalid delta batch mutated before validation completed");
+  }
+  let keyChangeFailed = false;
+  try {
+    region.apply([["update", 0, [99, "bad"]]]);
+  } catch (error) {
+    keyChangeFailed = String(error).includes("LRX-DELTA-007");
+  }
+  if (!keyChangeFailed || JSON.stringify(values(parent)) !== JSON.stringify(beforeInvalid)) {
+    throw new Error("delta update allowed a key change");
+  }
+  const retained = parent.children[0];
+  region.apply([["reset", [[4, "D"], [6, "f"]]]]);
+  if (parent.children[0] !== retained || JSON.stringify(values(parent)) !== '["4:D","6:f"]') {
+    throw new Error("delta reset lost retained keyed identity");
+  }
+  const metrics = region.instrumentation();
+  metrics[5] = 999;
+  if (region.instrumentation()[5] !== 5) throw new Error("delta metrics are mutable");
+  region.dispose();
+  region.dispose();
+  region.apply([["insert", 0, [7, "ignored"]]]);
+  if (parent.children.length !== 0) throw new Error("delta region disposal leaked nodes");
 }
 
 console.log("dynamic region runtime contract passed");
