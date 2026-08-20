@@ -429,7 +429,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     .const refs (.array <| .ofList sinkRefs),
     .const sinkCache (.array <| .ofList sinkInitialValues),
     .const tx (.array <| .ofList [
-      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil
+      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil,
+      uint 0, uint 0
     ]),
     .const oldSources (.array <| .ofList <|
       List.replicate checked.sourceCount (.literal .null)),

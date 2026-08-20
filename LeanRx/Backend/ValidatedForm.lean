@@ -514,7 +514,8 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
     .expr <| call runtime.append [.ident statusNode, .ident statusText],
     .expr <| call runtime.append [.ident root, .ident statusNode],
     .const metrics (.array <| .ofList [
-      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil]),
+      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil,
+      uint 0, uint 0]),
     .const cache (.array <| .ofList [
       .literal (.string initial.nameError), .literal (.string initial.ageError),
       .literal (.string initial.termsError), .literal (.boolean initial.disabled),

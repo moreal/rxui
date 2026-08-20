@@ -855,7 +855,8 @@ def emit (moduleName : String) (checked : LeanRx.Todo.Spec.Checked) : Except Err
     .expr <| call runtime.append [.ident reverseButton, .ident reverseText],
     .expr <| call runtime.append [.ident root, .ident reverseButton],
     .const metrics (.array <| .ofList [
-      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil]),
+      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil,
+      uint 0, uint 0]),
     .const keyed (call runtime.createKeyedRegion [
       .ident list, .ident mountRow.name, .ident updateRow.name, .ident disposeRow.name,
       .ident rowRoot.name]),

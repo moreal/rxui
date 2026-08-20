@@ -158,5 +158,7 @@ test("loads, paginates, retries, suppresses stale HTTP, and cancels disposal", a
   await page.waitForTimeout(400);
   expect(await page.evaluate(() => globalThis.issueDispose.effectInstrumentation()))
     .toEqual([10, 2]);
+  expect(await page.evaluate(() => globalThis.issueDispose.instrumentation().slice(8, 10)))
+    .toEqual([10, 2]);
   expect(pageErrors).toEqual([]);
 });

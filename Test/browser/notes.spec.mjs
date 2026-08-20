@@ -80,6 +80,8 @@ test("restores, debounces, reports storage errors, and cancels owned work", asyn
   expect(await page.evaluate(({ storageKey }) => localStorage.getItem(storageKey), expected))
     .toBe("final draft");
   expect(await page.evaluate(() => globalThis.notesDispose.effectInstrumentation())).toEqual([4, 1]);
+  expect(await page.evaluate(() => globalThis.notesDispose.instrumentation().slice(8, 10)))
+    .toEqual([4, 1]);
 
   await page.evaluate(() => {
     globalThis.notesOriginalSetItem = Storage.prototype.setItem;

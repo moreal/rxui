@@ -214,7 +214,8 @@ def emit (moduleName : String) (checked : TabsSpec.Checked n) : Except Error Emi
     .expr <| call runtime.append [.ident panel, .ident panelText],
     .expr <| call runtime.append [.ident root, .ident panel],
     .const metrics (.array <| .ofList [
-      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil]),
+      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil,
+      uint 0, uint 0]),
     .const sinkCache (.array <| .ofList [
       call panelEvaluator.exportName [.ident panels, arrayAt state 0]]),
     .const context (.array <| .ofList [

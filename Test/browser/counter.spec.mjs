@@ -111,6 +111,7 @@ test("add two suppresses the unchanged parity text write", async ({ page }) => {
   expect(await page.evaluate(() => globalThis.parityMutations)).toBe(0);
   const instrumentation = await page.evaluate(() => globalThis.leanrxDisposers[0].instrumentation());
   expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 2, 1, 3, 2]);
+  expect(instrumentation.slice(8, 10)).toEqual([0, 0]);
   expect(instrumentation[7]).toEqual([
     "transaction:begin",
     "event:addTwo",
@@ -135,11 +136,14 @@ test("nested dispatch batches into the outer transaction", async ({ page }) => {
     const snapshot = globalThis.leanrxDisposers[0].instrumentation();
     snapshot[0] = 99;
     snapshot[7].push("consumer:mutation");
+    snapshot[8] = 99;
+    snapshot[9] = 99;
   });
   await page.locator("#one button").nth(2).click();
   await expect(page.locator("#one .counter p").first()).toHaveText("Count: 3");
   const instrumentation = await page.evaluate(() => globalThis.leanrxDisposers[0].instrumentation());
   expect(instrumentation.slice(0, 7)).toEqual([0, 1, 2, 2, 1, 3, 2]);
+  expect(instrumentation.slice(8, 10)).toEqual([0, 0]);
   expect(instrumentation[7].filter((event) => event === "transaction:commit")).toHaveLength(1);
   expect(instrumentation[7].slice(0, 7)).toEqual([
     "transaction:begin",

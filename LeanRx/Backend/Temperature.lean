@@ -330,7 +330,8 @@ def emit (moduleName : String) (checked : TemperatureSpec.Checked) : Except Erro
     .expr <| call runtime.append [.ident errorNode, .ident errorText],
     .expr <| call runtime.append [.ident root, .ident errorNode],
     .const metrics (.array <| .ofList [
-      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil]),
+      uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil,
+      uint 0, uint 0]),
     .const errorCache (.array <| .ofList [.literal (.string "")]),
     .const propertyCache (.array <| .ofList [
       .literal (.string checked.spec.initialCelsius),

@@ -10,7 +10,7 @@ const manifest = JSON.parse(
 );
 if (
   manifest.module !== "TemperatureConverter.mjs" ||
-  manifest.runtimeAbi !== 5 ||
+  manifest.runtimeAbi !== 6 ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string", "string", "bool"]) ||
   manifest.sourceCount !== 3 ||
   manifest.derivedCount !== 0 ||

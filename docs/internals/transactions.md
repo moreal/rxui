@@ -27,11 +27,19 @@ development snapshot:
 | 5 | sink evaluations |
 | 6 | DOM writes (text, property, or dynamic attribute) |
 | 7 | stable trace-event strings |
+| 8 | owned commands started |
+| 9 | owned commands cancelled |
 
 Counters are cumulative for that mount and start at zero after initial mount.
 Mutating the returned array or its trace copy cannot modify transaction control.
 Trace events use declared source, derived, sink, and event names. They are a
 development observability contract, not a timing API.
+
+ABI 6 appends indices 8 and 9 without changing the original transaction slots.
+The effect runtime also exposes the focused copied pair through
+`effectInstrumentation()`. Starting a timer, storage operation, HTTP request, or
+foreign command increments index 8; explicit replacement and component disposal
+increment index 9 only when an owned handle actually existed.
 
 Dynamic-region emitters count every compiler-emitted `setText`, `setProperty`,
 and `setAttribute` call in index 6. Region insertion, removal, reorder, and
