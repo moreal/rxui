@@ -620,3 +620,66 @@ the browser test waits relative to the native-derived 250 ms debounce artifact.
 ### Follow-up issue or commit
 
 `example(notes): dogfood owned persistence`
+
+## Issue Browser — cancellable HTTP resources and typed decoding
+
+### Scenario exercised
+
+Issue Browser starts a real loopback HTTP request on mount, repeats it from a
+keyboard-activated Search button, appends a second page through a keyed region,
+shows typed decoder and non-200 failures, retries the last request, and replaces
+a delayed query with a newer one. A query containing `&`, `=`, and `?` reaches
+the server as one exact query value. Disposal while another delayed request is
+owned aborts it and suppresses all later delivery. The example imports only the
+public LeanRx API; the native reducer produces the initial request/decoder oracle.
+
+### What was pleasant
+
+The same opaque command handle drives pure stale-result rejection, runtime
+ownership, `AbortController`, and disposal. HTTP query pairs remain structured
+until the effect adapter applies `URLSearchParams`, so application/backend code
+never concatenates untrusted URLs. The decoder is an explicit checked foreign
+port with a native mock and a deterministic manifest disclosure of its wire
+types, errors, trust boundary, and security behavior.
+
+### Friction
+
+Structured JSON results cannot honestly reuse the scalar reactive
+`RuntimeTypeId`: doing so would reopen equality and lowering contracts sealed in
+M1. A separate manifest/port-only `PortTypeId` was required. The specialized
+backend still duplicates the pure Issue Browser state machine and the browser
+JSON decoder; native artifacts and adversarial browser cases detect drift, but
+that agreement is executable evidence rather than a proof of JavaScript or DOM
+behavior.
+
+### Bugs found
+
+The first foreign-port draft assumed every input and output had a scalar runtime
+representation, which could not describe `IssuePage` without weakening the
+reactive ABI. Structured wire metadata is now isolated from reactive equality,
+and the generated manifest locks the exact decoder contract. The focused browser
+path also made cancellation semantics concrete: removing an owned handle before
+aborting ensures even an adapter that resolves after cancellation cannot deliver
+stale data.
+
+### Security and accessibility checks
+
+Hostile component and issue titles stay in text nodes and create no image or
+handler execution. Query punctuation is encoded by the owned HTTP adapter.
+Decoder validation rejects malformed arrays, unsafe/non-natural IDs, and
+non-string titles before they reach the region. The query input and issue list
+have programmatic names, all actions are native buttons, loading/error output is
+a live status, Search is exercised by keyboard, populated content passes axe,
+and no promise rejection reaches the page.
+
+### Performance observations
+
+The defining scenario records the exact effect snapshot `[10,2]`: ten HTTP
+commands start, one delayed request is cancelled by a newer query, and one is
+cancelled by component disposal. Pagination retains the first keyed issue and
+mounts only the new page. These are deterministic ownership/work counters, not a
+network throughput claim.
+
+### Follow-up issue or commit
+
+`example(issue): dogfood cancellable HTTP resources`

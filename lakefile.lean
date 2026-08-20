@@ -59,7 +59,8 @@ lean_lib LeanRxExamples where
     `examples.DependentTabsBuild, `examples.TemperatureConverter,
     `examples.TemperatureConverterBuild, `examples.ValidatedForm,
     `examples.ValidatedFormBuild, `examples.TodoMVC, `examples.TodoMVCBuild,
-    `examples.Notes, `examples.NotesBuild]
+    `examples.Notes, `examples.NotesBuild, `examples.IssueBrowser,
+    `examples.IssueBrowserBuild]
 
 @[default_target]
 lean_exe leanrx_test where
@@ -100,6 +101,9 @@ lean_exe leanrx_todo_js where
 
 lean_exe leanrx_notes_js where
   root := `examples.NotesMain
+
+lean_exe leanrx_issue_browser_js where
+  root := `examples.IssueBrowserMain
 
 lean_exe leanrx_graph_bench where
   root := `bench.SmallGraph

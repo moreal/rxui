@@ -9,6 +9,7 @@ temperature_output="$workspace/temperature"
 validated_form_output="$workspace/validated-form"
 todo_output="$workspace/todo"
 notes_output="$workspace/notes"
+issue_browser_output="$workspace/issues"
 trap 'rm -rf -- "$workspace"' EXIT
 
 lake exe leanrx_counter_js -- "$output"
@@ -18,10 +19,12 @@ lake exe leanrx_temperature_js -- "$temperature_output"
 lake exe leanrx_validated_form_js -- "$validated_form_output"
 lake exe leanrx_todo_js -- "$todo_output"
 lake exe leanrx_notes_js -- "$notes_output"
+lake exe leanrx_issue_browser_js -- "$issue_browser_output"
 LEANRX_BROWSER_DIST="$output" LEANRX_DIAMOND_DIST="$diamond_output" \
   LEANRX_TABS_DIST="$tabs_output" \
   LEANRX_TEMPERATURE_DIST="$temperature_output" \
   LEANRX_VALIDATED_FORM_DIST="$validated_form_output" \
   LEANRX_TODO_DIST="$todo_output" \
   LEANRX_NOTES_DIST="$notes_output" \
+  LEANRX_ISSUE_BROWSER_DIST="$issue_browser_output" \
   corepack pnpm exec playwright test
