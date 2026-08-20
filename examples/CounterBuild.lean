@@ -5,6 +5,21 @@ namespace LeanRxExamples.CounterBuild
 
 open LeanRx LeanRxExamples.Counter
 
+/-- Editor/tooling entry points emitted beside the browser bundle. -/
+def generatedDeclarationsSource : String := String.intercalate "\n" [
+  "import examples.Counter",
+  "",
+  "namespace LeanRxGenerated.Counter",
+  "",
+  "abbrev Schema := LeanRxExamples.Counter.CounterSyntax_schema",
+  "def declarations := LeanRxExamples.Counter.CounterSyntax_declarations",
+  "abbrev Spec := LeanRxExamples.Counter.CounterSyntax_spec",
+  "abbrev Check := LeanRxExamples.Counter.CounterSyntax_check",
+  "",
+  "end LeanRxGenerated.Counter",
+  ""
+]
+
 private def generateChecked (directory : System.FilePath)
     (checked : CheckedComponent CounterSchema) : IO Unit := do
   let emitted ← match Backend.Component.emit "Counter.mjs" checked with
@@ -19,6 +34,7 @@ private def generateChecked (directory : System.FilePath)
   IO.FS.writeFile (directory / "Counter.graph.json") (checked.graph.toJson ++ "\n")
   IO.FS.writeFile (directory / "Counter.graph.dot") (checked.graph.toDot ++ "\n")
   IO.FS.writeFile (directory / "Counter.graph.html") (checked.graph.toHtml ++ "\n")
+  IO.FS.writeFile (directory / "Counter.generated.lean") generatedDeclarationsSource
   IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")
   IO.FS.writeFile (directory / "leanrx_host.mjs") (← IO.FS.readFile "runtime/leanrx_host.mjs")
 

@@ -30,8 +30,14 @@ if (
 }
 
 const source = await readFile(path.join(directory, "Counter.mjs"), "utf8");
+const declarations = await readFile(path.join(directory, "Counter.generated.lean"), "utf8");
 for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
   if (source.includes(banned)) throw new Error(`generated Counter contains ${banned}`);
+}
+if (!declarations.includes("namespace LeanRxGenerated.Counter") ||
+    !declarations.includes("CounterSyntax_declarations") ||
+    !declarations.includes("CounterSyntax_check")) {
+  throw new Error("generated Counter editor declarations are invalid");
 }
 
 const generated = await import(pathToFileURL(path.join(directory, "Counter.mjs")).href);
