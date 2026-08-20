@@ -43,6 +43,8 @@ host receives explicit state, context, handle, result decoder, and delivery
 function. `makeEffectDisposer` cancels all owned operations before delegating to
 the ordinary DOM/region disposer. ABI 6 exposes command starts/cancellations at
 standard instrumentation indices 8/9 and through a focused defensive snapshot.
+ABI 7 does not change the effect contract or metric indices; it versions the
+additional structural-delta region capability introduced in M10.
 
 ## Foreign ports
 

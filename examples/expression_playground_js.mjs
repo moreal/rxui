@@ -24,7 +24,7 @@ for (const [moduleName, exportName, resultType] of [
   );
   if (
     manifest.module !== moduleName ||
-    manifest.runtimeAbi !== 6 ||
+    manifest.runtimeAbi !== 7 ||
     JSON.stringify(manifest.exports) !== JSON.stringify([exportName]) ||
     manifest.inputs.map((input) => input.type).join(",") !== "int,int,int" ||
     manifest.resultType !== resultType

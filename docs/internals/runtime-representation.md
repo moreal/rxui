@@ -64,7 +64,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 6. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 7. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -93,6 +93,12 @@ context, handle, decoder, and delivery functions; structured foreign-port wire
 types remain manifest-only and cannot enter the scalar reactive ABI. Their
 type-indexed `PortRep` evidence and nominal `PortRecord` wrappers keep manifest
 metadata aligned with the Lean input/output signature.
+
+ABI 7 adds the checked structural-delta keyed-region adapter. It accepts only a
+closed, compiler-generated delta vocabulary and validates the complete batch
+before mutating owned DOM. The adapter remains a local region reconciler: it
+does not discover dependencies, schedule reactive work, or interpret arbitrary
+application messages.
 
 Dynamic-region manifests use a separate `ManifestTypeId` for metadata-only
 `record<name>` and `list<element>` slot descriptions. Those constructors cannot

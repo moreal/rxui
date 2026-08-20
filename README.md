@@ -153,6 +153,10 @@ wire types, errors, trust, and security contracts in deterministic manifests.
 See [the effects and ports contract](docs/internals/effects.md) and
 [ADR-0015](docs/adr/0015-runtime-abi-v6-owned-effects.md).
 
+The checked structural-delta region capability is versioned separately in
+[ADR-0016](docs/adr/0016-runtime-abi-v7-structural-deltas.md); it leaves the
+ten-slot transaction/effect instrumentation unchanged.
+
 ## Project boundaries
 
 LeanRx is intended to compile a restricted staged language; it will not transpile

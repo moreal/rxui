@@ -17,6 +17,7 @@
 | [0013](docs/adr/0013-runtime-abi-v4-form-events.md) | Accepted | Bump the internal runtime ABI for typed form properties and payload events | 2026-08-19 |
 | [0014](docs/adr/0014-runtime-abi-v5-dynamic-regions.md) | Accepted | Bump the internal runtime ABI for local dynamic regions and delegated row events | 2026-08-19 |
 | [0015](docs/adr/0015-runtime-abi-v6-owned-effects.md) | Accepted | Bump the internal runtime ABI for owned commands and explicit foreign ports | 2026-08-20 |
+| [0016](docs/adr/0016-runtime-abi-v7-structural-deltas.md) | Accepted | Bump the internal runtime ABI for checked structural keyed deltas | 2026-08-21 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

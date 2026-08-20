@@ -41,6 +41,12 @@ The effect runtime also exposes the focused copied pair through
 foreign command increments index 8; explicit replacement and component disposal
 increment index 9 only when an owned handle actually existed.
 
+ABI 7 leaves those ten standard slots unchanged and adds a separate copied
+structural-delta region snapshot. Its local counters distinguish mounts,
+retained updates, moves, disposals, full resets, accepted delta operations, and
+pre-mutation validation visits; they are not timing results or reactive graph
+counters.
+
 Dynamic-region emitters count every compiler-emitted `setText`, `setProperty`,
 and `setAttribute` call in index 6. Region insertion, removal, reorder, and
 branch replacement are structural operations reported separately by
