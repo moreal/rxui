@@ -76,3 +76,12 @@ action rather than claiming M5 actual-change pruning. Standard instrumentation
 counts every evaluated state-slot write and every compiler-emitted text,
 property, or attribute host call. Separate region counters record mounts,
 updates, moves, and disposals.
+
+M10 adds an opt-in structural-delta adapter beside full keyed reconciliation.
+The pure `ListDelta` vocabulary is closed, and a private-constructor planned
+batch exposes either the exact checked candidate or a visible reset fallback.
+The JavaScript host validates a whole tagged batch before mutation and retains
+local identity/disposal ownership; it still performs no dependency discovery or
+reactive scheduling. The default remains full keyed recomputation. See
+[ADR-0017](../adr/0017-structural-delta-remains-opt-in.md) and the
+[10k-row measurements](../performance/m10-data-grid.md).

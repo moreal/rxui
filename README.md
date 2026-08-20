@@ -158,6 +158,19 @@ The checked structural-delta region capability is versioned separately in
 [ADR-0016](docs/adr/0016-runtime-abi-v7-structural-deltas.md); it leaves the
 ten-slot transaction/effect instrumentation unchanged.
 
+Generate and benchmark the public M10 Data Grid experiment with:
+
+```sh
+lake exe leanrx_data_grid_js -- .tmp/grid
+./scripts/check_grid_bench.sh
+```
+
+The application compares full keyed recomputation, explicit checked deltas, and
+an explicit-cost-model hybrid on the same 10,000-row trace. Measurements support
+keeping delta opt-in rather than making it a default language feature; see the
+[performance report](docs/performance/m10-data-grid.md) and
+[ADR-0017](docs/adr/0017-structural-delta-remains-opt-in.md).
+
 ## Project boundaries
 
 LeanRx is intended to compile a restricted staged language; it will not transpile

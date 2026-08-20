@@ -18,6 +18,7 @@
 | [0014](docs/adr/0014-runtime-abi-v5-dynamic-regions.md) | Accepted | Bump the internal runtime ABI for local dynamic regions and delegated row events | 2026-08-19 |
 | [0015](docs/adr/0015-runtime-abi-v6-owned-effects.md) | Accepted | Bump the internal runtime ABI for owned commands and explicit foreign ports | 2026-08-20 |
 | [0016](docs/adr/0016-runtime-abi-v7-structural-deltas.md) | Accepted | Bump the internal runtime ABI for checked structural keyed deltas | 2026-08-21 |
+| [0017](docs/adr/0017-structural-delta-remains-opt-in.md) | Accepted | Keep structural delta an opt-in experimental library | 2026-08-21 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

@@ -703,3 +703,72 @@ deterministic ownership/work counters, not a network throughput claim.
 ### Follow-up issue or commit
 
 `example(issue): dogfood cancellable HTTP resources`
+
+## Data Grid — 10k structural strategy experiment
+
+### Scenario exercised
+
+The public `Grid.Spec` fixes one 10,000-row application and the defining create,
+single-row update, every-tenth removal, two-row swap, odd filter, descending sort,
+and keyed selection sequence. The generated module exports full keyed, explicit
+checked-delta, and hybrid-cost-model mounts. Native reference output, all three
+browser logical projections, and every final key/count/selection agree; no
+application handwritten reactivity bypasses the public API.
+
+### What was pleasant
+
+The proof-carrying delta planner made fallback explicit: a candidate batch either
+replays to the independently recomputed target or becomes one visible reset.
+This kept pure correctness independent of the empirical cost model. The same
+mount/update/dispose row callbacks drive full and delta region hosts, so the
+browser comparison retains identical text, keyed identity, disposal, hostile
+content, and accessibility semantics. Copied instrumentation clearly separates
+reactive/DOM work from structural operations.
+
+### Friction
+
+The specialized typed-JavaScript-AST emitter is large because arbitrary Lean
+reducers are still outside the controlled backend. Delta filtering and sorting
+fall back to reset; they do not yet compose verified `filterDelta`/`sortDelta`
+operators. The first cost model undercounts generated validation/projection work:
+native modeled derived evaluations fall under delta, while generated counters
+rise. Browser heap reporting was process-wide and too coarse to distinguish
+strategies. The full experiment adds a material API/runtime/test burden for
+workload-dependent wins.
+
+### Bugs found
+
+Initial lowering indexed the row array and search index in the wrong order; JS
+AST validation exposed the failing function but its generic message omitted the
+name, so the diagnostic and its regression now identify the invalid scope.
+The first generated grid used `role="row"` around a bare text node; the populated
+axe scan reported the missing required `gridcell` child for all 5,000 final rows.
+Rows now contain an explicit gridcell, every rendered row is checked
+structurally, and axe scans all unique UI plus a populated representative row.
+Running that 10k scan in the same long-lived Chromium process also made unrelated
+tests order-dependent under GC pressure; the grid workload now receives a fresh
+browser process after the standard suite.
+
+### Security and accessibility checks
+
+The hostile component name stays literal text and creates no image or handler.
+All action markers are native buttons, the grid/status/operations are named,
+selection is maintained with `aria-selected`, every row contains exactly one
+gridcell, and the populated representative accessibility scan is green. Repeated
+selection performs no derived, DOM, or region work. Disposal is idempotent and a
+detached control cannot change copied instrumentation.
+
+### Performance observations
+
+Five native samples show effectively tied median trace time despite deterministic
+work differences. Five Chromium samples show large small-update/reorder and DOM-
+write benefits for delta/hybrid, but explicit delta loses on bulk removal and
+does not improve filtering. Full/delta/hybrid perform 43,006/10,008/19,008
+standard DOM writes; modeled allocations are 53,000/20,002/29,002. The browser
+heap estimate is non-discriminating. Exact operation medians, work counts, bundle
+size, clean build time, complexity, and limitations are recorded in
+`docs/performance/m10-data-grid.md`.
+
+### Follow-up issue or commit
+
+`docs(delta): keep structural deltas opt-in`
