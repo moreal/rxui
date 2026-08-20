@@ -126,10 +126,25 @@ const decoded = decodeIssueResponse({
 });
 const invalid = decodeIssueResponse({ status: 200, body: '{"issues":"wrong"}' });
 const statusFailure = decodeIssueResponse({ status: 503, body: "{}" });
+const maximumId = decodeIssueResponse({
+  status: 200,
+  body: '{"issues":[{"id":9007199254740991,"title":"max"}],"hasMore":false}',
+});
+const unsafeId = decodeIssueResponse({
+  status: 200,
+  body: '{"issues":[{"id":9007199254740992,"title":"unsafe"}],"hasMore":false}',
+});
+const duplicateId = decodeIssueResponse({
+  status: 200,
+  body: '{"issues":[{"id":1,"title":"a"},{"id":1,"title":"b"}],"hasMore":false}',
+});
 if (JSON.stringify(decoded) !==
     '{"ok":true,"value":[[[7,"typed"]],true]}' ||
-    invalid.error.code !== "LRX-HTTP-DECODE-001" ||
-    statusFailure.error.code !== "LRX-HTTP-STATUS-001") {
+    invalid.error.code !== "LRX-PORT-302" ||
+    statusFailure.error.code !== "LRX-PORT-303" ||
+    maximumId.value[0][0][0] !== Number.MAX_SAFE_INTEGER ||
+    unsafeId.error.code !== "LRX-PORT-302" ||
+    duplicateId.error.code !== "LRX-PORT-304") {
   throw new Error("issue decoder port drifted from its typed wire contract");
 }
 

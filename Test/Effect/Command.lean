@@ -135,7 +135,7 @@ def run : IO Unit :=
         "foreign port runtime signature drifted"
       assertTrue (match ForeignPort.create (ι := String) (ο := String) "" .sync .none #[]
           "trust" "security" .ok with
-        | .error _ => true
+        | .error error => error.code == "LRX-PORT-101"
         | .ok _ => false) "empty foreign port name was accepted"
 
 end LeanRxTest.Effect.Command

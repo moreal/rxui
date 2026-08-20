@@ -49,6 +49,15 @@ test.beforeAll(async () => {
           } else {
             response.end(issueBody(70, "Recovered issue"));
           }
+        } else if (query === "duplicate") {
+          response.end(JSON.stringify({
+            issues: [{ id: 81, title: "Duplicate A" }, { id: 81, title: "Duplicate B" }],
+            hasMore: false,
+          }));
+        } else if (query === "cross" && page === "1") {
+          response.end(issueBody(90, "Cross-page first", true));
+        } else if (query === "cross" && page === "2") {
+          response.end(issueBody(90, "Cross-page duplicate"));
         } else if (query === "lean" && page === "1") {
           response.end(issueBody(
             1,
@@ -138,6 +147,20 @@ test("loads, paginates, retries, suppresses stale HTTP, and cancels disposal", a
   await expect(status).toHaveText("Loaded 1 issues");
   await expect(issues.first()).toHaveText("Recovered issue");
 
+  await input.fill("duplicate");
+  await expect(status).toContainText("Request failed: issue response contains duplicate IDs");
+  await expect(issues.first()).toHaveText("Recovered issue");
+  expect(pageErrors).toEqual([]);
+
+  await input.fill("cross");
+  await expect(status).toHaveText("Loaded 1 issues");
+  await expect(issues.first()).toHaveText("Cross-page first");
+  await next.click();
+  await expect(status).toContainText("Request failed: issue response contains duplicate IDs");
+  await expect(issues).toHaveCount(1);
+  await expect(issues.first()).toHaveText("Cross-page first");
+  expect(pageErrors).toEqual([]);
+
   await input.fill("slow");
   await expect(status).toHaveText("Loading");
   await input.fill("fresh");
@@ -157,8 +180,8 @@ test("loads, paginates, retries, suppresses stale HTTP, and cancels disposal", a
   await expect(root).toHaveCount(0);
   await page.waitForTimeout(400);
   expect(await page.evaluate(() => globalThis.issueDispose.effectInstrumentation()))
-    .toEqual([10, 2]);
+    .toEqual([13, 2]);
   expect(await page.evaluate(() => globalThis.issueDispose.instrumentation().slice(8, 10)))
-    .toEqual([10, 2]);
+    .toEqual([13, 2]);
   expect(pageErrors).toEqual([]);
 });

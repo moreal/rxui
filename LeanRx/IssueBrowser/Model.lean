@@ -52,15 +52,32 @@ structure Transition where
 def initial : State := ⟨"lean", #[], 0, false, .idle, none, none, .first, false⟩
 
 private def decodeError (message : String) : Error := {
-  code := "LRX-HTTP-DECODE-001"
+  code := "LRX-PORT-302"
   message := s!"issue response decode failed: {message}"
 }
+
+private def duplicateIssueError : Error := {
+  code := "LRX-PORT-304"
+  message := "issue response contains duplicate IDs"
+}
+
+def maxSafeIssueId : Nat := 9007199254740991
+
+private def uniqueIssueList : List Issue → List Nat → Bool
+  | [], _ => true
+  | issue :: rest, seen =>
+      !seen.contains issue.id && uniqueIssueList rest (issue.id :: seen)
+
+def issueIdsUnique (issues : Array Issue) : Bool :=
+  uniqueIssueList issues.toList []
 
 private def decodeIssue (value : Lean.Json) : Except Error Issue := do
   let idValue ← value.getObjVal? "id" |>.mapError decodeError
   let titleValue ← value.getObjVal? "title" |>.mapError decodeError
   let id ← idValue.getNat? |>.mapError decodeError
   let title ← titleValue.getStr? |>.mapError decodeError
+  unless id ≤ maxSafeIssueId do
+    throw <| decodeError s!"issue id must be at most {maxSafeIssueId}"
   pure { id, title }
 
 def decodePage (body : String) : Except Error Page := do
@@ -70,26 +87,30 @@ def decodePage (body : String) : Except Error Page := do
   let rawIssues ← issuesValue.getArr? |>.mapError decodeError
   let issues ← rawIssues.mapM decodeIssue
   let hasMore ← hasMoreValue.getBool? |>.mapError decodeError
+  unless issueIdsUnique issues do throw duplicateIssueError
   pure { issues, hasMore }
-
-/-- Explicit browser JSON-decoder port. Its structured output is wire metadata,
-not a reactive runtime/equality type. -/
-def decoderPort : Except Error (ForeignPort String Page) :=
-  ForeignPort.createStructured "decodeIssuePage" (.runtime .string)
-    (.record "IssuePage") .sync .none
-    #["LRX-HTTP-DECODE-001"]
-    "browser JSON parsing and object validation remain in the backend TCB"
-    "JSON is parsed as data; titles are returned as strings and never HTML"
-    decodePage
 
 def decodeResponse : Except Error HttpResponse → Except Error Page
   | .error error => .error error
   | .ok response =>
       if response.status == 200 then decodePage response.body
       else .error {
-        code := "LRX-HTTP-STATUS-001"
+        code := "LRX-PORT-303"
         message := s!"issue request returned HTTP {response.status.toNat}"
       }
+
+abbrev ResponseWire := PortRecord "HttpResponse" HttpResponse
+abbrev PageWire := PortRecord "IssuePage" Page
+
+/-- Explicit browser response-decoder port. Its nominal structured wrappers are
+erased by specialized lowering and never enter reactive runtime equality. -/
+def decoderPort : Except Error (ForeignPort ResponseWire PageWire) :=
+  ForeignPort.createStructured "decodeIssueResponse" (.record "HttpResponse")
+    (.record "IssuePage") .sync .none
+    #["LRX-PORT-302", "LRX-PORT-303", "LRX-PORT-304"]
+    "browser status/JSON parsing and object validation remain in the backend TCB"
+    "JSON is parsed as data; unique safe IDs key rows and titles remain text"
+    (fun input => decodeResponse (.ok input.value) |>.map fun page => ⟨page⟩)
 
 private def request (query : String) (page : Nat) : HttpRequest := {
   url := "/api/issues"
@@ -141,12 +162,17 @@ def update (state : State) (message : Msg) : Transition :=
             match result with
             | .ok page =>
                 let issues := if key.page == 1 then page.issues else state.issues ++ page.issues
-                ⟨{ state with
-                    issues
-                    currentPage := key.page
-                    hasMore := page.hasMore
-                    resource := .success key.handle page
-                    active := none }, .none⟩
+                if issueIdsUnique issues then
+                  ⟨{ state with
+                      issues
+                      currentPage := key.page
+                      hasMore := page.hasMore
+                      resource := .success key.handle page
+                      active := none }, .none⟩
+                else
+                  ⟨{ state with
+                      resource := .failure key.handle duplicateIssueError
+                      active := none }, .none⟩
             | .error error =>
                 ⟨{ state with resource := .failure key.handle error, active := none }, .none⟩
           else ⟨state, .none⟩
@@ -179,11 +205,11 @@ structure Checked where
   private mk ::
   spec : Spec
   initial : State
-  decoder : ForeignPort String Page
+  decoder : ForeignPort ResponseWire PageWire
 
 def check (spec : Spec) : Except Error Checked := do
   if spec.name.isEmpty then throw {
-    code := "LRX-EFFECT-002"
+    code := "LRX-PORT-502"
     message := "Issue Browser component name must not be empty"
   }
   let decoder ← decoderPort

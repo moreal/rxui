@@ -75,6 +75,24 @@ def PortCancellation.debug : PortCancellation → String
   | .none => "none"
   | .owned => "owned"
 
+/-- A structured wire value has an explicit nominal layout name while retaining
+its Lean payload type. The wrapper is erased by specialized backend lowering. -/
+structure PortRecord (name : String) (α : Type) where
+  value : α
+deriving Repr
+
+/-- Type-indexed evidence for foreign wire metadata. Callers cannot attach a
+record/array descriptor to an unrelated Lean input or output type. -/
+inductive PortRep : Type → Type 1 where
+  | runtime (value : RuntimeType α) : PortRep α
+  | array (element : PortRep α) : PortRep (Array α)
+  | record (name : String) : PortRep (PortRecord name α)
+
+def PortRep.typeId : {α : Type} → PortRep α → PortTypeId
+  | _, .runtime value => .runtime value.id
+  | _, .array element => .array element.typeId
+  | _, .record name => .record name
+
 /-- A typed foreign boundary. Construction requires explicit runtime
 representations, operational metadata, trust/security notes, and a native mock.
 It does not contain JavaScript source. -/
@@ -92,23 +110,23 @@ structure ForeignPort (ι ο : Type) where
 
 namespace ForeignPort
 
-def create [inputRuntime : RuntimeRep ι] [outputRuntime : RuntimeRep ο]
-    (name : String) (mode : PortMode) (cancellation : PortCancellation)
-    (errors : Array String) (trust security : String)
-    (nativeMock : ι → Except Error ο) : Except Error (ForeignPort ι ο) :=
+def createStructured (name : String) (inputRep : PortRep ι) (outputRep : PortRep ο)
+    (mode : PortMode) (cancellation : PortCancellation) (errors : Array String)
+    (trust security : String) (nativeMock : ι → Except Error ο) :
+    Except Error (ForeignPort ι ο) :=
   if name.isEmpty then .error {
-    code := "LRX-PORT-001"
+    code := "LRX-PORT-101"
     message := "foreign port name must not be empty"
   } else if trust.isEmpty then .error {
-    code := "LRX-PORT-002"
+    code := "LRX-PORT-102"
     message := s!"foreign port {name.quote} must declare its trust boundary"
   } else if security.isEmpty then .error {
-    code := "LRX-PORT-003"
+    code := "LRX-PORT-103"
     message := s!"foreign port {name.quote} must declare security behavior"
   } else .ok {
     name
-    inputType := .runtime inputRuntime.runtimeType.id
-    outputType := .runtime outputRuntime.runtimeType.id
+    inputType := inputRep.typeId
+    outputType := outputRep.typeId
     mode
     cancellation
     errors
@@ -117,30 +135,12 @@ def create [inputRuntime : RuntimeRep ι] [outputRuntime : RuntimeRep ο]
     nativeMock
   }
 
-def createStructured (name : String) (inputType outputType : PortTypeId)
-    (mode : PortMode) (cancellation : PortCancellation) (errors : Array String)
-    (trust security : String) (nativeMock : ι → Except Error ο) :
-    Except Error (ForeignPort ι ο) :=
-  if name.isEmpty then .error {
-    code := "LRX-PORT-001"
-    message := "foreign port name must not be empty"
-  } else if trust.isEmpty then .error {
-    code := "LRX-PORT-002"
-    message := s!"foreign port {name.quote} must declare its trust boundary"
-  } else if security.isEmpty then .error {
-    code := "LRX-PORT-003"
-    message := s!"foreign port {name.quote} must declare security behavior"
-  } else .ok {
-    name
-    inputType
-    outputType
-    mode
-    cancellation
-    errors
-    trust
-    security
-    nativeMock
-  }
+def create [inputRuntime : RuntimeRep ι] [outputRuntime : RuntimeRep ο]
+    (name : String) (mode : PortMode) (cancellation : PortCancellation)
+    (errors : Array String) (trust security : String)
+    (nativeMock : ι → Except Error ο) : Except Error (ForeignPort ι ο) :=
+  createStructured name (.runtime inputRuntime.runtimeType)
+    (.runtime outputRuntime.runtimeType) mode cancellation errors trust security nativeMock
 
 def runMock (port : ForeignPort ι ο) (input : ι) : Except Error ο :=
   port.nativeMock input

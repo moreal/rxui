@@ -49,6 +49,7 @@ private def runtimeNames : Except Js.Error RuntimeNames := do
   }
 
 private def uint (value : Nat) : Expr := .literal (.number (UInt32.ofNat value))
+private def bigint (value : Nat) : Expr := .literal (.bigint (Int.ofNat value))
 private def negativeOne : Expr := .unary .neg (uint 1)
 private def indexAt (target : Expr) (index : Nat) : Expr := .index target (uint index)
 private def arrayAt (name : Ident) (index : Nat) : Expr := indexAt (.ident name) index
@@ -122,6 +123,26 @@ private def disposeIssueFunction : Except Js.Error Function := do
     body := #[.return (.literal .null)]
   }
 
+private def uniqueIssuesFunction : Except Js.Error Function := do
+  let issues ← Ident.checked "issues"
+  let seen ← Ident.checked "seenIds"
+  let issue ← Ident.checked "candidateIssue"
+  let key ← Ident.checked "candidateKey"
+  pure {
+    name := ← Ident.checked "$lrx_uniqueIssues"
+    params := #[issues]
+    body := #[
+      .const seen (.array .nil),
+      .forOf issue (.ident issues) <| .ofList [
+        .const key (indexAt (.ident issue) 0),
+        .ifThen (method (.ident seen) "includes" [.ident key]) <|
+          .ofList [.return (.literal (.boolean false))],
+        .expr <| method (.ident seen) "push" [.ident key]
+      ],
+      .return (.literal (.boolean true))
+    ]
+  }
+
 private def renderFunction (runtime : RuntimeNames) : Except Js.Error Function := do
   let name ← Ident.checked "$lrx_renderIssues"
   let state ← Ident.checked "state"
@@ -186,14 +207,14 @@ private def beginFunction (runtime : RuntimeNames) (render received : Ident) :
   let metrics ← Ident.checked "metrics"
   let effects ← Ident.checked "effects"
   let handle ← Ident.checked "requestHandle"
+  let hadActive ← Ident.checked "hadActiveRequest"
+  let previousHandle ← Ident.checked "previousHandle"
   let body : List Stmt := [
     .const metrics (contextAt context 6),
     .const effects (contextAt context 5),
     .ifThen (stateAt state 11) <| .ofList [.return (.literal .null)],
-    .ifThen (equals (stateAt state 4) (uint 1)) <| .ofList [
-      .expr <| method (.ident effects) "cancel" [stateAt state 5],
-      trace metrics "command:http:cancel"
-    ],
+    .const hadActive (equals (stateAt state 4) (uint 1)),
+    .const previousHandle (stateAt state 5),
     .const handle (stateAt state 10)
   ] ++ assignState state metrics 0 (.ident query) ++
     assignState state metrics 4 (uint 1) ++
@@ -207,6 +228,10 @@ private def beginFunction (runtime : RuntimeNames) (render received : Ident) :
     incrementAt metrics 1,
     trace metrics "command:http:start",
     .expr <| call render [.ident state, .ident context],
+    .ifThen (.ident hadActive) <| .ofList [
+      .expr <| method (.ident effects) "cancel" [.ident previousHandle],
+      trace metrics "command:http:cancel"
+    ],
     .expr <| method (.ident effects) "http" [
       .ident handle, .literal (.string "GET"), .literal (.string "/api/issues"),
       .array <| .ofList [
@@ -218,7 +243,7 @@ private def beginFunction (runtime : RuntimeNames) (render received : Ident) :
   ]
   pure { name, params := #[state, context, query, page], body := body.toArray }
 
-private def receivedFunction (render : Ident) : Except Js.Error Function := do
+private def receivedFunction (render uniqueIssues : Ident) : Except Js.Error Function := do
   let name ← Ident.checked "$lrx_issueReceived"
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
@@ -237,16 +262,26 @@ private def receivedFunction (render : Ident) : Except Js.Error Function := do
       .ifThen condition <| .ofList <| [
         .ifThen (property (.ident result) "ok") <| .ofList <| [
           .const page (property (.ident result) "value"),
-          .const nextIssues (.conditional (equals (stateAt state 7) (uint 1))
+          .const nextIssues (.conditional (equals (stateAt state 7) (bigint 1))
             (indexAt (.ident page) 0)
             (method (stateAt state 1) "concat" [indexAt (.ident page) 0]))
-        ] ++ assignState state metrics 1 (.ident nextIssues) ++
-          assignState state metrics 2 (stateAt state 7) ++
-          assignState state metrics 3 (indexAt (.ident page) 1) ++
-          assignState state metrics 4 (uint 2) ++
-          assignState state metrics 5 negativeOne ++
-          assignState state metrics 12 (.literal (.string "")) ++ [
-          trace metrics "command:http:succeeded"
+        ] ++ [
+          .ifThen (call uniqueIssues [.ident nextIssues]) <| .ofList <|
+            assignState state metrics 1 (.ident nextIssues) ++
+            assignState state metrics 2 (stateAt state 7) ++
+            assignState state metrics 3 (indexAt (.ident page) 1) ++
+            assignState state metrics 4 (uint 2) ++
+            assignState state metrics 5 negativeOne ++
+            assignState state metrics 12 (.literal (.string "")) ++ [
+            trace metrics "command:http:succeeded"
+          ],
+          .ifThen (.unary .not <| call uniqueIssues [.ident nextIssues]) <| .ofList <|
+            assignState state metrics 4 (uint 3) ++
+            assignState state metrics 5 negativeOne ++
+            assignState state metrics 12
+              (.literal (.string "issue response contains duplicate IDs")) ++ [
+            trace metrics "command:http:failed"
+          ]
         ],
         .ifThen (.unary .not <| property (.ident result) "ok") <| .ofList <|
           assignState state metrics 4 (uint 3) ++
@@ -270,7 +305,7 @@ private def queryFunction (begin : Ident) : Except Js.Error Function := do
     name := ← Ident.checked "$lrx_issueQuery"
     params := #[state, context, value]
     body := #[
-      .expr <| call begin [.ident state, .ident context, .ident value, uint 1],
+      .expr <| call begin [.ident state, .ident context, .ident value, bigint 1],
       .return (.literal .null)
     ]
   }
@@ -282,7 +317,7 @@ private def searchFunction (begin : Ident) : Except Js.Error Function := do
     name := ← Ident.checked "$lrx_issueSearch"
     params := #[state, context]
     body := #[
-      .expr <| call begin [.ident state, .ident context, stateAt state 0, uint 1],
+      .expr <| call begin [.ident state, .ident context, stateAt state 0, bigint 1],
       .return (.literal .null)
     ]
   }
@@ -296,7 +331,7 @@ private def nextFunction (begin : Ident) : Except Js.Error Function := do
     body := #[
       .ifThen (stateAt state 3) <| .ofList [
         .expr <| call begin [.ident state, .ident context, stateAt state 0,
-          .binary .add (stateAt state 2) (uint 1)]
+          .binary .add (stateAt state 2) (bigint 1)]
       ],
       .return (.literal .null)
     ]
@@ -388,9 +423,9 @@ private def mountFunction (runtime : RuntimeNames) (componentName : String)
       uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil,
       uint 0, uint 0]),
     .const state (.array <| .ofList [
-      .literal (.string "lean"), .array .nil, uint 0, .literal (.boolean false),
-      uint 0, negativeOne, .literal (.string ""), uint 0,
-      .literal (.string "lean"), uint 1, uint 0, .literal (.boolean false),
+      .literal (.string "lean"), .array .nil, bigint 0, .literal (.boolean false),
+      uint 0, negativeOne, .literal (.string ""), bigint 0,
+      .literal (.string "lean"), bigint 1, uint 0, .literal (.boolean false),
       .literal (.string "")]),
     .const region (call runtime.createKeyedRegion [
       .ident list, .ident mountIssue, .ident updateIssue, .ident disposeIssue]),
@@ -418,7 +453,7 @@ private def mountFunction (runtime : RuntimeNames) (componentName : String)
     .const disposer (call runtime.makeEffectDisposer [
       .ident baseDisposer, .ident state, uint 11, .ident effects]),
     .expr <| call begin [
-      .ident state, .ident context, .literal (.string "lean"), uint 1],
+      .ident state, .ident context, .literal (.string "lean"), bigint 1],
     .return (.ident disposer)
   ]
   pure { name, params := #[target, adapters], body := body.toArray }
@@ -429,10 +464,11 @@ def emit (moduleName : String) (checked : LeanRx.IssueBrowser.Spec.Checked) :
   let mountIssue ← mountIssueFunction runtime
   let updateIssue ← updateIssueFunction runtime
   let disposeIssue ← disposeIssueFunction
+  let uniqueIssues ← uniqueIssuesFunction
   let render ← renderFunction runtime
   let receivedName ← Ident.checked "$lrx_issueReceived"
   let begin ← beginFunction runtime render.name receivedName
-  let received ← receivedFunction render.name
+  let received ← receivedFunction render.name uniqueIssues.name
   let query ← queryFunction begin.name
   let search ← searchFunction begin.name
   let next ← nextFunction begin.name
@@ -469,6 +505,7 @@ def emit (moduleName : String) (checked : LeanRx.IssueBrowser.Spec.Checked) :
     ]
     declarations := #[
       .function mountIssue, .function updateIssue, .function disposeIssue,
+      .function uniqueIssues,
       .function render, .function begin, .function received, .function query,
       .function search, .function next, .function retry, .function mount]
     exports := #[{ localName := mount.name, exportName := mount.name }]
@@ -486,11 +523,11 @@ def emit (moduleName : String) (checked : LeanRx.IssueBrowser.Spec.Checked) :
     derivedCount := 0
     textSinkCount := 1
     eventCount := 4
-    hostImports := #["leanrx_dom.mjs", "leanrx_host.mjs", "leanrx_region.mjs",
-      "leanrx_effects.mjs", "leanrx_issue_ports.mjs"]
+    hostImports := #["./leanrx_dom.mjs", "./leanrx_host.mjs", "./leanrx_region.mjs",
+      "./leanrx_effects.mjs", "./leanrx_issue_ports.mjs"]
     ports := #[PortManifest.ofForeign checked.decoder]
     features := #["commands", "http", "resource", "pagination", "keyed",
-      "owned-cancellation", "foreign:decodeIssuePage", "instrumentation"]
+      "owned-cancellation", "foreign:decodeIssueResponse", "instrumentation"]
   }⟩
 
 end LeanRx.Backend.IssueBrowser

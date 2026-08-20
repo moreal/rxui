@@ -22,7 +22,9 @@ def run : IO Unit := do
     source.contains "createKeyedRegion" && source.contains "makeEffectDisposer")
     "Issue Browser backend omitted its checked HTTP/resource lifecycle"
   assertTrue (emitted.manifest.sourceCount == 4 && emitted.manifest.eventCount == 4 &&
-    emitted.manifest.features.contains "foreign:decodeIssuePage" &&
+    emitted.manifest.features.contains "foreign:decodeIssueResponse" &&
+    emitted.manifest.hostImports == #["./leanrx_dom.mjs", "./leanrx_host.mjs",
+      "./leanrx_region.mjs", "./leanrx_effects.mjs", "./leanrx_issue_ports.mjs"] &&
     emitted.manifest.ports == #[Backend.PortManifest.ofForeign checked.decoder])
     "Issue Browser manifest drifted"
 

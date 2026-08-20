@@ -25,11 +25,13 @@ private def requestKey (transition : Transition) : Except String RequestKey :=
 
 def run : IO Unit := do
   assertTrue (match decoderPort with
-    | .ok port => port.inputType == .runtime .string &&
+    | .ok port => port.name == "decodeIssueResponse" &&
+        port.inputType == .record "HttpResponse" &&
         port.outputType == .record "IssuePage" &&
-        (match port.runMock
-          "{\"issues\":[{\"id\":4,\"title\":\"port\"}],\"hasMore\":false}" with
-        | .ok _ => true
+        port.errors == #["LRX-PORT-302", "LRX-PORT-303", "LRX-PORT-304"] &&
+        (match port.runMock ⟨{ status := 200, body :=
+            "{\"issues\":[{\"id\":4,\"title\":\"port\"}],\"hasMore\":false}" }⟩ with
+        | .ok output => output.value.issues == #[{ id := 4, title := "port" }]
         | .error _ => false)
     | .error _ => false) "issue decoder foreign-port declaration drifted"
   assertTrue (match decodePage
@@ -38,11 +40,26 @@ def run : IO Unit := do
     | .error _ => false)
     "valid issue JSON did not decode"
   assertTrue (match decodePage "{\"issues\":[{\"id\":\"bad\",\"title\":1}],\"hasMore\":false}" with
-    | .error error => error.code == "LRX-HTTP-DECODE-001"
+    | .error error => error.code == "LRX-PORT-302"
     | .ok _ => false) "invalid issue JSON was accepted"
+  assertTrue (match decodePage
+      "{\"issues\":[{\"id\":9007199254740991,\"title\":\"max\"}],\"hasMore\":false}" with
+    | .ok page => page.issues[0]?.map (·.id) == some maxSafeIssueId
+    | .error _ => false) "maximum safe issue ID was rejected"
+  assertTrue (match decodePage
+      "{\"issues\":[{\"id\":9007199254740992,\"title\":\"unsafe\"}],\"hasMore\":false}" with
+    | .error error => error.code == "LRX-PORT-302"
+    | .ok _ => false) "unsafe JavaScript issue ID was accepted natively"
+  assertTrue (match decodePage
+      "{\"issues\":[{\"id\":1,\"title\":\"a\"},{\"id\":1,\"title\":\"b\"}],\"hasMore\":false}" with
+    | .error error => error.code == "LRX-PORT-304"
+    | .ok _ => false) "duplicate issue IDs were accepted within one page"
   assertTrue (match decodeResponse (.ok { status := 503, body := "{}" }) with
-    | .error error => error.code == "LRX-HTTP-STATUS-001"
+    | .error error => error.code == "LRX-PORT-303"
     | .ok _ => false) "non-success HTTP status was accepted"
+  assertTrue (match (Spec.create "").check with
+    | .error error => error.code == "LRX-PORT-502"
+    | .ok _ => false) "empty Issue Browser spec returned the wrong diagnostic"
 
   let first := update initial .search
   let firstKey ← match requestKey first with
@@ -76,6 +93,10 @@ def run : IO Unit := do
   assertTrue (appended.state.issues == #[
     { id := 2, title := "fresh" }, { id := 3, title := "second page" }])
     "pagination replaced rather than appended issues"
+  let duplicatePage := update next.state (.received nextKey (.ok (page 2 "duplicate" false)))
+  assertTrue (duplicatePage.state.issues == loaded.state.issues &&
+    statusText duplicatePage.state == "Request failed: issue response contains duplicate IDs")
+    "cross-page duplicate key changed state or failed invisibly"
 
   let failing := update loaded.state .retry
   let failureKey ← match requestKey failing with

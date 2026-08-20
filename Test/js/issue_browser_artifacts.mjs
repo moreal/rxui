@@ -9,14 +9,14 @@ const manifest = JSON.parse(
   await readFile(path.join(directory, "IssueBrowser.mjs.manifest.json"), "utf8"),
 );
 const expectedPort = {
-  name: "decodeIssuePage",
-  input: "string",
+  name: "decodeIssueResponse",
+  input: "record<HttpResponse>",
   output: "record<IssuePage>",
   mode: "sync",
   cancellation: "none",
-  errors: ["LRX-HTTP-DECODE-001"],
-  trust: "browser JSON parsing and object validation remain in the backend TCB",
-  security: "JSON is parsed as data; titles are returned as strings and never HTML",
+  errors: ["LRX-PORT-302", "LRX-PORT-303", "LRX-PORT-304"],
+  trust: "browser status/JSON parsing and object validation remain in the backend TCB",
+  security: "JSON is parsed as data; unique safe IDs key rows and titles remain text",
 };
 if (
   manifest.module !== "IssueBrowser.mjs" ||
@@ -31,7 +31,13 @@ if (
   !manifest.features.includes("resource") ||
   !manifest.features.includes("pagination") ||
   !manifest.features.includes("owned-cancellation") ||
-  !manifest.hostImports.includes("leanrx_issue_ports.mjs")
+  JSON.stringify(manifest.hostImports) !== JSON.stringify([
+    "./leanrx_dom.mjs",
+    "./leanrx_host.mjs",
+    "./leanrx_region.mjs",
+    "./leanrx_effects.mjs",
+    "./leanrx_issue_ports.mjs",
+  ])
 ) {
   throw new Error("generated Issue Browser manifest is invalid");
 }
