@@ -711,9 +711,12 @@ deterministic ownership/work counters, not a network throughput claim.
 The public `Grid.Spec` fixes one 10,000-row application and the defining create,
 single-row update, every-tenth removal, two-row swap, odd filter, descending sort,
 and keyed selection sequence. The generated module exports full keyed, explicit
-checked-delta, and hybrid-cost-model mounts. Native reference output, all three
-browser logical projections, and every final key/count/selection agree; no
-application handwritten reactivity bypasses the public API.
+checked-delta, and hybrid-cost-model mounts. Every strategy begins at the checked
+empty state and runs those seven actions. The browser compares all 5,000 final
+keys, text values, order positions, and selection bits with the native
+`Grid.visibleRows` oracle, while
+intermediate assertions make every operation branch-effective. No application
+handwritten reactivity bypasses the public API.
 
 ### What was pleasant
 
@@ -723,7 +726,8 @@ This kept pure correctness independent of the empirical cost model. The same
 mount/update/dispose row callbacks drive full and delta region hosts, so the
 browser comparison retains identical text, keyed identity, disposal, hostile
 content, and accessibility semantics. Copied instrumentation clearly separates
-reactive/DOM work from structural operations.
+standard transaction/sink/DOM work from structural operations and Grid-specific
+projection/search/scan work.
 
 ### Friction
 
@@ -731,42 +735,59 @@ The specialized typed-JavaScript-AST emitter is large because arbitrary Lean
 reducers are still outside the controlled backend. Delta filtering and sorting
 fall back to reset; they do not yet compose verified `filterDelta`/`sortDelta`
 operators. The first cost model undercounts generated validation/projection work:
-native modeled derived evaluations fall under delta, while generated counters
-rise. Browser heap reporting was process-wide and too coarse to distinguish
-strategies. The full experiment adds a material API/runtime/test burden for
-workload-dependent wins.
+native modeled derived work falls under delta while generated key-search and
+validation costs rise. The checked generated component therefore fixes one
+concrete default cost model; alternate models remain pure-runner research inputs.
+Sampled browser allocations vary by run and process-wide heap reporting is too
+coarse to distinguish strategies. The full experiment adds a material
+API/runtime/test burden for workload-dependent wins.
 
 ### Bugs found
 
 Initial lowering indexed the row array and search index in the wrong order; JS
 AST validation exposed the failing function but its generic message omitted the
 name, so the diagnostic and its regression now identify the invalid scope.
-The first generated grid used `role="row"` around a bare text node; the populated
-axe scan reported the missing required `gridcell` child for all 5,000 final rows.
-Rows now contain an explicit gridcell, every rendered row is checked
-structurally, and axe scans all unique UI plus a populated representative row.
-Running that 10k scan in the same long-lived Chromium process also made unrelated
-tests order-dependent under GC pressure; the grid workload now receives a fresh
-browser process after the standard suite.
+Independent review found and regressed several deeper contract errors: reverse
+was not descending sort; accepted cost fields were ignored by the backend;
+same-key swap corrupted a neighbor; Update after removal threw a raw JavaScript
+error; the generated mount skipped the checked empty state; final endpoint-only
+comparison hid interior drift; and standard instrumentation confused transaction
+depth, structural visits, sink evaluations, and DOM writes. Sealed state/spec/
+planned-delta boundaries, full native-oracle comparison, invalid-action guards,
+manifest ABI assertions, and exact copied snapshots now lock those fixes.
+
+The first accessibility pass modeled a read-only result set as an interactive
+ARIA grid without implementing composite keyboard navigation. The final UI uses
+a named read-only table with row/cell structure and an external named group of
+native action buttons. Running the 10k workload in the same long-lived Chromium
+process also made unrelated tests order-dependent under GC pressure; the focused
+grid gate therefore receives a fresh browser process after the standard suite.
+The disposer host also now clears listener-remover closures so retaining copied
+metrics cannot retain the 10k source arrays after disposal.
 
 ### Security and accessibility checks
 
 The hostile component name stays literal text and creates no image or handler.
-All action markers are native buttons, the grid/status/operations are named,
-selection is maintained with `aria-selected`, every row contains exactly one
-gridcell, and the populated representative accessibility scan is green. Repeated
-selection performs no derived, DOM, or region work. Disposal is idempotent and a
-detached control cannot change copied instrumentation.
+All action markers are native buttons; the table, status, and operation group are
+programmatically named. Each row contains one cell, the selected read-only row
+uses `aria-current`, and the populated representative accessibility scan is
+green. Row-dependent controls are disabled before Create, Update remains disabled
+after its key is removed, and native keyboard activation exercises Create.
+Repeated selection performs no derived, DOM, or region work. Disposal is
+idempotent and a detached control cannot change copied instrumentation.
 
 ### Performance observations
 
 Five native samples show effectively tied median trace time despite deterministic
-work differences. Five Chromium samples show large small-update/reorder and DOM-
-write benefits for delta/hybrid, but explicit delta loses on bulk removal and
-does not improve filtering. Full/delta/hybrid perform 43,006/10,008/19,008
-standard DOM writes; modeled allocations are 53,000/20,002/29,002. The browser
-heap estimate is non-discriminating. Exact operation medians, work counts, bundle
-size, clean build time, complexity, and limitations are recorded in
+work differences. Six position-balanced Chromium samples show large small-update,
+reorder, and selection improvements for delta/hybrid, but explicit delta loses on
+bulk removal and does not improve filtering or sorting. Full/delta/hybrid perform
+43,007/10,009/19,009 standard sink evaluations and 43,000/10,002/19,002 retained
+updates, while every strategy performs exactly 40,009 emitted DOM writes.
+Modeled native allocation units are 53,000/20,002/29,002; sampled V8 allocation
+medians are about 2.10/2.17/2.23 MB and are observational, not thresholds. Exact
+commands, operation medians, work counts, artifact sizes, clean build time,
+complexity, and limitations are recorded in
 `docs/performance/m10-data-grid.md`.
 
 ### Follow-up issue or commit

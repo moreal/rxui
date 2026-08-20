@@ -43,9 +43,10 @@ increment index 9 only when an owned handle actually existed.
 
 ABI 7 leaves those ten standard slots unchanged and adds a separate copied
 structural-delta region snapshot. Its local counters distinguish mounts,
-retained updates, moves, disposals, full resets, accepted delta operations, and
-pre-mutation validation visits; they are not timing results or reactive graph
-counters.
+retained updates, DOM placements/moves, disposals, full resets, accepted delta
+operations, and pre-mutation validation units. A unit is one accepted delta or
+one item checked in a full target; it is not an instruction count. These focused
+counters are not timing results or reactive graph counters.
 
 Dynamic-region emitters count every compiler-emitted `setText`, `setProperty`,
 and `setAttribute` call in index 6. Region insertion, removal, reorder, and
@@ -53,6 +54,15 @@ branch replacement are structural operations reported separately by
 `regionInstrumentation()`; they are not silently folded into the DOM-write
 counter. Todo currently uses reference-style propagation after each action, so
 its manifest says `reference-propagation` rather than `actual-change`.
+
+The M10 Data Grid also advertises reference propagation. For its defining
+seven-operation trace, standard slot 3 records one projected-list evaluation per
+committed action and slot 4 records each fresh reference projection. Row scans,
+key searches, and removal scans live in a separate copied Grid snapshot rather
+than overloading the standard derived counters. Slot 5 counts affected row-region
+sink bundles plus the status sink. Slot 6 follows the same emitted host-call rule
+as every other dynamic-region backend. Structural placement, reorder, and
+disposal are reported only by `regionInstrumentation()`.
 
 Specialized form emitters preserve the same indices. Parser/validator execution
 is event-local update work, not a graph-derived node, so it never increments

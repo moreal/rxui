@@ -18,7 +18,7 @@ region host adds `createDeltaKeyedRegion`, which consumes a closed tagged delta
 vocabulary produced by the checked backend. It validates an entire batch,
 including bounds, key identity, uniqueness, and move targets, before mutating
 owned DOM. Its copied focused instrumentation reports mounts, retained updates,
-moves, disposals, full resets, accepted delta operations, and accepted
+DOM placements/moves, disposals, full resets, accepted delta operations, and accepted
 validation units (one unit per checked delta and per checked item in a full
 target).
 

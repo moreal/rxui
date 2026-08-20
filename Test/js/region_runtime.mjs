@@ -222,6 +222,7 @@ function values(parent) {
   expectDeltaFailure([[]], "LRX-DELTA-006");
   expectDeltaFailure([["insert", 0, []]], "LRX-DELTA-006");
   expectDeltaFailure([["reset", {}]], "LRX-DELTA-006");
+  expectDeltaFailure([["reset", [[]]]], "LRX-DELTA-006");
   expectDeltaFailure([["reset", [[8, "a"], [8, "b"]]]], "LRX-REGION-001");
   expectDeltaFailure([["unknown"]], "LRX-DELTA-006");
   let keyChangeFailed = false;

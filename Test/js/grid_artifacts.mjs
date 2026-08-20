@@ -13,9 +13,12 @@ const compact = fs.readFileSync(path.join(directory, "DataGrid.min.mjs"), "utf8"
 if (manifest.runtimeAbi !== 7 || manifest.module !== "DataGrid.mjs" ||
     JSON.stringify(manifest.exports) !== '["mountFull","mountDelta","mountHybrid"]' ||
     manifest.graphHash !== "grid:10000:5000:10:1:9998:7777:256:8:3:1" ||
-    !manifest.features.includes("structural-delta") ||
-    !manifest.features.includes("hybrid-cost-model") ||
-    manifest.eventCount !== 7 || manifest.sourceCount !== 4 || manifest.derivedCount !== 1) {
+    JSON.stringify(manifest.stateSlots) !==
+      '["list<record<GridRow>>","bool","bool","record<OptionNat>","list<record<ProjectedGridRow>>","nat","string"]' ||
+    JSON.stringify(manifest.features) !==
+      '["direct-dom","keyed-region","structural-delta","hybrid-cost-model","instrumentation","reference-propagation"]' ||
+    manifest.eventCount !== 7 || manifest.sourceCount !== 4 || manifest.derivedCount !== 1 ||
+    manifest.textSinkCount !== 2 || !Array.isArray(manifest.ports) || manifest.ports.length !== 0) {
   throw new Error("data-grid manifest contract changed");
 }
 if (JSON.stringify(manifest.hostImports) !==
