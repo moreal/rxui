@@ -31,6 +31,7 @@ lean_lib LeanRxTest where
     `Test.Backend.Notes,
     `Test.Backend.IssueBrowser,
     `Test.Backend.Grid,
+    `Test.Backend.JsFrameworkBenchmark,
     `Test.View.Model,
     `Test.Component.Model,
     `Test.Component.Dependent,
@@ -46,6 +47,7 @@ lean_lib LeanRxTest where
     `Test.Collection.Delta,
     `Test.Grid.Model,
     `Test.Grid.Component,
+    `Test.JsFrameworkBenchmark.Model,
     `Test.Todo.Model,
     `Test.Effect.Command,
     `Test.Effect.Resource,
@@ -67,6 +69,7 @@ lean_lib LeanRxExamples where
     `examples.ValidatedFormBuild, `examples.TodoMVC, `examples.TodoMVCBuild,
     `examples.Notes, `examples.NotesBuild, `examples.IssueBrowser,
     `examples.IssueBrowserBuild, `examples.DataGrid, `examples.DataGridBuild,
+    `examples.JsFrameworkBenchmark, `examples.JsFrameworkBenchmarkBuild,
     `examples.LeanRxDocs, `examples.LeanRxDocsBuild]
 
 @[default_target]
@@ -114,6 +117,9 @@ lean_exe leanrx_issue_browser_js where
 
 lean_exe leanrx_data_grid_js where
   root := `examples.DataGridMain
+
+lean_exe leanrx_js_framework_benchmark where
+  root := `examples.JsFrameworkBenchmarkMain
 
 lean_exe leanrx_docs_js where
   root := `examples.LeanRxDocsMain

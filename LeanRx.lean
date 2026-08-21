@@ -29,6 +29,7 @@ import LeanRx.Backend.Todo
 import LeanRx.Backend.Notes
 import LeanRx.Backend.IssueBrowser
 import LeanRx.Backend.Grid
+import LeanRx.Backend.JsFrameworkBenchmark
 import LeanRx.View.Model
 import LeanRx.Component.Model
 import LeanRx.Component.Dependent
@@ -48,6 +49,7 @@ import LeanRx.Region.Keyed
 import LeanRx.Collection.Delta
 import LeanRx.Grid.Model
 import LeanRx.Grid.Component
+import LeanRx.JsFrameworkBenchmark.Model
 import LeanRx.Todo.Model
 import LeanRx.Effect.Model
 import LeanRx.Effect.Command

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "upstreamTag": "chrome150",
+  "upstreamCommit": "fa15a77d73dca6dfc0a97ce8c4d6c0797726fa75",
+  "commonCssExcluded": true,
+  "brotliThresholdBytes": 1024,
+  "files": [
+    {
+      "name": "index.html",
+      "rawBytes": 1666,
+      "brotliBytes": 360,
+      "gzipBytes": 510
+    },
+    {
+      "name": "main.mjs",
+      "rawBytes": 114,
+      "brotliBytes": 114,
+      "gzipBytes": 126
+    },
+    {
+      "name": "LeanRx.mjs",
+      "rawBytes": 6493,
+      "brotliBytes": 1634,
+      "gzipBytes": 1806
+    },
+    {
+      "name": "leanrx_dom.mjs",
+      "rawBytes": 2797,
+      "brotliBytes": 516,
+      "gzipBytes": 645
+    },
+    {
+      "name": "leanrx_region.mjs",
+      "rawBytes": 11076,
+      "brotliBytes": 2015,
+      "gzipBytes": 2349
+    },
+    {
+      "name": "leanrx_host.mjs",
+      "rawBytes": 867,
+      "brotliBytes": 867,
+      "gzipBytes": 365
+    }
+  ],
+  "totals": {
+    "rawBytes": 23013,
+    "brotliBytes": 5506,
+    "gzipBytes": 5801
+  }
+}

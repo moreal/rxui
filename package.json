@@ -4,7 +4,11 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "test:browser": "playwright test",
-    "test:browser:install": "playwright install chromium"
+    "test:browser:install": "playwright install chromium",
+    "benchmark:check": "./scripts/check_js_framework_benchmark.sh",
+    "benchmark:prepare": "./scripts/prepare_js_framework_benchmark.sh",
+    "benchmark:run": "./scripts/run_js_framework_benchmark.sh",
+    "benchmark:size": "./scripts/measure_js_framework_benchmark_size.sh"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

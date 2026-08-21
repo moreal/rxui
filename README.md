@@ -26,6 +26,7 @@ lake exe leanrx_graph_properties -- 195936478
 ./scripts/check_effect_runtime.sh
 ./scripts/check_cli.sh
 ./scripts/check_browser.sh
+./scripts/check_js_framework_benchmark.sh
 ./scripts/check_bench.sh
 ./scripts/check_grid_bench.sh
 ./scripts/check_examples.sh
@@ -176,6 +177,19 @@ an explicit-cost-model hybrid on the same 10,000-row trace. Measurements support
 keeping delta opt-in rather than making it a default language feature; see the
 [performance report](docs/performance/m10-data-grid.md) and
 [ADR-0017](docs/adr/0017-structural-delta-remains-opt-in.md).
+
+Build the standard keyed `js-framework-benchmark` application and run its local
+contract/size gate with:
+
+```sh
+lake exe leanrx_js_framework_benchmark -- .tmp/js-framework-benchmark-app
+corepack pnpm benchmark:check
+```
+
+The [benchmark integration guide](docs/performance/js-framework-benchmark.md)
+documents the exact pinned upstream runner, one-command setup and execution,
+result archival, current 23,013-byte raw / 5,506-byte Brotli baseline, and the
+distinction between smoke validation and publishable performance measurements.
 
 M11 adds learnability commands and a self-hosted documentation dogfood:
 

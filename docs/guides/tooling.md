@@ -110,12 +110,15 @@ gates include:
 - `check_component_codegen.sh`: deterministic application artifacts and manifests;
 - `check_region_runtime.sh`, `check_effect_runtime.sh`: fake-host adversarial gates;
 - `check_browser.sh`: Chromium semantics, security, keyboard, axe, and disposal;
+- `check_js_framework_benchmark.sh`: standard keyed-app contract and size baseline;
 - `check_compile_fail.sh`: sealed public boundaries and source diagnostics;
 - policy/audit scripts: placeholders, exact axioms, and semantic unsafe scope.
 
 Browser tests require installed pinned dependencies and a permitted loopback test
 server. No timing assertion is hidden inside the correctness suite. The M10
-performance report provides its separate measurement commands and caveats.
+performance report and the
+[js-framework-benchmark guide](../performance/js-framework-benchmark.md) provide
+their separate measurement commands and caveats.
 
 ## Determinism and clean-checkout expectations
 

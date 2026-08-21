@@ -18,6 +18,7 @@ Reference material:
 - [Dynamic regions](internals/dynamic-regions.md)
 - [Effects and foreign ports](internals/effects.md)
 - [M10 Data Grid performance report](performance/m10-data-grid.md)
+- [js-framework-benchmark integration](performance/js-framework-benchmark.md)
 - [Upgrading Lean](upgrading-lean.md)
 - [Architecture decisions](adr/)
 

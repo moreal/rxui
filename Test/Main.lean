@@ -27,6 +27,7 @@ import Test.Backend.Todo
 import Test.Backend.Notes
 import Test.Backend.IssueBrowser
 import Test.Backend.Grid
+import Test.Backend.JsFrameworkBenchmark
 import Test.View.Model
 import Test.Component.Model
 import Test.Component.Dependent
@@ -42,6 +43,7 @@ import Test.Region.Keyed
 import Test.Collection.Delta
 import Test.Grid.Model
 import Test.Grid.Component
+import Test.JsFrameworkBenchmark.Model
 import Test.Todo.Model
 import Test.Effect.Command
 import Test.Effect.Resource
@@ -92,6 +94,7 @@ def main : IO Unit := do
   LeanRxTest.Backend.Notes.run
   LeanRxTest.Backend.IssueBrowser.run
   LeanRxTest.Backend.Grid.run
+  LeanRxTest.Backend.JsFrameworkBenchmark.run
   LeanRxTest.View.Model.run
   LeanRxTest.Component.Model.run
   LeanRxTest.Component.Dependent.run
@@ -107,6 +110,7 @@ def main : IO Unit := do
   LeanRxTest.Collection.Delta.run
   LeanRxTest.Grid.Model.run
   LeanRxTest.Grid.Component.run
+  LeanRxTest.JsFrameworkBenchmark.Model.run
   LeanRxTest.Todo.Model.run
   LeanRxTest.Effect.Command.run
   LeanRxTest.Effect.Resource.run
