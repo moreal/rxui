@@ -753,8 +753,8 @@ private def manifest (moduleName : String) (checked : LeanRx.Todo.Spec.Checked) 
     derivedCount := 0
     textSinkCount := 2
     eventCount := 10
-    hostImports := #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_unkeyed_region.mjs",
-      "./leanrx_host.mjs"]
+    hostImports := #["./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_region.mjs",
+      "./leanrx_unkeyed_region.mjs", "./leanrx_host.mjs"]
     features := #["dynamic-regions", "conditional", "positional", "keyed",
       "delegated-events", "typed-form-properties", "reference-propagation",
       "instrumentation", "trace"] }
@@ -931,9 +931,11 @@ def emit (moduleName : String) (checked : LeanRx.Todo.Spec.Checked) : Except Err
             (runtime.setText, runtime.setText),
             (runtime.setProperty, runtime.setProperty),
             (runtime.listen, runtime.listen),
-            (runtime.listenValue, runtime.listenValue),
-            (runtime.listenKey, runtime.listenKey),
             (runtime.listenDelegated, runtime.listenDelegated)
+          ] },
+        { source := "./leanrx_form_events.mjs", names := #[
+            (runtime.listenValue, runtime.listenValue),
+            (runtime.listenKey, runtime.listenKey)
           ] },
         { source := "./leanrx_region.mjs", names := #[
             (runtime.createKeyedRegion, runtime.createKeyedRegion)

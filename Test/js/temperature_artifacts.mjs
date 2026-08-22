@@ -10,14 +10,16 @@ const manifest = JSON.parse(
 );
 if (
   manifest.module !== "TemperatureConverter.mjs" ||
-  manifest.runtimeAbi !== 10 ||
+  manifest.runtimeAbi !== 11 ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string", "string", "bool"]) ||
   manifest.sourceCount !== 3 ||
   manifest.derivedCount !== 0 ||
   manifest.textSinkCount !== 1 ||
   manifest.eventCount !== 2 ||
   !manifest.features.includes("controlled-input") ||
-  !manifest.features.includes("validation")
+  !manifest.features.includes("validation") ||
+  JSON.stringify(manifest.hostImports) !==
+    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_host.mjs"])
 ) {
   throw new Error("generated Temperature Converter manifest is invalid");
 }

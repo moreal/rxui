@@ -10,7 +10,7 @@ const manifest = JSON.parse(
 );
 if (
   manifest.module !== "TodoMVC.mjs" ||
-  manifest.runtimeAbi !== 10 ||
+  manifest.runtimeAbi !== 11 ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify([
     "list<record<TodoItem>>", "nat", "string", "int", "string", "string",
   ]) ||
@@ -22,6 +22,7 @@ if (
   !manifest.features.includes("positional") ||
   !manifest.features.includes("reference-propagation") ||
   manifest.features.includes("actual-change") ||
+  !manifest.hostImports.includes("./leanrx_form_events.mjs") ||
   !manifest.hostImports.includes("./leanrx_region.mjs") ||
   !manifest.hostImports.includes("./leanrx_unkeyed_region.mjs")
 ) {

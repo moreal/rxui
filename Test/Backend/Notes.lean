@@ -24,7 +24,8 @@ def run : IO Unit := do
     "Notes backend omitted its checked command lifecycle"
   assertTrue (emitted.manifest.sourceCount == 1 && emitted.manifest.eventCount == 1 &&
     emitted.manifest.hostImports ==
-      #["./leanrx_dom.mjs", "./leanrx_host.mjs", "./leanrx_effects.mjs"])
+      #["./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_host.mjs",
+        "./leanrx_effects.mjs"])
     "Notes manifest drifted"
 
 end LeanRxTest.Backend.Notes

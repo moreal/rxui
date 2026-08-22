@@ -11,6 +11,7 @@ const files = new Set([
   "TemperatureConverter.mjs",
   "Temperature.expected.json",
   "leanrx_dom.mjs",
+  "leanrx_form_events.mjs",
   "leanrx_host.mjs",
 ]);
 let server;

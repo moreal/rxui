@@ -53,39 +53,6 @@ export function uniqueId(prefix) {
   return `${prefix}-${nextIdValue}`;
 }
 
-export function listenValue(node, type, state, context, dispatch) {
-  const handler = (event) => dispatch(state, context, event.currentTarget.value);
-  node.addEventListener(type, handler);
-  return () => node.removeEventListener(type, handler);
-}
-
-export function listenChecked(node, type, state, context, dispatch) {
-  const handler = (event) => dispatch(state, context, event.currentTarget.checked);
-  node.addEventListener(type, handler);
-  return () => node.removeEventListener(type, handler);
-}
-
-export function listenKey(node, type, state, context, dispatch) {
-  const handler = (event) => dispatch(state, context, event.key);
-  node.addEventListener(type, handler);
-  return () => node.removeEventListener(type, handler);
-}
-
-export function listenFocus(node, type, state, context, dispatch) {
-  const handler = () => dispatch(state, context);
-  node.addEventListener(type, handler);
-  return () => node.removeEventListener(type, handler);
-}
-
-export function listenSubmit(node, state, context, dispatch) {
-  const handler = (event) => {
-    event.preventDefault();
-    dispatch(state, context);
-  };
-  node.addEventListener("submit", handler);
-  return () => node.removeEventListener("submit", handler);
-}
-
 // The key of the nearest ancestor-or-self of `actionNode` (up to `root`) that
 // carries a `setKey` value or a `data-lrx-key` attribute; "" when none does.
 function delegatedKey(actionNode, root) {

@@ -10,7 +10,7 @@ const manifest = JSON.parse(
 );
 if (
   manifest.module !== "ValidatedForm.mjs" ||
-  manifest.runtimeAbi !== 10 ||
+  manifest.runtimeAbi !== 11 ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string", "string", "bool"]) ||
   manifest.sourceCount !== 3 ||
   manifest.derivedCount !== 0 ||
@@ -18,7 +18,9 @@ if (
   manifest.eventCount !== 8 ||
   !manifest.features.includes("typed-command") ||
   !manifest.features.includes("submit") ||
-  !manifest.features.includes("checked")
+  !manifest.features.includes("checked") ||
+  JSON.stringify(manifest.hostImports) !==
+    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_host.mjs"])
 ) {
   throw new Error("generated Validated Form manifest is invalid");
 }

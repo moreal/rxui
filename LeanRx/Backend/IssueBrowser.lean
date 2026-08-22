@@ -486,7 +486,9 @@ def emit (moduleName : String) (checked : LeanRx.IssueBrowser.Spec.Checked) :
           (runtime.childAt, runtime.childAt),
           (runtime.setText, runtime.setText),
           (runtime.setProperty, runtime.setProperty),
-          (runtime.listen, runtime.listen),
+          (runtime.listen, runtime.listen)
+        ] },
+      { source := "./leanrx_form_events.mjs", names := #[
           (runtime.listenValue, runtime.listenValue)
         ] },
       { source := "./leanrx_host.mjs", names := #[
@@ -523,8 +525,8 @@ def emit (moduleName : String) (checked : LeanRx.IssueBrowser.Spec.Checked) :
     derivedCount := 0
     textSinkCount := 1
     eventCount := 4
-    hostImports := #["./leanrx_dom.mjs", "./leanrx_host.mjs", "./leanrx_region.mjs",
-      "./leanrx_effects.mjs", "./leanrx_issue_ports.mjs"]
+    hostImports := #["./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_host.mjs",
+      "./leanrx_region.mjs", "./leanrx_effects.mjs", "./leanrx_issue_ports.mjs"]
     ports := #[PortManifest.ofForeign checked.decoder]
     features := #["commands", "http", "resource", "pagination", "keyed",
       "owned-cancellation", "foreign:decodeIssueResponse", "instrumentation"]

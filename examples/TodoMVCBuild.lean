@@ -41,6 +41,8 @@ private def generateChecked (directory : System.FilePath) (checked : Spec.Checke
   IO.FS.writeFile (directory / "TodoMVC.mjs.manifest.json") emitted.manifest.json
   IO.FS.writeFile (directory / "TodoMVC.expected.json") expectedJson
   IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")
+  IO.FS.writeFile (directory / "leanrx_form_events.mjs")
+    (← IO.FS.readFile "runtime/leanrx_form_events.mjs")
   IO.FS.writeFile (directory / "leanrx_region.mjs") (← IO.FS.readFile "runtime/leanrx_region.mjs")
   IO.FS.writeFile (directory / "leanrx_unkeyed_region.mjs")
     (← IO.FS.readFile "runtime/leanrx_unkeyed_region.mjs")

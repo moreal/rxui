@@ -20,7 +20,7 @@ const expectedPort = {
 };
 if (
   manifest.module !== "IssueBrowser.mjs" ||
-  manifest.runtimeAbi !== 10 ||
+  manifest.runtimeAbi !== 11 ||
   JSON.stringify(manifest.stateSlots) !==
     JSON.stringify(["string", "list<record<Issue>>", "nat", "bool"]) ||
   manifest.sourceCount !== 4 ||
@@ -33,6 +33,7 @@ if (
   !manifest.features.includes("owned-cancellation") ||
   JSON.stringify(manifest.hostImports) !== JSON.stringify([
     "./leanrx_dom.mjs",
+    "./leanrx_form_events.mjs",
     "./leanrx_host.mjs",
     "./leanrx_region.mjs",
     "./leanrx_effects.mjs",

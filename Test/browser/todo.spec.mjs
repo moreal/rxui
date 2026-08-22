@@ -11,6 +11,7 @@ const files = new Set([
   "TodoMVC.mjs",
   "TodoMVC.expected.json",
   "leanrx_dom.mjs",
+  "leanrx_form_events.mjs",
   "leanrx_region.mjs",
   "leanrx_unkeyed_region.mjs",
   "leanrx_host.mjs",

@@ -64,7 +64,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 10. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 11. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -127,6 +127,15 @@ insertion, and moves the conditional and positional regions into
 `leanrx_unkeyed_region.mjs` (importing the shared anchor/detach/snapshot
 helpers), which only TodoMVC imports. See
 [ADR-0020](../adr/0020-runtime-abi-v10-keyed-context-and-update-at.md).
+
+ABI 11 moves the typed control-event adapters `listenValue`, `listenChecked`,
+`listenKey`, `listenFocus`, and `listenSubmit` (ADR-0013) unchanged from the
+DOM host into `leanrx_form_events.mjs`; the DOM host keeps node construction,
+traversal, mutation, `setProperty`, `uniqueId`, the generic `listen`, and the
+delegated-event adapter (`setKey`, `listenDelegated`). Backends that lower a
+`ControlEvent` import and list the new host; artifacts that only delegate events
+ship the smaller DOM host. See
+[ADR-0021](../adr/0021-runtime-abi-v11-form-events-host.md).
 
 Dynamic-region manifests use a separate `ManifestTypeId` for metadata-only
 `record<name>` and `list<element>` slot descriptions. Those constructors cannot

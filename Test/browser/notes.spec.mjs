@@ -11,6 +11,7 @@ const files = new Set([
   "Notes.mjs",
   "Notes.expected.json",
   "leanrx_dom.mjs",
+  "leanrx_form_events.mjs",
   "leanrx_host.mjs",
   "leanrx_effects.mjs",
 ]);

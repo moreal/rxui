@@ -338,7 +338,9 @@ def emit (moduleName : String) (checked : LeanRx.Notes.Spec.Checked) : Except Js
           (runtime.setAttribute, runtime.setAttribute),
           (runtime.append, runtime.append),
           (runtime.setText, runtime.setText),
-          (runtime.setProperty, runtime.setProperty),
+          (runtime.setProperty, runtime.setProperty)
+        ] },
+      { source := "./leanrx_form_events.mjs", names := #[
           (runtime.listenValue, runtime.listenValue)
         ] },
       { source := "./leanrx_host.mjs", names := #[
@@ -366,7 +368,8 @@ def emit (moduleName : String) (checked : LeanRx.Notes.Spec.Checked) : Except Js
     derivedCount := 0
     textSinkCount := 1
     eventCount := 1
-    hostImports := #["./leanrx_dom.mjs", "./leanrx_host.mjs", "./leanrx_effects.mjs"]
+    hostImports := #["./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_host.mjs",
+      "./leanrx_effects.mjs"]
     features := #["commands", "timer", "storage", "owned-cancellation", "instrumentation"]
   }⟩
 

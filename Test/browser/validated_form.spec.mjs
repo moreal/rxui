@@ -11,6 +11,7 @@ const files = new Set([
   "ValidatedForm.mjs",
   "ValidatedForm.expected.json",
   "leanrx_dom.mjs",
+  "leanrx_form_events.mjs",
   "leanrx_host.mjs",
 ]);
 let server;

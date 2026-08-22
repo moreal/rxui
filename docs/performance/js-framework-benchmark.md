@@ -28,7 +28,8 @@ detached bulk insertion. Selecting a row re-runs the update callback for
 exactly the previously and newly selected rows through the region's
 `updateAt` (ADR-0020); every other operation commits the whole row list. It
 does not use the optional structural delta path or the conditional/positional
-regions, and since ABI 9/10 it ships neither of those host modules. The benchmark lowering is currently
+regions, or the typed form-event adapters, and since ABI 9/10/11 it ships none
+of those host modules. The benchmark lowering is currently
 a dedicated backend module; it is evidence for the current generated runtime
 rather than a claim that the general-purpose component compiler can yet lower
 every collection program.
@@ -70,7 +71,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 23,261 | 6,506 | 6,889 |
+| Complete fetched application | 22,047 | 6,422 | 6,789 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.

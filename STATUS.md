@@ -348,6 +348,19 @@ Complete — M0 through M11
   33.7 ms, create 10,000 335.5 → 330.0 ms, swap 23.5 → 22.8 ms, clear 14.9 →
   14.4 ms, and 23.5 → 22.7 KB shipped, with the other workloads level within
   noise.
+- Made the shipped runtime smaller again without touching the checked Lean
+  models (ADR-0021, runtime ABI 11): the five typed control-event adapters
+  (`listenValue`, `listenChecked`, `listenKey`, `listenFocus`, `listenSubmit`)
+  moved unchanged from the DOM host into `runtime/leanrx_form_events.mjs`,
+  which only the form backends (Temperature, Validated Form, Notes, TodoMVC,
+  Issue Browser) import; delegated-only artifacts (Data Grid, the
+  js-framework-benchmark) ship 1,214 fewer raw bytes (benchmark baseline
+  23,261 → 22,047 raw, 6,506 → 6,422 Brotli). The browser gates, artifact
+  checks, codegen gate, and doctor cover the split; the headless run recorded
+  in `BENCHMARK.md` measured 22.7 → 21.5 KB shipped (6.4 → 6.3 KB Brotli)
+  with byte-identical generated and region code, so the CPU rows moved only
+  by run-to-run drift (append 38.5 → 36.4 ms, partial update 20.9 → 19.8 ms,
+  swap's mean 22.8 → 26.9 ms from one 62.8 ms sample with a 23.9 ms median).
 
 ## In progress
 

@@ -14,9 +14,9 @@ keep the run short.
 ./scripts/run_js_framework_benchmark.sh --framework keyed/react-hooks --framework keyed/solid --headless --no-results
 ```
 
-- Measured at: 2026-08-22 13:55:46 UTC
-- LeanRx commit: `05a0b1e2d865085fe9c8640b663183e25a20c564` plus the uncommitted
-  ABI-10 runtime changes (tree state: dirty; see ADR-0020 and the archived
+- Measured at: 2026-08-22 15:52:14 UTC
+- LeanRx commit: `90a714645d8e8fca4e5dc624bbafd80fb767c84f` plus the uncommitted
+  ABI-11 runtime changes (tree state: dirty; see ADR-0021 and the archived
   `repository-changes.patch`)
 - Chrome mode: headless (headless is suitable for
   regression tracking; see the integration guide for why visible Chrome is
@@ -27,7 +27,7 @@ keep the run short.
 
 Full raw JSON per benchmark, Chrome traces, the generated LeanRx framework
 snapshot, the exact repository patch, and this environment metadata are
-archived under `.tmp/js-framework-benchmark-results/20260822T135546Z/` (not
+archived under `.tmp/js-framework-benchmark-results/20260822T155214Z/` (not
 committed; regenerate with the command above).
 
 Lower is better in every table below.
@@ -36,57 +36,59 @@ Lower is better in every table below.
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Create 1,000 rows (ms) | 38.4 | 32.2 | 30.8 |
-| Replace all 1,000 rows (ms) | 46.7 | 36.3 | 33.7 |
-| Partial update, every 10th row, 4× CPU slowdown (ms) | 27.7 | 21.3 | 20.9 |
-| Select row, 4× CPU slowdown (ms) | 10.4 | 7.5 | 6.2 |
-| Swap rows, 4× CPU slowdown (ms) | 148.3 | 25.4 | 22.8 |
-| Remove row, 2× CPU slowdown (ms) | 20.2 | 18.6 | 17.9 |
-| Create 10,000 rows (ms) | 675.9 | 360.8 | 330.0 |
-| Append 1,000 rows to 1,000 rows (ms) | 45.7 | 37.0 | 38.5 |
-| Clear 1,000 rows, 4× CPU slowdown (ms) | 26.6 | 18.9 | 14.4 |
+| Create 1,000 rows (ms) | 38.2 | 31.4 | 30.4 |
+| Replace all 1,000 rows (ms) | 46.6 | 36.2 | 33.7 |
+| Partial update, every 10th row, 4× CPU slowdown (ms) | 25.6 | 21.3 | 19.8 |
+| Select row, 4× CPU slowdown (ms) | 10.2 | 7.4 | 6.1 |
+| Swap rows, 4× CPU slowdown (ms) | 154.7 | 24.4 | 26.9 |
+| Remove row, 2× CPU slowdown (ms) | 19.6 | 18.8 | 17.9 |
+| Create 10,000 rows (ms) | 691.4 | 357.4 | 331.5 |
+| Append 1,000 rows to 1,000 rows (ms) | 45.1 | 38.9 | 36.4 |
+| Clear 1,000 rows, 4× CPU slowdown (ms) | 27.8 | 20.6 | 15.2 |
 
 ## Memory
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Memory after page load (MB) | 1.18 | 0.61 | 0.62 |
-| Memory after adding 1,000 rows (MB) | 4.42 | 2.70 | 2.05 |
-| Memory after adding then clearing rows (MB) | 1.97 | 0.79 | 0.73 |
+| Memory after page load (MB) | 1.17 | 0.52 | 0.53 |
+| Memory after adding 1,000 rows (MB) | 4.42 | 2.69 | 1.97 |
+| Memory after adding then clearing rows (MB) | 1.95 | 0.70 | 0.73 |
 
 ## Startup and size
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Uncompressed JS size (KB) | 190.30 | 11.50 | 22.70 |
-| Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 6.40 |
-| Startup time to first paint (ms) | 316.30 | 80.40 | 63.00 |
+| Uncompressed JS size (KB) | 190.30 | 11.50 | 21.50 |
+| Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 6.30 |
+| Startup time to first paint (ms) | 321.50 | 72.50 | 73.50 |
 
 ## Change from the previous run
 
-The previous recorded run (commit `314b6c1` plus the ABI-9 runtime changes
-that became `05a0b1e`, same runner, headless, the same three frameworks)
-measured LeanRx at 30.6 ms create 1,000, 35.1 ms replace, 20.2 ms partial
-update, 7.5 ms select, 23.5 ms swap, 18.1 ms remove, 335.5 ms create 10,000,
-36.8 ms append, and 14.9 ms clear, with 23.50 KB uncompressed / 6.30 KB Brotli
-and 61.8 ms to first paint. The ABI-10 runtime (the model rows are the keyed
-items and the region forwards the mount-local context to the row callbacks, so
-a commit builds no per-row payload array; selecting a row re-runs exactly the
-previously and newly selected rows through the region's `updateAt`; keys added
-to an empty region are registered with one index insertion; and the
-conditional/positional regions moved into a host module the benchmark does not
-ship) brings select from 7.5 to 6.2 ms (script 1.7 → 0.8 ms, below Solid's
-7.5 ms), replace from 35.1 to 33.7 ms, create 10,000 from 335.5 to 330.0 ms
-(script 29.2 → 28.4 ms), swap from 23.5 to 22.8 ms, and clear from 14.9 to
-14.4 ms; create 1,000, partial update (script 1.4 → 1.2 ms), and remove are
-level within run-to-run noise. Append moved from 36.8 to 38.5 ms with its
-script phase unchanged (3.0 → 3.1 ms) and its paint phase up 1.5 ms, which is
-within the paint noise of this headless runner. The shipped application is
-23.5 → 22.7 KB uncompressed (Brotli 6.3 → 6.4 KB: the added keyed-region code
-compresses less well than the removed comment-heavy unkeyed regions); first
-paint (61.8 → 63.0 ms) and memory (1.99 → 2.05 MB after adding 1,000 rows)
-are within noise, with Solid and React Hooks moving by similar amounts in the
-same run.
+The previous recorded run (commit `05a0b1e` plus the ABI-10 runtime changes
+that became `1100c15`, same runner, headless, the same three frameworks)
+measured LeanRx at 30.8 ms create 1,000, 33.7 ms replace, 20.9 ms partial
+update, 6.2 ms select, 22.8 ms swap, 17.9 ms remove, 330.0 ms create 10,000,
+38.5 ms append, and 14.4 ms clear, with 22.70 KB uncompressed / 6.40 KB Brotli
+and 63.0 ms to first paint. The ABI-11 runtime (ADR-0021) moves the five typed
+control-event adapters out of the DOM host into `leanrx_form_events.mjs`, a
+module that only the form applications import, so the benchmark's DOM host
+shrinks from 3,861 to 2,647 bytes and the shipped application from 22.7 to
+21.5 KB uncompressed (Brotli 6.4 → 6.3 KB). The generated module and the
+region host are byte-identical to the previous run, so the CPU rows measure
+run-to-run drift of this headless runner rather than a code change: create
+1,000 30.8 → 30.4 ms, replace level at 33.7 ms, partial update 20.9 → 19.8 ms,
+select 6.2 → 6.1 ms, remove level at 17.9 ms, create 10,000 330.0 → 331.5 ms,
+append 38.5 → 36.4 ms (paint 33.7 → 32.0 ms, now below Solid's 38.9 ms), and
+clear 14.4 → 15.2 ms with Solid moving 18.9 → 20.6 ms in the same run. Swap
+reads 22.8 → 26.9 ms because one of its fifteen samples took 62.8 ms (56.1 ms
+of paint); the other fourteen average 24.3 ms and the median is 23.9 ms against
+Solid's 24.0 ms median, with LeanRx's script phase (1.05 ms) still below
+Solid's (1.89 ms); a focused re-run of the swap workload alone for LeanRx and
+Solid one minute later (`--framework keyed/solid --benchmark 05_`, archived
+under `20260822T155431Z`) measured 20.4 ± 1.0 ms against 22.9 ± 1.4 ms.
+First paint moved 63.0 → 73.5 ms while Solid moved 80.4 → 72.5 ms and React
+Hooks 316.3 → 321.5 ms (first paint varies by about ±10 ms between runs of
+this runner); memory after adding 1,000 rows is 2.05 → 1.97 MB.
 
 ## Where the remaining time goes
 
@@ -102,13 +104,28 @@ spends the same 26 ms in clone plus text writes, so LeanRx's remaining script
 gap to it (about 3 ms per 10,000 rows) is the key validation plus per-row
 bookkeeping; clearing costs the same as vanilla's `textContent = ""`, and a
 swap's placement search is about 0.03 ms of its 0.12 ms handler (the two DOM
-moves are the rest). Two candidates were measured and rejected the same day:
-a two-row-exchange shortcut in keyed placement (about 0.03 ms per swap for
-630 more bytes of shipped host), and lowering the every-tenth-row update
-through `updateAt` for the 100 changed rows (0.03 ms faster locally but
-0.3 ms more script under the upstream runner's 4× CPU slowdown, where the
-100-call path runs less optimized than the 1,000-row region loop; confirmed by
-a focused upstream A/B with vanilla as the control).
+moves are the rest). Three candidates were measured and rejected: a
+two-row-exchange shortcut in keyed placement (about 0.03 ms per swap for
+630 more bytes of shipped host), lowering the every-tenth-row update through
+`updateAt` for the 100 changed rows (0.03 ms faster locally but 0.3 ms more
+script under the upstream runner's 4× CPU slowdown, where the 100-call path
+runs less optimized than the 1,000-row region loop; confirmed by a focused
+upstream A/B with vanilla as the control), and detaching the owned `tbody`
+during a pure append of 1,000 rows onto 1,000 (2026-08-23: the re-attach
+re-styles every existing row, 23 → 39 ms to the next frame locally; only the
+empty-parent rebuild benefits from detaching).
+
+Size is the one category where LeanRx is clearly behind Solid (21.5 KB against
+11.5 KB uncompressed, 6.3 against 4.5 KB Brotli). Measured on 2026-08-23 over
+the shipped files: the region host's documentation comments account for about
+2.9 KB raw and 1.0 KB Brotli of the total (stripping every host comment at
+bundle time would leave 19.5 KB / 5.5 KB), the `leanrx_host.mjs` disposer is
+served uncompressed because it is below the upstream server's 1 KiB Brotli
+threshold, and printer-level changes to the generated module (dot-notation
+member access, shorter function names) would save under 0.5 KB raw and under
+60 bytes Brotli. Closing the remaining gap therefore means either a minifier
+or bundle-time comment stripping, both of which change the stance that the
+shipped hosts are the repository's host files; neither is decided here.
 
 ## Reading these numbers
 
@@ -120,7 +137,7 @@ a focused upstream A/B with vanilla as the control).
 - Size numbers reflect the complete fetched application (see the [local byte
   baseline](docs/performance/js-framework-benchmark.md#deterministic-local-gate)),
   including LeanRx's shared region-runtime host rather than a tree-shaken
-  lower bound; the structural-delta and conditional/positional hosts are
-  shipped only by artifacts that import them.
+  lower bound; the structural-delta, conditional/positional, and form-event
+  hosts are shipped only by artifacts that import them.
 - A regression in one category is not offset by an improvement in another;
   read CPU, memory, and size as independent signals.

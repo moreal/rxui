@@ -23,15 +23,15 @@ def run : IO Unit := do
       ¬source.contains "innerHTML" && ¬source.contains "currentObserver" &&
       ¬source.contains "new Proxy" do
     throw <| IO.userError "Todo dynamic-region lowering changed"
-  unless emitted.manifest.runtimeAbi == 10 && emitted.manifest.stateSlots == #[
+  unless emitted.manifest.runtimeAbi == 11 && emitted.manifest.stateSlots == #[
       .list (.record "TodoItem"), .nat, .string, .int, .string, .string] &&
       emitted.manifest.sourceCount == 6 && emitted.manifest.derivedCount == 0 &&
       emitted.manifest.textSinkCount == 2 && emitted.manifest.eventCount == 10 &&
       emitted.manifest.features.contains "reference-propagation" &&
       ¬emitted.manifest.features.contains "actual-change" &&
       emitted.manifest.hostImports ==
-        #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_unkeyed_region.mjs",
-          "./leanrx_host.mjs"] do
+        #["./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_region.mjs",
+          "./leanrx_unkeyed_region.mjs", "./leanrx_host.mjs"] do
     throw <| IO.userError "Todo dynamic manifest changed"
 
 end LeanRxTest.Backend.Todo
