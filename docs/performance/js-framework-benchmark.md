@@ -13,15 +13,22 @@ table application. The integration has two deliberately separate lanes:
 
 The application uses the checked pure Lean operation model, the typed
 JavaScript AST backend, the standard full keyed-region runtime, and the standard
-ten-slot instrumentation contract. Rows are mounted by deep-cloning one static
-row template that `mount` builds once through the DOM host, then writing only
-the per-row key (a `setKey` node property that the delegated click adapter
-resolves), texts, and selection class; the keyed region matches retained keys
-by position before hashing, places nodes minimally (prefix/suffix trim plus a
-longest order-preserving subsequence, so a swap costs two DOM moves), and
-rebuilds a fully owned parent with one bulk removal and one detached bulk
-insertion. It does not use the optional structural delta path, and since ABI 9
-it does not ship that path's host module. The benchmark lowering is currently
+ten-slot instrumentation contract. The model rows themselves are the keyed
+items: the region forwards the mount-local context (metrics, row template,
+model state) to every row callback, which derives the selection flag from it,
+so a commit builds no per-row payload array. Rows are mounted by deep-cloning
+one static row template that `mount` builds once through the DOM host, then
+writing only the per-row key (a `setKey` node property that the delegated click
+adapter resolves), texts, and selection class; the keyed region matches
+retained keys by position before hashing, registers keys added to an empty
+region with one index insertion each, places nodes minimally (prefix/suffix
+trim plus a longest order-preserving subsequence, so a swap costs two DOM
+moves), and rebuilds a fully owned parent with one bulk removal and one
+detached bulk insertion. Selecting a row re-runs the update callback for
+exactly the previously and newly selected rows through the region's
+`updateAt` (ADR-0020); every other operation commits the whole row list. It
+does not use the optional structural delta path or the conditional/positional
+regions, and since ABI 9/10 it ships neither of those host modules. The benchmark lowering is currently
 a dedicated backend module; it is evidence for the current generated runtime
 rather than a claim that the general-purpose component compiler can yet lower
 every collection program.
@@ -63,7 +70,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 24,064 | 6,485 | 6,880 |
+| Complete fetched application | 23,261 | 6,506 | 6,889 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.

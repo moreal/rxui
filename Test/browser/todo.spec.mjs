@@ -12,6 +12,7 @@ const files = new Set([
   "TodoMVC.expected.json",
   "leanrx_dom.mjs",
   "leanrx_region.mjs",
+  "leanrx_unkeyed_region.mjs",
   "leanrx_host.mjs",
 ]);
 let server;

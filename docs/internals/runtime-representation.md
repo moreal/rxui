@@ -64,7 +64,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 9. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 10. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -117,6 +117,16 @@ detached bulk insertion, and moves `createDeltaKeyedRegion` into
 `leanrx_delta_region.mjs`, which imports the shared placement helpers from
 `leanrx_region.mjs`. See
 [ADR-0019](../adr/0019-runtime-abi-v9-owned-parent-rebuild.md).
+
+ABI 10 forwards the context given to a keyed region's `update` (and the delta
+region's `apply`) unchanged to the mount, update, and dispose callbacks as a
+trailing argument, adds `updateAt(index, item, context)` to the keyed region
+for re-running the update callback of one retained position whose key must
+match, registers each key added to an empty keyed region with one index
+insertion, and moves the conditional and positional regions into
+`leanrx_unkeyed_region.mjs` (importing the shared anchor/detach/snapshot
+helpers), which only TodoMVC imports. See
+[ADR-0020](../adr/0020-runtime-abi-v10-keyed-context-and-update-at.md).
 
 Dynamic-region manifests use a separate `ManifestTypeId` for metadata-only
 `record<name>` and `list<element>` slot descriptions. Those constructors cannot

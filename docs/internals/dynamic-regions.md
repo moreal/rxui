@@ -41,12 +41,15 @@ keys alone allocate fresh tokens. Lean proves that the optimized mounted
 projection equals full target-list recomputation. Token retention and disposal
 counts are now compared with the connected browser region host in TodoMVC.
 
-`runtime/leanrx_region.mjs` is a separate local reconciler, not a scheduler. It
-receives explicit target items and compiler-generated mount/update/dispose
-callbacks. It never discovers dependencies, observes reactive reads, or rebuilds
-outside its anchor. Conditional replacement, positional suffix ownership, keyed
-identity/reorder, duplicate-key fail-before-mutation, copied instrumentation, and
-idempotent disposal run against a deterministic fake DOM before browser dogfood.
+`runtime/leanrx_region.mjs` (the keyed region and the shared anchor, detach,
+placement, and rebuild helpers) and `runtime/leanrx_unkeyed_region.mjs` (the
+conditional and positional regions, shipped only by artifacts that import them)
+are separate local reconcilers, not schedulers. They receive explicit target
+items and compiler-generated mount/update/dispose callbacks and never discover
+dependencies, observe reactive reads, or rebuild outside their anchors.
+Conditional replacement, positional suffix ownership, keyed identity/reorder,
+duplicate-key fail-before-mutation, copied instrumentation, and idempotent
+disposal run against a deterministic fake DOM before browser dogfood.
 
 Keyed placement is minimal. After validating the whole target, updating
 retained rows, mounting new rows, and disposing removed rows, the host trims
@@ -68,6 +71,21 @@ otherwise each node is detached individually. Pure clears and updates with a
 retained row never detach the parent. The "placements/moves" counter counts
 `insertBefore` calls in every case, and a deterministic fuzz over random keyed
 targets checks order, identity, leak-freedom, and the placement bound.
+
+Keyed callbacks receive the caller's context. `update(items, context)` forwards
+`context` unchanged as a trailing argument to `mountItem(item, index,
+context)`, `updateItem(handle, item, index, context)`, and
+`disposeItem(handle, key, context)`, so a generated mount can thread its
+mount-local context (metrics, templates, state) to every row without building
+a per-commit payload array; the delta region's `update` and `apply` forward it
+the same way. `updateAt(index, item, context)` re-runs the update callback for
+one retained position whose key must be `item[0]` (LRX-REGION-003 otherwise,
+before any callback); it changes no shape, order, or identity and is
+equivalent to an update whose other items are unchanged, so a backend may use
+it when it can show that only that row's payload changed. Into an empty
+region, each new key is registered with a single index insertion and a size
+that did not grow reveals the repeated key; validation still fails before any
+callback or DOM mutation.
 
 TodoMVC begins from a private pure `Todo.State` and closed `Todo.Msg` update
 algebra. Add/toggle/delete/filter/edit/clear operations are total and preserve

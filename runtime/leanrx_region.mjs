@@ -18,89 +18,6 @@ export function snapshot(metrics) {
   return metrics.slice();
 }
 
-export function createConditionalRegion(parent, mountBranch, updateBranch, disposeBranch) {
-  const marker = anchor(parent, "leanrx:conditional");
-  const metrics = [0, 0, 0]; // mounts/updates/disposals
-  let current = null;
-  let disposed = false;
-  return {
-    update(branch, payload) {
-      if (disposed) return;
-      if (current && current.branch === branch) {
-        updateBranch(current.node, branch, payload);
-        metrics[1] += 1;
-        return;
-      }
-      if (current) {
-        disposeBranch(current.node, current.branch);
-        detach(current.node);
-        metrics[2] += 1;
-      }
-      const node = mountBranch(branch, payload);
-      parent.insertBefore(node, marker);
-      current = { branch, node };
-      metrics[0] += 1;
-    },
-    instrumentation() {
-      return snapshot(metrics);
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      if (current) {
-        disposeBranch(current.node, current.branch);
-        detach(current.node);
-        metrics[2] += 1;
-        current = null;
-      }
-      detach(marker);
-    },
-  };
-}
-
-export function createPositionalRegion(parent, mountItem, updateItem, disposeItem) {
-  const marker = anchor(parent, "leanrx:positional");
-  const metrics = [0, 0, 0]; // mounts/updates/disposals
-  let entries = [];
-  let disposed = false;
-  return {
-    update(items) {
-      if (disposed) return;
-      const common = Math.min(entries.length, items.length);
-      for (let index = 0; index < common; index += 1) {
-        updateItem(entries[index], items[index], index);
-        metrics[1] += 1;
-      }
-      for (let index = common; index < items.length; index += 1) {
-        const node = mountItem(items[index], index);
-        parent.insertBefore(node, marker);
-        entries.push(node);
-        metrics[0] += 1;
-      }
-      while (entries.length > items.length) {
-        const node = entries.pop();
-        disposeItem(node);
-        detach(node);
-        metrics[2] += 1;
-      }
-    },
-    instrumentation() {
-      return snapshot(metrics);
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      for (const node of entries) {
-        disposeItem(node);
-        detach(node);
-        metrics[2] += 1;
-      }
-      entries = [];
-      detach(marker);
-    },
-  };
-}
-
 function duplicateKey(key) {
   return new Error(`LRX-REGION-001 duplicate key: ${String(key)}`);
 }
@@ -204,6 +121,15 @@ export function rebuild(parent, marker, previous, previousCount, next, newCount)
   return placements;
 }
 
+function mismatchedKey(index, key) {
+  return new Error(`LRX-REGION-003 key ${String(key)} is not at position ${index}`);
+}
+
+/** update(items, context) reconciles the whole target (items[i][0] is the key)
+ * and forwards context to mountItem(item, index, context), updateItem(handle,
+ * item, index, context), and disposeItem(handle, key, context); updateAt(index,
+ * item, context) re-runs updateItem for one retained position whose key must
+ * match, changing no shape, order, or identity. */
 export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, rootItem = null) {
   const marker = anchor(parent, "leanrx:keyed");
   const metrics = [0, 0, 0, 0]; // mounts/updates/moves/disposals
@@ -212,7 +138,7 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
   let stamp = 0;
   let disposed = false;
   return {
-    update(items) {
+    update(items, context) {
       if (disposed) return;
       const count = items.length;
       const previous = current;
@@ -221,17 +147,24 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       // Validate the whole target before the first callback or DOM mutation. A
       // retained key is matched by position first (no hashing while the order is
       // unchanged), then through the key index; a new key registers an unmounted
-      // entry; a repeated key unregisters the new entries and fails.
+      // entry; a repeated key unregisters the new entries and fails. Into an
+      // empty region one insertion registers a key and a size that did not grow
+      // reveals the repeated key.
       const next = new Array(count);
+      const empty = entries.size === 0;
       let retained = 0;
       for (let index = 0; index < count; index += 1) {
         const key = items[index][0];
-        let entry = index < previousCount && previous[index].key === key
-          ? previous[index]
+        let entry = empty ? undefined
+          : index < previousCount && previous[index].key === key ? previous[index]
           : entries.get(key);
         if (entry === undefined) {
           entry = { key, handle: null, node: null, stamp, pos: -1 };
           entries.set(key, entry);
+          if (empty && entries.size !== index + 1) {
+            entries.clear();
+            throw duplicateKey(key);
+          }
         } else if (entry.stamp === stamp) {
           for (let added = 0; added < index; added += 1) {
             if (next[added].node === null) entries.delete(next[added].key);
@@ -246,19 +179,19 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       for (let index = 0; index < count; index += 1) {
         const entry = next[index];
         if (entry.node !== null) {
-          updateItem(entry.handle, items[index], index);
-          metrics[1] += 1;
+          updateItem(entry.handle, items[index], index, context);
         } else {
-          const handle = mountItem(items[index], index);
+          const handle = mountItem(items[index], index, context);
           entry.handle = handle;
           entry.node = rootItem ? rootItem(handle) : handle;
-          metrics[0] += 1;
         }
       }
+      metrics[0] += count - retained;
+      metrics[1] += retained;
       if (retained === 0) {
         for (let index = 0; index < previousCount; index += 1) {
           const entry = previous[index];
-          disposeItem(entry.handle, entry.key);
+          disposeItem(entry.handle, entry.key, context);
           if (count > 0) entries.delete(entry.key);
         }
         if (count === 0) entries.clear();
@@ -272,7 +205,7 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
             previous[kept] = entry;
             kept += 1;
           } else {
-            disposeItem(entry.handle, entry.key);
+            disposeItem(entry.handle, entry.key, context);
             detach(entry.node);
             entries.delete(entry.key);
             metrics[3] += 1;
@@ -281,6 +214,13 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
         metrics[2] += placeInOrder(parent, marker, previous, kept, next, count);
       }
       current = next;
+    },
+    updateAt(index, item, context) {
+      if (disposed) return;
+      const entry = current[index];
+      if (entry === undefined || entry.key !== item[0]) throw mismatchedKey(index, item[0]);
+      updateItem(entry.handle, item, index, context);
+      metrics[1] += 1;
     },
     instrumentation() {
       return snapshot(metrics);

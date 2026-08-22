@@ -17,7 +17,7 @@ def run : IO Unit := do
     | .error error => throw <| IO.userError s!"{error.code}: {error.message}"
   assertEq #["mount"] emitted.manifest.exports
   assertEq 8 emitted.manifest.eventCount
-  assertEq 9 emitted.manifest.runtimeAbi
+  assertEq 10 emitted.manifest.runtimeAbi
   assertEq #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_host.mjs"]
     emitted.manifest.hostImports
   unless emitted.manifest.features.contains "keyed-region" &&
@@ -35,5 +35,12 @@ def run : IO Unit := do
       readable.contains "10000" && ¬readable.contains "createDeltaKeyedRegion" &&
       compact.length < readable.length do
     throw <| IO.userError "benchmark printer output lost the upstream keyed table lowering"
+  -- The model rows are the keyed items (no per-commit projection array), the
+  -- region forwards the mount-local context to the row callbacks, and a
+  -- selection change re-runs exactly two retained rows through `updateAt`.
+  unless readable.contains "[\"updateAt\"]" && readable.contains "$lrx_benchmarkCommitRows" &&
+      ¬readable.contains "$lrx_benchmarkProject" &&
+      readable.contains "[\"update\"](state[0], context)" do
+    throw <| IO.userError "benchmark lowering lost the context-forwarding keyed commit"
 
 end LeanRxTest.Backend.JsFrameworkBenchmark

@@ -334,6 +334,20 @@ Complete — M0 through M11
   benchmark headless run recorded in `BENCHMARK.md` measured create 10,000
   345.7 → 335.5 ms, select 8.2 → 7.5 ms (level with Solid), and 27.6 → 23.5 KB
   shipped (6.8 → 6.3 KB Brotli) with every other workload improved or level.
+- Made the shipped runtime faster again without touching the checked Lean
+  models (ADR-0020, runtime ABI 10): both keyed regions forward the per-update
+  context to their mount/update/dispose callbacks, the keyed region gained
+  `updateAt` (one retained row, key-checked) and registers keys added to an
+  empty region with one index insertion, and the conditional/positional
+  regions moved to `runtime/leanrx_unkeyed_region.mjs`, which only TodoMVC
+  imports. The js-framework-benchmark backend commits the model rows as the
+  keyed items (no per-commit projection array) and lowers `select` to two
+  `updateAt` calls. Fake-DOM tests lock context forwarding, `updateAt`, and
+  empty-region duplicate rejection; the headless run recorded in
+  `BENCHMARK.md` measured select 7.5 → 6.2 ms (below Solid), replace 35.1 →
+  33.7 ms, create 10,000 335.5 → 330.0 ms, swap 23.5 → 22.8 ms, clear 14.9 →
+  14.4 ms, and 23.5 → 22.7 KB shipped, with the other workloads level within
+  noise.
 
 ## In progress
 

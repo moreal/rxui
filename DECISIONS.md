@@ -21,6 +21,7 @@
 | [0017](docs/adr/0017-structural-delta-remains-opt-in.md) | Accepted | Keep structural delta an opt-in experimental library | 2026-08-21 |
 | [0018](docs/adr/0018-runtime-abi-v8-template-clone.md) | Accepted | Bump the internal runtime ABI for template cloning and minimal keyed placement | 2026-08-22 |
 | [0019](docs/adr/0019-runtime-abi-v9-owned-parent-rebuild.md) | Accepted | Bump the internal runtime ABI for owned-parent rebuilds, property keys, and a separate delta host | 2026-08-22 |
+| [0020](docs/adr/0020-runtime-abi-v10-keyed-context-and-update-at.md) | Accepted | Bump the internal runtime ABI for keyed-region context forwarding and single-row updates | 2026-08-22 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

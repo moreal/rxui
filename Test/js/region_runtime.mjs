@@ -1,8 +1,8 @@
+import { createKeyedRegion } from "../../runtime/leanrx_region.mjs";
 import {
   createConditionalRegion,
-  createKeyedRegion,
   createPositionalRegion,
-} from "../../runtime/leanrx_region.mjs";
+} from "../../runtime/leanrx_unkeyed_region.mjs";
 import { createDeltaKeyedRegion } from "../../runtime/leanrx_delta_region.mjs";
 import { makeDisposer } from "../../runtime/leanrx_host.mjs";
 
@@ -608,6 +608,118 @@ function values(parent) {
       JSON.stringify(values(parent)) !== '["3"]' ||
       JSON.stringify(region.instrumentation()) !== "[3,0,3,2,2,1,4]") {
     throw new Error(`delta rebuild changed: ${JSON.stringify(region.instrumentation())}`);
+  }
+  region.dispose();
+}
+
+{
+  // Both keyed regions forward the per-update context unchanged to the mount,
+  // update, and dispose callbacks; older callers that pass none see undefined.
+  for (const create of [createKeyedRegion, createDeltaKeyedRegion]) {
+    const parent = new FakeParent();
+    const seen = [];
+    const region = create(
+      parent,
+      (item, index, context) => { seen.push(["mount", item[0], index, context]); return [new FakeNode(`${item[0]}`)]; },
+      (handle, item, index, context) => { seen.push(["update", item[0], index, context]); },
+      (handle, key, context) => { seen.push(["dispose", key, context]); },
+      (handle) => handle[0],
+    );
+    const first = { tag: "first" };
+    const second = { tag: "second" };
+    region.update([[1, "a"], [2, "b"]], first);
+    region.update([[2, "b"]], second);
+    region.update([[2, "b"], [3, "c"]]);
+    if (JSON.stringify(seen) !== JSON.stringify([
+      ["mount", 1, 0, first], ["mount", 2, 1, first],
+      ["update", 2, 0, second], ["dispose", 1, second],
+      ["update", 2, 0, undefined], ["mount", 3, 1, undefined],
+    ])) {
+      throw new Error(`${create.name} did not forward the update context: ${JSON.stringify(seen)}`);
+    }
+    region.dispose();
+  }
+}
+
+{
+  // updateAt re-runs the update callback for one retained position with the
+  // forwarded context and counts one update; it refuses a key that is not at
+  // that position or a position outside the region before calling anything,
+  // and is a no-op after disposal.
+  const parent = new FakeParent();
+  const calls = [];
+  const region = createKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}:${item[1]}`)],
+    (handle, item, index, context) => {
+      calls.push([item[0], index, context]);
+      handle[0].value = `${item[0]}:${item[1]}`;
+    },
+    () => {},
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"], [3, "c"]]);
+  const nodes = parent.children.slice(0, 3);
+  const context = { tag: "select" };
+  region.updateAt(1, [2, "B"], context);
+  if (JSON.stringify(values(parent)) !== '["1:a","2:B","3:c"]' || parent.children[1] !== nodes[1] ||
+      JSON.stringify(calls) !== '[[2,1,{"tag":"select"}]]' ||
+      JSON.stringify(region.instrumentation()) !== "[3,1,3,0]") {
+    throw new Error(`updateAt did not update exactly one retained row: ${JSON.stringify(calls)}`);
+  }
+  function expectMismatch(index, item) {
+    let failed = false;
+    try {
+      region.updateAt(index, item, context);
+    } catch (error) {
+      failed = String(error).includes("LRX-REGION-003");
+    }
+    if (!failed || calls.length !== 1 || JSON.stringify(values(parent)) !== '["1:a","2:B","3:c"]') {
+      throw new Error(`updateAt accepted key ${item[0]} at position ${index}`);
+    }
+  }
+  expectMismatch(0, [2, "wrong"]);
+  expectMismatch(3, [4, "outside"]);
+  expectMismatch(-1, [1, "negative"]);
+  region.update([[3, "c"], [1, "a"]]);
+  region.updateAt(1, [1, "A"], context);
+  if (JSON.stringify(values(parent)) !== '["3:c","1:A"]' || calls.length !== 4 ||
+      JSON.stringify(region.instrumentation()) !== "[3,4,4,1]") {
+    throw new Error("updateAt after a reorder did not address the current order");
+  }
+  region.dispose();
+  region.updateAt(0, [3, "ignored"], context);
+  if (calls.length !== 4 || parent.children.length !== 0) {
+    throw new Error("updateAt ran after disposal");
+  }
+}
+
+{
+  // An empty region registers each new key with one index insertion; the
+  // repeated key may be far from its first occurrence and nothing is mounted.
+  const parent = new FakeParent();
+  let mounts = 0;
+  const region = createKeyedRegion(
+    parent,
+    (item) => { mounts += 1; return [new FakeNode(`${item[0]}`)]; },
+    () => {},
+    () => {},
+    (handle) => handle[0],
+  );
+  let failed = false;
+  try {
+    region.update([[1, "a"], [2, "b"], [3, "c"], [4, "d"], [2, "again"]]);
+  } catch (error) {
+    failed = String(error).includes("LRX-REGION-001") && String(error).includes("2");
+  }
+  if (!failed || mounts !== 0 || parent.children.length !== 1) {
+    throw new Error("empty region accepted a distant repeated key");
+  }
+  region.update([[4, "d"], [3, "c"]]);
+  region.update([[3, "c"], [4, "d"], [5, "e"]]);
+  if (mounts !== 3 || JSON.stringify(values(parent)) !== '["3","4","5"]' ||
+      JSON.stringify(region.instrumentation()) !== "[3,2,4,0]") {
+    throw new Error(`empty region recovery changed: ${JSON.stringify(region.instrumentation())}`);
   }
   region.dispose();
 }

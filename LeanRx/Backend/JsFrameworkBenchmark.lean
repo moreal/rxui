@@ -143,29 +143,6 @@ private def buildDataFunction (runtime : RuntimeNames) (random : Ident) : Except
     ]
   }
 
-/-- Projects the model rows into keyed items `[id, label, selected, context]`;
-`selected` is `null` or a row id, so strict equality is the selection test. -/
-private def projectFunction : Except Error Function := do
-  let name ← Ident.checked "$lrx_benchmarkProject"
-  let rows ← Ident.checked "rows"
-  let selected ← Ident.checked "selected"
-  let context ← Ident.checked "context"
-  let target ← Ident.checked "target"
-  let row ← Ident.checked "row"
-  let isSelected := equals (.ident selected) (arrayAt row 0)
-  pure {
-    name
-    params := #[rows, selected, context]
-    body := #[
-      .const target (.array .nil),
-      .forOf row (.ident rows) <| .ofList [
-        .expr <| method (.ident target) "push" [.array <| .ofList [
-          arrayAt row 0, arrayAt row 1, isSelected, .ident context]]
-      ],
-      .return (.ident target)
-    ]
-  }
-
 private def findIndexFunction : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkFindIndex"
   let rows ← Ident.checked "rows"
@@ -230,13 +207,21 @@ private def rowTemplateFunction (runtime : RuntimeNames) : Except Error Function
     ]
   }
 
+/-- The selection flag of a row item: the mount-local context carries the model
+state in slot 3, whose slot 2 is the selected id (`null` for none). -/
+private def selectedFlag (context item : Ident) : Expr :=
+  equals (indexAt (arrayAt context 3) 2) (arrayAt item 0)
+
 /-- Mounts one row by cloning the static template that `mount` built once
-(carried in the item's context slot) and writing only the per-row key, texts,
-and selection class. The row root carries the delegated key, so both action
-links resolve it through their nearest keyed ancestor. -/
+(carried in the mount-local context that the keyed region forwards with every
+update) and writing only the per-row key, texts, and selection class. The row
+item is the model row itself; the selection flag is derived from the context.
+The row root carries the delegated key, so both action links resolve it through
+their nearest keyed ancestor. -/
 private def mountRowFunction (runtime : RuntimeNames) : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkMountRow"
   let item ← Ident.checked "item"
+  let _index ← Ident.checked "index"
   let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
   let keyText ← Ident.checked "keyText"
@@ -244,11 +229,11 @@ private def mountRowFunction (runtime : RuntimeNames) : Except Error Function :=
   let idCell ← Ident.checked "idCell"
   let selectLink ← Ident.checked "selectLink"
   let labelText ← Ident.checked "labelText"
+  let selected ← Ident.checked "selected"
   pure {
     name
-    params := #[item]
+    params := #[item, _index, context]
     body := #[
-      .const context (arrayAt item 3),
       .const metrics (arrayAt context 1),
       .const keyText (call runtime.string [arrayAt item 0]),
       .const root (call runtime.cloneTemplate [arrayAt context 2]),
@@ -258,13 +243,14 @@ private def mountRowFunction (runtime : RuntimeNames) : Except Error Function :=
       .const selectLink (call runtime.firstChild [call runtime.nextSibling [.ident idCell]]),
       .const labelText (call runtime.firstChild [.ident selectLink]),
       .expr <| call runtime.setText [.ident labelText, arrayAt item 1],
-      .ifThen (arrayAt item 2) <| .ofList [
+      .const selected (selectedFlag context item),
+      .ifThen (.ident selected) <| .ofList [
         setAttribute runtime (.ident root) "class" (.literal (.string "danger")),
         incrementAt metrics 6
       ],
       addAt metrics 6 (uint 3),
       .return <| .array <| .ofList [
-        .ident root, .ident labelText, arrayAt item 1, arrayAt item 2]
+        .ident root, .ident labelText, arrayAt item 1, .ident selected]
     ]
   }
 
@@ -273,23 +259,26 @@ private def updateRowFunction (runtime : RuntimeNames) : Except Error Function :
   let handle ← Ident.checked "handle"
   let item ← Ident.checked "item"
   let _index ← Ident.checked "index"
+  let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
-  let selectedClass := .conditional (arrayAt item 2)
+  let selected ← Ident.checked "selected"
+  let selectedClass := .conditional (.ident selected)
     (.literal (.string "danger")) (.literal (.string ""))
   pure {
     name
-    params := #[handle, item, _index]
+    params := #[handle, item, _index, context]
     body := #[
-      .const metrics (indexAt (arrayAt item 3) 1),
+      .const metrics (arrayAt context 1),
+      .const selected (selectedFlag context item),
       incrementAt metrics 5,
       .ifThen (notEquals (arrayAt handle 2) (arrayAt item 1)) <| .ofList [
         .expr <| call runtime.setText [arrayAt handle 1, arrayAt item 1],
         .assign (.index (.ident handle) (uint 2)) (arrayAt item 1),
         incrementAt metrics 6
       ],
-      .ifThen (notEquals (arrayAt handle 3) (arrayAt item 2)) <| .ofList [
+      .ifThen (notEquals (arrayAt handle 3) (.ident selected)) <| .ofList [
         setAttribute runtime (arrayAt handle 0) "class" selectedClass,
-        .assign (.index (.ident handle) (uint 3)) (arrayAt item 2),
+        .assign (.index (.ident handle) (uint 3)) (.ident selected),
         incrementAt metrics 6
       ],
       .return null
@@ -307,24 +296,56 @@ private def rowRootFunction : Except Error Function := do
   let handle ← Ident.checked "handle"
   pure { name, params := #[handle], body := #[.return (arrayAt handle 0)] }
 
-private def commitFunction (project : Ident) : Except Error Function := do
+private def commitMetrics (metrics action : Ident) : List Stmt := [
+  incrementAt metrics 1,
+  incrementAt metrics 3,
+  incrementAt metrics 4,
+  .expr <| method (arrayAt metrics 7) "push" [.ident action]
+]
+
+/-- Commits the whole row list: the model rows are the keyed items and the
+region forwards the mount-local context (metrics, template, state) to every
+row callback, so no per-commit projection array is built. -/
+private def commitFunction : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkCommit"
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
   let action ← Ident.checked "action"
   let metrics ← Ident.checked "metrics"
-  let target ← Ident.checked "target"
   pure {
     name
     params := #[state, context, action]
-    body := #[
-      .const metrics (arrayAt context 1),
-      incrementAt metrics 1,
-      incrementAt metrics 3,
-      incrementAt metrics 4,
-      .expr <| method (arrayAt metrics 7) "push" [.ident action],
-      .const target (call project [arrayAt state 0, arrayAt state 2, .ident context]),
-      .expr <| method (arrayAt context 0) "update" [.ident target],
+    body := #[.const metrics (arrayAt context 1)] ++ (commitMetrics metrics action).toArray ++ #[
+      .expr <| method (arrayAt context 0) "update" [arrayAt state 0, .ident context],
+      .return null
+    ]
+  }
+
+/-- Commits a change that affects the render payload of at most two retained
+rows (the previously and newly selected rows): the region re-runs the update
+callback for exactly those positions, which is equivalent to a full commit
+because every other row's label and selection flag are unchanged. A negative
+first position means no previously selected row; an equal second position is
+updated once. -/
+private def commitRowsFunction : Except Error Function := do
+  let name ← Ident.checked "$lrx_benchmarkCommitRows"
+  let state ← Ident.checked "state"
+  let context ← Ident.checked "context"
+  let first ← Ident.checked "first"
+  let second ← Ident.checked "second"
+  let action ← Ident.checked "action"
+  let metrics ← Ident.checked "metrics"
+  let rows ← Ident.checked "rows"
+  let updateAt (position : Ident) : Stmt :=
+    .expr <| method (arrayAt context 0) "updateAt" [
+      .ident position, .index (.ident rows) (.ident position), .ident context]
+  pure {
+    name
+    params := #[state, context, first, second, action]
+    body := #[.const metrics (arrayAt context 1)] ++ (commitMetrics metrics action).toArray ++ #[
+      .const rows (arrayAt state 0),
+      .ifThen (notEquals (.ident first) negativeOne) <| .ofList [updateAt first],
+      .ifThen (notEquals (.ident second) (.ident first)) <| .ofList [updateAt second],
       .return null
     ]
   }
@@ -448,7 +469,11 @@ private def swapFunction (firstIndex secondIndex : Nat) (commit : Ident) : Excep
     ]
   }
 
-private def selectFunction (runtime : RuntimeNames) (findIndex commit : Ident) :
+/-- Selecting a row changes only the selected id, and a row's selection flag
+depends on it only through equality with the row's own id, so exactly the
+previously selected row (if any) and the newly selected row change; the commit
+goes through `commitRows` instead of re-running every row. -/
+private def selectFunction (runtime : RuntimeNames) (findIndex commitRows : Ident) :
     Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkSelect"
   let state ← Ident.checked "state"
@@ -457,6 +482,7 @@ private def selectFunction (runtime : RuntimeNames) (findIndex commit : Ident) :
   let metrics ← Ident.checked "metrics"
   let parsedKey ← Ident.checked "parsedKey"
   let foundIndex ← Ident.checked "foundIndex"
+  let previousIndex ← Ident.checked "previousIndex"
   pure {
     name
     params := #[state, context, key]
@@ -465,10 +491,12 @@ private def selectFunction (runtime : RuntimeNames) (findIndex commit : Ident) :
       .const parsedKey (call runtime.bigInt [.ident key]),
       .const foundIndex (call findIndex [arrayAt state 0, .ident parsedKey]),
       .ifThen (notEquals (.ident foundIndex) negativeOne) <| .ofList [
+        .const previousIndex (call findIndex [arrayAt state 0, arrayAt state 2]),
         .assign (.index (.ident state) (uint 2)) (.ident parsedKey),
         incrementAt metrics 0,
-        .expr <| call commit [
-          .ident state, .ident context, .literal (.string "select")],
+        .expr <| call commitRows [
+          .ident state, .ident context, .ident previousIndex, .ident foundIndex,
+          .literal (.string "select")],
         .return null
       ],
       .return null
@@ -561,7 +589,8 @@ private def mountFunction (runtime : RuntimeNames) (rowTemplate mountRow updateR
       .const template (call rowTemplate []),
       .const region (call runtime.createKeyedRegion [
         .ident tbody, .ident mountRow, .ident updateRow, .ident disposeRow, .ident rowRoot]),
-      .const context (.array <| .ofList [.ident region, .ident metrics, .ident template]),
+      .const context (.array <| .ofList [
+        .ident region, .ident metrics, .ident template, .ident state]),
       .const off (call runtime.listenDelegated [
         .ident target, .literal (.string "click"), .ident state, .ident context, .ident dispatch]),
       .const disposer (call runtime.makeDisposer [
@@ -600,29 +629,29 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
   let runtime ← runtimeNames
   let random ← randomFunction runtime
   let buildData ← buildDataFunction runtime random.name
-  let project ← projectFunction
   let findIndex ← findIndexFunction
   let rowTemplate ← rowTemplateFunction runtime
   let mountRow ← mountRowFunction runtime
   let updateRow ← updateRowFunction runtime
   let disposeRow ← disposeRowFunction
   let rowRoot ← rowRootFunction
-  let commit ← commitFunction project.name
+  let commit ← commitFunction
+  let commitRows ← commitRowsFunction
   let replace ← replaceFunction buildData.name commit.name
   let add ← addFunction checked.spec.rowCount buildData.name commit.name
   let updateRows ← updateFunction runtime checked.spec.updateStride commit.name
   let clearRows ← clearFunction commit.name
   let swapRows ← swapFunction checked.spec.swapFirst checked.spec.swapSecond commit.name
-  let selectRow ← selectFunction runtime findIndex.name commit.name
+  let selectRow ← selectFunction runtime findIndex.name commitRows.name
   let removeRow ← removeFunction runtime findIndex.name commit.name
   let dispatch ← dispatchFunction checked.spec replace.name add.name updateRows.name
     clearRows.name swapRows.name selectRow.name removeRow.name
   let mount ← mountFunction runtime rowTemplate.name mountRow.name updateRow.name
     disposeRow.name rowRoot.name dispatch.name
   let declarations : Array Decl := #[
-    .function random, .function buildData, .function project, .function findIndex,
+    .function random, .function buildData, .function findIndex,
     .function rowTemplate, .function mountRow, .function updateRow, .function disposeRow, .function rowRoot,
-    .function commit, .function replace, .function add, .function updateRows,
+    .function commit, .function commitRows, .function replace, .function add, .function updateRows,
     .function clearRows, .function swapRows, .function selectRow, .function removeRow,
     .function dispatch, .function mount
   ]

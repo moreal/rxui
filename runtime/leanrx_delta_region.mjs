@@ -77,7 +77,9 @@ function validateDeltaBatch(currentKeys, deltas) {
  * edits. It owns only its anchor, keyed instances, and disposal; it does not
  * discover dependencies or schedule reactive work. Every batch is validated
  * completely before the first DOM mutation. Its full reconcile shares the
- * minimal placement and owned-parent rebuild of the standard keyed region. */
+ * minimal placement and owned-parent rebuild of the standard keyed region, and
+ * like that region it forwards the `context` given to `update`/`apply` to the
+ * mount, update, and dispose callbacks. */
 export function createDeltaKeyedRegion(
   parent, mountItem, updateItem, disposeItem, rootItem = null,
 ) {
@@ -87,7 +89,7 @@ export function createDeltaKeyedRegion(
   let entries = [];
   let disposed = false;
 
-  function reconcile(items, alreadyValidated = false) {
+  function reconcile(items, alreadyValidated, context) {
     if (!alreadyValidated) validateUniqueItems(items);
     metrics[6] += items.length;
     const oldByKey = new Map(entries.map((entry) => [entry.key, entry]));
@@ -98,19 +100,19 @@ export function createDeltaKeyedRegion(
       const key = item[0];
       let entry = oldByKey.get(key);
       if (entry) {
-        updateItem(entry.handle, item, index);
+        updateItem(entry.handle, item, index, context);
         metrics[1] += 1;
         oldByKey.delete(key);
         retained += 1;
       } else {
-        const handle = mountItem(item, index);
+        const handle = mountItem(item, index, context);
         entry = { key, handle, node: rootItem ? rootItem(handle) : handle, pos: -1 };
         metrics[0] += 1;
       }
       next.push(entry);
     }
     if (retained === 0) {
-      for (const entry of entries) disposeItem(entry.handle, entry.key);
+      for (const entry of entries) disposeItem(entry.handle, entry.key, context);
       metrics[3] += entries.length;
       metrics[2] += rebuild(parent, marker, entries, entries.length, next, next.length);
     } else {
@@ -118,7 +120,7 @@ export function createDeltaKeyedRegion(
       for (let index = 0; index < entries.length; index += 1) {
         const entry = entries[index];
         if (oldByKey.has(entry.key)) {
-          disposeItem(entry.handle, entry.key);
+          disposeItem(entry.handle, entry.key, context);
           detach(entry.node);
           metrics[3] += 1;
         } else {
@@ -132,12 +134,12 @@ export function createDeltaKeyedRegion(
     metrics[4] += 1;
   }
 
-  function applyOne(delta) {
+  function applyOne(delta, context) {
     const tag = delta[0];
     if (tag === "insert") {
       const index = delta[1];
       const item = delta[2];
-      const handle = mountItem(item, index);
+      const handle = mountItem(item, index, context);
       const entry = { key: item[0], handle, node: rootItem ? rootItem(handle) : handle, pos: -1 };
       const before = entries[index]?.node ?? marker;
       parent.insertBefore(entry.node, before);
@@ -146,12 +148,12 @@ export function createDeltaKeyedRegion(
     } else if (tag === "remove") {
       const index = delta[1];
       const [entry] = entries.splice(index, 1);
-      disposeItem(entry.handle, entry.key);
+      disposeItem(entry.handle, entry.key, context);
       detach(entry.node);
       metrics[3] += 1;
     } else if (tag === "update") {
       const index = delta[1];
-      updateItem(entries[index].handle, delta[2], index);
+      updateItem(entries[index].handle, delta[2], index, context);
       metrics[1] += 1;
     } else if (tag === "move") {
       const fromIndex = delta[1];
@@ -164,21 +166,21 @@ export function createDeltaKeyedRegion(
         metrics[2] += 1;
       }
     } else {
-      reconcile(delta[1], true);
+      reconcile(delta[1], true, context);
     }
     metrics[5] += 1;
   }
 
   return {
-    update(items) {
+    update(items, context) {
       if (disposed) return;
-      reconcile(items);
+      reconcile(items, false, context);
     },
-    apply(deltas) {
+    apply(deltas, context) {
       if (disposed) return;
       validateDeltaBatch(entries.map((entry) => entry.key), deltas);
       metrics[6] += deltas.length;
-      for (const delta of deltas) applyOne(delta);
+      for (const delta of deltas) applyOne(delta, context);
     },
     instrumentation() {
       return snapshot(metrics);
