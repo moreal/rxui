@@ -134,3 +134,84 @@ test("@framework-benchmark implements the upstream keyed table contract", async 
   await expect(page.locator("#main")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test("@framework-benchmark preserves model state across composed keyed operations", async ({ page }) => {
+  test.setTimeout(180000);
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+  await page.goto(origin);
+
+  const rows = page.locator("tbody > tr");
+  await page.locator("#run").click();
+  await expect(rows).toHaveCount(1000);
+
+  const selectedRow = rows.nth(10);
+  const stableRow = rows.nth(11);
+  await selectedRow.evaluate((row) => { globalThis.leanrxSelectedRow = row; });
+  await stableRow.evaluate((row) => { globalThis.leanrxStableRow = row; });
+  await selectedRow.locator("td").nth(1).locator("a").click();
+  await expect(selectedRow).toHaveClass("danger");
+
+  const selectedLabel = await selectedRow.locator("td").nth(1).textContent();
+  await page.locator("#update").click();
+  await expect(selectedRow.locator("td").nth(1)).toHaveText(`${selectedLabel} !!!`);
+  await expect(selectedRow).toHaveClass("danger");
+  expect(await selectedRow.evaluate((row) => row === globalThis.leanrxSelectedRow)).toBe(true);
+  expect(await stableRow.evaluate((row) => row === globalThis.leanrxStableRow)).toBe(true);
+
+  await page.locator("#update").click();
+  await expect(selectedRow.locator("td").nth(1)).toHaveText(`${selectedLabel} !!! !!!`);
+  await expect(selectedRow).toHaveClass("danger");
+
+  await page.locator("#add").click();
+  await expect(rows).toHaveCount(2000);
+  await expect(selectedRow).toHaveClass("danger");
+  await expect(rows.nth(1000).locator("td").first()).toHaveText("1001");
+  await expect(rows.last().locator("td").first()).toHaveText("2000");
+  expect(await selectedRow.evaluate((row) => row === globalThis.leanrxSelectedRow)).toBe(true);
+
+  await rows.nth(1).locator("td").nth(1).locator("a").click();
+  await rows.nth(1).evaluate((row) => { globalThis.leanrxSwappedSelection = row; });
+  await page.locator("#swaprows").click();
+  await expect(rows.nth(998).locator("td").first()).toHaveText("2");
+  await expect(rows.nth(998)).toHaveClass("danger");
+  expect(await rows.nth(998).evaluate((row) => row === globalThis.leanrxSwappedSelection))
+    .toBe(true);
+
+  await rows.first().locator("td").nth(2).locator("span")
+    .evaluate((element) => element.click());
+  await expect(rows).toHaveCount(1999);
+  await expect(page.locator("tbody > tr.danger")).toHaveCount(1);
+  await expect(page.locator("tbody > tr.danger").locator("td").first()).toHaveText("2");
+  expect(await page.evaluate(() => globalThis.leanrxSwappedSelection.isConnected)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("@framework-benchmark ignores operations whose model preconditions do not hold", async ({ page }) => {
+  test.setTimeout(180000);
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+  await page.goto(origin);
+
+  const rows = page.locator("tbody > tr");
+  await page.locator("#run").click();
+  await rows.nth(4).locator("td").nth(1).locator("a").click();
+  await expect(rows.nth(4)).toHaveClass("danger");
+
+  const unknownSelect = rows.nth(5).locator('[data-lrx-action="select"]');
+  await unknownSelect.evaluate((link) => link.setAttribute("data-lrx-key", "1001"));
+  await unknownSelect.click();
+  await expect(rows.nth(4)).toHaveClass("danger");
+  await expect(page.locator("tbody > tr.danger")).toHaveCount(1);
+
+  const unknownRemove = rows.nth(5).locator('[data-lrx-action="remove"]');
+  await unknownRemove.evaluate((link) => link.setAttribute("data-lrx-key", "1001"));
+  await unknownRemove.evaluate((element) => element.click());
+  await expect(rows).toHaveCount(1000);
+  await expect(rows.nth(4)).toHaveClass("danger");
+
+  await page.locator("#clear").click();
+  await page.locator("#swaprows").click();
+  await expect(rows).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

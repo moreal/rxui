@@ -41,6 +41,8 @@ jobs:
         run: ./scripts/check_browser.sh
       - name: Check JS framework benchmark contract and size baseline
         run: ./scripts/check_js_framework_benchmark.sh
+      - name: Test JS framework benchmark orchestration
+        run: ./scripts/test_js_framework_benchmark_scripts.sh
       - name: Run small graph benchmark smoke gate
         run: ./scripts/check_bench.sh
       - name: Run data-grid benchmark correctness gate

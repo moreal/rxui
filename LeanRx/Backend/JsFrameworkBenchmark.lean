@@ -331,7 +331,6 @@ private def addFunction (rowCount : Nat) (buildData commit : Ident) : Except Err
       .const appended (call buildData [.ident state, uint rowCount]),
       .assign (.index (.ident state) (uint 0))
         (method (arrayAt state 0) "concat" [.ident appended]),
-      .assign (.index (.ident state) (uint 2)) null,
       addAt metrics 0 (uint 2),
       .expr <| call commit [
         .ident state, .ident context, .literal (.string "add")],
@@ -362,8 +361,7 @@ private def updateFunction (runtime : RuntimeNames) (stride : Nat) (commit : Ide
             (.binary .add (arrayAt changedRow 1) (.literal (.string " !!!")))
         ]
       ],
-      .assign (.index (.ident state) (uint 2)) null,
-      addAt metrics 0 (uint 2),
+      incrementAt metrics 0,
       .expr <| call commit [
         .ident state, .ident context, .literal (.string "update")],
       .return null
@@ -417,21 +415,29 @@ private def swapFunction (firstIndex secondIndex : Nat) (commit : Ident) : Excep
     ]
   }
 
-private def selectFunction (runtime : RuntimeNames) (commit : Ident) : Except Error Function := do
+private def selectFunction (runtime : RuntimeNames) (findIndex commit : Ident) :
+    Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkSelect"
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
   let key ← Ident.checked "key"
   let metrics ← Ident.checked "metrics"
+  let parsedKey ← Ident.checked "parsedKey"
+  let foundIndex ← Ident.checked "foundIndex"
   pure {
     name
     params := #[state, context, key]
     body := #[
       .const metrics (arrayAt context 1),
-      .assign (.index (.ident state) (uint 2)) (call runtime.bigInt [.ident key]),
-      incrementAt metrics 0,
-      .expr <| call commit [
-        .ident state, .ident context, .literal (.string "select")],
+      .const parsedKey (call runtime.bigInt [.ident key]),
+      .const foundIndex (call findIndex [arrayAt state 0, .ident parsedKey]),
+      .ifThen (notEquals (.ident foundIndex) negativeOne) <| .ofList [
+        .assign (.index (.ident state) (uint 2)) (.ident parsedKey),
+        incrementAt metrics 0,
+        .expr <| call commit [
+          .ident state, .ident context, .literal (.string "select")],
+        .return null
+      ],
       .return null
     ]
   }
@@ -570,7 +576,7 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
   let updateRows ← updateFunction runtime checked.spec.updateStride commit.name
   let clearRows ← clearFunction commit.name
   let swapRows ← swapFunction checked.spec.swapFirst checked.spec.swapSecond commit.name
-  let selectRow ← selectFunction runtime commit.name
+  let selectRow ← selectFunction runtime findIndex.name commit.name
   let removeRow ← removeFunction runtime findIndex.name commit.name
   let dispatch ← dispatchFunction checked.spec replace.name add.name updateRows.name
     clearRows.name swapRows.name selectRow.name removeRow.name

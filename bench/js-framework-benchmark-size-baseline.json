@@ -19,9 +19,9 @@
     },
     {
       "name": "LeanRx.mjs",
-      "rawBytes": 6493,
-      "brotliBytes": 1634,
-      "gzipBytes": 1806
+      "rawBytes": 6592,
+      "brotliBytes": 1653,
+      "gzipBytes": 1808
     },
     {
       "name": "leanrx_dom.mjs",
@@ -43,8 +43,8 @@
     }
   ],
   "totals": {
-    "rawBytes": 23013,
-    "brotliBytes": 5506,
-    "gzipBytes": 5801
+    "rawBytes": 23112,
+    "brotliBytes": 5525,
+    "gzipBytes": 5803
   }
 }

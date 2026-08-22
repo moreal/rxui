@@ -55,10 +55,10 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 23,013 | 5,506 | 5,801 |
+| Complete fetched application | 23,112 | 5,525 | 5,803 |
 
-The official upstream size workload independently produced 23,013 raw bytes and
-5,506 compressed bytes during integration verification.
+The local size gate uses the pinned upstream workload's fetched-asset and
+compression rules; the official runner remains the publication check.
 
 ## Prepare the official runner
 

@@ -12,6 +12,7 @@ lake exe leanrx_graph_properties -- 195936478
 ./scripts/check_cli.sh
 ./scripts/check_browser.sh
 ./scripts/check_js_framework_benchmark.sh
+./scripts/test_js_framework_benchmark_scripts.sh
 ./scripts/check_bench.sh
 ./scripts/check_grid_bench.sh
 ./scripts/check_examples.sh
