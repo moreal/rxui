@@ -198,7 +198,7 @@ or `corepack pnpm benchmark:all` for the complete keyed and non-keyed suite.
 
 The [benchmark integration guide](docs/performance/js-framework-benchmark.md)
 documents the exact pinned upstream runner, one-command setup and execution,
-result archival, current 28,238-byte raw / 6,959-byte Brotli baseline, and the
+result archival, current 24,064-byte raw / 6,485-byte Brotli baseline, and the
 distinction between smoke validation and publishable performance measurements.
 [BENCHMARK.md](BENCHMARK.md) records the latest upstream-runner measurement as
 CPU, memory, and startup/size tables (currently a headless React Hooks, Solid,

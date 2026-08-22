@@ -1,9 +1,9 @@
 import {
   createConditionalRegion,
-  createDeltaKeyedRegion,
   createKeyedRegion,
   createPositionalRegion,
 } from "../../runtime/leanrx_region.mjs";
+import { createDeltaKeyedRegion } from "../../runtime/leanrx_delta_region.mjs";
 import { makeDisposer } from "../../runtime/leanrx_host.mjs";
 
 class FakeNode {
@@ -43,6 +43,7 @@ class FakeParent extends FakeNode {
     if (index < 0) throw new Error("missing removal node");
     this.children.splice(index, 1);
     node.parentNode = null;
+    this.removals = (this.removals ?? 0) + 1;
   }
 
   appendChild(node) {
@@ -403,6 +404,37 @@ function values(parent) {
 }
 
 {
+  // An empty region rejects a repeated key before mounting anything and stays
+  // usable; the same holds after a clear.
+  const parent = new FakeParent();
+  let mounts = 0;
+  const region = createKeyedRegion(
+    parent,
+    (item) => { mounts += 1; return [new FakeNode(`${item[0]}`)]; },
+    () => {},
+    () => {},
+    (handle) => handle[0],
+  );
+  for (const round of [0, 1]) {
+    let failed = false;
+    try {
+      region.update([[1, "a"], [2, "b"], [1, "again"]]);
+    } catch (error) {
+      failed = String(error).includes("LRX-REGION-001") && String(error).includes("1");
+    }
+    if (!failed || mounts !== 2 * round || parent.children.length !== 1) {
+      throw new Error(`empty region accepted or mounted a repeated key (round ${round})`);
+    }
+    region.update([[1, "a"], [2, "b"]]);
+    if (mounts !== 2 * (round + 1) || JSON.stringify(values(parent)) !== '["1","2"]') {
+      throw new Error(`empty region did not recover after a repeated key (round ${round})`);
+    }
+    region.update([]);
+  }
+  region.dispose();
+}
+
+{
   // Deterministic fuzz: arbitrary keyed targets always yield the target order
   // with retained identity, never place more nodes than a full rebuild would,
   // and reject duplicates before mutating.
@@ -493,6 +525,89 @@ function values(parent) {
   region.apply([["reset", rows([6, 1, 5, 3, 4, 2])]]);
   if (region.instrumentation()[2] !== 9 || JSON.stringify(values(parent)) !== '["6","1","5","3","4","2"]') {
     throw new Error("delta region reset rotation did not cost one placement");
+  }
+  region.dispose();
+}
+
+{
+  // Rebuilding a region that owns its whole connected parent detaches that
+  // parent for the bulk clear and insertion, then restores it at the same
+  // position; an unowned or focused parent, a pure clear, and a retained row
+  // leave the parent attached throughout.
+  const grandparent = new FakeParent();
+  const before = new FakeNode("before");
+  const parent = new FakeParent();
+  const after = new FakeNode("after");
+  grandparent.append(before);
+  grandparent.append(parent);
+  grandparent.append(after);
+  const region = createKeyedRegion(
+    grandparent.children[1],
+    (item) => [new FakeNode(`${item[0]}`)],
+    (handle, item) => { handle[0].value = `${item[0]}`; },
+    () => {},
+    (handle) => handle[0],
+  );
+  const rows = (keys) => keys.map((key) => [key, "x"]);
+  const attachedAt = (index) => grandparent.children[index] === parent && parent.parentNode === grandparent;
+  region.update(rows([1, 2, 3]));
+  if (grandparent.removals !== 1 || !attachedAt(1) || grandparent.children.length !== 3 ||
+      JSON.stringify(values(parent)) !== '["1","2","3"]') {
+    throw new Error("first fill of an owned connected parent did not detach and restore it once");
+  }
+  region.update(rows([4, 5]));
+  if (grandparent.removals !== 2 || parent.bulkClears !== 1 || !attachedAt(1) ||
+      JSON.stringify(values(parent)) !== '["4","5"]') {
+    throw new Error("replace-all of an owned connected parent did not detach and restore it once");
+  }
+  region.update(rows([4, 6]));
+  if (grandparent.removals !== 2 || !attachedAt(1) || JSON.stringify(values(parent)) !== '["4","6"]') {
+    throw new Error("an update with a retained row detached the parent");
+  }
+  region.update([]);
+  if (grandparent.removals !== 2 || parent.bulkClears !== 2 || !attachedAt(1)) {
+    throw new Error("a pure clear detached the parent");
+  }
+  globalThis.document.activeElement = parent;
+  region.update(rows([7]));
+  if (grandparent.removals !== 2 || !attachedAt(1) || JSON.stringify(values(parent)) !== '["7"]') {
+    throw new Error("a focused parent was detached");
+  }
+  globalThis.document.activeElement = null;
+  const foreign = new FakeNode("foreign");
+  parent.insertBefore(foreign, parent.children[0]);
+  region.update(rows([8, 9]));
+  if (grandparent.removals !== 2 || parent.bulkClears !== 2 || !attachedAt(1) ||
+      JSON.stringify(values(parent)) !== '["foreign","8","9"]') {
+    throw new Error("an unowned parent was detached or bulk-cleared");
+  }
+  if (JSON.stringify(region.instrumentation()) !== "[9,1,9,7]") {
+    throw new Error(`rebuild metrics changed: ${JSON.stringify(region.instrumentation())}`);
+  }
+  region.dispose();
+  if (parent.children.length !== 1 || parent.children[0] !== foreign || !attachedAt(1)) {
+    throw new Error("disposal after rebuilds leaked nodes or moved the parent");
+  }
+}
+
+{
+  // The structural-delta region's full reconcile shares the owned-parent rebuild.
+  const grandparent = new FakeParent();
+  const parent = new FakeParent();
+  grandparent.append(parent);
+  const region = createDeltaKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}`)],
+    () => {},
+    () => {},
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"]]);
+  region.apply([["reset", [[3, "c"]]]]);
+  if (grandparent.removals !== 2 || parent.bulkClears !== 1 || parent.parentNode !== grandparent ||
+      JSON.stringify(values(parent)) !== '["3"]' ||
+      JSON.stringify(region.instrumentation()) !== "[3,0,3,2,2,1,4]") {
+    throw new Error(`delta rebuild changed: ${JSON.stringify(region.instrumentation())}`);
   }
   region.dispose();
 }

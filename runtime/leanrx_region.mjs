@@ -1,14 +1,20 @@
-function detach(node) {
+/** Detaches `node` from its parent when it has one. Shared with
+ * leanrx_delta_region.mjs; not a generated-code entry point. */
+export function detach(node) {
   if (node.parentNode) node.parentNode.removeChild(node);
 }
 
-function anchor(parent, label) {
+/** Appends and returns a region's comment marker. Shared with
+ * leanrx_delta_region.mjs; not a generated-code entry point. */
+export function anchor(parent, label) {
   const marker = document.createComment(label);
   parent.append(marker);
   return marker;
 }
 
-function snapshot(metrics) {
+/** Copies a region's counters. Shared with leanrx_delta_region.mjs; not a
+ * generated-code entry point. */
+export function snapshot(metrics) {
   return metrics.slice();
 }
 
@@ -134,11 +140,12 @@ function markLongestIncreasing(entries, start, end, flags) {
   }
 }
 
-// Places next (target order) given old[0..oldCount) (retained entries in DOM
-// order, all present in next). Inserts new nodes and moves only retained nodes
-// outside one longest order-preserving subsequence; returns the placement count.
-// Entries carry a scratch `pos` that is -1 outside this call.
-function placeInOrder(parent, marker, old, oldCount, next, newCount) {
+/** Places next (target order) given old[0..oldCount) (retained entries in DOM
+ * order, all present in next). Inserts new nodes and moves only retained nodes
+ * outside one longest order-preserving subsequence; returns the placement count.
+ * Entries carry a scratch `pos` that is -1 outside this call. Shared with
+ * leanrx_delta_region.mjs; not a generated-code entry point. */
+export function placeInOrder(parent, marker, old, oldCount, next, newCount) {
   let start = 0;
   while (start < oldCount && start < newCount && old[start] === next[start]) start += 1;
   let oldEnd = oldCount - 1;
@@ -172,6 +179,31 @@ function placeInOrder(parent, marker, old, oldCount, next, newCount) {
   return placements;
 }
 
+/** Replaces every node of previous[0..previousCount) (already disposed) with
+ * next[0..newCount) when no entry is retained; returns the placement count.
+ * A region that owns its whole parent (its first node through its marker, no
+ * foreign sibling) removes the old rows with one bulk clear and, while the
+ * parent is connected, not focused, and about to receive rows, detaches that
+ * parent so the browser attaches the rebuilt subtree once instead of per row.
+ * Shared with leanrx_delta_region.mjs; not a generated-code entry point. */
+export function rebuild(parent, marker, previous, previousCount, next, newCount) {
+  const first = previousCount > 0 ? previous[0].node : marker;
+  if (!ownsWholeParent(parent, marker, first, previousCount)) {
+    for (let index = 0; index < previousCount; index += 1) detach(previous[index].node);
+    return placeInOrder(parent, marker, previous, 0, next, newCount);
+  }
+  const container = newCount > 0 && document.activeElement !== parent ? parent.parentNode : null;
+  const sibling = container ? parent.nextSibling : null;
+  if (container) container.removeChild(parent);
+  if (previousCount > 0) {
+    parent.textContent = "";
+    parent.appendChild(marker);
+  }
+  const placements = placeInOrder(parent, marker, previous, 0, next, newCount);
+  if (container) container.insertBefore(parent, sibling);
+  return placements;
+}
+
 export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, rootItem = null) {
   const marker = anchor(parent, "leanrx:keyed");
   const metrics = [0, 0, 0, 0]; // mounts/updates/moves/disposals
@@ -183,59 +215,57 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
     update(items) {
       if (disposed) return;
       const count = items.length;
-      stamp += 1;
-      // Validate the whole target before the first callback or DOM mutation.
-      const next = new Array(count);
-      let retained = 0;
-      let fresh = null;
-      for (let index = 0; index < count; index += 1) {
-        const key = items[index][0];
-        const entry = entries.get(key);
-        if (entry !== undefined) {
-          if (entry.stamp === stamp) throw duplicateKey(key);
-          entry.stamp = stamp;
-          retained += 1;
-        } else if (fresh === null) {
-          fresh = new Set([key]);
-        } else if (fresh.has(key)) {
-          throw duplicateKey(key);
-        } else {
-          fresh.add(key);
-        }
-        next[index] = entry === undefined ? null : entry;
-      }
       const previous = current;
       const previousCount = previous.length;
-      const replaced = retained === 0 && previousCount > 0;
-      if (replaced) entries.clear();
+      stamp += 1;
+      // Validate the whole target before the first callback or DOM mutation. A
+      // retained key is matched by position first (no hashing while the order is
+      // unchanged), then through the key index; a new key registers an unmounted
+      // entry; a repeated key unregisters the new entries and fails.
+      const next = new Array(count);
+      let retained = 0;
       for (let index = 0; index < count; index += 1) {
-        const item = items[index];
-        let entry = next[index];
-        if (entry !== null) {
-          updateItem(entry.handle, item, index);
+        const key = items[index][0];
+        let entry = index < previousCount && previous[index].key === key
+          ? previous[index]
+          : entries.get(key);
+        if (entry === undefined) {
+          entry = { key, handle: null, node: null, stamp, pos: -1 };
+          entries.set(key, entry);
+        } else if (entry.stamp === stamp) {
+          for (let added = 0; added < index; added += 1) {
+            if (next[added].node === null) entries.delete(next[added].key);
+          }
+          throw duplicateKey(key);
+        } else {
+          entry.stamp = stamp;
+          retained += 1;
+        }
+        next[index] = entry;
+      }
+      for (let index = 0; index < count; index += 1) {
+        const entry = next[index];
+        if (entry.node !== null) {
+          updateItem(entry.handle, items[index], index);
           metrics[1] += 1;
         } else {
-          const handle = mountItem(item, index);
-          entry = { key: item[0], handle, node: rootItem ? rootItem(handle) : handle, stamp, pos: -1 };
-          entries.set(entry.key, entry);
-          next[index] = entry;
+          const handle = mountItem(items[index], index);
+          entry.handle = handle;
+          entry.node = rootItem ? rootItem(handle) : handle;
           metrics[0] += 1;
         }
       }
-      let kept = 0;
-      if (replaced) {
+      if (retained === 0) {
         for (let index = 0; index < previousCount; index += 1) {
           const entry = previous[index];
           disposeItem(entry.handle, entry.key);
+          if (count > 0) entries.delete(entry.key);
         }
-        if (ownsWholeParent(parent, marker, previous[0].node, previousCount)) {
-          parent.textContent = "";
-          parent.appendChild(marker);
-        } else {
-          for (let index = 0; index < previousCount; index += 1) detach(previous[index].node);
-        }
+        if (count === 0) entries.clear();
         metrics[3] += previousCount;
+        metrics[2] += rebuild(parent, marker, previous, previousCount, next, count);
       } else {
+        let kept = 0;
         for (let index = 0; index < previousCount; index += 1) {
           const entry = previous[index];
           if (entry.stamp === stamp) {
@@ -248,8 +278,8 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
             metrics[3] += 1;
           }
         }
+        metrics[2] += placeInOrder(parent, marker, previous, kept, next, count);
       }
-      metrics[2] += placeInOrder(parent, marker, previous, kept, next, count);
       current = next;
     },
     instrumentation() {
@@ -266,194 +296,6 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       }
       entries.clear();
       current = [];
-      detach(marker);
-    },
-  };
-}
-
-function deltaError(code, message) {
-  throw new Error(`${code} ${message}`);
-}
-
-function validateUniqueItems(items) {
-  const seen = new Set();
-  for (const item of items) {
-    if (!Array.isArray(item) || item.length === 0) {
-      deltaError("LRX-DELTA-006", "delta item must carry a key");
-    }
-    if (seen.has(item[0])) deltaError("LRX-REGION-001", `duplicate key: ${String(item[0])}`);
-    seen.add(item[0]);
-  }
-  return Array.from(seen);
-}
-
-function validateDeltaBatch(currentKeys, deltas) {
-  if (!Array.isArray(deltas)) deltaError("LRX-DELTA-006", "delta batch must be an array");
-  const keys = currentKeys.slice();
-  for (const delta of deltas) {
-    if (!Array.isArray(delta) || typeof delta[0] !== "string") {
-      deltaError("LRX-DELTA-006", "delta must be a tagged array");
-    }
-    const tag = delta[0];
-    if (tag === "insert") {
-      const index = delta[1];
-      const item = delta[2];
-      if (!Number.isSafeInteger(index) || index < 0 || index > keys.length) {
-        deltaError("LRX-DELTA-001", `insert index ${String(index)} is invalid`);
-      }
-      if (!Array.isArray(item) || item.length === 0) {
-        deltaError("LRX-DELTA-006", "inserted item must carry a key");
-      }
-      if (keys.includes(item[0])) {
-        deltaError("LRX-REGION-001", `duplicate key: ${String(item[0])}`);
-      }
-      keys.splice(index, 0, item[0]);
-    } else if (tag === "remove") {
-      const index = delta[1];
-      if (!Number.isSafeInteger(index) || index < 0 || index >= keys.length) {
-        deltaError("LRX-DELTA-002", `remove index ${String(index)} is invalid`);
-      }
-      keys.splice(index, 1);
-    } else if (tag === "update") {
-      const index = delta[1];
-      const item = delta[2];
-      if (!Number.isSafeInteger(index) || index < 0 || index >= keys.length) {
-        deltaError("LRX-DELTA-003", `update index ${String(index)} is invalid`);
-      }
-      if (!Array.isArray(item) || item.length === 0 || item[0] !== keys[index]) {
-        deltaError("LRX-DELTA-007", "updated item must retain its key");
-      }
-    } else if (tag === "move") {
-      const fromIndex = delta[1];
-      const toIndex = delta[2];
-      if (!Number.isSafeInteger(fromIndex) || fromIndex < 0 || fromIndex >= keys.length) {
-        deltaError("LRX-DELTA-004", `move source ${String(fromIndex)} is invalid`);
-      }
-      if (!Number.isSafeInteger(toIndex) || toIndex < 0 || toIndex >= keys.length) {
-        deltaError("LRX-DELTA-005", `move target ${String(toIndex)} is invalid`);
-      }
-      const [key] = keys.splice(fromIndex, 1);
-      keys.splice(toIndex, 0, key);
-    } else if (tag === "reset") {
-      const items = delta[1];
-      if (!Array.isArray(items)) deltaError("LRX-DELTA-006", "reset payload must be an array");
-      keys.splice(0, keys.length, ...validateUniqueItems(items));
-    } else {
-      deltaError("LRX-DELTA-006", `unknown delta tag: ${tag}`);
-    }
-  }
-}
-
-/** A local keyed-region variant that consumes compiler-produced structural
- * edits. It owns only its anchor, keyed instances, and disposal; it does not
- * discover dependencies or schedule reactive work. Every batch is validated
- * completely before the first DOM mutation. */
-export function createDeltaKeyedRegion(
-  parent, mountItem, updateItem, disposeItem, rootItem = null,
-) {
-  const marker = anchor(parent, "leanrx:delta-keyed");
-  const metrics = [0, 0, 0, 0, 0, 0, 0];
-  // mounts/updates/moves/disposals/fullResets/deltaOps/acceptedValidationUnits
-  let entries = [];
-  let disposed = false;
-
-  function reconcile(items, alreadyValidated = false) {
-    if (!alreadyValidated) validateUniqueItems(items);
-    metrics[6] += items.length;
-    const oldByKey = new Map(entries.map((entry) => [entry.key, entry]));
-    const next = [];
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      const key = item[0];
-      let entry = oldByKey.get(key);
-      if (entry) {
-        updateItem(entry.handle, item, index);
-        metrics[1] += 1;
-        oldByKey.delete(key);
-      } else {
-        const handle = mountItem(item, index);
-        entry = { key, handle, node: rootItem ? rootItem(handle) : handle, pos: -1 };
-        metrics[0] += 1;
-      }
-      next.push(entry);
-    }
-    let kept = 0;
-    for (let index = 0; index < entries.length; index += 1) {
-      const entry = entries[index];
-      if (oldByKey.has(entry.key)) {
-        disposeItem(entry.handle, entry.key);
-        detach(entry.node);
-        metrics[3] += 1;
-      } else {
-        entries[kept] = entry;
-        kept += 1;
-      }
-    }
-    metrics[2] += placeInOrder(parent, marker, entries, kept, next, next.length);
-    entries = next;
-    metrics[4] += 1;
-  }
-
-  function applyOne(delta) {
-    const tag = delta[0];
-    if (tag === "insert") {
-      const index = delta[1];
-      const item = delta[2];
-      const handle = mountItem(item, index);
-      const entry = { key: item[0], handle, node: rootItem ? rootItem(handle) : handle, pos: -1 };
-      const before = entries[index]?.node ?? marker;
-      parent.insertBefore(entry.node, before);
-      entries.splice(index, 0, entry);
-      metrics[0] += 1;
-    } else if (tag === "remove") {
-      const index = delta[1];
-      const [entry] = entries.splice(index, 1);
-      disposeItem(entry.handle, entry.key);
-      detach(entry.node);
-      metrics[3] += 1;
-    } else if (tag === "update") {
-      const index = delta[1];
-      updateItem(entries[index].handle, delta[2], index);
-      metrics[1] += 1;
-    } else if (tag === "move") {
-      const fromIndex = delta[1];
-      const toIndex = delta[2];
-      if (fromIndex !== toIndex) {
-        const [entry] = entries.splice(fromIndex, 1);
-        entries.splice(toIndex, 0, entry);
-        const before = entries[toIndex + 1]?.node ?? marker;
-        parent.insertBefore(entry.node, before);
-        metrics[2] += 1;
-      }
-    } else {
-      reconcile(delta[1], true);
-    }
-    metrics[5] += 1;
-  }
-
-  return {
-    update(items) {
-      if (disposed) return;
-      reconcile(items);
-    },
-    apply(deltas) {
-      if (disposed) return;
-      validateDeltaBatch(entries.map((entry) => entry.key), deltas);
-      metrics[6] += deltas.length;
-      for (const delta of deltas) applyOne(delta);
-    },
-    instrumentation() {
-      return snapshot(metrics);
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      for (const entry of entries) {
-        disposeItem(entry.handle, entry.key);
-        detach(entry.node);
-        metrics[3] += 1;
-      }
-      entries = [];
       detach(marker);
     },
   };

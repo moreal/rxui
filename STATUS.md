@@ -320,6 +320,20 @@ Complete — M0 through M11
   placement snapshot (15,000 for every strategy), and `BENCHMARK.md` record
   the change; the pure region theorems are unchanged and still do not cover
   the host placement algorithm.
+- Made the shipped runtime faster and smaller again without touching the
+  checked Lean models (ADR-0019, runtime ABI 9): the DOM host's
+  `cloneTemplate` clones a node that `mount` builds once and `setKey` records a
+  delegated key as a node property that `listenDelegated` resolves alongside
+  `data-lrx-key` attributes; the keyed region validates through its key index
+  alone (retained keys matched by position first, repeated keys rolled back
+  before any callback) and rebuilds a region that owns its whole connected
+  parent with one bulk clear and one detached bulk insertion; the opt-in
+  structural-delta adapter moved to `runtime/leanrx_delta_region.mjs`, which
+  only the Data Grid imports. Fake-DOM tests lock the detach/restore, focus,
+  foreign-sibling, and empty-region duplicate-key cases; the js-framework-
+  benchmark headless run recorded in `BENCHMARK.md` measured create 10,000
+  345.7 → 335.5 ms, select 8.2 → 7.5 ms (level with Solid), and 27.6 → 23.5 KB
+  shipped (6.8 → 6.3 KB Brotli) with every other workload improved or level.
 
 ## In progress
 

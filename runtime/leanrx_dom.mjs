@@ -26,17 +26,16 @@ export function nextSibling(node) {
   return node.nextSibling;
 }
 
-const templates = new WeakMap();
-
-/** Deep-clones the static subtree that `build` produces. `build` runs once per
- * builder function; later calls clone the retained prototype. */
-export function cloneTemplate(build) {
-  let template = templates.get(build);
-  if (template === undefined) {
-    template = build();
-    templates.set(build, template);
-  }
+/** Deep-clones a static prototype subtree that generated code built once. */
+export function cloneTemplate(template) {
   return template.cloneNode(true);
+}
+
+/** Marks `node` as a delegated-event key carrier. `listenDelegated` resolves
+ * the nearest ancestor-or-self key from this property or a `data-lrx-key`
+ * attribute, so a keyed row root serves every action node inside it. */
+export function setKey(node, key) {
+  node.$lrxKey = key;
 }
 
 export function setText(node, value) {
@@ -87,6 +86,18 @@ export function listenSubmit(node, state, context, dispatch) {
   return () => node.removeEventListener("submit", handler);
 }
 
+// The key of the nearest ancestor-or-self of `actionNode` (up to `root`) that
+// carries a `setKey` value or a `data-lrx-key` attribute; "" when none does.
+function delegatedKey(actionNode, root) {
+  for (let current = actionNode; current !== null; current = current.parentNode) {
+    const key = current.$lrxKey;
+    if (key !== undefined) return key;
+    if (current.hasAttribute("data-lrx-key")) return current.getAttribute("data-lrx-key") ?? "";
+    if (current === root) break;
+  }
+  return "";
+}
+
 export function listenDelegated(node, type, state, context, dispatch) {
   const handler = (event) => {
     const target = event.target;
@@ -94,12 +105,11 @@ export function listenDelegated(node, type, state, context, dispatch) {
       ? target.closest("[data-lrx-action]")
       : null;
     if (!actionNode || !node.contains(actionNode)) return;
-    const keyNode = actionNode.closest("[data-lrx-key]");
     dispatch(
       state,
       context,
       actionNode.getAttribute("data-lrx-action") ?? "",
-      keyNode && node.contains(keyNode) ? keyNode.getAttribute("data-lrx-key") ?? "" : "",
+      delegatedKey(actionNode, node),
       typeof target.value === "string" ? target.value : "",
       target.checked === true,
       typeof event.key === "string" ? event.key : "",

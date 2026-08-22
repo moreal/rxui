@@ -10,7 +10,7 @@ const manifest = JSON.parse(
 );
 if (
   manifest.module !== "ValidatedForm.mjs" ||
-  manifest.runtimeAbi !== 8 ||
+  manifest.runtimeAbi !== 9 ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string", "string", "bool"]) ||
   manifest.sourceCount !== 3 ||
   manifest.derivedCount !== 0 ||

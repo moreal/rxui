@@ -56,11 +56,17 @@ inserted before their successor. Among equally long subsequences the host keeps
 earlier target positions in place, so reversing two rows moves only the second
 and an edit focused inside the first survives. A swap therefore costs two
 placements, a rotation one, and appends, prepends, middle insertions, and
-removals place only the new nodes. If a target drops every retained row and the region owns its
-whole parent (its first node through its marker, with no foreign sibling), the
-rows are removed with one bulk clear and the marker is re-appended; otherwise
-each node is detached individually. The "placements/moves" counter counts
-`insertBefore` calls in both cases, and a deterministic fuzz over random keyed
+removals place only the new nodes. Retained keys are matched by position first,
+so an unchanged order never hashes a key; new keys register in the key index
+during validation and a repeated key unregisters them before failing. If a
+target retains no row, the region rebuilds: when it owns its whole parent (its
+first node through its marker, with no foreign sibling), the old rows are
+removed with one bulk clear, the marker is re-appended, and, while the parent is
+connected, is not the active element, and is about to receive rows, the parent
+is detached for the bulk insertion and restored at the same position;
+otherwise each node is detached individually. Pure clears and updates with a
+retained row never detach the parent. The "placements/moves" counter counts
+`insertBefore` calls in every case, and a deterministic fuzz over random keyed
 targets checks order, identity, leak-freedom, and the placement bound.
 
 TodoMVC begins from a private pure `Todo.State` and closed `Todo.Msg` update
@@ -97,9 +103,11 @@ The pure `ListDelta` vocabulary is closed; `reset` carries an `Array` target as
 specified by the architecture. A private-constructor planned batch exposes
 either the exact checked candidate or a visible reset fallback, and reports a
 reset whenever any accepted batch contains one.
-The JavaScript host validates a whole tagged batch before mutation and retains
-local identity/disposal ownership; it still performs no dependency discovery or
-reactive scheduling. Its focused copied counters distinguish mounts, retained
+The JavaScript host (`runtime/leanrx_delta_region.mjs`, which imports the
+shared placement and rebuild helpers from `leanrx_region.mjs` and is shipped
+only by artifacts that import it) validates a whole tagged batch before
+mutation and retains local identity/disposal ownership; it still performs no
+dependency discovery or reactive scheduling. Its focused copied counters distinguish mounts, retained
 updates, placements/moves, disposals, resets, accepted deltas, and validation
 units; standard transaction metrics retain their existing meanings. The default
 remains full keyed recomputation. See

@@ -64,7 +64,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 8. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 9. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -107,6 +107,16 @@ of the action node, and makes keyed placement minimal (prefix/suffix trim plus
 a longest order-preserving subsequence, with one bulk clear when a region that
 owns its whole parent drops every row). See
 [ADR-0018](../adr/0018-runtime-abi-v8-template-clone.md).
+
+ABI 9 makes `cloneTemplate` clone a prototype node that generated code built
+once, adds `setKey` so a delegated key can live on a node as a property (the
+delegated adapter resolves the nearest ancestor-or-self key from that property
+or a `data-lrx-key` attribute), validates keyed targets through the key index
+alone, rebuilds a region that owns its whole parent with one bulk clear and one
+detached bulk insertion, and moves `createDeltaKeyedRegion` into
+`leanrx_delta_region.mjs`, which imports the shared placement helpers from
+`leanrx_region.mjs`. See
+[ADR-0019](../adr/0019-runtime-abi-v9-owned-parent-rebuild.md).
 
 Dynamic-region manifests use a separate `ManifestTypeId` for metadata-only
 `record<name>` and `list<element>` slot descriptions. Those constructors cannot

@@ -20,6 +20,7 @@ private structure RuntimeNames where
   firstChild : Ident
   nextSibling : Ident
   cloneTemplate : Ident
+  setKey : Ident
   listenDelegated : Ident
   createKeyedRegion : Ident
   makeDisposer : Ident
@@ -67,6 +68,7 @@ private def runtimeNames : Except Error RuntimeNames := do
     firstChild := ← Ident.checked "firstChild"
     nextSibling := ← Ident.checked "nextSibling"
     cloneTemplate := ← Ident.checked "cloneTemplate"
+    setKey := ← Ident.checked "setKey"
     listenDelegated := ← Ident.checked "listenDelegated"
     createKeyedRegion := ← Ident.checked "createKeyedRegion"
     makeDisposer := ← Ident.checked "makeDisposer"
@@ -141,23 +143,24 @@ private def buildDataFunction (runtime : RuntimeNames) (random : Ident) : Except
     ]
   }
 
+/-- Projects the model rows into keyed items `[id, label, selected, context]`;
+`selected` is `null` or a row id, so strict equality is the selection test. -/
 private def projectFunction : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkProject"
   let rows ← Ident.checked "rows"
   let selected ← Ident.checked "selected"
-  let metrics ← Ident.checked "metrics"
+  let context ← Ident.checked "context"
   let target ← Ident.checked "target"
   let row ← Ident.checked "row"
-  let isSelected := .binary .and (notEquals (.ident selected) null)
-    (equals (.ident selected) (arrayAt row 0))
+  let isSelected := equals (.ident selected) (arrayAt row 0)
   pure {
     name
-    params := #[rows, selected, metrics]
+    params := #[rows, selected, context]
     body := #[
       .const target (.array .nil),
       .forOf row (.ident rows) <| .ofList [
         .expr <| method (.ident target) "push" [.array <| .ofList [
-          arrayAt row 0, arrayAt row 1, isSelected, .ident metrics]]
+          arrayAt row 0, arrayAt row 1, isSelected, .ident context]]
       ],
       .return (.ident target)
     ]
@@ -227,13 +230,14 @@ private def rowTemplateFunction (runtime : RuntimeNames) : Except Error Function
     ]
   }
 
-/-- Mounts one row by cloning the static template and writing only the
-per-row key, texts, and selection class. The row root carries the delegated
-key, so both action links resolve it through their nearest keyed ancestor. -/
-private def mountRowFunction (runtime : RuntimeNames) (template : Ident) :
-    Except Error Function := do
+/-- Mounts one row by cloning the static template that `mount` built once
+(carried in the item's context slot) and writing only the per-row key, texts,
+and selection class. The row root carries the delegated key, so both action
+links resolve it through their nearest keyed ancestor. -/
+private def mountRowFunction (runtime : RuntimeNames) : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkMountRow"
   let item ← Ident.checked "item"
+  let context ← Ident.checked "context"
   let metrics ← Ident.checked "metrics"
   let keyText ← Ident.checked "keyText"
   let root ← Ident.checked "rowRoot"
@@ -244,10 +248,11 @@ private def mountRowFunction (runtime : RuntimeNames) (template : Ident) :
     name
     params := #[item]
     body := #[
-      .const metrics (arrayAt item 3),
+      .const context (arrayAt item 3),
+      .const metrics (arrayAt context 1),
       .const keyText (call runtime.string [arrayAt item 0]),
-      .const root (call runtime.cloneTemplate [.ident template]),
-      setAttribute runtime (.ident root) "data-lrx-key" (.ident keyText),
+      .const root (call runtime.cloneTemplate [arrayAt context 2]),
+      .expr <| call runtime.setKey [.ident root, .ident keyText],
       .const idCell (call runtime.firstChild [.ident root]),
       .expr <| call runtime.setText [call runtime.firstChild [.ident idCell], .ident keyText],
       .const selectLink (call runtime.firstChild [call runtime.nextSibling [.ident idCell]]),
@@ -275,7 +280,7 @@ private def updateRowFunction (runtime : RuntimeNames) : Except Error Function :
     name
     params := #[handle, item, _index]
     body := #[
-      .const metrics (arrayAt item 3),
+      .const metrics (indexAt (arrayAt item 3) 1),
       incrementAt metrics 5,
       .ifThen (notEquals (arrayAt handle 2) (arrayAt item 1)) <| .ofList [
         .expr <| call runtime.setText [arrayAt handle 1, arrayAt item 1],
@@ -318,7 +323,7 @@ private def commitFunction (project : Ident) : Except Error Function := do
       incrementAt metrics 3,
       incrementAt metrics 4,
       .expr <| method (arrayAt metrics 7) "push" [.ident action],
-      .const target (call project [arrayAt state 0, arrayAt state 2, .ident metrics]),
+      .const target (call project [arrayAt state 0, arrayAt state 2, .ident context]),
       .expr <| method (arrayAt context 0) "update" [.ident target],
       .return null
     ]
@@ -530,14 +535,15 @@ private def dispatchFunction (spec : LeanRx.JsFrameworkBenchmark.Spec) (replace 
     ]
   }
 
-private def mountFunction (runtime : RuntimeNames) (mountRow updateRow disposeRow rowRoot
-    dispatch : Ident) : Except Error Function := do
+private def mountFunction (runtime : RuntimeNames) (rowTemplate mountRow updateRow disposeRow
+    rowRoot dispatch : Ident) : Except Error Function := do
   let name ← Ident.checked "mount"
   let target ← Ident.checked "target"
   let tbody ← Ident.checked "tbody"
   let metrics ← Ident.checked "metrics"
   let rows ← Ident.checked "rows"
   let state ← Ident.checked "state"
+  let template ← Ident.checked "template"
   let region ← Ident.checked "region"
   let context ← Ident.checked "context"
   let off ← Ident.checked "off"
@@ -552,9 +558,10 @@ private def mountFunction (runtime : RuntimeNames) (mountRow updateRow disposeRo
         uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil, uint 0, uint 0]),
       .const rows (.array .nil),
       .const state (.array <| .ofList [.ident rows, bigint 1, null]),
+      .const template (call rowTemplate []),
       .const region (call runtime.createKeyedRegion [
         .ident tbody, .ident mountRow, .ident updateRow, .ident disposeRow, .ident rowRoot]),
-      .const context (.array <| .ofList [.ident region, .ident metrics]),
+      .const context (.array <| .ofList [.ident region, .ident metrics, .ident template]),
       .const off (call runtime.listenDelegated [
         .ident target, .literal (.string "click"), .ident state, .ident context, .ident dispatch]),
       .const disposer (call runtime.makeDisposer [
@@ -596,7 +603,7 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
   let project ← projectFunction
   let findIndex ← findIndexFunction
   let rowTemplate ← rowTemplateFunction runtime
-  let mountRow ← mountRowFunction runtime rowTemplate.name
+  let mountRow ← mountRowFunction runtime
   let updateRow ← updateRowFunction runtime
   let disposeRow ← disposeRowFunction
   let rowRoot ← rowRootFunction
@@ -610,8 +617,8 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
   let removeRow ← removeFunction runtime findIndex.name commit.name
   let dispatch ← dispatchFunction checked.spec replace.name add.name updateRows.name
     clearRows.name swapRows.name selectRow.name removeRow.name
-  let mount ← mountFunction runtime mountRow.name updateRow.name disposeRow.name rowRoot.name
-    dispatch.name
+  let mount ← mountFunction runtime rowTemplate.name mountRow.name updateRow.name
+    disposeRow.name rowRoot.name dispatch.name
   let declarations : Array Decl := #[
     .function random, .function buildData, .function project, .function findIndex,
     .function rowTemplate, .function mountRow, .function updateRow, .function disposeRow, .function rowRoot,
@@ -631,6 +638,7 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
           (runtime.firstChild, runtime.firstChild),
           (runtime.nextSibling, runtime.nextSibling),
           (runtime.cloneTemplate, runtime.cloneTemplate),
+          (runtime.setKey, runtime.setKey),
           (runtime.listenDelegated, runtime.listenDelegated)
         ] },
       { source := "./leanrx_region.mjs", names := #[
