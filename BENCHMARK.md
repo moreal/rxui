@@ -38,13 +38,13 @@ Lower is better in every table below.
 |---|---:|---:|---:|
 | Create 1,000 rows (ms) | 38.4 | 32.2 | 30.8 |
 | Replace all 1,000 rows (ms) | 46.7 | 36.3 | 33.7 |
-| Partial update, every 10th row ×16 (ms) | 27.7 | 21.3 | 20.9 |
-| Select row (ms) | 10.4 | 7.5 | 6.2 |
-| Swap rows (ms) | 148.3 | 25.4 | 22.8 |
-| Remove row (ms) | 20.2 | 18.6 | 17.9 |
+| Partial update, every 10th row, 4× CPU slowdown (ms) | 27.7 | 21.3 | 20.9 |
+| Select row, 4× CPU slowdown (ms) | 10.4 | 7.5 | 6.2 |
+| Swap rows, 4× CPU slowdown (ms) | 148.3 | 25.4 | 22.8 |
+| Remove row, 2× CPU slowdown (ms) | 20.2 | 18.6 | 17.9 |
 | Create 10,000 rows (ms) | 675.9 | 360.8 | 330.0 |
-| Append 1,000 to 10,000 rows ×2 (ms) | 45.7 | 37.0 | 38.5 |
-| Clear rows ×8 (ms) | 26.6 | 18.9 | 14.4 |
+| Append 1,000 rows to 1,000 rows (ms) | 45.7 | 37.0 | 38.5 |
+| Clear 1,000 rows, 4× CPU slowdown (ms) | 26.6 | 18.9 | 14.4 |
 
 ## Memory
 
@@ -87,6 +87,28 @@ compresses less well than the removed comment-heavy unkeyed regions); first
 paint (61.8 → 63.0 ms) and memory (1.99 → 2.05 MB after adding 1,000 rows)
 are within noise, with Solid and React Hooks moving by similar amounts in the
 same run.
+
+## Where the remaining time goes
+
+Measured locally on 2026-08-22 (Playwright-driven headless Chromium, no CPU
+throttling, `performance.now()` timers inside the region host and the
+application, medians of seven fresh-page runs; a diagnostic, not the upstream
+runner): creating 10,000 rows spends about 1.7 ms building the model rows,
+0.8 ms validating keys (the key-index insert that rejects a repeated key
+before any DOM mutation), 26 ms cloning the row template and writing its two
+texts, 2.5 ms inserting the rows into the detached `tbody`, and 2.6 ms
+re-attaching the `tbody`. The vanilla JavaScript implementation's row loop
+spends the same 26 ms in clone plus text writes, so LeanRx's remaining script
+gap to it (about 3 ms per 10,000 rows) is the key validation plus per-row
+bookkeeping; clearing costs the same as vanilla's `textContent = ""`, and a
+swap's placement search is about 0.03 ms of its 0.12 ms handler (the two DOM
+moves are the rest). Two candidates were measured and rejected the same day:
+a two-row-exchange shortcut in keyed placement (about 0.03 ms per swap for
+630 more bytes of shipped host), and lowering the every-tenth-row update
+through `updateAt` for the 100 changed rows (0.03 ms faster locally but
+0.3 ms more script under the upstream runner's 4× CPU slowdown, where the
+100-call path runs less optimized than the 1,000-row region loop; confirmed by
+a focused upstream A/B with vanilla as the control).
 
 ## Reading these numbers
 
