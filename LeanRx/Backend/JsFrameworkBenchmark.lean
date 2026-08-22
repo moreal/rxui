@@ -17,6 +17,9 @@ private structure RuntimeNames where
   setAttribute : Ident
   append : Ident
   setText : Ident
+  firstChild : Ident
+  nextSibling : Ident
+  cloneTemplate : Ident
   listenDelegated : Ident
   createKeyedRegion : Ident
   makeDisposer : Ident
@@ -61,6 +64,9 @@ private def runtimeNames : Except Error RuntimeNames := do
     setAttribute := ← Ident.checked "setAttribute"
     append := ← Ident.checked "append"
     setText := ← Ident.checked "setText"
+    firstChild := ← Ident.checked "firstChild"
+    nextSibling := ← Ident.checked "nextSibling"
+    cloneTemplate := ← Ident.checked "cloneTemplate"
     listenDelegated := ← Ident.checked "listenDelegated"
     createKeyedRegion := ← Ident.checked "createKeyedRegion"
     makeDisposer := ← Ident.checked "makeDisposer"
@@ -176,49 +182,37 @@ private def findIndexFunction : Except Error Function := do
     ]
   }
 
-private def mountRowFunction (runtime : RuntimeNames) : Except Error Function := do
-  let name ← Ident.checked "$lrx_benchmarkMountRow"
-  let item ← Ident.checked "item"
-  let metrics ← Ident.checked "metrics"
+private def rowTemplateFunction (runtime : RuntimeNames) : Except Error Function := do
+  let name ← Ident.checked "$lrx_benchmarkRowTemplate"
   let root ← Ident.checked "rowRoot"
   let idCell ← Ident.checked "idCell"
-  let idText ← Ident.checked "idText"
   let labelCell ← Ident.checked "labelCell"
   let selectLink ← Ident.checked "selectLink"
-  let labelText ← Ident.checked "labelText"
   let removeCell ← Ident.checked "removeCell"
   let removeLink ← Ident.checked "removeLink"
   let removeIcon ← Ident.checked "removeIcon"
   let fillerCell ← Ident.checked "fillerCell"
-  let keyText := call runtime.string [arrayAt item 0]
-  let selectedClass := .conditional (arrayAt item 2)
-    (.literal (.string "danger")) (.literal (.string ""))
+  let emptyText := call runtime.createText [.literal (.string "")]
   pure {
     name
-    params := #[item]
+    params := #[]
     body := #[
-      .const metrics (arrayAt item 3),
       .const root (call runtime.createElement [.literal (.string "tr")]),
-      setAttribute runtime (.ident root) "class" selectedClass,
       .const idCell (call runtime.createElement [.literal (.string "td")]),
       setAttribute runtime (.ident idCell) "class" (.literal (.string "col-md-1")),
-      .const idText (call runtime.createText [keyText]),
-      .expr <| call runtime.append [.ident idCell, .ident idText],
+      .expr <| call runtime.append [.ident idCell, emptyText],
       .expr <| call runtime.append [.ident root, .ident idCell],
       .const labelCell (call runtime.createElement [.literal (.string "td")]),
       setAttribute runtime (.ident labelCell) "class" (.literal (.string "col-md-4")),
       .const selectLink (call runtime.createElement [.literal (.string "a")]),
       setAttribute runtime (.ident selectLink) "data-lrx-action" (.literal (.string "select")),
-      setAttribute runtime (.ident selectLink) "data-lrx-key" keyText,
-      .const labelText (call runtime.createText [arrayAt item 1]),
-      .expr <| call runtime.append [.ident selectLink, .ident labelText],
+      .expr <| call runtime.append [.ident selectLink, emptyText],
       .expr <| call runtime.append [.ident labelCell, .ident selectLink],
       .expr <| call runtime.append [.ident root, .ident labelCell],
       .const removeCell (call runtime.createElement [.literal (.string "td")]),
       setAttribute runtime (.ident removeCell) "class" (.literal (.string "col-md-1")),
       .const removeLink (call runtime.createElement [.literal (.string "a")]),
       setAttribute runtime (.ident removeLink) "data-lrx-action" (.literal (.string "remove")),
-      setAttribute runtime (.ident removeLink) "data-lrx-key" keyText,
       .const removeIcon (call runtime.createElement [.literal (.string "span")]),
       setAttribute runtime (.ident removeIcon) "class"
         (.literal (.string "glyphicon glyphicon-remove")),
@@ -229,7 +223,41 @@ private def mountRowFunction (runtime : RuntimeNames) : Except Error Function :=
       .const fillerCell (call runtime.createElement [.literal (.string "td")]),
       setAttribute runtime (.ident fillerCell) "class" (.literal (.string "col-md-6")),
       .expr <| call runtime.append [.ident root, .ident fillerCell],
-      addAt metrics 6 (uint 11),
+      .return (.ident root)
+    ]
+  }
+
+/-- Mounts one row by cloning the static template and writing only the
+per-row key, texts, and selection class. The row root carries the delegated
+key, so both action links resolve it through their nearest keyed ancestor. -/
+private def mountRowFunction (runtime : RuntimeNames) (template : Ident) :
+    Except Error Function := do
+  let name ← Ident.checked "$lrx_benchmarkMountRow"
+  let item ← Ident.checked "item"
+  let metrics ← Ident.checked "metrics"
+  let keyText ← Ident.checked "keyText"
+  let root ← Ident.checked "rowRoot"
+  let idCell ← Ident.checked "idCell"
+  let selectLink ← Ident.checked "selectLink"
+  let labelText ← Ident.checked "labelText"
+  pure {
+    name
+    params := #[item]
+    body := #[
+      .const metrics (arrayAt item 3),
+      .const keyText (call runtime.string [arrayAt item 0]),
+      .const root (call runtime.cloneTemplate [.ident template]),
+      setAttribute runtime (.ident root) "data-lrx-key" (.ident keyText),
+      .const idCell (call runtime.firstChild [.ident root]),
+      .expr <| call runtime.setText [call runtime.firstChild [.ident idCell], .ident keyText],
+      .const selectLink (call runtime.firstChild [call runtime.nextSibling [.ident idCell]]),
+      .const labelText (call runtime.firstChild [.ident selectLink]),
+      .expr <| call runtime.setText [.ident labelText, arrayAt item 1],
+      .ifThen (arrayAt item 2) <| .ofList [
+        setAttribute runtime (.ident root) "class" (.literal (.string "danger")),
+        incrementAt metrics 6
+      ],
+      addAt metrics 6 (uint 3),
       .return <| .array <| .ofList [
         .ident root, .ident labelText, arrayAt item 1, arrayAt item 2]
     ]
@@ -556,7 +584,8 @@ private def manifest (moduleName : String) (checked : LeanRx.JsFrameworkBenchmar
   textSinkCount := 2
   eventCount := 8
   hostImports := #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_host.mjs"]
-  features := #["direct-dom", "keyed-region", "instrumentation", "benchmark-contract"]
+  features := #["direct-dom", "template-clone", "keyed-region", "instrumentation",
+    "benchmark-contract"]
 }
 
 def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Checked) :
@@ -566,7 +595,8 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
   let buildData ← buildDataFunction runtime random.name
   let project ← projectFunction
   let findIndex ← findIndexFunction
-  let mountRow ← mountRowFunction runtime
+  let rowTemplate ← rowTemplateFunction runtime
+  let mountRow ← mountRowFunction runtime rowTemplate.name
   let updateRow ← updateRowFunction runtime
   let disposeRow ← disposeRowFunction
   let rowRoot ← rowRootFunction
@@ -584,7 +614,7 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
     dispatch.name
   let declarations : Array Decl := #[
     .function random, .function buildData, .function project, .function findIndex,
-    .function mountRow, .function updateRow, .function disposeRow, .function rowRoot,
+    .function rowTemplate, .function mountRow, .function updateRow, .function disposeRow, .function rowRoot,
     .function commit, .function replace, .function add, .function updateRows,
     .function clearRows, .function swapRows, .function selectRow, .function removeRow,
     .function dispatch, .function mount
@@ -598,6 +628,9 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
           (runtime.setAttribute, runtime.setAttribute),
           (runtime.append, runtime.append),
           (runtime.setText, runtime.setText),
+          (runtime.firstChild, runtime.firstChild),
+          (runtime.nextSibling, runtime.nextSibling),
+          (runtime.cloneTemplate, runtime.cloneTemplate),
           (runtime.listenDelegated, runtime.listenDelegated)
         ] },
       { source := "./leanrx_region.mjs", names := #[

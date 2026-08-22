@@ -23,7 +23,7 @@ def run : IO Unit := do
       ¬source.contains "innerHTML" && ¬source.contains "currentObserver" &&
       ¬source.contains "new Proxy" do
     throw <| IO.userError "Todo dynamic-region lowering changed"
-  unless emitted.manifest.runtimeAbi == 7 && emitted.manifest.stateSlots == #[
+  unless emitted.manifest.runtimeAbi == 8 && emitted.manifest.stateSlots == #[
       .list (.record "TodoItem"), .nat, .string, .int, .string, .string] &&
       emitted.manifest.sourceCount == 6 && emitted.manifest.derivedCount == 0 &&
       emitted.manifest.textSinkCount == 2 && emitted.manifest.eventCount == 10 &&

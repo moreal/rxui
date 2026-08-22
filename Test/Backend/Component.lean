@@ -26,7 +26,7 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
       ¬readable.contains "eval(" && ¬readable.contains "Function(" do
     throw <| IO.userError "Counter output introduced a banned runtime mechanism"
   unless emitted.manifest.moduleName == "Counter.mjs" &&
-      emitted.manifest.runtimeAbi == 7 &&
+      emitted.manifest.runtimeAbi == 8 &&
       emitted.manifest.exports == #["mount"] &&
       emitted.manifest.stateSlots == #[.int, .int, .string] &&
       emitted.manifest.sourceCount == 1 && emitted.manifest.derivedCount == 2 &&

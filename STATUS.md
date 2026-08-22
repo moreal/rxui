@@ -308,6 +308,18 @@ Complete — M0 through M11
   compile-fail fixtures plus four focused diagnostic checks, 163-file placeholder,
   and 76-file semantic-safety gates passed. The clone and source workspace
   remained clean.
+- Made the shipped runtime faster without touching the checked Lean models
+  (ADR-0018, runtime ABI 8): the keyed region and the delta region's full
+  reconcile now trim the unchanged prefix/suffix and move only the retained
+  nodes outside one longest order-preserving subsequence (a swap is two DOM
+  moves instead of a near-full sibling walk), a fully owned parent is cleared
+  with one bulk removal, the DOM host gained `cloneTemplate`/`firstChild`/
+  `nextSibling` so the js-framework-benchmark rows are deep-cloned from one
+  static template, and delegated keys resolve from the nearest keyed
+  ancestor. Fake-DOM placement/bulk-clear/fuzz tests, the updated Grid
+  placement snapshot (15,000 for every strategy), and `BENCHMARK.md` record
+  the change; the pure region theorems are unchanged and still do not cover
+  the host placement algorithm.
 
 ## In progress
 

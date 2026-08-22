@@ -48,6 +48,21 @@ outside its anchor. Conditional replacement, positional suffix ownership, keyed
 identity/reorder, duplicate-key fail-before-mutation, copied instrumentation, and
 idempotent disposal run against a deterministic fake DOM before browser dogfood.
 
+Keyed placement is minimal. After validating the whole target, updating
+retained rows, mounting new rows, and disposing removed rows, the host trims
+the unchanged prefix and suffix of the retained order and moves only the
+retained nodes outside one longest order-preserving subsequence; new nodes are
+inserted before their successor. Among equally long subsequences the host keeps
+earlier target positions in place, so reversing two rows moves only the second
+and an edit focused inside the first survives. A swap therefore costs two
+placements, a rotation one, and appends, prepends, middle insertions, and
+removals place only the new nodes. If a target drops every retained row and the region owns its
+whole parent (its first node through its marker, with no foreign sibling), the
+rows are removed with one bulk clear and the marker is re-appended; otherwise
+each node is detached individually. The "placements/moves" counter counts
+`insertBefore` calls in both cases, and a deterministic fuzz over random keyed
+targets checks order, identity, leak-freedom, and the placement bound.
+
 TodoMVC begins from a private pure `Todo.State` and closed `Todo.Msg` update
 algebra. Add/toggle/delete/filter/edit/clear operations are total and preserve
 monotonic unique natural keys; empty titles are rejected on add and delete the

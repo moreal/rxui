@@ -23,7 +23,7 @@ def run : IO Unit := do
           source.contains "createText(\"Third panel\")" == false &&
           ¬source.contains "Nat.zero_lt_succ" && ¬source.contains "proof" do
         throw <| IO.userError s!"dependent Tabs lowering changed:\n{source}"
-      unless emitted.manifest.runtimeAbi == 7 &&
+      unless emitted.manifest.runtimeAbi == 8 &&
           emitted.manifest.stateSlots == #[Backend.ManifestTypeId.fin 3] &&
           emitted.manifest.sourceCount == 1 && emitted.manifest.derivedCount == 0 &&
           emitted.manifest.textSinkCount == 1 && emitted.manifest.eventCount == 1 &&

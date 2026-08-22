@@ -263,9 +263,9 @@ test("@grid keeps all structural strategies logically aligned on 10,000 rows", a
     ["create", "update", "remove", "swap", "filter", "sort", "select"],
     0, 0,
   ]);
-  expect(full.region).toEqual([[10000, 43000, 23997, 5000]]);
-  expect(delta.region).toEqual([[10000, 10002, 15001, 5000, 3, 1007, 21007]]);
-  expect(hybrid.region).toEqual([[10000, 19002, 15001, 5000, 4, 4, 29004]]);
+  expect(full.region).toEqual([[10000, 43000, 15000, 5000]]);
+  expect(delta.region).toEqual([[10000, 10002, 15000, 5000, 3, 1007, 21007]]);
+  expect(hybrid.region).toEqual([[10000, 19002, 15000, 5000, 4, 4, 29004]]);
   expect(full.gridWork).toEqual([65000, 37000, 0]);
   expect(delta.gridWork).toEqual([28000, 70000, 10000]);
   expect(hybrid.gridWork).toEqual([37000, 70000, 10000]);

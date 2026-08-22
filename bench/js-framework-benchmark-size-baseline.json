@@ -19,21 +19,21 @@
     },
     {
       "name": "LeanRx.mjs",
-      "rawBytes": 6592,
-      "brotliBytes": 1653,
-      "gzipBytes": 1808
+      "rawBytes": 6845,
+      "brotliBytes": 1723,
+      "gzipBytes": 1894
     },
     {
       "name": "leanrx_dom.mjs",
-      "rawBytes": 2797,
-      "brotliBytes": 516,
-      "gzipBytes": 645
+      "rawBytes": 3415,
+      "brotliBytes": 731,
+      "gzipBytes": 876
     },
     {
       "name": "leanrx_region.mjs",
-      "rawBytes": 11076,
-      "brotliBytes": 2015,
-      "gzipBytes": 2349
+      "rawBytes": 15331,
+      "brotliBytes": 3164,
+      "gzipBytes": 3642
     },
     {
       "name": "leanrx_host.mjs",
@@ -43,8 +43,8 @@
     }
   ],
   "totals": {
-    "rawBytes": 23112,
-    "brotliBytes": 5525,
-    "gzipBytes": 5803
+    "rawBytes": 28238,
+    "brotliBytes": 6959,
+    "gzipBytes": 7413
   }
 }

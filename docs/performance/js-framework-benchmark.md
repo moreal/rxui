@@ -13,10 +13,15 @@ table application. The integration has two deliberately separate lanes:
 
 The application uses the checked pure Lean operation model, the typed
 JavaScript AST backend, the standard full keyed-region runtime, and the standard
-ten-slot instrumentation contract. It does not use the optional structural
-delta path. The benchmark lowering is currently a dedicated backend module; it
-is evidence for the current generated runtime rather than a claim that the
-general-purpose component compiler can yet lower every collection program.
+ten-slot instrumentation contract. Rows are mounted by deep-cloning one static
+row template that the generated code builds once through the DOM host, then
+writing only the per-row key, texts, and selection class; the keyed region
+places nodes minimally (prefix/suffix trim plus a longest order-preserving
+subsequence, so a swap costs two DOM moves) and clears a fully owned parent
+with one bulk removal. It does not use the optional structural delta path. The
+benchmark lowering is currently a dedicated backend module; it is evidence for
+the current generated runtime rather than a claim that the general-purpose
+component compiler can yet lower every collection program.
 
 ## Deterministic local gate
 
@@ -55,7 +60,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 23,112 | 5,525 | 5,803 |
+| Complete fetched application | 28,238 | 6,959 | 7,413 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.

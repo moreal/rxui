@@ -44,6 +44,25 @@ class FakeParent extends FakeNode {
     this.children.splice(index, 1);
     node.parentNode = null;
   }
+
+  appendChild(node) {
+    this.insertBefore(node, null);
+  }
+
+  get firstChild() {
+    return this.children[0] ?? null;
+  }
+
+  get childNodes() {
+    return this.children;
+  }
+
+  set textContent(value) {
+    if (value !== "") throw new Error("fake parent only supports clearing");
+    for (const node of this.children) node.parentNode = null;
+    this.children = [];
+    this.bulkClears = (this.bulkClears ?? 0) + 1;
+  }
 }
 
 globalThis.document = {
@@ -264,6 +283,216 @@ function values(parent) {
   if (JSON.stringify(values(parent)) !== '["4:d","2:b","3:c","1:a"]' ||
       parent.children[0] !== last || parent.children[3] !== first) {
     throw new Error("two-move swap batch lost its order or keyed identity");
+  }
+  region.dispose();
+}
+
+{
+  // Keyed placement cost: a swap moves two nodes, a rotation moves one, appends
+  // and prepends place only the new nodes, and pure updates place nothing.
+  const parent = new FakeParent();
+  const region = createKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}`)],
+    (handle, item) => { handle[0].value = `${item[0]}`; },
+    () => {},
+    (handle) => handle[0],
+  );
+  const rows = (keys) => keys.map((key) => [key, "x"]);
+  const moves = () => region.instrumentation()[2];
+  region.update(rows([1, 2, 3, 4, 5, 6, 7, 8]));
+  if (moves() !== 8) throw new Error(`initial placement count ${moves()}`);
+  const nodes = parent.children.slice(0, 8);
+  region.update(rows([1, 7, 3, 4, 5, 6, 2, 8]));
+  if (moves() !== 10 || JSON.stringify(values(parent)) !== '["1","7","3","4","5","6","2","8"]' ||
+      parent.children[1] !== nodes[6] || parent.children[6] !== nodes[1]) {
+    throw new Error(`keyed swap did not cost exactly two placements (${moves()})`);
+  }
+  region.update(rows([8, 1, 7, 3, 4, 5, 6, 2]));
+  if (moves() !== 11 || JSON.stringify(values(parent)) !== '["8","1","7","3","4","5","6","2"]' ||
+      parent.children[0] !== nodes[7]) {
+    throw new Error(`keyed rotation did not move exactly the rotated node (${moves()})`);
+  }
+  region.update(rows([8, 1, 7, 3, 4, 5, 6, 2]));
+  if (moves() !== 11) throw new Error("unchanged keyed order placed nodes");
+  region.update(rows([8, 1, 7, 3, 4, 5, 6, 2, 9, 10]));
+  if (moves() !== 13 || parent.children[7] !== nodes[1]) {
+    throw new Error(`keyed append placed retained nodes (${moves()})`);
+  }
+  region.update(rows([0, 8, 1, 7, 3, 4, 5, 6, 2, 9, 10]));
+  if (moves() !== 14) throw new Error(`keyed prepend placed retained nodes (${moves()})`);
+  region.update(rows([0, 8, 1, 7, 3, 5, 6, 2, 9, 10]));
+  if (moves() !== 14 || JSON.stringify(values(parent)) !== '["0","8","1","7","3","5","6","2","9","10"]') {
+    throw new Error("keyed removal placed nodes");
+  }
+  region.update(rows([0, 8, 1, 7, 3, 11, 5, 6, 2, 9, 10]));
+  if (moves() !== 15 || parent.children[5].value !== "11") {
+    throw new Error("keyed middle insertion placed retained nodes");
+  }
+  if (JSON.stringify(region.instrumentation()) !== "[12,62,15,1]") {
+    throw new Error(`keyed placement metrics changed: ${JSON.stringify(region.instrumentation())}`);
+  }
+  region.dispose();
+}
+
+{
+  // Reversing two rows keeps the first target row (and any focus inside it) in
+  // place and moves only the second; larger reversals move all but one row.
+  const parent = new FakeParent();
+  const region = createKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}`)],
+    () => {},
+    () => {},
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"]]);
+  const [first, second] = parent.children;
+  region.update([[2, "b"], [1, "a"]]);
+  const movesAfterSwap = region.instrumentation()[2];
+  if (movesAfterSwap !== 3 || parent.children[0] !== second || parent.children[1] !== first) {
+    throw new Error("two-row reversal moved the first target row");
+  }
+  region.update([[2, "b"], [1, "a"], [3, "c"], [4, "d"]]);
+  region.update([[4, "d"], [3, "c"], [1, "a"], [2, "b"]]);
+  if (region.instrumentation()[2] !== movesAfterSwap + 2 + 3 ||
+      JSON.stringify(values(parent)) !== '["4","3","1","2"]') {
+    throw new Error("four-row reversal did not cost three placements");
+  }
+  region.dispose();
+}
+
+{
+  // Clearing or replacing every row of a region that owns its whole parent uses
+  // one bulk removal; the marker and disposal accounting are retained.
+  const parent = new FakeParent();
+  let disposals = 0;
+  const region = createKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}`)],
+    () => {},
+    () => { disposals += 1; },
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"], [3, "c"]]);
+  region.update([]);
+  if (parent.bulkClears !== 1 || disposals !== 3 || parent.children.length !== 1 ||
+      parent.children[0].value !== "leanrx:keyed") {
+    throw new Error("keyed clear did not bulk-remove an owned parent");
+  }
+  region.update([[4, "d"], [5, "e"]]);
+  const retained = parent.children[0];
+  region.update([[6, "f"], [7, "g"]]);
+  if (parent.bulkClears !== 2 || disposals !== 5 || retained.parentNode !== null ||
+      JSON.stringify(values(parent)) !== '["6","7"]') {
+    throw new Error("keyed replace-all did not bulk-remove an owned parent");
+  }
+  const foreign = new FakeNode("foreign");
+  parent.insertBefore(foreign, parent.children[0]);
+  region.update([]);
+  if (parent.bulkClears !== 2 || disposals !== 7 || JSON.stringify(values(parent)) !== '["foreign"]') {
+    throw new Error("keyed clear bulk-removed a parent it does not own");
+  }
+  if (JSON.stringify(region.instrumentation()) !== "[7,0,7,7]") {
+    throw new Error(`bulk clear metrics changed: ${JSON.stringify(region.instrumentation())}`);
+  }
+  region.dispose();
+  if (parent.children.length !== 1 || parent.children[0] !== foreign) {
+    throw new Error("keyed disposal after bulk clear leaked nodes");
+  }
+}
+
+{
+  // Deterministic fuzz: arbitrary keyed targets always yield the target order
+  // with retained identity, never place more nodes than a full rebuild would,
+  // and reject duplicates before mutating.
+  let seed = 0x2f6e2b1;
+  const random = (bound) => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return seed % bound;
+  };
+  const parent = new FakeParent();
+  const identity = new Map();
+  let disposals = 0;
+  const region = createKeyedRegion(
+    parent,
+    (item) => {
+      const node = new FakeNode(`${item[0]}`);
+      identity.set(item[0], node);
+      return [node];
+    },
+    (handle, item) => { handle[0].value = `${item[0]}`; },
+    (handle, key) => { disposals += 1; identity.delete(key); },
+    (handle) => handle[0],
+  );
+  let previousMoves = 0;
+  for (let round = 0; round < 400; round += 1) {
+    const size = random(40);
+    const keys = [];
+    const used = new Set();
+    while (keys.length < size) {
+      const key = random(60);
+      if (!used.has(key)) { used.add(key); keys.push(key); }
+    }
+    const before = JSON.stringify(values(parent));
+    const retainedNodes = keys.filter((key) => identity.has(key)).map((key) => [key, identity.get(key)]);
+    if (round % 7 === 3 && keys.length > 0) {
+      let failed = false;
+      try {
+        region.update([...keys, keys[0]].map((key) => [key, "dup"]));
+      } catch (error) {
+        failed = String(error).includes("LRX-REGION-001");
+      }
+      if (!failed || JSON.stringify(values(parent)) !== before) {
+        throw new Error("fuzz duplicate update mutated the keyed region");
+      }
+    }
+    region.update(keys.map((key) => [key, "v"]));
+    if (JSON.stringify(values(parent)) !== JSON.stringify(keys.map(String))) {
+      throw new Error(`fuzz round ${round} produced the wrong order`);
+    }
+    for (const [key, node] of retainedNodes) {
+      if (identity.get(key) !== node || node.parentNode !== parent) {
+        throw new Error(`fuzz round ${round} lost identity for key ${key}`);
+      }
+    }
+    const moves = region.instrumentation()[2];
+    if (moves - previousMoves > keys.length) {
+      throw new Error(`fuzz round ${round} placed more nodes than a rebuild`);
+    }
+    previousMoves = moves;
+    if (identity.size !== keys.length || parent.children.length !== keys.length + 1) {
+      throw new Error(`fuzz round ${round} leaked or lost nodes`);
+    }
+  }
+  region.dispose();
+  if (parent.children.length !== 0 || identity.size !== 0 || disposals === 0) {
+    throw new Error("fuzzed keyed region disposal leaked nodes");
+  }
+}
+
+{
+  // The structural-delta region's full reconcile shares the same placement bound.
+  const parent = new FakeParent();
+  const region = createDeltaKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}`)],
+    () => {},
+    () => {},
+    (handle) => handle[0],
+  );
+  const rows = (keys) => keys.map((key) => [key, "x"]);
+  region.update(rows([1, 2, 3, 4, 5, 6]));
+  const nodes = parent.children.slice(0, 6);
+  region.update(rows([1, 5, 3, 4, 2, 6]));
+  if (region.instrumentation()[2] !== 8 || parent.children[1] !== nodes[4] ||
+      parent.children[4] !== nodes[1] ||
+      JSON.stringify(values(parent)) !== '["1","5","3","4","2","6"]') {
+    throw new Error("delta region full reconcile swap did not cost two placements");
+  }
+  region.apply([["reset", rows([6, 1, 5, 3, 4, 2])]]);
+  if (region.instrumentation()[2] !== 9 || JSON.stringify(values(parent)) !== '["6","1","5","3","4","2"]') {
+    throw new Error("delta region reset rotation did not cost one placement");
   }
   region.dispose();
 }

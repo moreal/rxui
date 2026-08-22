@@ -18,6 +18,27 @@ export function childAt(parent, index) {
   return parent.childNodes[index];
 }
 
+export function firstChild(node) {
+  return node.firstChild;
+}
+
+export function nextSibling(node) {
+  return node.nextSibling;
+}
+
+const templates = new WeakMap();
+
+/** Deep-clones the static subtree that `build` produces. `build` runs once per
+ * builder function; later calls clone the retained prototype. */
+export function cloneTemplate(build) {
+  let template = templates.get(build);
+  if (template === undefined) {
+    template = build();
+    templates.set(build, template);
+  }
+  return template.cloneNode(true);
+}
+
 export function setText(node, value) {
   node.data = value;
 }
@@ -73,11 +94,12 @@ export function listenDelegated(node, type, state, context, dispatch) {
       ? target.closest("[data-lrx-action]")
       : null;
     if (!actionNode || !node.contains(actionNode)) return;
+    const keyNode = actionNode.closest("[data-lrx-key]");
     dispatch(
       state,
       context,
       actionNode.getAttribute("data-lrx-action") ?? "",
-      actionNode.getAttribute("data-lrx-key") ?? "",
+      keyNode && node.contains(keyNode) ? keyNode.getAttribute("data-lrx-key") ?? "" : "",
       typeof target.value === "string" ? target.value : "",
       target.checked === true,
       typeof event.key === "string" ? event.key : "",

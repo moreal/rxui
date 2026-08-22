@@ -106,9 +106,9 @@ trace:
 
 | Strategy | Standard derived evals | Standard changed derived | Standard sink evals | Standard DOM writes | Region mounts | Region updates | Region placements/moves | Region disposals | Full resets | Accepted delta ops | Validation units |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Full | 7 | 7 | 43,007 | 40,009 | 10,000 | 43,000 | 23,997 | 5,000 | — | — | — |
-| Delta | 7 | 7 | 10,009 | 40,009 | 10,000 | 10,002 | 15,001 | 5,000 | 3 | 1,007 | 21,007 |
-| Hybrid | 7 | 7 | 19,009 | 40,009 | 10,000 | 19,002 | 15,001 | 5,000 | 4 | 4 | 29,004 |
+| Full | 7 | 7 | 43,007 | 40,009 | 10,000 | 43,000 | 15,000 | 5,000 | — | — | — |
+| Delta | 7 | 7 | 10,009 | 40,009 | 10,000 | 10,002 | 15,000 | 5,000 | 3 | 1,007 | 21,007 |
+| Hybrid | 7 | 7 | 19,009 | 40,009 | 10,000 | 19,002 | 15,000 | 5,000 | 4 | 4 | 29,004 |
 
 The separate Grid-specific snapshot records projection visits, key-search
 visits, and removal-scan visits respectively:
@@ -127,7 +127,12 @@ evaluations plus status sinks. Slot 6 counts only compiler-emitted `setText`,
 strategies create the same 10,000 rows and reach the same changed DOM; the
 measured benefit is fewer retained-row sink evaluations and updates, not fewer
 DOM writes. Validation units count accepted deltas plus items inspected in full
-targets and are not an exact JavaScript instruction count.
+targets and are not an exact JavaScript instruction count. The placement column
+reflects the ABI-8 region host, which moves only the retained rows outside one
+longest order-preserving subsequence: the full strategy's swap and sort now cost
+the same placements as the delta strategies (5,000 after the 10,000 mounts),
+where the ABI-7 host's sibling walk paid 23,997 for the full strategy and
+15,001 for the delta strategies.
 
 ## Size and build cost
 

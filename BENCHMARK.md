@@ -2,19 +2,22 @@
 
 Results from the pinned upstream [`js-framework-benchmark`](https://github.com/krausest/js-framework-benchmark)
 runner (`chrome150`, commit `fa15a77d73dca6dfc0a97ce8c4d6c0797726fa75`), comparing LeanRx against
-vanilla JavaScript, React Hooks, Preact Hooks, Vue, Solid, and Svelte keyed
-implementations of the same table application. See
-[the integration guide](docs/performance/js-framework-benchmark.md) for what is
-measured and how to reproduce it.
+the React Hooks and Solid keyed implementations of the same table application.
+See [the integration guide](docs/performance/js-framework-benchmark.md) for what
+is measured and how to reproduce it; the `popular` preset additionally measures
+vanilla JavaScript, Preact Hooks, Vue, and Svelte, which this refresh skipped to
+keep the run short.
 
 ## How this was measured
 
 ```sh
-corepack pnpm benchmark:compare -- --headless
+./scripts/run_js_framework_benchmark.sh --framework keyed/react-hooks --framework keyed/solid --headless --no-results
 ```
 
-- Measured at: 2026-08-22 05:37:41 UTC
-- LeanRx commit: `2963b85c83d40d5941e6475338a481fc512693ff` (tree state: clean)
+- Measured at: 2026-08-22 11:28:17 UTC
+- LeanRx commit: `41974a795e72774aaf00695414f081cecae9c2bc` plus the uncommitted
+  ABI-8 runtime changes (tree state: dirty; see ADR-0018 and the archived
+  `repository-changes.patch`)
 - Chrome mode: headless (headless is suitable for
   regression tracking; see the integration guide for why visible Chrome is
   preferred for publishable comparisons)
@@ -23,41 +26,53 @@ corepack pnpm benchmark:compare -- --headless
 - Node v22.23.2, Lean 4.33.0, Lake 5.0.0-src+d8b1897
 
 Full raw JSON per benchmark, Chrome traces, the generated LeanRx framework
-snapshot, and this exact environment metadata are archived under
-`.tmp/js-framework-benchmark-results/20260822T053741Z/` (not committed; regenerate
-with the command above).
+snapshot, the exact repository patch, and this environment metadata are
+archived under `.tmp/js-framework-benchmark-results/20260822T112817Z/` (not
+committed; regenerate with the command above).
 
 Lower is better in every table below.
 
 ## CPU workloads
 
-| Benchmark | vanilla | React Hooks | Preact Hooks | Vue | Solid | Svelte | **LeanRx** |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Create 1,000 rows (ms) | 29.5 | 37.9 | 38.9 | 36.5 | 31.8 | 31.3 | 33.4 |
-| Replace all 1,000 rows (ms) | 35.1 | 50.0 | 46.5 | 41.7 | 38.9 | 39.1 | 37.0 |
-| Partial update, every 10th row ×16 (ms) | 22.4 | 26.5 | 36.9 | 24.4 | 21.4 | 21.2 | 24.1 |
-| Select row (ms) | 6.6 | 10.3 | 24.2 | 8.5 | 10.5 | 11.9 | 9.4 |
-| Swap rows (ms) | 26.9 | 152.0 | 42.6 | 31.3 | 31.0 | 33.0 | 140.3 |
-| Remove row (ms) | 18.1 | 21.3 | 29.0 | 23.5 | 19.6 | 19.5 | 21.2 |
-| Create 10,000 rows (ms) | 330.5 | 670.5 | 425.3 | 409.5 | 354.1 | 354.8 | 382.1 |
-| Append 1,000 to 10,000 rows ×2 (ms) | 36.4 | 45.0 | 47.8 | 42.9 | 38.7 | 39.5 | 44.1 |
-| Clear rows ×8 (ms) | 14.5 | 27.3 | 20.1 | 20.4 | 19.6 | 17.1 | 21.7 |
+| Benchmark | React Hooks | Solid | **LeanRx** |
+|---|---:|---:|---:|
+| Create 1,000 rows (ms) | 37.7 | 31.5 | 31.3 |
+| Replace all 1,000 rows (ms) | 47.0 | 37.1 | 34.8 |
+| Partial update, every 10th row ×16 (ms) | 24.1 | 23.2 | 21.3 |
+| Select row (ms) | 10.2 | 7.7 | 8.2 |
+| Swap rows (ms) | 152.3 | 24.4 | 23.4 |
+| Remove row (ms) | 21.5 | 18.1 | 18.7 |
+| Create 10,000 rows (ms) | 674.5 | 349.1 | 345.7 |
+| Append 1,000 to 10,000 rows ×2 (ms) | 44.6 | 37.4 | 37.2 |
+| Clear rows ×8 (ms) | 26.7 | 19.2 | 15.3 |
 
 ## Memory
 
-| Benchmark | vanilla | React Hooks | Preact Hooks | Vue | Solid | Svelte | **LeanRx** |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Memory after page load (MB) | 0.55 | 1.18 | 0.66 | 0.86 | 0.61 | 0.63 | 0.59 |
-| Memory after adding 1,000 rows (MB) | 1.89 | 4.42 | 3.34 | 3.76 | 2.70 | 2.82 | 1.95 |
-| Memory after adding then clearing rows (MB) | 0.66 | 1.97 | 0.84 | 1.18 | 0.79 | 0.97 | 0.74 |
+| Benchmark | React Hooks | Solid | **LeanRx** |
+|---|---:|---:|---:|
+| Memory after page load (MB) | 1.18 | 0.60 | 0.61 |
+| Memory after adding 1,000 rows (MB) | 4.42 | 2.70 | 1.95 |
+| Memory after adding then clearing rows (MB) | 1.95 | 0.79 | 0.74 |
 
 ## Startup and size
 
-| Benchmark | vanilla | React Hooks | Preact Hooks | Vue | Solid | Svelte | **LeanRx** |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Uncompressed JS size (KB) | 11.30 | 190.30 | 14.60 | 63.70 | 11.50 | 34.30 | 22.50 |
-| Compressed (Brotli) JS size (KB) | 2.50 | 51.40 | 5.70 | 22.80 | 4.50 | 12.20 | 5.40 |
-| Startup time to first paint (ms) | 72.00 | 332.50 | 84.30 | 140.40 | 82.90 | 125.60 | 70.40 |
+| Benchmark | React Hooks | Solid | **LeanRx** |
+|---|---:|---:|---:|
+| Uncompressed JS size (KB) | 190.30 | 11.50 | 27.60 |
+| Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 6.80 |
+| Startup time to first paint (ms) | 312.70 | 76.80 | 71.20 |
+
+## Change from the previous run
+
+The previous recorded run (commit `2963b85`, same runner, headless, the full
+`popular` preset) measured LeanRx at 33.4 ms create 1,000, 37.0 ms replace,
+24.1 ms partial update, 9.4 ms select, 140.3 ms swap, 21.2 ms remove,
+382.1 ms create 10,000, 44.1 ms append, and 21.7 ms clear, with 22.50 KB
+uncompressed / 5.40 KB Brotli. The ABI-8 runtime (minimal keyed placement,
+bulk clear of an owned parent, template-cloned rows) removes the swap outlier
+and trims every other CPU workload; the shipped host grew by about 5 KB
+uncompressed / 1.4 KB Brotli, which is recorded rather than offset against the
+CPU gains.
 
 ## Reading these numbers
 

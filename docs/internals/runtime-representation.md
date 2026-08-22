@@ -64,7 +64,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 7. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 8. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -99,6 +99,14 @@ closed, compiler-generated delta vocabulary and validates the complete batch
 before mutating owned DOM. The adapter remains a local region reconciler: it
 does not discover dependencies, schedule reactive work, or interpret arbitrary
 application messages.
+
+ABI 8 adds `firstChild`, `nextSibling`, and `cloneTemplate` to the DOM host so
+a generated static row template is built once and deep-cloned per instance,
+resolves delegated `data-lrx-key` values from the nearest keyed ancestor-or-self
+of the action node, and makes keyed placement minimal (prefix/suffix trim plus
+a longest order-preserving subsequence, with one bulk clear when a region that
+owns its whole parent drops every row). See
+[ADR-0018](../adr/0018-runtime-abi-v8-template-clone.md).
 
 Dynamic-region manifests use a separate `ManifestTypeId` for metadata-only
 `record<name>` and `list<element>` slot descriptions. Those constructors cannot

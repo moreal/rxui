@@ -198,12 +198,13 @@ or `corepack pnpm benchmark:all` for the complete keyed and non-keyed suite.
 
 The [benchmark integration guide](docs/performance/js-framework-benchmark.md)
 documents the exact pinned upstream runner, one-command setup and execution,
-result archival, current 23,112-byte raw / 5,525-byte Brotli baseline, and the
+result archival, current 28,238-byte raw / 6,959-byte Brotli baseline, and the
 distinction between smoke validation and publishable performance measurements.
-[BENCHMARK.md](BENCHMARK.md) records the latest `corepack pnpm benchmark:compare`
-run as CPU, memory, and startup/size tables against vanilla, React Hooks, Preact,
-Vue, Solid, and Svelte; it is a headless single-machine snapshot for regression
-tracking rather than a definitive ranking, and it is regenerated, not hand-edited.
+[BENCHMARK.md](BENCHMARK.md) records the latest upstream-runner measurement as
+CPU, memory, and startup/size tables (currently a headless React Hooks, Solid,
+and LeanRx run; `corepack pnpm benchmark:compare` adds vanilla, Preact, Vue, and
+Svelte); it is a single-machine snapshot for regression tracking rather than a
+definitive ranking, and it is regenerated, not hand-edited.
 
 M11 adds learnability commands and a self-hosted documentation dogfood:
 
