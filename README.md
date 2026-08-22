@@ -186,6 +186,16 @@ lake exe leanrx_js_framework_benchmark -- .tmp/js-framework-benchmark-app
 corepack pnpm benchmark:check
 ```
 
+Compare LeanRx with keyed vanilla, React Hooks, Preact, Vue, Solid, and Svelte
+using the official upstream runner:
+
+```sh
+corepack pnpm benchmark:compare
+```
+
+Use `corepack pnpm benchmark:all-keyed` for every keyed upstream implementation
+or `corepack pnpm benchmark:all` for the complete keyed and non-keyed suite.
+
 The [benchmark integration guide](docs/performance/js-framework-benchmark.md)
 documents the exact pinned upstream runner, one-command setup and execution,
 result archival, current 23,013-byte raw / 5,506-byte Brotli baseline, and the

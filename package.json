@@ -6,8 +6,15 @@
     "test:browser": "playwright test",
     "test:browser:install": "playwright install chromium",
     "benchmark:check": "./scripts/check_js_framework_benchmark.sh",
-    "benchmark:prepare": "./scripts/prepare_js_framework_benchmark.sh",
+    "benchmark:prepare": "./scripts/prepare_js_framework_benchmark.sh --install --prebuilt",
+    "benchmark:prepare:all": "./scripts/prepare_js_framework_benchmark.sh --install --prebuilt",
+    "benchmark:compare": "./scripts/run_js_framework_benchmark.sh --preset popular",
+    "benchmark:compare:cpu": "./scripts/run_js_framework_benchmark.sh --preset popular --cpu",
+    "benchmark:compare:size": "./scripts/run_js_framework_benchmark.sh --preset popular --size",
     "benchmark:run": "./scripts/run_js_framework_benchmark.sh",
+    "benchmark:baseline": "./scripts/run_js_framework_benchmark.sh --preset baseline",
+    "benchmark:all-keyed": "./scripts/run_js_framework_benchmark.sh --preset all-keyed",
+    "benchmark:all": "./scripts/run_js_framework_benchmark.sh --preset all",
     "benchmark:size": "./scripts/measure_js_framework_benchmark_size.sh"
   },
   "devDependencies": {

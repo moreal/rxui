@@ -4,7 +4,10 @@ set -euo pipefail
 upstream_url="https://github.com/krausest/js-framework-benchmark.git"
 upstream_tag="chrome150"
 upstream_commit="fa15a77d73dca6dfc0a97ce8c4d6c0797726fa75"
+prebuilt_url="https://github.com/krausest/js-framework-benchmark/releases/download/$upstream_tag/build.zip"
+prebuilt_sha256="1bff881fb7d23210e5bc4e886373da1002c88c912f0cd165e60921e8c10b38e0"
 install_dependencies=false
+install_prebuilt=false
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 upstream_directory="$repository_root/.tmp/js-framework-benchmark"
 
@@ -14,8 +17,12 @@ while (( $# > 0 )); do
       install_dependencies=true
       shift
       ;;
+    --prebuilt)
+      install_prebuilt=true
+      shift
+      ;;
     --help|-h)
-      echo "usage: $0 [--install] [upstream-directory]"
+      echo "usage: $0 [--install] [--prebuilt] [upstream-directory]"
       exit 0
       ;;
     --*)
@@ -50,6 +57,30 @@ if [[ "$actual_commit" != "$upstream_commit" ]]; then
   echo "upstream checkout must be pinned to $upstream_tag ($upstream_commit)" >&2
   echo "actual commit: $actual_commit" >&2
   exit 1
+fi
+
+if [[ "$install_prebuilt" == true ]]; then
+  prebuilt_archive="$upstream_directory/build.zip"
+  prebuilt_marker="$upstream_directory/.leanrx-prebuilt-$upstream_commit"
+  if [[ ! -f "$prebuilt_marker" ]]; then
+    if [[ ! -f "$prebuilt_archive" ]]; then
+      echo "downloading the pinned $upstream_tag pre-built framework archive (44.8 MB)"
+      curl --fail --location --retry 3 --output "$prebuilt_archive.part" "$prebuilt_url"
+      mv "$prebuilt_archive.part" "$prebuilt_archive"
+    fi
+    actual_prebuilt_sha256="$(shasum -a 256 "$prebuilt_archive" | awk '{print $1}')"
+    if [[ "$actual_prebuilt_sha256" != "$prebuilt_sha256" ]]; then
+      echo "build.zip checksum mismatch" >&2
+      echo "expected: $prebuilt_sha256" >&2
+      echo "actual:   $actual_prebuilt_sha256" >&2
+      exit 1
+    fi
+    echo "extracting the pinned pre-built framework archive"
+    unzip -q -o "$prebuilt_archive" -d "$upstream_directory"
+    touch "$prebuilt_marker"
+  else
+    echo "existing pinned pre-built frameworks are ready"
+  fi
 fi
 
 workspace="$(mktemp -d)"

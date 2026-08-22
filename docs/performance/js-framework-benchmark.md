@@ -9,7 +9,7 @@ table application. The integration has two deliberately separate lanes:
 1. a deterministic repository gate checks the application contract, keyed DOM
    identity, generated JavaScript syntax, disposal, and shipped size;
 2. the upstream runner measures CPU duration, memory, first paint, and transfer size
-   alongside `vanillajs-keyed` in Chrome.
+   alongside vanilla, React Hooks, Preact, Vue, Solid, and Svelte in Chrome.
 
 The application uses the checked pure Lean operation model, the typed
 JavaScript AST backend, the standard full keyed-region runtime, and the standard
@@ -68,16 +68,20 @@ demand rather than kept as a submodule: it is a large, independently versioned
 test suite with dependencies for hundreds of implementations, while LeanRx
 needs one immutable runner revision.
 
-Prepare the default `.tmp/js-framework-benchmark` checkout and install upstream
-dependencies once:
+Prepare the default `.tmp/js-framework-benchmark` checkout, runner dependencies,
+and official pre-built framework artifacts once (a benchmark command also does
+this automatically when they are missing):
 
 ```sh
-./scripts/prepare_js_framework_benchmark.sh --install
+corepack pnpm benchmark:prepare
 ```
 
 An explicit checkout path may be supplied as the final argument. The script
 refuses a checkout at any other commit and replaces only a previously generated
-`frameworks/keyed/leanrx` directory.
+`frameworks/keyed/leanrx` directory. Preparation downloads the release's 44.8 MB
+`build.zip`, verifies its pinned SHA-256 digest, and extracts the pre-built
+artifacts required by React and some of the other 186 upstream implementations.
+It does not install and execute every framework's dependency tree.
 
 ## Run performance measurements
 
@@ -85,11 +89,14 @@ For publishable measurements, close unrelated applications, disable power-saving
 modes, use the normal visible Chrome mode, and run:
 
 ```sh
-./scripts/run_js_framework_benchmark.sh
+corepack pnpm benchmark:compare
 ```
 
 The runner first executes upstream keyed and CSP checks, then benchmarks
-`vanillajs-keyed` and LeanRx under the same server and Chrome settings.
+LeanRx with `vanillajs`, `react-hooks`, `preact-hooks`, `vue`, `solid`, and
+`svelte` under the same server and Chrome settings. These are all keyed
+implementations; comparing a keyed implementation with a non-keyed one can
+reward different DOM identity semantics.
 It uses the upstream repetition count by default and builds the upstream results
 table. The exact generated framework, raw JSON, Chrome traces, the table,
 repository status/patch, and environment metadata are archived under
@@ -99,12 +106,27 @@ still use a clean committed tree.
 Useful controls are:
 
 ```sh
-LEANRX_BENCH_COUNT=20 ./scripts/run_js_framework_benchmark.sh
-LEANRX_BENCH_CHROME_BINARY=/path/to/chrome ./scripts/run_js_framework_benchmark.sh
-LEANRX_BENCH_RESULTS_DIR=/path/to/archive ./scripts/run_js_framework_benchmark.sh
-./scripts/run_js_framework_benchmark.sh --headless --smoke
-./scripts/run_js_framework_benchmark.sh --no-results
+corepack pnpm benchmark:baseline                 # LeanRx and vanilla only
+corepack pnpm benchmark:compare:cpu              # nine CPU workloads only
+corepack pnpm benchmark:compare:size             # size and first paint only
+corepack pnpm benchmark:all-keyed                # every keyed implementation
+corepack pnpm benchmark:all                      # every keyed and non-keyed implementation
+./scripts/run_js_framework_benchmark.sh --framework keyed/react-hooks
+./scripts/run_js_framework_benchmark.sh --benchmark 01_ --benchmark 05_
+LEANRX_BENCH_COUNT=20 corepack pnpm benchmark:compare
+LEANRX_BENCH_CHROME_BINARY=/path/to/chrome corepack pnpm benchmark:compare
+LEANRX_BENCH_RESULTS_DIR=/path/to/archive corepack pnpm benchmark:compare
+corepack pnpm benchmark:compare -- --headless --smoke
+corepack pnpm benchmark:compare -- --no-results
 ```
+
+`--framework` may be repeated and automatically includes `keyed/leanrx`.
+`benchmark:all-keyed` is the broad apples-to-apples run; `benchmark:all` also
+includes non-keyed implementations and currently takes roughly 12 hours on the
+upstream maintainer's reference machine. Comparison commands that need another
+framework fetch the pinned official pre-built archive automatically if it is absent. The upstream
+repository contains the benchmark runner and result-table generator; it is not
+merely a published-results snapshot.
 
 `--smoke` performs one short pass through every default upstream workload. It is useful
 for integration validation but too noisy and under-sampled for performance

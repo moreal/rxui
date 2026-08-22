@@ -6,9 +6,76 @@ upstream_directory="$repository_root/.tmp/js-framework-benchmark"
 headless=false
 smoke=false
 build_results=true
+preset="popular"
+framework_arguments=()
+benchmark_arguments=()
+
+usage() {
+  cat <<'EOF'
+usage: scripts/run_js_framework_benchmark.sh [options] [upstream-directory]
+
+options:
+  --preset popular     LeanRx, vanilla, React Hooks, Preact, Vue, Solid, Svelte (default)
+  --preset baseline    LeanRx and vanilla only
+  --preset all-keyed   all upstream keyed implementations plus LeanRx
+  --preset all         all upstream keyed and non-keyed implementations plus LeanRx
+  --framework NAME     custom comparison; repeat as needed (LeanRx is always added)
+  --benchmark ID       run matching upstream workload IDs; repeat as needed
+  --cpu                 run the nine CPU workloads
+  --memory              run the three memory workloads
+  --size                run size and first-paint workloads
+  --headless           use headless Chrome (local/CI diagnostics only)
+  --smoke              one validation iteration; does not write measurements
+  --no-results         skip building the interactive upstream results site
+EOF
+}
 
 while (( $# > 0 )); do
   case "$1" in
+    --preset)
+      if (( $# < 2 )); then
+        echo "--preset requires a value" >&2
+        exit 2
+      fi
+      preset="$2"
+      shift 2
+      ;;
+    --framework)
+      if (( $# < 2 )); then
+        echo "--framework requires a keyed/name or non-keyed/name" >&2
+        exit 2
+      fi
+      framework_arguments+=("$2")
+      shift 2
+      ;;
+    --benchmark)
+      if (( $# < 2 )); then
+        echo "--benchmark requires a workload ID or prefix" >&2
+        exit 2
+      fi
+      benchmark_arguments+=("$2")
+      shift 2
+      ;;
+    --cpu)
+      benchmark_arguments+=(01_ 02_ 03_ 04_ 05_ 06_ 07_ 08_ 09_)
+      shift
+      ;;
+    --memory)
+      benchmark_arguments+=(21_ 22_ 25_)
+      shift
+      ;;
+    --size)
+      benchmark_arguments+=(40_)
+      shift
+      ;;
+    --all-keyed)
+      preset="all-keyed"
+      shift
+      ;;
+    --all)
+      preset="all"
+      shift
+      ;;
     --headless)
       headless=true
       shift
@@ -21,8 +88,11 @@ while (( $# > 0 )); do
       build_results=false
       shift
       ;;
+    --)
+      shift
+      ;;
     --help|-h)
-      echo "usage: $0 [--headless] [--smoke] [--no-results] [upstream-directory]"
+      usage
       exit 0
       ;;
     --*)
@@ -40,14 +110,77 @@ while (( $# > 0 )); do
   esac
 done
 
-"$repository_root/scripts/prepare_js_framework_benchmark.sh" "$upstream_directory"
+case "$preset" in
+  popular|baseline|all-keyed|all) ;;
+  *)
+    echo "unknown preset: $preset" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+if (( ${#framework_arguments[@]} > 0 )); then
+  preset="custom"
+  selected_frameworks=("${framework_arguments[@]}")
+  if [[ " ${selected_frameworks[*]} " != *" keyed/leanrx "* ]]; then
+    selected_frameworks+=(keyed/leanrx)
+  fi
+else
+  case "$preset" in
+    popular)
+      selected_frameworks=(
+        keyed/vanillajs
+        keyed/react-hooks
+        keyed/preact-hooks
+        keyed/vue
+        keyed/solid
+        keyed/svelte
+        keyed/leanrx
+      )
+      ;;
+    baseline)
+      selected_frameworks=(keyed/vanillajs keyed/leanrx)
+      ;;
+    all-keyed|all)
+      selected_frameworks=()
+      ;;
+  esac
+fi
+
+prepare_args=()
+needs_prebuilt=false
+if [[ "$preset" == all-keyed || "$preset" == all ]]; then
+  needs_prebuilt=true
+else
+  for framework in "${selected_frameworks[@]}"; do
+    if [[ "$framework" != keyed/leanrx && "$framework" != keyed/vanillajs ]]; then
+      needs_prebuilt=true
+      break
+    fi
+  done
+fi
+if [[ "$needs_prebuilt" == true ]]; then
+  prepare_args+=(--prebuilt)
+fi
+"$repository_root/scripts/prepare_js_framework_benchmark.sh" "${prepare_args[@]}" "$upstream_directory"
+
+for framework in "${selected_frameworks[@]}"; do
+  if [[ ! "$framework" =~ ^(keyed|non-keyed)/[A-Za-z0-9._-]+$ ]]; then
+    echo "invalid framework name: $framework" >&2
+    exit 2
+  fi
+  if [[ ! -f "$upstream_directory/frameworks/$framework/package.json" ]]; then
+    echo "framework not found in pinned upstream release: $framework" >&2
+    exit 2
+  fi
+done
 
 if [[ ! -d "$upstream_directory/node_modules" ]] ||
     [[ ! -f "$upstream_directory/webdriver-ts/dist/benchmarkRunner.js" ]] ||
     [[ ! -d "$upstream_directory/server/node_modules" ]]; then
-  echo "benchmark dependencies are missing" >&2
-  echo "run: ./scripts/prepare_js_framework_benchmark.sh --install \"$upstream_directory\"" >&2
-  exit 1
+  echo "benchmark dependencies are missing; installing them once"
+  "$repository_root/scripts/prepare_js_framework_benchmark.sh" \
+    --install "${prepare_args[@]}" "$upstream_directory"
 fi
 
 server_log="$repository_root/.tmp/js-framework-benchmark-server.log"
@@ -83,9 +216,23 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 
-keyed_args=(--framework keyed/leanrx)
-csp_args=(keyed/leanrx)
-benchmark_args=(--framework keyed/vanillajs keyed/leanrx)
+if (( ${#selected_frameworks[@]} > 0 )); then
+  validation_frameworks=("${selected_frameworks[@]}")
+  benchmark_args=(--framework "${selected_frameworks[@]}")
+elif [[ "$preset" == all-keyed ]]; then
+  # The release implementations are already validated upstream. Rechecking every
+  # implementation would add hours before the actual benchmark.
+  validation_frameworks=(keyed/leanrx)
+  benchmark_args=(--type keyed)
+else
+  validation_frameworks=(keyed/leanrx)
+  benchmark_args=()
+fi
+keyed_args=(--framework "${validation_frameworks[@]}")
+csp_args=("${validation_frameworks[@]}")
+if (( ${#benchmark_arguments[@]} > 0 )); then
+  benchmark_args+=(--benchmark "${benchmark_arguments[@]}")
+fi
 if [[ "$headless" == true ]]; then
   keyed_args+=(--headless)
   csp_args+=(--headless)
@@ -157,6 +304,17 @@ if [[ "$smoke" == false ]]; then
     echo "headless=$headless"
     echo "chromeBinary=${LEANRX_BENCH_CHROME_BINARY:-default}"
     echo "count=${LEANRX_BENCH_COUNT:-upstream-default}"
+    echo "preset=$preset"
+    if (( ${#selected_frameworks[@]} > 0 )); then
+      printf 'frameworks=%s\n' "${selected_frameworks[*]}"
+    else
+      echo "frameworks=$preset"
+    fi
+    if (( ${#benchmark_arguments[@]} > 0 )); then
+      printf 'benchmarks=%s\n' "${benchmark_arguments[*]}"
+    else
+      echo "benchmarks=upstream-default"
+    fi
   } >"$results_directory/environment.txt"
   echo "archived framework, raw results, traces, and environment metadata in $results_directory"
 fi
