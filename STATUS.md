@@ -465,6 +465,32 @@ Complete — M0 through M11
   36.7) for 325.0 → 323.1 ms total against Solid's 362.8 in a run that
   drifted slower for every framework, every CPU row still below Solid's, at
   10.1 KB shipped (3.5 KB Brotli against Solid's 11.5 / 4.5 KB).
+- Reached a cloned row template's text slots without wrapping the elements
+  between them (ADR-0028, runtime ABI 14) after a paired CDP profile showed
+  the remaining create-10,000 script gap to upstream vanilla to be
+  garbage-collection volume that both sides spend on DOM wrappers (six per
+  row: the `tr`, two cells, the link, and two texts, all retained while in
+  the document): the DOM host gains `nextText(node)` — the Text node that
+  follows a node in document order through one shared
+  `TreeWalker(SHOW_TEXT)`, documented as not stopping at the node's subtree —
+  and the benchmark backend mounts a row with two `nextText` calls instead of
+  four `firstChild`/`nextSibling` reads, so a row allocates three wrappers and
+  makes six binding calls instead of eight; the Lean model and the region
+  host are unchanged. A per-row walker (+1.0 ms) and a stateful walker API
+  (same speed) were measured and not adopted, and a swap's two DOM moves
+  were re-checked as the floor for a keyed exchange. The counter browser
+  suite locks `nextText` on real DOM (slot order, identity, `null` off a
+  detached subtree, comment skipping, and the escape past a subtree without
+  text). Locally (paired, 12 clicks per page, 10 rounds) create 10,000 falls
+  1.24 ms and is level with vanilla, create 1,000 0.12 ms, replace 0.08 ms;
+  the baseline moves 10,380 → 10,486 raw, 3,540 → 3,585 Brotli (`main.mjs`
+  alone 8,820 / 3,225 bytes). The headless run recorded in `BENCHMARK.md`
+  measured create 10,000 script 27.4 → 24.9 ms (Solid 36.7 → 35.5), create
+  1,000 script 2.7 → 2.5, replace 5.4 → 5.3, and append 3.0 → 2.9, memory
+  after adding 1,000 rows 2.01 → 1.97 MB, the totals moving with paint drift
+  and every CPU row except a coin-flip partial update (20.9 against 20.7)
+  below Solid's, at 10.2 KB shipped (3.5 KB Brotli against Solid's 11.5 /
+  4.5 KB).
 
 ## In progress
 

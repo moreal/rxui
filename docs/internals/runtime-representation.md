@@ -64,7 +64,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 13. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 14. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -151,6 +151,15 @@ context)` disposes and detaches one retained row while the later rows shift a
 position without an update callback; both check their keys before any callback
 or DOM mutation (`LRX-REGION-003` otherwise). See
 [ADR-0026](../adr/0026-runtime-abi-v13-keyed-swap-and-remove.md).
+
+ABI 14 adds `nextText(node)` to the DOM host: the Text node that follows
+`node` in document order (descendants first), or `null`, through one shared
+`TreeWalker(SHOW_TEXT)` whose `currentNode` is the last returned node; it does
+not stop at `node`'s subtree, so generated code uses it only where a static
+template guarantees the text slots it addresses. A cloned template's text
+slots are reached without wrapping the elements between them (three wrappers
+per js-framework-benchmark row instead of six). See
+[ADR-0028](../adr/0028-runtime-abi-v14-next-text.md).
 
 The keyed region host (`leanrx_region.mjs`) exposes `createKeyedRegion(parent,
 mountItem, updateItem, disposeItem, rootItem?)` to generated code and shares

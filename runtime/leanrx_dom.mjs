@@ -31,6 +31,18 @@ export function cloneTemplate(template) {
   return template.cloneNode(true);
 }
 
+let textWalker = null;
+
+// The Text node that follows node in document order (descendants first), or
+// null: TreeWalker(SHOW_TEXT).nextNode() from node. Reaches a cloned template's
+// text slots without wrapping the elements between them; the shared walker
+// keeps only the returned node current.
+export function nextText(node) {
+  textWalker ??= document.createTreeWalker(document, NodeFilter.SHOW_TEXT);
+  textWalker.currentNode = node;
+  return textWalker.nextNode();
+}
+
 // Marks node as a delegated-event key carrier for listenDelegated.
 export function setKey(node, key) {
   node.$lrxKey = key;

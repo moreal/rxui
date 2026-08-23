@@ -17,8 +17,7 @@ private structure RuntimeNames where
   setAttribute : Ident
   append : Ident
   setText : Ident
-  firstChild : Ident
-  nextSibling : Ident
+  nextText : Ident
   cloneTemplate : Ident
   setKey : Ident
   listenDelegated : Ident
@@ -65,8 +64,7 @@ private def runtimeNames : Except Error RuntimeNames := do
     setAttribute := ← Ident.checked "setAttribute"
     append := ← Ident.checked "append"
     setText := ← Ident.checked "setText"
-    firstChild := ← Ident.checked "firstChild"
-    nextSibling := ← Ident.checked "nextSibling"
+    nextText := ← Ident.checked "nextText"
     cloneTemplate := ← Ident.checked "cloneTemplate"
     setKey := ← Ident.checked "setKey"
     listenDelegated := ← Ident.checked "listenDelegated"
@@ -217,7 +215,10 @@ private def selectedFlag (context item : Ident) : Expr :=
 update) and writing only the per-row key, texts, and selection class. The row
 item is the model row itself; the selection flag is derived from the context.
 The row root carries the delegated key, so both action links resolve it through
-their nearest keyed ancestor. -/
+their nearest keyed ancestor. The two text slots are the first two text nodes
+of the row in document order (the id cell's text, then the select link's
+text), reached through `nextText` so the cells and the link between them are
+never wrapped. -/
 private def mountRowFunction (runtime : RuntimeNames) : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkMountRow"
   let item ← Ident.checked "item"
@@ -226,8 +227,7 @@ private def mountRowFunction (runtime : RuntimeNames) : Except Error Function :=
   let metrics ← Ident.checked "metrics"
   let keyText ← Ident.checked "keyText"
   let root ← Ident.checked "rowRoot"
-  let idCell ← Ident.checked "idCell"
-  let selectLink ← Ident.checked "selectLink"
+  let idText ← Ident.checked "idText"
   let labelText ← Ident.checked "labelText"
   let selected ← Ident.checked "selected"
   pure {
@@ -238,10 +238,9 @@ private def mountRowFunction (runtime : RuntimeNames) : Except Error Function :=
       .const keyText (call runtime.string [arrayAt item 0]),
       .const root (call runtime.cloneTemplate [arrayAt context 2]),
       .expr <| call runtime.setKey [.ident root, .ident keyText],
-      .const idCell (call runtime.firstChild [.ident root]),
-      .expr <| call runtime.setText [call runtime.firstChild [.ident idCell], .ident keyText],
-      .const selectLink (call runtime.firstChild [call runtime.nextSibling [.ident idCell]]),
-      .const labelText (call runtime.firstChild [.ident selectLink]),
+      .const idText (call runtime.nextText [.ident root]),
+      .expr <| call runtime.setText [.ident idText, .ident keyText],
+      .const labelText (call runtime.nextText [.ident idText]),
       .expr <| call runtime.setText [.ident labelText, arrayAt item 1],
       .const selected (selectedFlag context item),
       .ifThen (.ident selected) <| .ofList [
@@ -705,8 +704,7 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
           (runtime.setAttribute, runtime.setAttribute),
           (runtime.append, runtime.append),
           (runtime.setText, runtime.setText),
-          (runtime.firstChild, runtime.firstChild),
-          (runtime.nextSibling, runtime.nextSibling),
+          (runtime.nextText, runtime.nextText),
           (runtime.cloneTemplate, runtime.cloneTemplate),
           (runtime.setKey, runtime.setKey),
           (runtime.listenDelegated, runtime.listenDelegated),

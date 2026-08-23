@@ -190,3 +190,49 @@ test("mount instances are isolated and disposal is idempotent", async ({ page })
   await expect(page.locator("#one .counter")).toHaveCount(0);
   await expect(page.locator("#two .counter")).toHaveCount(1);
 });
+
+test("nextText walks a template's text slots in document order without stopping at its root", async ({ page }) => {
+  await page.goto(origin);
+  const result = await page.evaluate(async () => {
+    const { nextText } = await import("/leanrx_dom.mjs");
+    const row = document.createElement("tr");
+    const idCell = document.createElement("td");
+    idCell.append(document.createTextNode("id"));
+    const labelCell = document.createElement("td");
+    const link = document.createElement("a");
+    link.append(document.createComment("note"), document.createTextNode("label"));
+    labelCell.append(link, document.createTextNode("tail"));
+    const iconCell = document.createElement("td");
+    iconCell.append(document.createElement("span"));
+    row.append(idCell, labelCell, iconCell);
+    const first = nextText(row);
+    const second = nextText(first);
+    const third = nextText(second);
+    const detachedEnd = nextText(third);
+    const emptyRow = document.createElement("tr");
+    emptyRow.append(document.createElement("td"));
+    const detachedEmpty = nextText(emptyRow);
+    const host = document.getElementById("two");
+    host.append(row, document.createTextNode("after"));
+    const escaped = nextText(third);
+    const escapedFromEmpty = nextText(iconCell);
+    return {
+      texts: [first.data, second.data, third.data],
+      identity: first === idCell.firstChild && second === link.lastChild && third === labelCell.lastChild,
+      detachedEnd,
+      detachedEmpty,
+      escaped: escaped.data,
+      escapedFromEmpty: escapedFromEmpty.data,
+      fromText: nextText(first) === second,
+    };
+  });
+  expect(result).toEqual({
+    texts: ["id", "label", "tail"],
+    identity: true,
+    detachedEnd: null,
+    detachedEmpty: null,
+    escaped: "after",
+    escapedFromEmpty: "after",
+    fromText: true,
+  });
+});
