@@ -230,12 +230,13 @@ back (8,421 / 3,089 bytes), ADR-0027 adds the monotone-key check and the
 lazily built index (8,714 / 3,180 bytes), ADR-0028 adds the text-slot
 walker (8,820 / 3,225 bytes), ADR-0029's Number ids trim two bytes
 (8,818 / 3,224 bytes), and ADR-0030 adds the structural click listener
-(9,236 / 3,339 bytes). What remains is code: the keyed region host, the DOM
-host with the disposer, the generated module, and `index.html` (1.7 KB /
-0.36 KB, excluded from the upstream size score, which counts JavaScript
-only); the next size step would be tree-shaking host functions this
-application never calls, which the "Reading these numbers" note below
-deliberately does not do.
+(9,236 / 3,339 bytes), and ADR-0031 drops the host declarations nothing
+reachable from the mount statement references — six DOM-host functions this
+application never calls and `uniqueId`'s counter — from the flattened module
+(8,942 / 3,251 bytes). What remains is code: the keyed region host, the DOM
+host functions the application reaches with the disposer, the generated
+module, and `index.html` (1.7 KB / 0.36 KB, excluded from the upstream size
+score, which counts JavaScript only).
 
 ## Reading these numbers
 
@@ -245,9 +246,11 @@ deliberately does not do.
   `corepack pnpm benchmark:compare` in visible Chrome, idle machine, for
   publishable comparisons.
 - Size numbers reflect the complete fetched application (see the [local byte
-  baseline](docs/performance/js-framework-benchmark.md#deterministic-local-gate)),
-  including LeanRx's shared region-runtime host rather than a tree-shaken
-  lower bound; the structural-delta, conditional/positional, and form-event
-  hosts are shipped only by artifacts that import them.
+  baseline](docs/performance/js-framework-benchmark.md#deterministic-local-gate)):
+  since ADR-0023 one flattened module holding the region and DOM host
+  declarations the application reaches (ADR-0031 drops the unreachable ones
+  at build time), compacted (ADR-0024); the structural-delta,
+  conditional/positional, and form-event hosts are shipped only by artifacts
+  that import them, and no other example's hosts are pruned.
 - A regression in one category is not offset by an improvement in another;
   read CPU, memory, and size as independent signals.

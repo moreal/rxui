@@ -42,13 +42,18 @@ ADR-0023 the build flattens the application into one module: `main.mjs` holds
 the DOM host and the keyed region host (the repository's `runtime/` files with
 their comments, blank lines, indentation, and `export` keywords dropped, in
 import order), then the generated declarations, then the mount statement, so
-the page fetches two files (`index.html`, `main.mjs`); no code is tree-shaken.
+the page fetches two files (`index.html`, `main.mjs`).
 Since ADR-0024 that flattened text is compacted by a dependency-free Lean
 tokenizer pass (`LeanRx/Backend/JsCompact.lean`): comments and unneeded
 whitespace dropped, `x["name"]` written as `x.name`, every top-level binding
 and every binding inside a top-level function renamed to a short name, and
 any construct the pass does not model rejected at build time; the readable
 hosts in `runtime/` and the generated readable module remain the contracts.
+Since ADR-0031 the same pass first drops the inlined host declarations that
+nothing reachable from the mount statement references (a top-level function,
+or a literal-initialized top-level variable, that no kept segment names), so
+the module is the application's closure over the hosts — the hosts themselves
+are unchanged and every other example still serves them whole.
 Since ADR-0025 the AST printer emits parentheses only where operator
 precedence requires them and `x = x + e` as `x += e`, and the benchmark
 backend omits the `return null` statements from handlers whose results
@@ -99,7 +104,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 10,902 | 3,699 | 4,204 |
+| Complete fetched application | 10,608 | 3,611 | 4,122 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.
@@ -188,9 +193,9 @@ Treat the upstream categories independently:
 - the local byte baseline detects bloat but does not prove faster execution.
 
 A regression in one category must not be hidden by an aggregate score. In
-particular, LeanRx ships the shared full region host and DOM host, including
-code not exercised by this application, flattened and compacted but not
-tree-shaken (ADR-0023, ADR-0024), so the size result is an honest production
-artifact rather than a tree-shaken lower bound. The generated application and
+particular, LeanRx's size result is the one flattened module the page
+fetches (ADR-0023, ADR-0024): the repository hosts' declarations reachable
+from the application's entry, compacted — not a hand-picked subset and not a
+lower bound computed apart from the shipped bytes (ADR-0031). The generated application and
 browser remain inside the documented trusted computing base; only its pure Lean
 state-transition semantics receive Lean-level checking.

@@ -545,6 +545,22 @@ Complete — M0 through M11
   paint-bound and throttled rows drifting slower with the run, every CPU
   row below Solid's, at 10.6 KB shipped (3.6 KB Brotli against Solid's
   11.5 / 4.5 KB).
+- Dropped the host declarations nothing reachable from the mount statement
+  references from the flattened js-framework-benchmark module (ADR-0031,
+  runtime ABI unchanged): the compactor gains an opt-in `prune` step — a
+  top-level function or a literal-initialized top-level variable stays only
+  if a root (any statement, or a declaration with a non-literal initializer)
+  reaches it transitively — and the benchmark build uses it, so the module is
+  the application's closure over the inlined hosts: `childAt`, `firstChild`,
+  `nextSibling`, `setProperty`, `uniqueId` with its counter, and `listen` are
+  no longer shipped by this page (they remain in `runtime/leanrx_dom.mjs`
+  for the examples that import them). The size reading in `BENCHMARK.md`
+  and the integration guide now describes the module as the reachable host
+  code rather than "not tree-shaken"; the compactor's golden test covers the
+  pruned fixture, transitive reachability, a self-recursive dead function,
+  an effectful `const` root, and the no-root case. The baseline moves 10,902
+  → 10,608 raw, 3,699 → 3,611 Brotli (`main.mjs` alone 8,942 / 3,251 bytes);
+  nothing the page runs changes.
 
 ## In progress
 

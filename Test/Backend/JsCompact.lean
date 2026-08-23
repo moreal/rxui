@@ -4,8 +4,8 @@ namespace LeanRxTest.Backend.JsCompact
 
 open LeanRx.Js
 
-private def compact (source : String) : IO String :=
-  match Compact.compact source with
+private def compact (source : String) (prune : Bool := false) : IO String :=
+  match Compact.compact source prune with
   | .ok output => pure output
   | .error error =>
       throw <| IO.userError s!"compactor rejected fixture: {error.code}: {error.message}"
@@ -85,6 +85,30 @@ def run : IO Unit := do
   let free ← compact "function first(value) { return value + a; }"
   unless free == "function A(b){return b+a;}" do
     throw <| IO.userError s!"JavaScript compactor reused a free name: {free}"
+  -- ADR-0031: with `prune`, only the declarations the top-level statements
+  -- reach are kept: the fixture's mount statement reaches `run` alone, so
+  -- `createElement`, `uniqueId` with its counter, and `region` are dropped and
+  -- the remaining name pool is renumbered.
+  let pruned ← compact fixture (prune := true)
+  unless pruned == "function A(b){const a=b.rows;return(Math.round((Math.random()*1000))" ++
+      "%a.length)+a[\"not-an-identifier\"];}globalThis.leanrxDispose=A(document.body);" do
+    throw <| IO.userError s!"JavaScript compactor pruned wrongly:\n{pruned}"
+  -- A declaration whose initializer may have effects is a root; reachability
+  -- is transitive and a self-reference does not keep a declaration alive.
+  let transitive ← compact
+    ("let counter = 0;\nfunction bump() { counter += 1; return counter; }\n" ++
+      "function unused() { return bump(); }\nconst kept = bump();\n" ++
+      "function dead(x) { return dead(x); }\n") (prune := true)
+  unless transitive == "let A=0;function B(){A+=1;return A;}const C=B();" do
+    throw <| IO.userError s!"JavaScript compactor pruned the wrong declarations:\n{transitive}"
+  -- Without a statement nothing is reachable; a module that is only
+  -- declarations is kept whole unless pruning is requested.
+  let whole ← compact "function f() { return 1; }"
+  unless whole == "function A(){return 1;}" do
+    throw <| IO.userError s!"JavaScript compactor changed without prune: {whole}"
+  let emptied ← compact "function f() { return 1; }" (prune := true)
+  unless emptied == "" do
+    throw <| IO.userError s!"JavaScript compactor kept an unreachable declaration: {emptied}"
   expectRejected "a regular expression literal" "function f(a) { return /x/.test(a); }"
   expectRejected "a destructuring declaration" "function f(a) { const [b] = a; return b; }"
   expectRejected "multiple declarators" "function f(a) { let b = 1, c = 2; return a; }"

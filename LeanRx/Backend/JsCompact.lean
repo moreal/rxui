@@ -8,10 +8,12 @@ no token pair needs, rewrites `x["name"]` to `x.name`, renames every top-level
 binding and every binding declared inside a top-level function to a short
 name, and fails closed on any construct it does not model (regular expression
 literals, destructuring, multiple declarators, classes, labels, restricted
-line breaks, a local that shadows a free or top-level name). It is text-level
-and deliberately small; the readable hosts in `runtime/` and the JavaScript
-AST printer remain the contracts, and the benchmark gate syntax-checks and
-runs the result.
+line breaks, a local that shadows a free or top-level name). With `prune`
+(ADR-0031) it first drops every top-level function declaration and every
+literal-initialized top-level `let`/`const`/`var` that no top-level statement
+reaches through references. It is text-level and deliberately small; the
+readable hosts in `runtime/` and the JavaScript AST printer remain the
+contracts, and the benchmark gate syntax-checks and runs the result.
 -/
 
 namespace LeanRx.Js.Compact
@@ -446,8 +448,59 @@ private def needsSpace (previous current : Token) : Bool :=
     (previous.text.endsWith "+" && current.text.startsWith "+") ||
     (previous.text.endsWith "-" && current.text.startsWith "-")
 
-/-- Compacts a flattened module: see the module docstring. -/
-def compact (source : String) : Except Error String := do
+/-- A token that is a single literal value: a number, a string, a template
+without expressions, or `null`/`undefined`/`true`/`false`. -/
+private def literalToken (token : Token) : Bool :=
+  token.kind == .number || token.kind == .string ||
+    (token.kind == .template && !token.opens && token.text.endsWith "`") ||
+    (token.kind == .word && ["null", "undefined", "true", "false"].contains token.text)
+
+/-- The name a top-level segment declares when dropping the segment cannot
+change the behaviour of the code that remains: a function declaration, or a
+`let`/`const`/`var` whose initializer is absent or a single literal. Any other
+segment (a statement, or a declaration whose initializer may have effects) is
+a root that stays. -/
+private def prunableName (tokens : Array Token) (lo stop : Nat) : Option String :=
+  let head := tokens.getD lo default
+  let name := tokens.getD (lo + 1) default
+  if head.kind != .word || name.kind != .word then none
+  else if head.text == "function" then some name.text
+  else if head.text == "let" || head.text == "const" || head.text == "var" then
+    if punctAt tokens (lo + 2) ";" && lo + 3 == stop then some name.text
+    else if punctAt tokens (lo + 2) "=" && literalToken (tokens.getD (lo + 3) default) &&
+        punctAt tokens (lo + 4) ";" && lo + 5 == stop then some name.text
+    else none
+  else none
+
+/-- The top-level segments that stay after pruning: every root (a segment that
+declares nothing prunable) and, transitively, every prunable declaration that
+a kept segment references outside its own local bindings. -/
+private def reachable (tokens : Array Token) (roles : Array Role)
+    (segments : Array (Nat × Nat)) (locals : Array (List String)) : Array Bool := Id.run do
+  let declared := segments.map fun (lo, stop) => prunableName tokens lo stop
+  let mut live := declared.map (·.isNone)
+  let mut changed := true
+  for _ in [0:segments.size + 1] do
+    unless changed do break
+    changed := false
+    for segment in [0:segments.size] do
+      unless live.getD segment false do continue
+      let (lo, stop) := segments.getD segment (0, 0)
+      let names := locals.getD segment []
+      for index in [lo:stop] do
+        let role := roles.getD index .none
+        unless role == .reference || role == .shorthand do continue
+        let name := textAt tokens index
+        if names.contains name then continue
+        for target in [0:segments.size] do
+          if !(live.getD target false) && declared.getD target none == some name then
+            live := live.set! target true
+            changed := true
+  return live
+
+/-- Compacts a flattened module: see the module docstring. With `prune`, the
+top-level declarations no top-level statement reaches are dropped first. -/
+def compact (source : String) (prune : Bool := false) : Except Error String := do
   let tokens ← tokenize source
   let roles ← analyze tokens
   for index in [0:tokens.size] do
@@ -489,9 +542,12 @@ def compact (source : String) : Except Error String := do
       locals := locals.push (← bindings tokens roles (lo + 2) stop)
     else
       locals := locals.push []
+  let live := if prune then reachable tokens roles segments locals
+    else segments.map fun _ => true
   let mut free : List String := []
   let mut topCandidates : Array Candidate := #[]
   for segment in [0:segments.size] do
+    unless live.getD segment false do continue
     let (lo, stop) := segments.getD segment (0, 0)
     let names := locals.getD segment []
     for index in [lo:stop] do
@@ -508,8 +564,9 @@ def compact (source : String) : Except Error String := do
         | none => topCandidates := topCandidates.push { name, count := 1, first := index }
       else if !free.contains name then
         free := free ++ [name]
-  for names in locals do
-    for name in names do
+  for segment in [0:segments.size] do
+    unless live.getD segment false do continue
+    for name in locals.getD segment [] do
       if free.contains name then
         throw (unsupported s!"local '{name}' shadows a free identifier")
   for name in uniqueTop do
@@ -518,6 +575,7 @@ def compact (source : String) : Except Error String := do
   let topMap := assign topCandidates free true
   let mut output : Array Token := #[]
   for segment in [0:segments.size] do
+    unless live.getD segment false do continue
     let (lo, stop) := segments.getD segment (0, 0)
     let names := locals.getD segment []
     let localMap := assign (countUses tokens roles lo stop names) free false

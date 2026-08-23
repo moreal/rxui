@@ -132,8 +132,9 @@ private def generateChecked (directory : System.FilePath)
     hosts := hosts ++ (← inlineHost name (← IO.FS.readFile ("runtime" / name)))
   -- ADR-0024: the flattened text is then compacted (whitespace, comments,
   -- short identifiers, dot member access); the compactor fails closed on any
-  -- construct it does not model.
-  let main ← match Js.Compact.compact (hosts ++ compact ++ "\n" ++ mainStatement) with
+  -- construct it does not model. ADR-0031: it first drops the inlined host
+  -- declarations nothing reachable from the mount statement references.
+  let main ← match Js.Compact.compact (hosts ++ compact ++ "\n" ++ mainStatement) (prune := true) with
     | .ok source => pure (source ++ "\n")
     | .error error =>
         throw <| IO.userError
