@@ -49,7 +49,11 @@ hosts in `runtime/` and the generated readable module remain the contracts.
 Since ADR-0025 the AST printer emits parentheses only where operator
 precedence requires them and `x = x + e` as `x += e`, and the benchmark
 backend omits the `return null` statements from handlers whose results
-nothing reads.
+nothing reads. Since ADR-0029 the backend represents the model's `Nat` row
+ids as JavaScript safe integers (`Number`) instead of the `BigInt` the
+general `Nat` contract uses — the ids are allocated sequentially and stay far
+below `Number.MAX_SAFE_INTEGER` for any run — and discloses that as the
+`safe-integer-ids` manifest feature; the model and the hosts are unchanged.
 The benchmark lowering is currently a dedicated
 backend module; it is evidence for the current generated runtime rather than a
 claim that the general-purpose component compiler can yet lower every
@@ -92,7 +96,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 10,486 | 3,585 | 4,072 |
+| Complete fetched application | 10,484 | 3,584 | 4,069 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.

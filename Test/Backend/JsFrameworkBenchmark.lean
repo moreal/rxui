@@ -50,5 +50,12 @@ def run : IO Unit := do
       readable.contains "[\"removeAt\"](index, key, context)" &&
       readable.contains "$lrx_benchmarkCommitRemove(state, context, foundIndex, parsedKey, \"remove\")" do
     throw <| IO.userError "benchmark lowering lost the targeted swap/remove commits"
+  -- Row ids are safe integers (ADR-0029): the model's next id starts at the
+  -- Number 1, a delegated key is parsed with `Number`, no BigInt reaches the
+  -- module, and the manifest discloses the representation.
+  unless readable.contains "[rows, 1, null]" && readable.contains "Number(key)" &&
+      ¬readable.contains "BigInt" && ¬readable.contains "1n" &&
+      emitted.manifest.features.contains "safe-integer-ids" do
+    throw <| IO.userError "benchmark lowering lost the safe-integer id representation"
 
 end LeanRxTest.Backend.JsFrameworkBenchmark

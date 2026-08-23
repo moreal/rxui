@@ -491,6 +491,30 @@ Complete — M0 through M11
   and every CPU row except a coin-flip partial update (20.9 against 20.7)
   below Solid's, at 10.2 KB shipped (3.5 KB Brotli against Solid's 11.5 /
   4.5 KB).
+- Represented the js-framework-benchmark's row ids as safe integers
+  (ADR-0029, runtime ABI unchanged) after the paired CDP profile and the
+  paired click harness attributed a small steady share of the create-10,000
+  script to the `Nat` → `BigInt` id representation (the allocation per row,
+  the bigint comparisons in the monotone-key check, and the `String(bigint)`
+  rendering per mount): the backend's next id starts at the Number `1`,
+  generated rows carry Number ids, a delegated key is parsed with `Number`,
+  and the manifest discloses `safe-integer-ids`; the ids are allocated
+  sequentially and grow by at most 10,000 per event, so every model
+  operation on them is exact far below `Number.MAX_SAFE_INTEGER`, and the
+  Lean model, the hosts, the general `Nat` contract, and the manifest's
+  `stateSlots` are unchanged. The paired harness gained a forced garbage
+  collection before each measured click (the create-10,000 samples had
+  split into ≈18 and ≈22 ms modes by whether a major collection landed in
+  the click, which round medians straddle): create 10,000 falls 0.26 ms,
+  replace 0.11 ms, create 1,000 is unchanged, and two copies of the same
+  build resolve to 0.01 ms under the protocol; the baseline moves 10,486 →
+  10,484 raw, 3,585 → 3,584 Brotli (`main.mjs` alone 8,818 / 3,224 bytes).
+  The headless run recorded in `BENCHMARK.md` measured create 10,000 script
+  24.9 → 25.4 ms in a run that drifted slower for every framework (Solid
+  35.5 → 37.4, so LeanRx's share of Solid's script fell 0.70 → 0.68) for
+  333.7 ms total against Solid's 368.6, create 1,000 script 2.50 → 2.47,
+  replace 5.27 → 5.25, every CPU row below Solid's, at 10.2 KB shipped (3.5
+  KB Brotli against Solid's 11.5 / 4.5 KB).
 
 ## In progress
 

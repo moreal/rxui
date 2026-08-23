@@ -26,6 +26,11 @@ one JavaScript array access; the logical operation needs no runtime bounds
 branch. Native-to-Node differential cases execute the first and last valid
 indices in both printer modes.
 
+One hand-lowered backend departs from the `Nat` row: the js-framework-benchmark
+backend represents its model's row ids as safe-integer `number`s because that
+application's id domain is bounded by its own specification (ADR-0029). The
+general component compiler and every other backend keep the `BigInt` mapping.
+
 `ReactiveIR.Expr.erasureReport` traverses every closed IR constructor, records
 the vector lengths and finite bounds removed by the ABI, and separately records
 any operation that would inspect such evidence. The scalar emitter invokes the

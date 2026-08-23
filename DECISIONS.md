@@ -30,6 +30,7 @@
 | [0026](docs/adr/0026-runtime-abi-v13-keyed-swap-and-remove.md) | Accepted | Bump the internal runtime ABI for keyed-region swap and single-row removal | 2026-08-23 |
 | [0027](docs/adr/0027-monotone-keys-without-index.md) | Accepted | Validate monotone keys without an index in the keyed region | 2026-08-23 |
 | [0028](docs/adr/0028-runtime-abi-v14-next-text.md) | Accepted | Bump the internal runtime ABI for text-slot traversal in the DOM host | 2026-08-23 |
+| [0029](docs/adr/0029-safe-integer-benchmark-ids.md) | Accepted | Represent js-framework-benchmark row ids as safe integers | 2026-08-23 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

@@ -24,13 +24,12 @@ private structure RuntimeNames where
   createKeyedRegion : Ident
   makeDisposer : Ident
   array : Ident
-  bigInt : Ident
   document : Ident
   math : Ident
+  number : Ident
   string : Ident
 
 private def uint (value : Nat) : Expr := .literal (.number (UInt32.ofNat value))
-private def bigint (value : Nat) : Expr := .literal (.bigint (Int.ofNat value))
 private def bool (value : Bool) : Expr := .literal (.boolean value)
 private def null : Expr := .literal .null
 private def negativeOne : Expr := .unary .neg (uint 1)
@@ -71,9 +70,9 @@ private def runtimeNames : Except Error RuntimeNames := do
     createKeyedRegion := ← Ident.checked "createKeyedRegion"
     makeDisposer := ← Ident.checked "makeDisposer"
     array := ← Ident.checked "Array"
-    bigInt := ← Ident.checked "BigInt"
     document := ← Ident.checked "document"
     math := ← Ident.checked "Math"
+    number := ← Ident.checked "Number"
     string := ← Ident.checked "String"
   }
 
@@ -93,6 +92,15 @@ private def randomFunction (runtime : RuntimeNames) : Except Error Function := d
     body := #[.return <| .binary .rem rounded (.ident max)]
   }
 
+/-- Builds `count` fresh `[id, label]` rows from the model's next id. Row ids are
+the model's `Nat` values represented as JavaScript safe integers (`Number`)
+rather than the `BigInt` the general `Nat` contract uses (ADR-0029): ids are
+allocated sequentially from 1 and grow by at most the large row count per
+event, so they stay far below `Number.MAX_SAFE_INTEGER` for any run, every
+`Nat` operation the model performs on them (`+`, `==`) is exact there, and the
+narrower representation spares a heap allocation per row and a `BigInt`
+conversion per rendered id and per delegated key. The manifest discloses the
+choice as the `safe-integer-ids` feature. -/
 private def buildDataFunction (runtime : RuntimeNames) (random : Ident) : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkBuildData"
   let state ← Ident.checked "state"
@@ -132,7 +140,7 @@ private def buildDataFunction (runtime : RuntimeNames) (random : Ident) : Except
       .forOf index (method (call runtime.array [.ident count]) "keys" []) <| .ofList [
         .const id (arrayAt state 1),
         .assign (.index (.ident state) (uint 1))
-          (.binary .add (arrayAt state 1) (bigint 1)),
+          (.binary .add (arrayAt state 1) (uint 1)),
         .const label labelValue,
         .expr <| method (.ident rows) "push" [
           .array <| .ofList [.ident id, .ident label]]
@@ -524,7 +532,9 @@ private def selectFunction (runtime : RuntimeNames) (findIndex commitRows : Iden
     params := #[state, context, key]
     body := #[
       .const metrics (arrayAt context 1),
-      .const parsedKey (call runtime.bigInt [.ident key]),
+      -- The delegated key is the row id's decimal text; a key that is not a
+      -- row id (`NaN`, `0`, …) matches no row and the event is ignored.
+      .const parsedKey (call runtime.number [.ident key]),
       .const foundIndex (call findIndex [arrayAt state 0, .ident parsedKey]),
       .ifThen (notEquals (.ident foundIndex) negativeOne) <| .ofList [
         .const previousIndex (call findIndex [arrayAt state 0, arrayAt state 2]),
@@ -553,7 +563,7 @@ private def removeFunction (runtime : RuntimeNames) (findIndex commitRemove : Id
     params := #[state, context, key]
     body := #[
       .const metrics (arrayAt context 1),
-      .const parsedKey (call runtime.bigInt [.ident key]),
+      .const parsedKey (call runtime.number [.ident key]),
       .const foundIndex (call findIndex [arrayAt state 0, .ident parsedKey]),
       .ifThen (notEquals (.ident foundIndex) negativeOne) <| .ofList [
         .expr <| method (arrayAt state 0) "splice" [.ident foundIndex, uint 1],
@@ -622,7 +632,7 @@ private def mountFunction (runtime : RuntimeNames) (rowTemplate mountRow updateR
       .const metrics (.array <| .ofList [
         uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil, uint 0, uint 0]),
       .const rows (.array .nil),
-      .const state (.array <| .ofList [.ident rows, bigint 1, null]),
+      .const state (.array <| .ofList [.ident rows, uint 1, null]),
       .const template (call rowTemplate []),
       .const region (call runtime.createKeyedRegion [
         .ident tbody, .ident mountRow, .ident updateRow, .ident disposeRow, .ident rowRoot]),
@@ -658,7 +668,7 @@ private def manifest (moduleName : String) (checked : LeanRx.JsFrameworkBenchmar
   eventCount := 8
   hostImports := #["./leanrx_dom.mjs", "./leanrx_region.mjs"]
   features := #["direct-dom", "template-clone", "keyed-region", "instrumentation",
-    "benchmark-contract"]
+    "benchmark-contract", "safe-integer-ids"]
 }
 
 def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Checked) :
@@ -696,7 +706,7 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
     .function dispatch, .function mount
   ]
   let module : Module := {
-    globals := #[runtime.array, runtime.bigInt, runtime.document, runtime.math, runtime.string]
+    globals := #[runtime.array, runtime.document, runtime.math, runtime.number, runtime.string]
     imports := #[
       { source := "./leanrx_dom.mjs", names := #[
           (runtime.createElement, runtime.createElement),
