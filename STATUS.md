@@ -374,6 +374,23 @@ Complete — M0 through M11
   against Solid's 79.0 ms, with the CPU rows moving only by run-to-run drift
   (swap's mean 26.9 → 23.6 ms because this run had no outlier sample; every
   CPU row at or below Solid).
+- Made the shipped js-framework-benchmark application smaller a fourth time
+  without touching the checked Lean models or the runtime ABI (ADR-0023):
+  `lake exe leanrx_js_framework_benchmark` now flattens the page into one
+  `main.mjs` — the DOM host and keyed region host inlined from `runtime/` in
+  import order with comments, blank lines, indentation, and `export` dropped,
+  then the generated declarations without import/export statements, then the
+  mount statement — so the page fetches two files instead of five; nothing is
+  tree-shaken or renamed and no minifier is added (esbuild's bundle-and-minify
+  would reach about 3.1 KB Brotli and remains undecided). The benchmark gate
+  syntax-checks and runs the flattened module and the baseline moves 20,684 →
+  17,480 raw, 5,415 → 4,277 Brotli (`main.mjs` alone 15,814 / 3,917 bytes
+  against Solid's 11,563 / 4,358). The headless run recorded in
+  `BENCHMARK.md` measured 20.2 → 17.1 KB shipped (5.3 → 4.2 KB Brotli, now
+  below Solid's 4.5 KB) and first paint 77.6 ms against Solid's 81.3 ms, with
+  the CPU rows moving only by run-to-run drift (swap 23.6 → 21.2 ms, remove
+  17.9 → 18.2 ms against Solid's 18.0 ms within a ±2.2 ms spread; every other
+  CPU row below Solid).
 
 ## In progress
 

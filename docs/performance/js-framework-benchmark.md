@@ -29,12 +29,16 @@ exactly the previously and newly selected rows through the region's
 `updateAt` (ADR-0020); every other operation commits the whole row list. It
 does not use the optional structural delta path or the conditional/positional
 regions, or the typed form-event adapters, and since ABI 9/10/11 it ships none
-of those host modules; since ABI 12 its disposer comes from the DOM host, so the
-page fetches five files (`index.html`, `main.mjs`, the generated module, the
-DOM host, the keyed region host). The benchmark lowering is currently
-a dedicated backend module; it is evidence for the current generated runtime
-rather than a claim that the general-purpose component compiler can yet lower
-every collection program.
+of those host modules; since ABI 12 its disposer comes from the DOM host. Since
+ADR-0023 the build flattens the application into one module: `main.mjs` holds
+the DOM host and the keyed region host (the repository's `runtime/` files with
+their comments, blank lines, indentation, and `export` keywords dropped, in
+import order), then the generated declarations, then the mount statement, so
+the page fetches two files (`index.html`, `main.mjs`); no code is tree-shaken
+and no identifier is renamed. The benchmark lowering is currently a dedicated
+backend module; it is evidence for the current generated runtime rather than a
+claim that the general-purpose component compiler can yet lower every
+collection program.
 
 ## Deterministic local gate
 
@@ -73,7 +77,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 20,684 | 5,415 | 6,240 |
+| Complete fetched application | 17,480 | 4,277 | 4,815 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.
@@ -162,8 +166,9 @@ Treat the upstream categories independently:
 - the local byte baseline detects bloat but does not prove faster execution.
 
 A regression in one category must not be hidden by an aggregate score. In
-particular, LeanRx currently ships the shared full region host, including code
-not exercised by this application, so the size result is an honest production
-artifact rather than a tree-shaken lower bound. The generated application and
+particular, LeanRx ships the shared full region host and DOM host, including
+code not exercised by this application, flattened but not minified or
+tree-shaken (ADR-0023), so the size result is an honest production artifact
+rather than a tree-shaken lower bound. The generated application and
 browser remain inside the documented trusted computing base; only its pure Lean
 state-transition semantics receive Lean-level checking.

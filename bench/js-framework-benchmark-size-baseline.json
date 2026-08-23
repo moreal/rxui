@@ -13,32 +13,14 @@
     },
     {
       "name": "main.mjs",
-      "rawBytes": 114,
-      "brotliBytes": 114,
-      "gzipBytes": 126
-    },
-    {
-      "name": "LeanRx.mjs",
-      "rawBytes": 7187,
-      "brotliBytes": 1752,
-      "gzipBytes": 1916
-    },
-    {
-      "name": "leanrx_dom.mjs",
-      "rawBytes": 3323,
-      "brotliBytes": 979,
-      "gzipBytes": 1152
-    },
-    {
-      "name": "leanrx_region.mjs",
-      "rawBytes": 8394,
-      "brotliBytes": 2210,
-      "gzipBytes": 2536
+      "rawBytes": 15814,
+      "brotliBytes": 3917,
+      "gzipBytes": 4305
     }
   ],
   "totals": {
-    "rawBytes": 20684,
-    "brotliBytes": 5415,
-    "gzipBytes": 6240
+    "rawBytes": 17480,
+    "brotliBytes": 4277,
+    "gzipBytes": 4815
   }
 }

@@ -6,13 +6,7 @@ import { expect, test } from "@playwright/test";
 const directory = process.env.LEANRX_JS_FRAMEWORK_BENCHMARK_DIST;
 test.skip(!directory, "LEANRX_JS_FRAMEWORK_BENCHMARK_DIST is required");
 
-const files = new Set([
-  "index.html",
-  "main.mjs",
-  "LeanRx.mjs",
-  "leanrx_dom.mjs",
-  "leanrx_region.mjs",
-]);
+const files = new Set(["index.html", "main.mjs"]);
 let server;
 let origin;
 

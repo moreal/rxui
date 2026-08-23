@@ -52,9 +52,32 @@ private def indexHtml (name : String) : String :=
   "</body>\n" ++
   "</html>\n"
 
-private def mainModule : String :=
-  "import { mount } from \"./LeanRx.mjs\";\n" ++
-  "globalThis.leanrxBenchmarkDispose = mount(document.getElementById(\"main\"));\n"
+private def mainStatement : String :=
+  "globalThis.leanrxBenchmarkDispose=mount(document.getElementById(\"main\"));\n"
+
+-- Inlines one repository host into the flattened benchmark module (ADR-0023):
+-- whole-line `//` comments, blank lines, and indentation are dropped and the
+-- `export` keyword is removed from its function declarations; identifiers,
+-- statements, and line order are kept. Hosts inlined this way must not contain
+-- `import`/`export {` lines or multi-line string literals; the benchmark gate
+-- syntax-checks and runs the result.
+private def inlineHost (name : String) (source : String) : IO String := do
+  let kept := (source.splitOn "\n").filterMap fun line =>
+    let trimmed := line.trimAsciiStart.toString
+    if trimmed.isEmpty || trimmed.startsWith "//" then none else some trimmed
+  for line in kept do
+    if line.startsWith "import " || line.startsWith "export {" || line.startsWith "export{" then
+      throw <| IO.userError s!"JS framework benchmark host {name} cannot be inlined: {line}"
+  pure <| String.join <| kept.map fun line =>
+    (if line.startsWith "export " then (line.drop 7).toString else line) ++ "\n"
+
+-- The generated module with its host imports resolved to the inlined host
+-- declarations (free names) and no export list.
+private def flattenedModule (module : Js.Module) : Js.Module :=
+  { module with
+    globals := module.globals ++ module.imports.flatMap fun entry => entry.names.map (·.2),
+    imports := #[],
+    exports := #[] }
 
 private def packageJson : String :=
   "{\n" ++
@@ -90,27 +113,29 @@ private def packageLock : String :=
   "}\n"
 
 private def assetManifest : String :=
-  "{\"files\":[\"index.html\",\"main.mjs\",\"LeanRx.mjs\"," ++
-  "\"leanrx_dom.mjs\",\"leanrx_region.mjs\"]}\n"
+  "{\"files\":[\"index.html\",\"main.mjs\"]}\n"
 
 private def generateChecked (directory : System.FilePath)
     (checked : LeanRx.JsFrameworkBenchmark.Spec.Checked) : IO Unit := do
-  let emitted ← match Backend.JsFrameworkBenchmark.emit "LeanRx.mjs" checked with
+  let emitted ← match Backend.JsFrameworkBenchmark.emit "main.mjs" checked with
     | .ok emitted => pure emitted
     | .error error => throw <| IO.userError s!"JS framework benchmark backend failed: {error.code}"
-  let compact ← match Js.Printer.module .compact emitted.module with
+  let compact ← match Js.Printer.module .compact (flattenedModule emitted.module) with
     | .ok source => pure source
     | .error error => throw <| IO.userError s!"JS framework benchmark printer failed: {error.code}"
+  -- The page fetches one module: the hosts the generated module imports, in
+  -- import order, then the generated declarations, then the mount statement.
+  let mut hosts := ""
+  for hostImport in emitted.manifest.hostImports do
+    let name := (hostImport.splitOn "/").getLastD hostImport
+    hosts := hosts ++ (← inlineHost name (← IO.FS.readFile ("runtime" / name)))
   IO.FS.createDirAll directory
   IO.FS.writeFile (directory / "index.html") (indexHtml checked.spec.name)
-  IO.FS.writeFile (directory / "main.mjs") mainModule
-  IO.FS.writeFile (directory / "LeanRx.mjs") (compact ++ "\n")
-  IO.FS.writeFile (directory / "LeanRx.mjs.manifest.json") emitted.manifest.json
+  IO.FS.writeFile (directory / "main.mjs") (hosts ++ compact ++ "\n" ++ mainStatement)
+  IO.FS.writeFile (directory / "main.mjs.manifest.json") emitted.manifest.json
   IO.FS.writeFile (directory / "benchmark-assets.json") assetManifest
   IO.FS.writeFile (directory / "package.json") packageJson
   IO.FS.writeFile (directory / "package-lock.json") packageLock
-  IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")
-  IO.FS.writeFile (directory / "leanrx_region.mjs") (← IO.FS.readFile "runtime/leanrx_region.mjs")
 
 def generateInto (directory : System.FilePath) : IO Unit :=
   match spec.check with

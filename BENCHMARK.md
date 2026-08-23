@@ -14,9 +14,9 @@ keep the run short.
 ./scripts/run_js_framework_benchmark.sh --framework keyed/react-hooks --framework keyed/solid --headless --no-results
 ```
 
-- Measured at: 2026-08-23 00:22:54 UTC
-- LeanRx commit: `8bf0153c8d897f4812dff6db2498e62f4b421d1f` plus the uncommitted
-  ABI-12 runtime changes (tree state: dirty; see ADR-0022 and the archived
+- Measured at: 2026-08-23 03:57:49 UTC
+- LeanRx commit: `9ae4b951087843863820f95ecfdd9166ff691657` plus the uncommitted
+  ADR-0023 build changes (tree state: dirty; see ADR-0023 and the archived
   `repository-changes.patch`)
 - Chrome mode: headless (headless is suitable for
   regression tracking; see the integration guide for why visible Chrome is
@@ -27,7 +27,7 @@ keep the run short.
 
 Full raw JSON per benchmark, Chrome traces, the generated LeanRx framework
 snapshot, the exact repository patch, and this environment metadata are
-archived under `.tmp/js-framework-benchmark-results/20260823T002254Z/` (not
+archived under `.tmp/js-framework-benchmark-results/20260823T035749Z/` (not
 committed; regenerate with the command above).
 
 Lower is better in every table below.
@@ -36,63 +36,73 @@ Lower is better in every table below.
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Create 1,000 rows (ms) | 38.5 | 32.2 | 30.8 |
-| Replace all 1,000 rows (ms) | 47.4 | 36.5 | 34.0 |
-| Partial update, every 10th row, 4× CPU slowdown (ms) | 29.4 | 22.9 | 20.5 |
-| Select row, 4× CPU slowdown (ms) | 10.8 | 8.4 | 5.9 |
-| Swap rows, 4× CPU slowdown (ms) | 151.8 | 25.3 | 23.6 |
-| Remove row, 2× CPU slowdown (ms) | 20.5 | 18.9 | 17.9 |
-| Create 10,000 rows (ms) | 697.1 | 356.5 | 330.2 |
-| Append 1,000 rows to 1,000 rows (ms) | 45.3 | 38.9 | 36.7 |
-| Clear 1,000 rows, 4× CPU slowdown (ms) | 28.1 | 19.7 | 15.1 |
+| Create 1,000 rows (ms) | 38.8 | 32.2 | 30.6 |
+| Replace all 1,000 rows (ms) | 47.5 | 35.8 | 33.4 |
+| Partial update, every 10th row, 4× CPU slowdown (ms) | 25.4 | 23.7 | 18.6 |
+| Select row, 4× CPU slowdown (ms) | 10.1 | 8.1 | 6.4 |
+| Swap rows, 4× CPU slowdown (ms) | 144.7 | 25.3 | 21.2 |
+| Remove row, 2× CPU slowdown (ms) | 20.0 | 18.0 | 18.2 |
+| Create 10,000 rows (ms) | 643.9 | 347.8 | 326.5 |
+| Append 1,000 rows to 1,000 rows (ms) | 45.1 | 38.7 | 35.3 |
+| Clear 1,000 rows, 4× CPU slowdown (ms) | 26.8 | 18.5 | 15.0 |
 
 ## Memory
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Memory after page load (MB) | 1.17 | 0.61 | 0.61 |
-| Memory after adding 1,000 rows (MB) | 4.42 | 2.70 | 2.06 |
-| Memory after adding then clearing rows (MB) | 1.97 | 0.79 | 0.72 |
+| Memory after page load (MB) | 1.14 | 0.58 | 0.55 |
+| Memory after adding 1,000 rows (MB) | 4.42 | 2.70 | 1.93 |
+| Memory after adding then clearing rows (MB) | 1.89 | 0.70 | 0.71 |
 
 ## Startup and size
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Uncompressed JS size (KB) | 190.30 | 11.50 | 20.20 |
-| Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 5.30 |
-| Startup time to first paint (ms) | 319.10 | 79.00 | 74.50 |
+| Uncompressed JS size (KB) | 190.30 | 11.50 | 17.10 |
+| Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 4.20 |
+| Startup time to first paint (ms) | 317.80 | 81.30 | 77.60 |
 
 ## Change from the previous run
 
-The previous recorded run (commit `90a7146` plus the ABI-11 runtime changes
-that became `8bf0153`, same runner, headless, the same three frameworks)
-measured LeanRx at 30.4 ms create 1,000, 33.7 ms replace, 19.8 ms partial
-update, 6.1 ms select, 26.9 ms swap (23.9 ms median), 17.9 ms remove,
-331.5 ms create 10,000, 36.4 ms append, and 15.2 ms clear, with 21.50 KB
-uncompressed / 6.30 KB Brotli and 73.5 ms to first paint. The ABI-12 runtime
-(ADR-0022) deletes `leanrx_host.mjs` — an 867-byte module that the upstream
-server served uncompressed because it is below its 1 KiB Brotli threshold,
-13.5% of the compressed application — by moving `makeDisposer` unchanged into
-the DOM host the page already fetches, and condenses the region and DOM hosts'
-multi-line comments to the terse style of the other hosts (the contract prose
-moved to the internals document). The page now fetches five files instead of
-six, and the shipped application shrinks from 21.5 to 20.2 KB uncompressed and
-from 6.3 to 5.3 KB Brotli (local baseline 22,047 → 20,684 raw, 6,422 → 5,415
-Brotli bytes); Solid's 4.5 KB Brotli is now 0.8 KB away instead of 1.8 KB.
-The generated module differs only by one import specifier and the region host
-only by comments, so the CPU rows again measure run-to-run drift of this
-headless runner: create 1,000 30.4 → 30.8 ms (Solid 31.4 → 32.2), replace
-33.7 → 34.0 (Solid 36.2 → 36.5), partial update 19.8 → 20.5 (Solid 21.3 →
-22.9), select 6.1 → 5.9 (Solid 7.4 → 8.4), remove level at 17.9, create
-10,000 331.5 → 330.2, append 36.4 → 36.7, and clear 15.2 → 15.1 (Solid 20.6 →
-19.7). Swap reads 26.9 → 23.6 ms because this run had no outlier sample (15
-samples, 23.6 ± 1.4 ms, median 24.1 ms, against Solid's 25.3 ± 1.5 ms, median
-24.9 ms); LeanRx's script phase is 1.15 ms against Solid's 2.04 ms. First
-paint moved 73.5 → 74.5 ms while Solid moved 72.5 → 79.0 ms and React Hooks
-321.5 → 319.1 ms (first paint varies by about ±10 ms between runs of this
-runner); memory after page load is 0.53 → 0.61 MB for LeanRx and 0.52 → 0.61
-MB for Solid in the same run, and after adding 1,000 rows 1.97 → 2.06 MB
-(Solid 2.69 → 2.70).
+The previous recorded run (commit `8bf0153` plus the ABI-12 runtime changes
+that became `9ae4b95`, same runner, headless, the same three frameworks)
+measured LeanRx at 30.8 ms create 1,000, 34.0 ms replace, 20.5 ms partial
+update, 5.9 ms select, 23.6 ms swap (24.1 ms median), 17.9 ms remove,
+330.2 ms create 10,000, 36.7 ms append, and 15.1 ms clear, with 20.20 KB
+uncompressed / 5.30 KB Brotli, five fetched files, and 74.5 ms to first
+paint. This run ships the ADR-0023 build: `lake exe
+leanrx_js_framework_benchmark` now flattens the application into one
+`main.mjs` (the DOM host and the keyed region host inlined from `runtime/`
+with their comments, blank lines, indentation, and `export` keywords dropped,
+then the generated declarations without import/export statements, then the
+mount statement), so the page fetches two files instead of five; no host
+function is tree-shaken, no identifier is renamed, and no minifier is
+involved. The shipped application shrinks from 20.2 to 17.1 KB uncompressed
+and from 5.3 to 4.2 KB Brotli (local baseline 20,684 → 17,480 raw, 5,415 →
+4,277 Brotli bytes, of which `main.mjs` is 15,814 / 3,917 against Solid's
+single 11,563 / 4,358-byte module); the compressed size row is now below
+Solid's 4.5 KB, and the uncompressed row is the only upstream row where
+LeanRx still trails it. The host and generated code are byte-identical apart
+from whitespace, comments, and module syntax, so the CPU rows again measure
+run-to-run drift of this headless runner: create 1,000 30.8 → 30.6 ms (Solid
+32.2 → 32.2), replace 34.0 → 33.4 (Solid 36.5 → 35.8), partial update 20.5 →
+18.6 (Solid 22.9 → 23.7), select 5.9 → 6.4 (Solid 8.4 → 8.1), swap 23.6 →
+21.2 (15 samples, 21.2 ± 1.7 ms, median 20.4 ms, against Solid's 25.3 ± 3.1
+ms, median 24.5 ms; LeanRx's script phase is 1.09 ms against Solid's 2.09
+ms), remove 17.9 → 18.2 (18.2 ± 2.2 ms, median 18.0 ms, against Solid's 18.0
+± 1.0 ms, median 18.1 ms; LeanRx's script phase is 0.49 ms against Solid's
+0.77 ms, the difference is paint), create 10,000 330.2 → 326.5 (Solid 356.5 →
+347.8), append 36.7 → 35.3 (Solid 38.9 → 38.7), and clear 15.1 → 15.0 (Solid
+19.7 → 18.5). First paint moved 74.5 → 77.6 ms while Solid moved 79.0 → 81.3
+ms and React Hooks 319.1 → 317.8 ms (first paint varies by about ±10 ms
+between runs of this runner, more than three fewer localhost requests can
+show); memory after page load is
+0.61 → 0.55 MB for LeanRx and 0.61 → 0.58 MB for Solid in the same run, and
+after adding 1,000 rows 2.06 → 1.93 MB (Solid 2.70 → 2.70). An earlier
+attempt at this run was discarded: the upstream runner hit a transient
+puppeteer "detached Frame" error while loading Solid's select benchmark,
+retried for about two hours, and exited with "run was not completely
+successful" without archiving.
 
 ## Where the remaining time goes
 
