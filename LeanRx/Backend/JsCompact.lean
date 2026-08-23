@@ -4,7 +4,8 @@ import LeanRx.Backend.JsAst
 Compacts one flattened JavaScript module (ADR-0024): the hosts inlined by the
 js-framework-benchmark build plus the compact-printed generated declarations.
 The pass tokenizes the text, drops comments and every byte of whitespace that
-no token pair needs, rewrites `x["name"]` to `x.name`, renames every top-level
+no token pair needs, folds trailing commas, rewrites `x["name"]` to `x.name`,
+renames every top-level
 binding and every binding declared inside a top-level function to a short
 name, and fails closed on any construct it does not model (regular expression
 literals, destructuring, multiple declarators, classes, labels, restricted
@@ -606,9 +607,23 @@ def compact (source : String) (prune : Bool := false) : Except Error String := d
       else
         output := output.push { token with newline := false }
       index := index + 1
+  -- Trailing commas: a `,` directly before `)` or `}` is always a trailing
+  -- comma in the accepted grammar (argument or parameter list, object
+  -- literal); before `]` it is one unless the element before it is an
+  -- elision (`[,` or `,,`), which the fold must preserve.
+  let mut folded : Array Token := #[]
+  for token in output do
+    if token.kind == .punct && [")", "]", "}"].contains token.text then
+      if let some last := folded.back? then
+        if last.kind == .punct && last.text == "," then
+          let before := folded.getD (folded.size - 2) default
+          let elision := token.text == "]" && before.kind == .punct &&
+            (before.text == "," || before.text == "[")
+          unless elision do folded := folded.pop
+    folded := folded.push token
   let mut rendered := ""
   let mut previous : Option Token := none
-  for token in output do
+  for token in folded do
     if let some last := previous then
       if needsSpace last token then rendered := rendered ++ " "
     rendered := rendered ++ token.text

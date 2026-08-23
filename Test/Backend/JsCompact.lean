@@ -60,7 +60,7 @@ private def expected : String :=
   "for(let c=0;c<b.length;c+=1){const d=b[c][0];const e={key:d,handle:null,stamp:a,pos:-1};" ++
   "h.set(d,e);if(e.stamp===a)throw new Error(`dup ${String(d)}`);}" ++
   "return b.map((j)=>j.pos- -i)??[];},dispose(){try{f.remove();}catch(k){a=typeof k;}" ++
-  "return g?.slice()??[];},};}function B(b){const a=b.rows;" ++
+  "return g?.slice()??[];}};}function B(b){const a=b.rows;" ++
   "return(Math.round((Math.random()*1000))%a.length)+a[\"not-an-identifier\"];}" ++
   "globalThis.leanrxDispose=B(document.body);"
 
@@ -106,6 +106,12 @@ def run : IO Unit := do
   let whole ← compact "function f() { return 1; }"
   unless whole == "function A(){return 1;}" do
     throw <| IO.userError s!"JavaScript compactor changed without prune: {whole}"
+  let trailing ← compact "function f(a) { return f(a,) + [a,][0]; }"
+  unless trailing == "function A(a){return A(a)+[a][0];}" do
+    throw <| IO.userError s!"JavaScript compactor kept a trailing comma: {trailing}"
+  let elision ← compact "function f() { return [1,,].length + [,].length; }"
+  unless elision == "function A(){return[1,,].length+[,].length;}" do
+    throw <| IO.userError s!"JavaScript compactor folded an elision: {elision}"
   let emptied ← compact "function f() { return 1; }" (prune := true)
   unless emptied == "" do
     throw <| IO.userError s!"JavaScript compactor kept an unreachable declaration: {emptied}"
