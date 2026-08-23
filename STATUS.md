@@ -407,6 +407,21 @@ Complete — M0 through M11
   drift (swap 21.2 → 24.6 ms against Solid's 23.7 ms, within one standard
   deviation, LeanRx's script phase half of Solid's; every other CPU row
   below Solid).
+- Made the shipped js-framework-benchmark application smaller a sixth time
+  without touching the checked Lean models or the runtime ABI (ADR-0025):
+  the JavaScript AST printer emits parentheses only where operator
+  precedence requires them and prints `x = x + e` as `x += e` (every
+  generated artifact, both printer modes; covered by the differential suite
+  and the example contracts), and the benchmark backend omits the
+  `return null` statements from handlers whose results nothing reads. The
+  baseline moves 9,788 → 9,341 raw, 3,247 → 3,217 Brotli (`main.mjs` alone
+  7,675 / 2,857 bytes against Solid's 11,563 / 4,358). The headless run
+  recorded in `BENCHMARK.md` measured 9.6 → 9.1 KB shipped (3.2 → 3.1 KB
+  Brotli against Solid's 11.5 / 4.5 KB) with every CPU row below Solid's
+  (swap 24.6 → 23.2 ms against Solid's 25.5 ms, still within one standard
+  deviation; append 37.8 → 36.8 against 38.6) and the single-sample first
+  paint at 81.3 ms against Solid's 76.8 ms (77.8 against 81.5 in the
+  previous run; the row does not separate the two).
 
 ## In progress
 

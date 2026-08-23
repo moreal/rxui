@@ -14,10 +14,10 @@ keep the run short.
 ./scripts/run_js_framework_benchmark.sh --framework keyed/react-hooks --framework keyed/solid --headless --no-results
 ```
 
-- Measured at: 2026-08-23 06:09:34 UTC
-- LeanRx commit: `89c39204bd4fdc6bfd952e22b0d1d5eab34455d4` plus the uncommitted
-  ADR-0024 compactor changes (tree state: dirty; see ADR-0024 and the archived
-  `repository-changes.patch`)
+- Measured at: 2026-08-23 06:55:01 UTC
+- LeanRx commit: `19d9fe07be10a82991b00ef6b50001c899320445` plus the uncommitted
+  ADR-0025 printer and backend changes (tree state: dirty; see ADR-0025 and the
+  archived `repository-changes.patch`)
 - Chrome mode: headless (headless is suitable for
   regression tracking; see the integration guide for why visible Chrome is
   preferred for publishable comparisons)
@@ -27,7 +27,7 @@ keep the run short.
 
 Full raw JSON per benchmark, Chrome traces, the generated LeanRx framework
 snapshot, the exact repository patch, and this environment metadata are
-archived under `.tmp/js-framework-benchmark-results/20260823T060934Z/` (not
+archived under `.tmp/js-framework-benchmark-results/20260823T065501Z/` (not
 committed; regenerate with the command above).
 
 Lower is better in every table below.
@@ -36,67 +36,68 @@ Lower is better in every table below.
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Create 1,000 rows (ms) | 37.7 | 31.7 | 31.1 |
-| Replace all 1,000 rows (ms) | 48.2 | 39.1 | 33.9 |
-| Partial update, every 10th row, 4× CPU slowdown (ms) | 28.4 | 23.5 | 22.0 |
-| Select row, 4× CPU slowdown (ms) | 10.1 | 8.3 | 6.6 |
-| Swap rows, 4× CPU slowdown (ms) | 156.1 | 23.7 | 24.6 |
-| Remove row, 2× CPU slowdown (ms) | 20.6 | 18.6 | 17.4 |
-| Create 10,000 rows (ms) | 649.5 | 357.3 | 330.6 |
-| Append 1,000 rows to 1,000 rows (ms) | 46.3 | 38.1 | 37.8 |
-| Clear 1,000 rows, 4× CPU slowdown (ms) | 27.5 | 19.5 | 15.2 |
+| Create 1,000 rows (ms) | 38.5 | 32.1 | 30.3 |
+| Replace all 1,000 rows (ms) | 47.0 | 36.9 | 33.8 |
+| Partial update, every 10th row, 4× CPU slowdown (ms) | 28.3 | 21.5 | 20.8 |
+| Select row, 4× CPU slowdown (ms) | 10.6 | 8.0 | 6.3 |
+| Swap rows, 4× CPU slowdown (ms) | 149.1 | 25.5 | 23.2 |
+| Remove row, 2× CPU slowdown (ms) | 19.7 | 18.3 | 17.8 |
+| Create 10,000 rows (ms) | 673.5 | 355.3 | 330.8 |
+| Append 1,000 rows to 1,000 rows (ms) | 46.3 | 38.6 | 36.8 |
+| Clear 1,000 rows, 4× CPU slowdown (ms) | 27.8 | 20.1 | 15.2 |
 
 ## Memory
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Memory after page load (MB) | 1.18 | 0.61 | 0.58 |
-| Memory after adding 1,000 rows (MB) | 4.42 | 2.70 | 2.04 |
-| Memory after adding then clearing rows (MB) | 1.97 | 0.78 | 0.71 |
+| Memory after page load (MB) | 1.18 | 0.61 | 0.60 |
+| Memory after adding 1,000 rows (MB) | 4.42 | 2.69 | 1.94 |
+| Memory after adding then clearing rows (MB) | 1.97 | 0.79 | 0.71 |
 
 ## Startup and size
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Uncompressed JS size (KB) | 190.30 | 11.50 | 9.60 |
-| Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 3.20 |
-| Startup time to first paint (ms) | 318.00 | 81.50 | 77.80 |
+| Uncompressed JS size (KB) | 190.30 | 11.50 | 9.10 |
+| Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 3.10 |
+| Startup time to first paint (ms) | 327.90 | 76.80 | 81.30 |
 
 ## Change from the previous run
 
-The previous recorded run (commit `9ae4b95` plus the ADR-0023 build changes
-that became `89c3920`, same runner, headless, the same three frameworks)
-measured LeanRx at 30.6 ms create 1,000, 33.4 ms replace, 18.6 ms partial
-update, 6.4 ms select, 21.2 ms swap, 18.2 ms remove, 326.5 ms create 10,000,
-35.3 ms append, and 15.0 ms clear, with 17.10 KB uncompressed / 4.20 KB
-Brotli and 77.6 ms to first paint. This run ships the ADR-0024 build: the
-flattened `main.mjs` now passes through a dependency-free Lean compactor
-(`LeanRx/Backend/JsCompact.lean`) that drops comments and unneeded
-whitespace, writes `x["name"]` as `x.name`, and renames every top-level
-binding and every binding inside a top-level function to a short name,
-rejecting at build time any construct it does not model; the readable hosts
-in `runtime/`, the AST printer, the runtime ABI, and the Lean models are
+The previous recorded run (commit `89c3920` plus the ADR-0024 compactor
+changes that became `19d9fe0`, same runner, headless, the same three
+frameworks) measured LeanRx at 31.1 ms create 1,000, 33.9 ms replace, 22.0 ms
+partial update, 6.6 ms select, 24.6 ms swap, 17.4 ms remove, 330.6 ms create
+10,000, 37.8 ms append, and 15.2 ms clear, with 9.60 KB uncompressed / 3.20 KB
+Brotli and 77.8 ms to first paint. This run ships the ADR-0025 build: the
+JavaScript AST printer (`LeanRx/Backend/JsPrinter.lean`) now emits
+parentheses only where operator precedence requires them and prints
+`x = x + e` as `x += e`, and the benchmark backend omits the `return null`
+statements that ended handlers whose results nothing reads; the hosts in
+`runtime/`, the compactor, the runtime ABI, and the Lean models are
 unchanged, and no function is tree-shaken. The shipped application shrinks
-from 17.1 to 9.6 KB uncompressed and from 4.2 to 3.2 KB Brotli (local
-baseline 17,480 → 9,788 raw, 4,277 → 3,247 Brotli bytes, of which `main.mjs`
-is 8,122 / 2,887 against Solid's single 11,563 / 4,358-byte module), so both
-size rows are now below Solid's; no upstream row remains where LeanRx trails
-Solid by more than run-to-run noise. The compacted code executes the same
-statements in the same order, so the CPU rows again measure drift of this
-headless runner: create 1,000 30.6 → 31.1 ms (Solid 32.2 → 31.7), replace
-33.4 → 33.9 (Solid 35.8 → 39.1), partial update 18.6 → 22.0 (Solid 23.7 →
-23.5; LeanRx's script phase is 1.47 ms against Solid's 1.87 ms, the rest is
-paint), select 6.4 → 6.6 (Solid 8.1 → 8.3), swap 21.2 → 24.6 (15 samples,
-24.6 ± 2.0 ms, median 24.0 ms, against Solid's 23.7 ± 1.9 ms, median 23.8
-ms; LeanRx's script phase is 1.08 ms against Solid's 2.11 ms, the difference
-is paint, 20.3 against 18.8 ms, and the two means are within one standard
-deviation of each other), remove 18.2 → 17.4 (Solid 18.0 → 18.6), create
-10,000 326.5 → 330.6 (Solid 347.8 → 357.3), append 35.3 → 37.8 (Solid 38.7 →
-38.1; script 3.05 against 4.33 ms, paint 33.1 against 32.4 ms), and clear
-15.0 → 15.2 (Solid 18.5 → 19.5). First paint moved 77.6 → 77.8 ms while Solid
-moved 81.3 → 81.5 ms and React Hooks 317.8 → 318.0 ms; memory after page
-load is 0.55 → 0.58 MB for LeanRx and 0.58 → 0.61 MB for Solid in the same
-run, and after adding 1,000 rows 1.93 → 2.04 MB (Solid 2.70 → 2.70).
+from 9.6 to 9.1 KB uncompressed and from 3.2 to 3.1 KB Brotli (local baseline
+9,788 → 9,341 raw, 3,247 → 3,217 Brotli bytes, of which `main.mjs` is 7,675 /
+2,857 against Solid's single 11,563 / 4,358-byte module). The executed
+statements are the same minus one `return` per handler, so the CPU rows again
+measure drift of this headless runner, and in this run every one of them is
+below Solid's: create 1,000 31.1 → 30.3 ms (Solid 31.7 → 32.1), replace 33.9
+→ 33.8 (Solid 39.1 → 36.9), partial update 22.0 → 20.8 (Solid 23.5 → 21.5;
+script 1.27 against 1.93 ms), select 6.6 → 6.3 (Solid 8.3 → 8.0), swap 24.6 →
+23.2 (15 samples, 23.2 ± 2.2 ms, median 22.5, against Solid's 25.5 ± 2.9 ms,
+median 25.4; script 0.99 against 2.07 ms, paint 19.3 against 20.3 ms — the
+two means are again within one standard deviation of each other, so this row
+remains a coin flip between the two), remove 17.4 → 17.8 (Solid 18.6 → 18.3),
+create 10,000 330.6 → 330.8 (Solid 357.3 → 355.3; script 28.3 against 35.7
+ms), append 37.8 → 36.8 (Solid 38.1 → 38.6; script 3.03 against 4.42 ms,
+paint 32.4 against 32.7 ms), and clear 15.2 → 15.2 (Solid 19.5 → 20.1). First
+paint is one `performance.getEntriesByType("paint")` sample per framework
+and moved 77.8 → 81.3 ms while Solid moved 81.5 → 76.8 ms and React Hooks
+318.0 → 327.9 ms; across the last three runs LeanRx measured 77.6, 77.8, and
+81.3 ms against Solid's 81.3, 81.5, and 76.8 ms, so the two are not separable
+by this row. Memory after page load is 0.58 → 0.60 MB for LeanRx and 0.61 →
+0.61 MB for Solid, and after adding 1,000 rows 2.04 → 1.94 MB (Solid 2.70 →
+2.69).
 
 ## Where the remaining time goes
 
@@ -123,22 +124,25 @@ during a pure append of 1,000 rows onto 1,000 (2026-08-23: the re-attach
 re-styles every existing row, 23 → 39 ms to the next frame locally; only the
 empty-parent rebuild benefits from detaching).
 
-Size was the one category where LeanRx trailed Solid until this run (20.2 KB
+Size was the one category where LeanRx trailed Solid until the ADR-0024 run (20.2 KB
 against 11.5 KB uncompressed, 5.3 against 4.5 KB Brotli before ADR-0023;
 17.1 / 4.2 KB after it). Measured on 2026-08-23 over the shipped files
 before ADR-0023: the region host's documentation comments were about 2.9 KB
 raw and 1.0 KB Brotli of the total and the `leanrx_host.mjs` disposer was
 served uncompressed because it was below the upstream server's 1 KiB Brotli
 threshold; ADR-0022 removed both, ADR-0023 flattened the page into one
-module, and ADR-0024 compacts that module in Lean (whitespace, comments,
+module, ADR-0024 compacts that module in Lean (whitespace, comments,
 short identifiers, dot member access) to 8,122 raw / 2,887 Brotli bytes,
 below both esbuild's bundle-and-minify of the same files (about 8,786 /
-3,124, measured as a reference, not adopted) and Solid's module. What remains
-is code: the keyed region host, the DOM host with the disposer, the generated
-module, and `index.html` (1.7 KB / 0.36 KB, excluded from the upstream size
-score, which counts JavaScript only); the next size step would be
-tree-shaking host functions this application never calls, which the
-"Reading these numbers" note below deliberately does not do.
+3,124, measured as a reference, not adopted) and Solid's module, and
+ADR-0025 prints the generated part without redundant parentheses, with
+compound assignments, and without effect-only `return null` statements
+(7,675 / 2,857 bytes). What remains is code: the keyed region host, the DOM
+host with the disposer, the generated module, and `index.html` (1.7 KB /
+0.36 KB, excluded from the upstream size score, which counts JavaScript
+only); the next size step would be tree-shaking host functions this
+application never calls, which the "Reading these numbers" note below
+deliberately does not do.
 
 ## Reading these numbers
 

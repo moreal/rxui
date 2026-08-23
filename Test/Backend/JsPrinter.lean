@@ -17,7 +17,7 @@ private def print (mode : Printer.Mode) (module : Module) : IO String :=
 def run : IO Unit := do
   unless Printer.stringLiteral "quote\"\n\x00린" == "\"quote\\\"\\n\\u0000린\"" do
     throw <| IO.userError "JavaScript string escaping changed"
-  unless Printer.literal (.bigint (-7)) == "(-7n)" &&
+  unless Printer.literal (.bigint (-7)) == "-7n" &&
       Printer.literal (.bigint 9007199254740993) == "9007199254740993n" do
     throw <| IO.userError "JavaScript BigInt literal emission changed"
   unless Printer.literal .signedIntegerPattern == "/^-?[0-9]+$/" do
@@ -37,9 +37,9 @@ def run : IO Unit := do
       exports := #[{ localName := evaluate, exportName := evaluate }] }
   let readable ← print .readable module
   let compact ← print .compact module
-  unless readable == "function evaluate(input) {\n  return (input + 1n);\n}\nexport { evaluate };\n" do
+  unless readable == "function evaluate(input) {\n  return input + 1n;\n}\nexport { evaluate };\n" do
     throw <| IO.userError s!"readable JavaScript golden changed:\n{readable}"
-  unless compact == "function evaluate(input){return (input+1n);}export{evaluate};" do
+  unless compact == "function evaluate(input){return input+1n;}export{evaluate};" do
     throw <| IO.userError s!"compact JavaScript golden changed: {compact}"
   let repeated ← print .readable module
   unless repeated == readable do

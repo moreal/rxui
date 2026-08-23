@@ -27,7 +27,7 @@ def run : IO Unit := do
     | .ok source => pure source
     | .error error => throw <| IO.userError error.message
   unless subtotalSource ==
-      "function subtotal(price, quantity, threshold) {\n  return (price * quantity);\n}\nexport { subtotal };\n" do
+      "function subtotal(price, quantity, threshold) {\n  return price * quantity;\n}\nexport { subtotal };\n" do
     throw <| IO.userError s!"scalar module golden changed:\n{subtotalSource}"
   let manifest := (LeanRx.Backend.ArtifactManifest.scalar
     "subtotal.mjs" subtotalModule).json

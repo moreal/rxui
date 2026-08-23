@@ -280,8 +280,7 @@ private def updateRowFunction (runtime : RuntimeNames) : Except Error Function :
         setAttribute runtime (arrayAt handle 0) "class" selectedClass,
         .assign (.index (.ident handle) (uint 3)) (.ident selected),
         incrementAt metrics 6
-      ],
-      .return null
+      ]
     ]
   }
 
@@ -316,8 +315,7 @@ private def commitFunction : Except Error Function := do
     name
     params := #[state, context, action]
     body := #[.const metrics (arrayAt context 1)] ++ (commitMetrics metrics action).toArray ++ #[
-      .expr <| method (arrayAt context 0) "update" [arrayAt state 0, .ident context],
-      .return null
+      .expr <| method (arrayAt context 0) "update" [arrayAt state 0, .ident context]
     ]
   }
 
@@ -345,8 +343,7 @@ private def commitRowsFunction : Except Error Function := do
     body := #[.const metrics (arrayAt context 1)] ++ (commitMetrics metrics action).toArray ++ #[
       .const rows (arrayAt state 0),
       .ifThen (notEquals (.ident first) negativeOne) <| .ofList [updateAt first],
-      .ifThen (notEquals (.ident second) (.ident first)) <| .ofList [updateAt second],
-      .return null
+      .ifThen (notEquals (.ident second) (.ident first)) <| .ofList [updateAt second]
     ]
   }
 
@@ -366,8 +363,7 @@ private def replaceFunction (buildData commit : Ident) : Except Error Function :
         (call buildData [.ident state, .ident count]),
       .assign (.index (.ident state) (uint 2)) null,
       addAt metrics 0 (uint 2),
-      .expr <| call commit [.ident state, .ident context, .ident action],
-      .return null
+      .expr <| call commit [.ident state, .ident context, .ident action]
     ]
   }
 
@@ -387,8 +383,7 @@ private def addFunction (rowCount : Nat) (buildData commit : Ident) : Except Err
         (method (arrayAt state 0) "concat" [.ident appended]),
       addAt metrics 0 (uint 2),
       .expr <| call commit [
-        .ident state, .ident context, .literal (.string "add")],
-      .return null
+        .ident state, .ident context, .literal (.string "add")]
     ]
   }
 
@@ -417,8 +412,7 @@ private def updateFunction (runtime : RuntimeNames) (stride : Nat) (commit : Ide
       ],
       incrementAt metrics 0,
       .expr <| call commit [
-        .ident state, .ident context, .literal (.string "update")],
-      .return null
+        .ident state, .ident context, .literal (.string "update")]
     ]
   }
 
@@ -436,8 +430,7 @@ private def clearFunction (commit : Ident) : Except Error Function := do
       .assign (.index (.ident state) (uint 2)) null,
       addAt metrics 0 (uint 2),
       .expr <| call commit [
-        .ident state, .ident context, .literal (.string "clear")],
-      .return null
+        .ident state, .ident context, .literal (.string "clear")]
     ]
   }
 
@@ -462,10 +455,8 @@ private def swapFunction (firstIndex secondIndex : Nat) (commit : Ident) : Excep
         .assign (.index (.ident rows) (uint secondIndex)) (.ident firstRow),
         addAt metrics 0 (uint 2),
         .expr <| call commit [
-          .ident state, .ident context, .literal (.string "swaprows")],
-        .return null
-      ],
-      .return null
+          .ident state, .ident context, .literal (.string "swaprows")]
+      ]
     ]
   }
 
@@ -496,10 +487,8 @@ private def selectFunction (runtime : RuntimeNames) (findIndex commitRows : Iden
         incrementAt metrics 0,
         .expr <| call commitRows [
           .ident state, .ident context, .ident previousIndex, .ident foundIndex,
-          .literal (.string "select")],
-        .return null
-      ],
-      .return null
+          .literal (.string "select")]
+      ]
     ]
   }
 
@@ -526,10 +515,8 @@ private def removeFunction (runtime : RuntimeNames) (findIndex commit : Ident) :
         ],
         incrementAt metrics 0,
         .expr <| call commit [
-          .ident state, .ident context, .literal (.string "remove")],
-        .return null
-      ],
-      .return null
+          .ident state, .ident context, .literal (.string "remove")]
+      ]
     ]
   }
 
@@ -540,10 +527,13 @@ private def dispatchFunction (spec : LeanRx.JsFrameworkBenchmark.Spec) (replace 
   let context ← Ident.checked "context"
   let action ← Ident.checked "action"
   let key ← Ident.checked "key"
+  -- The action slugs are distinct and `action` is never reassigned, so the
+  -- branches are mutually exclusive and need no early exit; every handler
+  -- (like the dispatcher itself, which the delegated listener calls for its
+  -- effect) returns nothing.
   let branch (slug : String) (callee : Ident) (args : List Expr) : Stmt :=
     .ifThen (equals (.ident action) (.literal (.string slug))) <| .ofList [
-      .expr <| call callee args,
-      .return null
+      .expr <| call callee args
     ]
   pure {
     name
@@ -558,8 +548,7 @@ private def dispatchFunction (spec : LeanRx.JsFrameworkBenchmark.Spec) (replace 
       branch "clear" clearRows [.ident state, .ident context],
       branch "swaprows" swapRows [.ident state, .ident context],
       branch "select" selectRow [.ident state, .ident context, .ident key],
-      branch "remove" removeRow [.ident state, .ident context, .ident key],
-      .return null
+      branch "remove" removeRow [.ident state, .ident context, .ident key]
     ]
   }
 

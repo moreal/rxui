@@ -41,6 +41,10 @@ whitespace dropped, `x["name"]` written as `x.name`, every top-level binding
 and every binding inside a top-level function renamed to a short name, and
 any construct the pass does not model rejected at build time; the readable
 hosts in `runtime/` and the generated readable module remain the contracts.
+Since ADR-0025 the AST printer emits parentheses only where operator
+precedence requires them and `x = x + e` as `x += e`, and the benchmark
+backend omits the `return null` statements from handlers whose results
+nothing reads.
 The benchmark lowering is currently a dedicated
 backend module; it is evidence for the current generated runtime rather than a
 claim that the general-purpose component compiler can yet lower every
@@ -83,7 +87,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 9,788 | 3,247 | 3,699 |
+| Complete fetched application | 9,341 | 3,217 | 3,665 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.

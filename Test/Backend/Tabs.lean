@@ -18,7 +18,7 @@ def run : IO Unit := do
         | .error error => throw <| IO.userError s!"Tabs printer failed: {error.code}"
       unless source.contains "return panels[selected];" &&
           source.contains "function $lrx_select(state, context, index)" &&
-          source.contains "if ((!(state[0] === index)))" &&
+          source.contains "if (!(state[0] === index))" &&
           source.contains "setText(context[0], next)" &&
           source.contains "createText(\"Third panel\")" == false &&
           ¬source.contains "Nat.zero_lt_succ" && ¬source.contains "proof" do
