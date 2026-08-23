@@ -7,20 +7,20 @@
   "files": [
     {
       "name": "index.html",
-      "rawBytes": 1666,
-      "brotliBytes": 360,
-      "gzipBytes": 510
+      "rawBytes": 1458,
+      "brotliBytes": 337,
+      "gzipBytes": 482
     },
     {
       "name": "main.mjs",
-      "rawBytes": 8942,
-      "brotliBytes": 3251,
-      "gzipBytes": 3612
+      "rawBytes": 8447,
+      "brotliBytes": 3104,
+      "gzipBytes": 3453
     }
   ],
   "totals": {
-    "rawBytes": 10608,
-    "brotliBytes": 3611,
-    "gzipBytes": 4122
+    "rawBytes": 9905,
+    "brotliBytes": 3441,
+    "gzipBytes": 3935
   }
 }

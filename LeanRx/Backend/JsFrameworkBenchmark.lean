@@ -20,7 +20,6 @@ private structure RuntimeNames where
   nextText : Ident
   cloneTemplate : Ident
   setKey : Ident
-  listenDelegated : Ident
   listenDelegatedCells : Ident
   createKeyedRegion : Ident
   makeDisposer : Ident
@@ -67,7 +66,6 @@ private def runtimeNames : Except Error RuntimeNames := do
     nextText := ← Ident.checked "nextText"
     cloneTemplate := ← Ident.checked "cloneTemplate"
     setKey := ← Ident.checked "setKey"
-    listenDelegated := ← Ident.checked "listenDelegated"
     listenDelegatedCells := ← Ident.checked "listenDelegatedCells"
     createKeyedRegion := ← Ident.checked "createKeyedRegion"
     makeDisposer := ← Ident.checked "makeDisposer"
@@ -151,22 +149,22 @@ private def buildDataFunction (runtime : RuntimeNames) (random : Ident) : Except
     ]
   }
 
+/-- The position of the first row whose id is `key`, or -1: the model's
+`findIdx`, returning from the loop at the first match. -/
 private def findIndexFunction : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkFindIndex"
   let rows ← Ident.checked "rows"
   let key ← Ident.checked "key"
-  let found ← Ident.checked "found"
   let index ← Ident.checked "index"
   pure {
     name
     params := #[rows, key]
     body := #[
-      .const found (.array <| .ofList [negativeOne]),
       .forOf index (method (.ident rows) "keys" []) <| .ofList [
         .ifThen (equals (.index (.index (.ident rows) (.ident index)) (uint 0)) (.ident key)) <|
-          .ofList [.assign (.index (.ident found) (uint 0)) (.ident index)]
+          .ofList [.return (.ident index)]
       ],
-      .return (arrayAt found 0)
+      .return negativeOne
     ]
   }
 
@@ -225,6 +223,13 @@ table body resolves them by structure (`listenDelegatedCells`). -/
 private def cellActions : Expr := .array <| .ofList [
   .literal (.string ""), .literal (.string "select"),
   .literal (.string "remove"), .literal (.string "")]
+
+/-- The six button actions in page order (ADR-0032): the page's `#buttons`
+element holds one wrapper per button, adjacent and in this order, and `mount`
+marks it as a keyed row (key `""`, which no button action reads) so the same
+structural listener dispatches `buttonActions[i]` for a click strictly inside
+its `i`-th child. The upstream ids of the buttons equal these slugs. -/
+def buttonActions : List String := ["run", "runlots", "add", "update", "clear", "swaprows"]
 
 /-- The selection flag of a row item: the mount-local context carries the model
 state in slot 3, whose slot 2 is the selected id (`null` for none). -/
@@ -628,6 +633,7 @@ private def mountFunction (runtime : RuntimeNames) (rowTemplate mountRow updateR
   let name ← Ident.checked "mount"
   let target ← Ident.checked "target"
   let tbody ← Ident.checked "tbody"
+  let buttons ← Ident.checked "buttons"
   let metrics ← Ident.checked "metrics"
   let rows ← Ident.checked "rows"
   let state ← Ident.checked "state"
@@ -643,6 +649,8 @@ private def mountFunction (runtime : RuntimeNames) (rowTemplate mountRow updateR
     body := #[
       .const tbody (method (.ident runtime.document) "getElementById" [
         .literal (.string "tbody")]),
+      .const buttons (method (.ident runtime.document) "getElementById" [
+        .literal (.string "buttons")]),
       .const metrics (.array <| .ofList [
         uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil, uint 0, uint 0]),
       .const rows (.array .nil),
@@ -652,8 +660,10 @@ private def mountFunction (runtime : RuntimeNames) (rowTemplate mountRow updateR
         .ident tbody, .ident mountRow, .ident updateRow, .ident disposeRow, .ident rowRoot]),
       .const context (.array <| .ofList [
         .ident region, .ident metrics, .ident template, .ident state]),
-      .const off (call runtime.listenDelegated [
-        .ident target, .literal (.string "click"), .ident state, .ident context, .ident dispatch]),
+      .expr <| call runtime.setKey [.ident buttons, .literal (.string "")],
+      .const off (call runtime.listenDelegatedCells [
+        .ident buttons, .literal (.string "click"), .ident state, .ident context, .ident dispatch,
+        stringArray buttonActions]),
       .const offCells (call runtime.listenDelegatedCells [
         .ident tbody, .literal (.string "click"), .ident state, .ident context, .ident dispatch,
         cellActions]),
@@ -734,7 +744,6 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
           (runtime.nextText, runtime.nextText),
           (runtime.cloneTemplate, runtime.cloneTemplate),
           (runtime.setKey, runtime.setKey),
-          (runtime.listenDelegated, runtime.listenDelegated),
           (runtime.listenDelegatedCells, runtime.listenDelegatedCells),
           (runtime.makeDisposer, runtime.makeDisposer)
         ] },

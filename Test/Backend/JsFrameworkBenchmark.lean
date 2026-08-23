@@ -59,9 +59,15 @@ def run : IO Unit := do
     throw <| IO.userError "benchmark lowering lost the safe-integer id representation"
   -- Row clicks are resolved by structure (ADR-0030): the table body's listener
   -- maps the clicked cell's position to its action and the cloned rows carry
-  -- no action attribute (the buttons' attributes live in the page).
+  -- no action attribute; the buttons go through the same listener on the
+  -- page's `#buttons` row (ADR-0032), so the attribute adapter is not imported.
   unless readable.contains "listenDelegatedCells(tbody, \"click\", state, context, $lrx_benchmarkDispatch, [\"\", \"select\", \"remove\", \"\"])" &&
       ¬readable.contains "data-lrx-action" do
     throw <| IO.userError "benchmark lowering lost the structural row-click delegation"
+  unless readable.contains "setKey(buttons, \"\")" &&
+      readable.contains "listenDelegatedCells(buttons, \"click\", state, context, $lrx_benchmarkDispatch, [\"run\", \"runlots\", \"add\", \"update\", \"clear\", \"swaprows\"])" &&
+      ¬readable.contains "listenDelegated(" &&
+      Backend.JsFrameworkBenchmark.buttonActions == ["run", "runlots", "add", "update", "clear", "swaprows"] do
+    throw <| IO.userError "benchmark lowering lost the structural button delegation"
 
 end LeanRxTest.Backend.JsFrameworkBenchmark

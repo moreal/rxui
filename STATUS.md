@@ -561,6 +561,32 @@ Complete — M0 through M11
   an effectful `const` root, and the no-root case. The baseline moves 10,902
   → 10,608 raw, 3,699 → 3,611 Brotli (`main.mjs` alone 8,942 / 3,251 bytes);
   nothing the page runs changes.
+- Resolved the js-framework-benchmark's six buttons by structure (ADR-0032,
+  runtime ABI unchanged): the page's button row carries `id="buttons"` with
+  its wrappers adjacent in the backend's `buttonActions` order (the build
+  renders them from that list), `mount` marks it with `setKey(buttons, "")`
+  and registers `listenDelegatedCells` on it beside the table body's
+  listener, the buttons lose their `data-lrx-action` attributes, and the
+  backend no longer imports `listenDelegated`, so after ADR-0031 the
+  attribute adapter and its key walk leave the flattened module; the DOM
+  host, TodoMVC, the data grid, and the Lean model are unchanged. The backend
+  test asserts the mark, the listener, the action order, and the absence of
+  `listenDelegated`; the browser gate checks that a click on the button row
+  or a wrapper itself dispatches nothing. The baseline moves 10,608 → 9,937
+  raw, 3,611 → 3,452 Brotli (`main.mjs` alone 8,479 / 3,115, `index.html`
+  1,458 / 337 bytes). The headless run recorded in `BENCHMARK.md` (ADR-0031
+  and ADR-0032 together) measured 9.7 KB shipped / 3.4 KB Brotli against
+  Solid's 11.5 / 4.5 KB, create 10,000 script 24.6 → 23.6 ms in a run that
+  drifted faster for every framework (Solid 36.3 → 34.9, LeanRx's share of
+  Solid's script 0.68 in both runs) for 314.3 ms total against Solid's
+  345.8, every CPU row except the paint-bound partial update (23.6 against
+  22.8, script 1.37 against 1.67) below Solid's, and memory after adding
+  1,000 rows 1.91 MB against 2.60. Two trims followed without an ADR: the
+  AST printer renders `!(a === b)` as `a !== b` (binding like an equality,
+  with a golden for the grouping) and the benchmark's row search returns at
+  the first match (the model's `findIdx`) instead of scanning every row into
+  a cell; baseline 9,937 → 9,905 raw, 3,452 → 3,441 Brotli (`main.mjs`
+  8,447 / 3,104 bytes), select and the measured clicks unchanged locally.
 
 ## In progress
 

@@ -65,6 +65,26 @@ def run : IO Unit := do
   unless extendedSource ==
       "function evaluate(state){state[0]=2n;for(const item of state){item;}if(true){return [state[0],\"ok\"];}}export{evaluate};" do
     throw <| IO.userError s!"extended JavaScript AST golden changed: {extendedSource}"
+  -- `!(a === b)` prints as `a !== b` and binds like an equality, so it is
+  -- grouped where an equality would be and not otherwise.
+  let negated : Module :=
+    { declarations := #[.function {
+        name := evaluate
+        params := #[state, item]
+        body := #[
+          .ifThen (.unary .not (.binary .eq (.ident state) (.ident item))) <| .ofList [
+            .return (.binary .add (.ident state)
+              (.unary .not (.binary .eq (.ident item) (.literal (.number 1)))))
+          ],
+          .return (.binary .and (.unary .not (.binary .eq (.ident state) (.ident item)))
+            (.unary .not (.ident item)))
+        ]
+      }]
+      exports := #[{ localName := evaluate, exportName := evaluate }] }
+  let negatedSource ← print .compact negated
+  unless negatedSource ==
+      "function evaluate(state,item){if(state!==item){return state+(item!==1);}return state!==item&&!item;}export{evaluate};" do
+    throw <| IO.userError s!"negated equality golden changed: {negatedSource}"
   let invalid : Module :=
     { declarations := #[]
       exports := #[{ localName := evaluate, exportName := evaluate }] }

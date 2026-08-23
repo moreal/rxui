@@ -21,8 +21,10 @@ one static row template that `mount` builds once through the DOM host, then
 writing only the per-row key (a `setKey` node property that the delegated click
 adapter resolves), texts, and selection class — since ADR-0030 the cloned rows
 carry no `data-lrx-action` attributes: the table body's `listenDelegatedCells`
-listener resolves `select` and `remove` from the cell that contains the click
-and the buttons keep their attributes in the page; the keyed region matches
+listener resolves `select` and `remove` from the cell that contains the click,
+and since ADR-0032 the page's `#buttons` row (marked with `setKey`, its six
+wrappers adjacent in the backend's `buttonActions` order) goes through the
+same listener, so the attribute adapter is not shipped; the keyed region matches
 retained keys by position before hashing, validates the model's id-ordered
 rows without a key index (strictly monotone keys of one type are distinct, and
 the index is built only when a retained key leaves its position; ADR-0027),
@@ -55,9 +57,10 @@ or a literal-initialized top-level variable, that no kept segment names), so
 the module is the application's closure over the hosts — the hosts themselves
 are unchanged and every other example still serves them whole.
 Since ADR-0025 the AST printer emits parentheses only where operator
-precedence requires them and `x = x + e` as `x += e`, and the benchmark
-backend omits the `return null` statements from handlers whose results
-nothing reads. Since ADR-0029 the backend represents the model's `Nat` row
+precedence requires them, `x = x + e` as `x += e`, and (since the ADR-0032
+round) `!(a === b)` as `a !== b`, and the benchmark backend omits the
+`return null` statements from handlers whose results nothing reads and
+returns from its row search at the first match. Since ADR-0029 the backend represents the model's `Nat` row
 ids as JavaScript safe integers (`Number`) instead of the `BigInt` the
 general `Nat` contract uses — the ids are allocated sequentially and stay far
 below `Number.MAX_SAFE_INTEGER` for any run — and discloses that as the
@@ -104,7 +107,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 10,608 | 3,611 | 4,122 |
+| Complete fetched application | 9,905 | 3,441 | 3,935 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.

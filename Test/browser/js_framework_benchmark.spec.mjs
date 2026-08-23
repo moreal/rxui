@@ -202,6 +202,15 @@ test("@framework-benchmark ignores operations whose model preconditions do not h
   await expect(rows).toHaveCount(1000);
   await expect(rows.nth(4)).toHaveClass("danger");
 
+  // The buttons dispatch by their wrapper's position in `#buttons` (ADR-0032):
+  // a click on the row or on a wrapper itself is not a button action.
+  await page.evaluate(() => {
+    document.getElementById("buttons").click();
+    document.getElementById("run").parentNode.click();
+  });
+  await expect(rows).toHaveCount(1000);
+  await expect(page.locator("tbody > tr.danger")).toHaveCount(1);
+
   await page.locator("#clear").click();
   await page.locator("#swaprows").click();
   await expect(rows).toHaveCount(0);

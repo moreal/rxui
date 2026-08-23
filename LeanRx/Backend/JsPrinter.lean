@@ -81,6 +81,8 @@ private def precedence : Expr → Nat
   | .ident _ => primaryPrecedence
   | .literal (.bigint value) => if value < 0 then unaryPrecedence else primaryPrecedence
   | .literal _ => primaryPrecedence
+  -- Printed as `left !== right` (see `expr`), so it binds like an equality.
+  | .unary .not (.binary .eq _ _) => binaryPrecedence .eq
   | .unary _ _ => unaryPrecedence
   | .binary op _ _ => binaryPrecedence op
   | .conditional _ _ _ => conditionalPrecedence
@@ -101,6 +103,14 @@ mutual
   def expr (mode : Mode) : Expr → Except Error String
     | .ident name => pure name.raw
     | .literal value => pure (literal value)
+    | .unary .not (.binary .eq left right) => do
+        -- `!(a === b)` is `a !== b`: the same value for every operand pair, one
+        -- token shorter and without the parentheses.
+        let space := separator mode
+        let level := binaryPrecedence .eq
+        let renderedLeft := wrap level left (← expr mode left)
+        let renderedRight := wrap (level + 1) right (← expr mode right)
+        pure <| renderedLeft ++ space ++ "!==" ++ space ++ renderedRight
     | .unary op value => do
         let rendered := wrap unaryPrecedence value (← expr mode value)
         -- `- -x` would merge into a decrement; keep the inner negation grouped.

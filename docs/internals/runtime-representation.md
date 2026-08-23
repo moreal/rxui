@@ -175,7 +175,9 @@ contains the target strictly inside it (an empty or missing entry, a target
 that is that child itself, or no keyed row dispatches nothing); `dispatch`
 receives the same arguments as `listenDelegated`'s, with the row's key. Rows
 cloned from a template therefore carry no per-row `data-lrx-action`
-attributes. `listenDelegated` is unchanged for attribute-marked controls. See
+attributes, and the benchmark's button row is marked the same way so its six
+buttons dispatch by wrapper position (ADR-0032). `listenDelegated` is
+unchanged for attribute-marked controls. See
 [ADR-0030](../adr/0030-runtime-abi-v15-structural-delegation.md).
 
 The keyed region host (`leanrx_region.mjs`) exposes `createKeyedRegion(parent,

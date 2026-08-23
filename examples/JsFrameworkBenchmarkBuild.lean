@@ -7,6 +7,26 @@ namespace LeanRxExamples.JsFrameworkBenchmarkBuild
 
 open LeanRx LeanRxExamples.JsFrameworkBenchmark
 
+-- The upstream label of each button, by its action slug.
+private def buttonLabel : String → String
+  | "run" => "Create 1,000 rows"
+  | "runlots" => "Create 10,000 rows"
+  | "add" => "Append 1,000 rows"
+  | "update" => "Update every 10th row"
+  | "clear" => "Clear"
+  | "swaprows" => "Swap Rows"
+  | slug => slug
+
+-- The six button wrappers, adjacent (no whitespace text nodes between them)
+-- and in `buttonActions` order, so the `#buttons` row's childNodes index of a
+-- wrapper is the index of its action (ADR-0032); the button ids are the
+-- upstream selectors and equal the slugs.
+private def buttonsHtml : String :=
+  String.join <| Backend.JsFrameworkBenchmark.buttonActions.map fun slug =>
+    "<div class=\"col-sm-6 smallpad\"><button type=\"button\" " ++
+      "class=\"btn btn-primary btn-block\" id=\"" ++ slug ++ "\">" ++
+      buttonLabel slug ++ "</button></div>"
+
 private def indexHtml (name : String) : String :=
   "<!DOCTYPE html>\n" ++
   "<html lang=\"en\">\n" ++
@@ -21,26 +41,8 @@ private def indexHtml (name : String) : String :=
   "    <div class=\"jumbotron\">\n" ++
   "      <div class=\"row\">\n" ++
   "        <div class=\"col-md-6\"><h1>" ++ name ++ "</h1></div>\n" ++
-  "        <div class=\"col-md-6\"><div class=\"row\">\n" ++
-  "          <div class=\"col-sm-6 smallpad\"><button type=\"button\" " ++
-    "class=\"btn btn-primary btn-block\" id=\"run\" data-lrx-action=\"run\">" ++
-    "Create 1,000 rows</button></div>\n" ++
-  "          <div class=\"col-sm-6 smallpad\"><button type=\"button\" " ++
-    "class=\"btn btn-primary btn-block\" id=\"runlots\" data-lrx-action=\"runlots\">" ++
-    "Create 10,000 rows</button></div>\n" ++
-  "          <div class=\"col-sm-6 smallpad\"><button type=\"button\" " ++
-    "class=\"btn btn-primary btn-block\" id=\"add\" data-lrx-action=\"add\">" ++
-    "Append 1,000 rows</button></div>\n" ++
-  "          <div class=\"col-sm-6 smallpad\"><button type=\"button\" " ++
-    "class=\"btn btn-primary btn-block\" id=\"update\" data-lrx-action=\"update\">" ++
-    "Update every 10th row</button></div>\n" ++
-  "          <div class=\"col-sm-6 smallpad\"><button type=\"button\" " ++
-    "class=\"btn btn-primary btn-block\" id=\"clear\" data-lrx-action=\"clear\">" ++
-    "Clear</button></div>\n" ++
-  "          <div class=\"col-sm-6 smallpad\"><button type=\"button\" " ++
-    "class=\"btn btn-primary btn-block\" id=\"swaprows\" " ++
-    "data-lrx-action=\"swaprows\">Swap Rows</button></div>\n" ++
-  "        </div></div>\n" ++
+  "        <div class=\"col-md-6\"><div class=\"row\" id=\"buttons\">" ++ buttonsHtml ++
+    "</div></div>\n" ++
   "      </div>\n" ++
   "    </div>\n" ++
   "    <table class=\"table table-hover table-striped test-data\">\n" ++
