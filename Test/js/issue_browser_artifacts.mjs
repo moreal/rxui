@@ -20,7 +20,7 @@ const expectedPort = {
 };
 if (
   manifest.module !== "IssueBrowser.mjs" ||
-  manifest.runtimeAbi !== 12 ||
+  manifest.runtimeAbi !== 13 ||
   JSON.stringify(manifest.stateSlots) !==
     JSON.stringify(["string", "list<record<Issue>>", "nat", "bool"]) ||
   manifest.sourceCount !== 4 ||

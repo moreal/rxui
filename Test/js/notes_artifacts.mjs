@@ -10,7 +10,7 @@ const manifest = JSON.parse(
 );
 if (
   manifest.module !== "Notes.mjs" ||
-  manifest.runtimeAbi !== 12 ||
+  manifest.runtimeAbi !== 13 ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string"]) ||
   manifest.sourceCount !== 1 ||
   manifest.derivedCount !== 0 ||

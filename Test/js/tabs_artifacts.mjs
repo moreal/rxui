@@ -12,7 +12,7 @@ if (
   manifest.compilerVersion !== "0.1.0-dev" ||
   manifest.leanToolchain !== "leanprover/lean4:v4.33.0" ||
   manifest.module !== "DependentTabs.mjs" ||
-  manifest.runtimeAbi !== 12 ||
+  manifest.runtimeAbi !== 13 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["fin<3>"]) ||
   manifest.sourceCount !== 1 ||

@@ -64,7 +64,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 12. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 13. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -143,6 +143,15 @@ fetches; the host comments are condensed to the terse style of the other hosts
 and the keyed-region contract below is the reference for the prose they held.
 See [ADR-0022](../adr/0022-runtime-abi-v12-disposer-in-dom-host.md).
 
+ABI 13 adds two more targeted operations to the keyed region, alongside
+`updateAt`: `swapAt(first, second, items, context)` exchanges the retained rows
+at two positions with at most two node moves (one when adjacent) and re-runs
+the update callback for exactly those positions, and `removeAt(index, key,
+context)` disposes and detaches one retained row while the later rows shift a
+position without an update callback; both check their keys before any callback
+or DOM mutation (`LRX-REGION-003` otherwise). See
+[ADR-0026](../adr/0026-runtime-abi-v13-keyed-swap-and-remove.md).
+
 The keyed region host (`leanrx_region.mjs`) exposes `createKeyedRegion(parent,
 mountItem, updateItem, disposeItem, rootItem?)` to generated code and shares
 `detach`, `anchor`, `snapshot`, `placeInOrder`, and `rebuild` with the delta and
@@ -157,7 +166,19 @@ not grow reveals the repetition); it then forwards `context` to
 `mountItem(item, index, context)`, `updateItem(handle, item, index, context)`,
 and `disposeItem(handle, key, context)`. `updateAt(index, item, context)`
 re-runs `updateItem` for one retained position whose key must match
-(`LRX-REGION-003` otherwise) and changes no shape, order, or identity.
+(`LRX-REGION-003` otherwise) and changes no shape, order, or identity;
+`swapAt(first, second, items, context)` requires `items` to differ from the
+current order only by the exchange of positions `first < second` (so
+`items[second][0]` is checked at `first` and `items[first][0]` at `second`),
+moves the higher node before the lower one and, unless they are adjacent, the
+lower node before the old successor of the higher one, then re-runs
+`updateItem` for both positions; `removeAt(index, key, context)` disposes the
+retained row at `index` (whose key must be `key`), detaches its node, and
+unregisters the key, and the later rows keep their handles and nodes one
+position earlier without an update callback. A backend that lowers an
+operation through one of these must argue that the result equals a full
+`update` (no other row's render payload changed, and for `removeAt` no row's
+payload depends on its position).
 Placement inserts new nodes and moves only the retained nodes outside one
 longest order-preserving subsequence after trimming the unchanged prefix and
 suffix, so a two-row swap costs two DOM moves; ties keep earlier target

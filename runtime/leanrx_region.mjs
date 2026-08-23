@@ -117,7 +117,10 @@ function mismatchedKey(index, key) {
 
 // update(items, context) reconciles the whole target (items[i][0] is the key),
 // forwarding context to the mount/update/dispose callbacks; updateAt(index,
-// item, context) re-runs updateItem for one retained, key-checked position.
+// item, context) re-runs updateItem for one retained, key-checked position;
+// swapAt(first, second, items, context) exchanges two retained positions with
+// at most two moves and re-runs updateItem for them; removeAt(index, key,
+// context) disposes one retained row and shifts the rest without re-rendering.
 export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, rootItem = null) {
   const marker = anchor(parent, "leanrx:keyed");
   const metrics = [0, 0, 0, 0]; // mounts/updates/moves/disposals
@@ -205,6 +208,44 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       if (entry === undefined || entry.key !== item[0]) throw mismatchedKey(index, item[0]);
       updateItem(entry.handle, item, index, context);
       metrics[1] += 1;
+    },
+    // items is the target order, which must differ from the current order only
+    // by the exchange of first < second, so items[second][0] is checked at first
+    // and items[first][0] at second before any callback or DOM mutation
+    // (LRX-REGION-003 otherwise).
+    swapAt(first, second, items, context) {
+      if (disposed) return;
+      const low = current[first];
+      const high = current[second];
+      const lowItem = items[first];
+      const highItem = items[second];
+      if (!(first < second) || low === undefined || high === undefined || low.key !== highItem[0]) {
+        throw mismatchedKey(first, highItem?.[0]);
+      }
+      if (high.key !== lowItem[0]) throw mismatchedKey(second, lowItem[0]);
+      const adjacent = second === first + 1;
+      const after = current[second + 1];
+      parent.insertBefore(high.node, low.node);
+      if (!adjacent) parent.insertBefore(low.node, after === undefined ? marker : after.node);
+      current[first] = high;
+      current[second] = low;
+      metrics[2] += adjacent ? 1 : 2;
+      updateItem(high.handle, lowItem, first, context);
+      updateItem(low.handle, highItem, second, context);
+      metrics[1] += 2;
+    },
+    // The retained row at index, whose key must be key (LRX-REGION-003
+    // otherwise), is disposed and detached; later rows shift one position and
+    // keep their handles and nodes without an update callback.
+    removeAt(index, key, context) {
+      if (disposed) return;
+      const entry = current[index];
+      if (entry === undefined || entry.key !== key) throw mismatchedKey(index, key);
+      current.splice(index, 1);
+      disposeItem(entry.handle, key, context);
+      detach(entry.node);
+      entries.delete(key);
+      metrics[3] += 1;
     },
     instrumentation() {
       return snapshot(metrics);

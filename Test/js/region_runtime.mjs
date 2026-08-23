@@ -695,6 +695,121 @@ function values(parent) {
 }
 
 {
+  // swapAt exchanges two retained positions with two moves (one when adjacent),
+  // re-runs the update callback for exactly those positions with the forwarded
+  // context, and refuses mismatched keys or positions before calling anything.
+  const parent = new FakeParent();
+  const calls = [];
+  const region = createKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}`)],
+    (handle, item, index, context) => { calls.push([item[0], index, context]); },
+    () => {},
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"], [3, "c"], [4, "d"], [5, "e"]]);
+  const nodes = parent.children.slice(0, 5);
+  const context = { tag: "swap" };
+  region.swapAt(1, 3, [[1, "a"], [4, "d"], [3, "c"], [2, "b"], [5, "e"]], context);
+  if (JSON.stringify(values(parent)) !== '["1","4","3","2","5"]' ||
+      parent.children[1] !== nodes[3] || parent.children[3] !== nodes[1] ||
+      JSON.stringify(calls) !== '[[4,1,{"tag":"swap"}],[2,3,{"tag":"swap"}]]' ||
+      JSON.stringify(region.instrumentation()) !== "[5,2,7,0]") {
+    throw new Error(`swapAt did not exchange exactly two rows: ${JSON.stringify(calls)}`);
+  }
+  region.swapAt(3, 4, [[1, "a"], [4, "d"], [3, "c"], [5, "e"], [2, "b"]], context);
+  if (JSON.stringify(values(parent)) !== '["1","4","3","5","2"]' || parent.children[4] !== nodes[1] ||
+      calls.length !== 4 || JSON.stringify(region.instrumentation()) !== "[5,4,8,0]") {
+    throw new Error("swapAt of adjacent rows did not move exactly one node");
+  }
+  function expectSwapMismatch(first, second, items) {
+    let failed = false;
+    try {
+      region.swapAt(first, second, items, context);
+    } catch (error) {
+      failed = String(error).includes("LRX-REGION-003");
+    }
+    if (!failed || calls.length !== 4 || JSON.stringify(values(parent)) !== '["1","4","3","5","2"]') {
+      throw new Error(`swapAt accepted positions ${first}/${second}`);
+    }
+  }
+  const order = [[1, "a"], [4, "d"], [3, "c"], [5, "e"], [2, "b"]];
+  expectSwapMismatch(0, 2, order);
+  expectSwapMismatch(2, 0, [[3, "c"], [4, "d"], [1, "a"], [5, "e"], [2, "b"]]);
+  expectSwapMismatch(1, 1, order);
+  expectSwapMismatch(3, 5, order);
+  expectSwapMismatch(0, 4, [[2, "b"], [4, "d"], [3, "c"], [5, "e"], [9, "x"]]);
+  region.update([[4, "d"], [1, "a"]]);
+  region.swapAt(0, 1, [[1, "a"], [4, "d"]], context);
+  if (JSON.stringify(values(parent)) !== '["1","4"]' || parent.children[0] !== nodes[0] ||
+      calls.length !== 8 || JSON.stringify(region.instrumentation()) !== "[5,8,10,3]") {
+    throw new Error("swapAt after a reorder did not address the current order");
+  }
+  region.dispose();
+  region.swapAt(0, 1, [[4, "d"], [1, "a"]], context);
+  if (calls.length !== 8 || parent.children.length !== 0) {
+    throw new Error("swapAt ran after disposal");
+  }
+}
+
+{
+  // removeAt disposes and detaches one retained row whose key must match,
+  // shifts the later rows without an update callback, unregisters the key,
+  // and is a no-op after disposal.
+  const parent = new FakeParent();
+  const updates = [];
+  const disposals = [];
+  const region = createKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}`)],
+    (handle, item, index, context) => { updates.push([item[0], index, context]); },
+    (handle, key, context) => { disposals.push([key, context]); },
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"], [3, "c"], [4, "d"]]);
+  const nodes = parent.children.slice(0, 4);
+  const context = { tag: "remove" };
+  region.removeAt(1, 2, context);
+  if (JSON.stringify(values(parent)) !== '["1","3","4"]' || nodes[1].parentNode !== null ||
+      parent.children[1] !== nodes[2] || updates.length !== 0 ||
+      JSON.stringify(disposals) !== '[[2,{"tag":"remove"}]]' ||
+      JSON.stringify(region.instrumentation()) !== "[4,0,4,1]") {
+    throw new Error(`removeAt did not remove exactly one row: ${JSON.stringify(disposals)}`);
+  }
+  function expectRemoveMismatch(index, key) {
+    let failed = false;
+    try {
+      region.removeAt(index, key, context);
+    } catch (error) {
+      failed = String(error).includes("LRX-REGION-003");
+    }
+    if (!failed || disposals.length !== 1 || JSON.stringify(values(parent)) !== '["1","3","4"]') {
+      throw new Error(`removeAt accepted key ${key} at position ${index}`);
+    }
+  }
+  expectRemoveMismatch(1, 2);
+  expectRemoveMismatch(0, 3);
+  expectRemoveMismatch(3, 4);
+  expectRemoveMismatch(-1, 1);
+  region.update([[1, "a"], [2, "B"], [3, "c"], [4, "d"]]);
+  if (JSON.stringify(values(parent)) !== '["1","2","3","4"]' || parent.children[2] !== nodes[2] ||
+      JSON.stringify(region.instrumentation()) !== "[5,3,5,1]") {
+    throw new Error("removeAt left a stale key behind");
+  }
+  region.removeAt(3, 4, context);
+  region.removeAt(0, 1, context);
+  if (JSON.stringify(values(parent)) !== '["2","3"]' || disposals.length !== 3 ||
+      updates.length !== 3 || JSON.stringify(region.instrumentation()) !== "[5,3,5,3]") {
+    throw new Error("removeAt at the ends did not keep the middle rows");
+  }
+  region.dispose();
+  region.removeAt(0, 2, context);
+  if (disposals.length !== 5 || parent.children.length !== 0) {
+    throw new Error("removeAt ran after disposal");
+  }
+}
+
+{
   // An empty region registers each new key with one index insertion; the
   // repeated key may be far from its first occurrence and nothing is mounted.
   const parent = new FakeParent();

@@ -101,7 +101,7 @@ fi
 
 doctor_output="$(lake exe leanrx -- doctor)"
 for fragment in "LeanRx doctor" "[ok] compiler: 0.1.0-dev" \
-    "[ok] toolchain: leanprover/lean4:v4.33.0" "[ok] runtime ABI: 12" \
+    "[ok] toolchain: leanprover/lean4:v4.33.0" "[ok] runtime ABI: 13" \
     "[ok] node:" "[ok] pnpm: 10.33.0" "[ok] browser hosts: present" \
     "[ok] playwright: Version 1.62.1" "[ok] chromium: installed" \
     "[ok] backend smoke: valid" "result: ready"; do

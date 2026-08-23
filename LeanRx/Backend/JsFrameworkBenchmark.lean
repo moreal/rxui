@@ -347,6 +347,49 @@ private def commitRowsFunction : Except Error Function := do
     ]
   }
 
+/-- Commits a change that exchanges the rows at two positions and leaves every
+other row's render payload unchanged: the region moves the two nodes and
+re-runs the update callback for exactly those positions, which is equivalent
+to a full commit because no row's label or selection flag depends on its
+position. -/
+private def commitSwapFunction : Except Error Function := do
+  let name ← Ident.checked "$lrx_benchmarkCommitSwap"
+  let state ← Ident.checked "state"
+  let context ← Ident.checked "context"
+  let first ← Ident.checked "first"
+  let second ← Ident.checked "second"
+  let action ← Ident.checked "action"
+  let metrics ← Ident.checked "metrics"
+  pure {
+    name
+    params := #[state, context, first, second, action]
+    body := #[.const metrics (arrayAt context 1)] ++ (commitMetrics metrics action).toArray ++ #[
+      .expr <| method (arrayAt context 0) "swapAt" [
+        .ident first, .ident second, arrayAt state 0, .ident context]
+    ]
+  }
+
+/-- Commits the removal of one row: the region disposes exactly that row and
+shifts the later rows without re-running their update callbacks, which is
+equivalent to a full commit because no row's label or selection flag depends
+on its position or on the removed row (a removed selected row leaves no row
+selected, and no other row was selected before). -/
+private def commitRemoveFunction : Except Error Function := do
+  let name ← Ident.checked "$lrx_benchmarkCommitRemove"
+  let state ← Ident.checked "state"
+  let context ← Ident.checked "context"
+  let index ← Ident.checked "index"
+  let key ← Ident.checked "key"
+  let action ← Ident.checked "action"
+  let metrics ← Ident.checked "metrics"
+  pure {
+    name
+    params := #[state, context, index, key, action]
+    body := #[.const metrics (arrayAt context 1)] ++ (commitMetrics metrics action).toArray ++ #[
+      .expr <| method (arrayAt context 0) "removeAt" [.ident index, .ident key, .ident context]
+    ]
+  }
+
 private def replaceFunction (buildData commit : Ident) : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkReplace"
   let state ← Ident.checked "state"
@@ -434,7 +477,9 @@ private def clearFunction (commit : Ident) : Except Error Function := do
     ]
   }
 
-private def swapFunction (firstIndex secondIndex : Nat) (commit : Ident) : Except Error Function := do
+/-- Swapping two rows changes only their positions, so the commit goes through
+`commitSwap` instead of reconciling every row. -/
+private def swapFunction (firstIndex secondIndex : Nat) (commitSwap : Ident) : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkSwap"
   let state ← Ident.checked "state"
   let context ← Ident.checked "context"
@@ -454,8 +499,9 @@ private def swapFunction (firstIndex secondIndex : Nat) (commit : Ident) : Excep
         .assign (.index (.ident rows) (uint firstIndex)) (.ident secondRow),
         .assign (.index (.ident rows) (uint secondIndex)) (.ident firstRow),
         addAt metrics 0 (uint 2),
-        .expr <| call commit [
-          .ident state, .ident context, .literal (.string "swaprows")]
+        .expr <| call commitSwap [
+          .ident state, .ident context, uint firstIndex, uint secondIndex,
+          .literal (.string "swaprows")]
       ]
     ]
   }
@@ -492,7 +538,9 @@ private def selectFunction (runtime : RuntimeNames) (findIndex commitRows : Iden
     ]
   }
 
-private def removeFunction (runtime : RuntimeNames) (findIndex commit : Ident) :
+/-- Removing a row changes no other row's render payload, so the commit goes
+through `commitRemove` instead of reconciling every row. -/
+private def removeFunction (runtime : RuntimeNames) (findIndex commitRemove : Ident) :
     Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkRemove"
   let state ← Ident.checked "state"
@@ -514,8 +562,9 @@ private def removeFunction (runtime : RuntimeNames) (findIndex commit : Ident) :
           .assign (.index (.ident state) (uint 2)) null
         ],
         incrementAt metrics 0,
-        .expr <| call commit [
-          .ident state, .ident context, .literal (.string "remove")]
+        .expr <| call commitRemove [
+          .ident state, .ident context, .ident foundIndex, .ident parsedKey,
+          .literal (.string "remove")]
       ]
     ]
   }
@@ -626,13 +675,15 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
   let rowRoot ← rowRootFunction
   let commit ← commitFunction
   let commitRows ← commitRowsFunction
+  let commitSwap ← commitSwapFunction
+  let commitRemove ← commitRemoveFunction
   let replace ← replaceFunction buildData.name commit.name
   let add ← addFunction checked.spec.rowCount buildData.name commit.name
   let updateRows ← updateFunction runtime checked.spec.updateStride commit.name
   let clearRows ← clearFunction commit.name
-  let swapRows ← swapFunction checked.spec.swapFirst checked.spec.swapSecond commit.name
+  let swapRows ← swapFunction checked.spec.swapFirst checked.spec.swapSecond commitSwap.name
   let selectRow ← selectFunction runtime findIndex.name commitRows.name
-  let removeRow ← removeFunction runtime findIndex.name commit.name
+  let removeRow ← removeFunction runtime findIndex.name commitRemove.name
   let dispatch ← dispatchFunction checked.spec replace.name add.name updateRows.name
     clearRows.name swapRows.name selectRow.name removeRow.name
   let mount ← mountFunction runtime rowTemplate.name mountRow.name updateRow.name
@@ -640,7 +691,8 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
   let declarations : Array Decl := #[
     .function random, .function buildData, .function findIndex,
     .function rowTemplate, .function mountRow, .function updateRow, .function disposeRow, .function rowRoot,
-    .function commit, .function commitRows, .function replace, .function add, .function updateRows,
+    .function commit, .function commitRows, .function commitSwap, .function commitRemove,
+    .function replace, .function add, .function updateRows,
     .function clearRows, .function swapRows, .function selectRow, .function removeRow,
     .function dispatch, .function mount
   ]

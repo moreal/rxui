@@ -82,10 +82,18 @@ the same way. `updateAt(index, item, context)` re-runs the update callback for
 one retained position whose key must be `item[0]` (LRX-REGION-003 otherwise,
 before any callback); it changes no shape, order, or identity and is
 equivalent to an update whose other items are unchanged, so a backend may use
-it when it can show that only that row's payload changed. Into an empty
-region, each new key is registered with a single index insertion and a size
-that did not grow reveals the repeated key; validation still fails before any
-callback or DOM mutation.
+it when it can show that only that row's payload changed. Since ABI 13 two
+more targeted operations follow the same rule: `swapAt(first, second, items,
+context)` exchanges the retained rows at `first < second` (checking
+`items[second][0]` at `first` and `items[first][0]` at `second` first) with at
+most two moves and re-runs the update callback for exactly those positions,
+and `removeAt(index, key, context)` disposes and detaches the retained row at
+`index` (whose key must be `key`) while the later rows shift one position
+without an update callback; a backend uses them when it can show that the
+exchange or removal changes no other row's payload (for `removeAt`, that no
+row's payload depends on its position). Into an empty region, each new key is
+registered with a single index insertion and a size that did not grow reveals
+the repeated key; validation still fails before any callback or DOM mutation.
 
 TodoMVC begins from a private pure `Todo.State` and closed `Todo.Msg` update
 algebra. Add/toggle/delete/filter/edit/clear operations are total and preserve

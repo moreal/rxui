@@ -18,7 +18,7 @@ def run : IO Unit := do
   assertEq #["mountFull", "mountDelta", "mountHybrid"] emitted.manifest.exports
   assertEq 10000 checked.spec.rowCount
   assertEq 7 emitted.manifest.eventCount
-  assertEq 12 emitted.manifest.runtimeAbi
+  assertEq 13 emitted.manifest.runtimeAbi
   assertEq #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_delta_region.mjs"]
     emitted.manifest.hostImports
   unless emitted.manifest.features.contains "structural-delta" &&

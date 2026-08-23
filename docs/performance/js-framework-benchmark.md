@@ -26,7 +26,10 @@ trim plus a longest order-preserving subsequence, so a swap costs two DOM
 moves), and rebuilds a fully owned parent with one bulk removal and one
 detached bulk insertion. Selecting a row re-runs the update callback for
 exactly the previously and newly selected rows through the region's
-`updateAt` (ADR-0020); every other operation commits the whole row list. It
+`updateAt` (ADR-0020), swapping two rows goes through `swapAt` (two node
+moves and two update callbacks) and removing a row through `removeAt` (one
+disposal, no update callbacks) since ADR-0026; every other operation commits
+the whole row list. It
 does not use the optional structural delta path or the conditional/positional
 regions, or the typed form-event adapters, and since ABI 9/10/11 it ships none
 of those host modules; since ABI 12 its disposer comes from the DOM host. Since
@@ -87,7 +90,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 9,341 | 3,217 | 3,665 |
+| Complete fetched application | 10,087 | 3,449 | 3,913 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.

@@ -422,6 +422,27 @@ Complete — M0 through M11
   deviation; append 37.8 → 36.8 against 38.6) and the single-sample first
   paint at 81.3 ms against Solid's 76.8 ms (77.8 against 81.5 in the
   previous run; the row does not separate the two).
+- Made swapping and removing rows cheaper without touching the checked Lean
+  models (ADR-0026, runtime ABI 13), after a paired local measurement against
+  upstream vanilla showed the remaining create/append gap to be the id
+  representation and per-row markup rather than the key index (which the
+  duplicate-key contract requires) and a swap's two DOM moves to be the floor
+  (`Node.moveBefore` measures the same): the keyed region gains `swapAt`
+  (two moves, one when adjacent, update callbacks for exactly the two
+  positions) and `removeAt` (one disposal, later rows shift without a
+  callback), both validating keys before any callback or DOM mutation, and
+  the benchmark backend lowers `swaprows` and `remove` through them instead
+  of reconciling every row. Locally (warm, unthrottled) swap script falls
+  0.14 → 0.05 ms (vanilla 0.04) and remove 0.19 → 0.085 ms (vanilla 0.12); a
+  focused upstream A/B (4×/2× CPU slowdown, vanilla as drift control)
+  measured swap script 1.31 → 0.51 ms and remove 0.43 → 0.24 ms. The fake-DOM
+  suite locks both operations; the baseline moves 9,341 → 10,087 raw,
+  3,217 → 3,449 Brotli (`main.mjs` alone 8,421 / 3,089 bytes against Solid's
+  11,563 / 4,358). The headless run recorded in `BENCHMARK.md` measured swap
+  23.2 → 20.3 ms (script 0.99 → 0.40) against Solid's 23.5 ms and remove
+  17.8 → 16.9 ms against 17.6, the other CPU rows moving with Solid by drift
+  and every CPU row below Solid's, at 9.9 KB shipped (3.4 KB Brotli against
+  Solid's 11.5 / 4.5 KB).
 
 ## In progress
 

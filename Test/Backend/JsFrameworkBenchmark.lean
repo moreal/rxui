@@ -17,7 +17,7 @@ def run : IO Unit := do
     | .error error => throw <| IO.userError s!"{error.code}: {error.message}"
   assertEq #["mount"] emitted.manifest.exports
   assertEq 8 emitted.manifest.eventCount
-  assertEq 12 emitted.manifest.runtimeAbi
+  assertEq 13 emitted.manifest.runtimeAbi
   assertEq #["./leanrx_dom.mjs", "./leanrx_region.mjs"]
     emitted.manifest.hostImports
   unless emitted.manifest.features.contains "keyed-region" &&
@@ -42,5 +42,13 @@ def run : IO Unit := do
       ¬readable.contains "$lrx_benchmarkProject" &&
       readable.contains "[\"update\"](state[0], context)" do
     throw <| IO.userError "benchmark lowering lost the context-forwarding keyed commit"
+  -- A swap exchanges exactly the two model positions through `swapAt` and a
+  -- removal disposes exactly the found row through `removeAt` (ADR-0026);
+  -- neither reconciles the whole row list.
+  unless readable.contains "[\"swapAt\"](first, second, state[0], context)" &&
+      readable.contains "$lrx_benchmarkCommitSwap(state, context, 1, 998, \"swaprows\")" &&
+      readable.contains "[\"removeAt\"](index, key, context)" &&
+      readable.contains "$lrx_benchmarkCommitRemove(state, context, foundIndex, parsedKey, \"remove\")" do
+    throw <| IO.userError "benchmark lowering lost the targeted swap/remove commits"
 
 end LeanRxTest.Backend.JsFrameworkBenchmark
