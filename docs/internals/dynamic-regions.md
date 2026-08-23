@@ -60,15 +60,23 @@ earlier target positions in place, so reversing two rows moves only the second
 and an edit focused inside the first survives. A swap therefore costs two
 placements, a rotation one, and appends, prepends, middle insertions, and
 removals place only the new nodes. Retained keys are matched by position first,
-so an unchanged order never hashes a key; new keys register in the key index
-during validation and a repeated key unregisters them before failing. If a
-target retains no row, the region rebuilds: when it owns its whole parent (its
-first node through its marker, with no foreign sibling), the old rows are
-removed with one bulk clear, the marker is re-appended, and, while the parent is
-connected, is not the active element, and is about to receive rows, the parent
-is detached for the bulk insertion and restored at the same position;
-otherwise each node is detached individually. Pure clears and updates with a
-retained row never detach the parent. The "placements/moves" counter counts
+so an unchanged order never hashes a key. The first key away from its position
+decides how the rest are validated: when every key is a number, every key a
+bigint, or every key a string and the keys are strictly increasing or strictly
+decreasing, they are pairwise distinct (`<` totally orders each of those types;
+it is not transitive across them, so mixed types never qualify), and the host
+consults its key index only while some previous row is still unmatched;
+otherwise every key away from its position is looked up and a repeated key
+drops the index and fails. The index is built from the previous rows when an
+update first needs it, every new key registers in it while it exists, and it
+is dropped whenever nothing is retained, so fills, appends, and replacements in
+key order never hash a key. If a target retains no row, the region rebuilds:
+when it owns its whole parent (its first node through its marker, with no
+foreign sibling), the old rows are removed with one bulk clear, the marker is
+re-appended, and, while the parent is connected, is not the active element, and
+is about to receive rows, the parent is detached for the bulk insertion and
+restored at the same position; otherwise each node is detached individually.
+Pure clears and updates with a retained row never detach the parent. The "placements/moves" counter counts
 `insertBefore` calls in every case, and a deterministic fuzz over random keyed
 targets checks order, identity, leak-freedom, and the placement bound.
 
@@ -91,9 +99,9 @@ and `removeAt(index, key, context)` disposes and detaches the retained row at
 `index` (whose key must be `key`) while the later rows shift one position
 without an update callback; a backend uses them when it can show that the
 exchange or removal changes no other row's payload (for `removeAt`, that no
-row's payload depends on its position). Into an empty region, each new key is
-registered with a single index insertion and a size that did not grow reveals
-the repeated key; validation still fails before any callback or DOM mutation.
+row's payload depends on its position). `removeAt` unregisters the key only
+while an index exists; validation always fails before any callback or DOM
+mutation.
 
 TodoMVC begins from a private pure `Todo.State` and closed `Todo.Msg` update
 algebra. Add/toggle/delete/filter/edit/clear operations are total and preserve

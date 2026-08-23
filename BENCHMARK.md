@@ -14,10 +14,10 @@ keep the run short.
 ./scripts/run_js_framework_benchmark.sh --framework keyed/react-hooks --framework keyed/solid --headless --no-results
 ```
 
-- Measured at: 2026-08-23 08:17:11 UTC
-- LeanRx commit: `65130a6a9028cbb51aa8708dd1041441b4ad7a95` plus the uncommitted
-  ADR-0026 region-host and backend changes (tree state: dirty; see ADR-0026 and
-  the archived `repository-changes.patch`)
+- Measured at: 2026-08-23 10:00:25 UTC
+- LeanRx commit: `aeb6bdf661b1dd81e347e4cfcf4ba19510a854e7` plus the uncommitted
+  ADR-0027 keyed-region host change (tree state: dirty; see ADR-0027 and the
+  archived `repository-changes.patch`)
 - Chrome mode: headless (headless is suitable for
   regression tracking; see the integration guide for why visible Chrome is
   preferred for publishable comparisons)
@@ -27,7 +27,7 @@ keep the run short.
 
 Full raw JSON per benchmark, Chrome traces, the generated LeanRx framework
 snapshot, the exact repository patch, and this environment metadata are
-archived under `.tmp/js-framework-benchmark-results/20260823T081711Z/` (not
+archived under `.tmp/js-framework-benchmark-results/20260823T100025Z/` (not
 committed; regenerate with the command above).
 
 Lower is better in every table below.
@@ -36,78 +36,108 @@ Lower is better in every table below.
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Create 1,000 rows (ms) | 37.8 | 31.0 | 29.9 |
-| Replace all 1,000 rows (ms) | 45.9 | 35.7 | 33.1 |
-| Partial update, every 10th row, 4× CPU slowdown (ms) | 25.2 | 20.0 | 19.3 |
-| Select row, 4× CPU slowdown (ms) | 9.4 | 7.4 | 5.3 |
-| Swap rows, 4× CPU slowdown (ms) | 148.9 | 23.5 | 20.3 |
-| Remove row, 2× CPU slowdown (ms) | 19.9 | 17.6 | 16.9 |
-| Create 10,000 rows (ms) | 649.7 | 345.6 | 325.0 |
-| Append 1,000 rows to 1,000 rows (ms) | 44.5 | 37.5 | 35.8 |
-| Clear 1,000 rows, 4× CPU slowdown (ms) | 26.8 | 18.5 | 14.7 |
+| Create 1,000 rows (ms) | 38.7 | 31.8 | 30.7 |
+| Replace all 1,000 rows (ms) | 46.8 | 36.0 | 33.6 |
+| Partial update, every 10th row, 4× CPU slowdown (ms) | 27.5 | 22.7 | 18.9 |
+| Select row, 4× CPU slowdown (ms) | 10.8 | 7.5 | 6.4 |
+| Swap rows, 4× CPU slowdown (ms) | 153.5 | 23.3 | 23.1 |
+| Remove row, 2× CPU slowdown (ms) | 19.7 | 17.5 | 16.8 |
+| Create 10,000 rows (ms) | 664.3 | 362.8 | 323.1 |
+| Append 1,000 rows to 1,000 rows (ms) | 45.2 | 39.4 | 36.6 |
+| Clear 1,000 rows, 4× CPU slowdown (ms) | 28.0 | 19.9 | 16.2 |
 
 ## Memory
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Memory after page load (MB) | 1.18 | 0.53 | 0.60 |
-| Memory after adding 1,000 rows (MB) | 4.42 | 2.70 | 2.03 |
-| Memory after adding then clearing rows (MB) | 1.97 | 0.77 | 0.71 |
+| Memory after page load (MB) | 1.18 | 0.61 | 0.60 |
+| Memory after adding 1,000 rows (MB) | 4.42 | 2.70 | 2.01 |
+| Memory after adding then clearing rows (MB) | 1.97 | 0.79 | 0.71 |
 
 ## Startup and size
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Uncompressed JS size (KB) | 190.30 | 11.50 | 9.90 |
-| Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 3.40 |
-| Startup time to first paint (ms) | 309.00 | 73.10 | 68.60 |
+| Uncompressed JS size (KB) | 190.30 | 11.50 | 10.10 |
+| Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 3.50 |
+| Startup time to first paint (ms) | 333.70 | 78.90 | 93.80 |
 
 ## Change from the previous run
 
-The previous recorded run (commit `19d9fe0` plus the ADR-0025 printer and
-backend changes that became `65130a6`, same runner, headless, the same three
-frameworks) measured LeanRx at 30.3 ms create 1,000, 33.8 ms replace, 20.8 ms
-partial update, 6.3 ms select, 23.2 ms swap, 17.8 ms remove, 330.8 ms create
-10,000, 36.8 ms append, and 15.2 ms clear, with 9.10 KB uncompressed / 3.10 KB
-Brotli and 81.3 ms to first paint. This run ships the ADR-0026 build (runtime
-ABI 13): the keyed region host gains `swapAt` and `removeAt`, and the benchmark
-backend lowers a swap through `swapAt` (two DOM moves and two update callbacks
-instead of reconciling all 1,000 rows) and a removal through `removeAt` (one
-disposal instead of 999 update callbacks and a key-index pass); the Lean
-models and every other operation are unchanged. Swap falls 23.2 → 20.3 ms
-(script 0.99 → 0.40 ms, paint 19.3 → 17.6; Solid 25.5 → 23.5, script 2.07 →
-1.97, so the row is no longer a coin flip) and remove 17.8 → 16.9 ms (script
-0.40 → 0.27; Solid 18.3 → 17.6). The other CPU rows moved together with Solid
-by this run's drift: create 1,000 30.3 → 29.9 (Solid 32.1 → 31.0), replace
-33.8 → 33.1 (36.9 → 35.7), partial update 20.8 → 19.3 (21.5 → 20.0; script
-1.27 → 1.24), select 6.3 → 5.3 (8.0 → 7.4), create 10,000 330.8 → 325.0
-(355.3 → 345.6; script 28.3 → 28.1 against 34.6), append 36.8 → 35.8 (38.6 →
-37.5), and clear 15.2 → 14.7 (20.1 → 18.5); every CPU row is below Solid's.
-The shipped application grows from 9.1 to 9.9 KB uncompressed and from 3.1 to
-3.4 KB Brotli (local baseline 9,341 → 10,087 raw, 3,217 → 3,449 Brotli bytes,
-of which `main.mjs` is 8,421 / 3,089 against Solid's single 11,563 /
-4,358-byte module), the cost of the two new region operations. First paint is
+The previous recorded run (commit `65130a6` plus the ADR-0026 region-host and
+backend changes that became `aeb6bdf`, same runner, headless, the same three
+frameworks) measured LeanRx at 29.9 ms create 1,000, 33.1 ms replace, 19.3 ms
+partial update, 5.3 ms select, 20.3 ms swap, 16.9 ms remove, 325.0 ms create
+10,000, 35.8 ms append, and 14.7 ms clear, with 9.90 KB uncompressed / 3.40 KB
+Brotli and 68.6 ms to first paint. This run ships the ADR-0027 keyed region
+host (runtime ABI unchanged): keys that are all numbers, all bigints, or all
+strings and strictly increasing or decreasing are validated as distinct
+without the key index, which is now built only when a retained key is found
+away from its position and dropped when nothing is retained, so the
+benchmark's creates and appends (model rows in id order) never hash a key; the
+Lean models, the backend, and every other operation are unchanged. Create
+10,000 script falls 28.1 → 27.4 ms (Solid 34.6 → 36.7) for 325.0 → 323.1 ms
+total (Solid 345.6 → 362.8), the one row this change targets; it is the only
+CPU row that moved against the run's drift, which was slower this time for
+every framework (Solid's create 1,000 31.0 → 31.8, replace 35.7 → 36.0,
+partial update 20.0 → 22.7, swap 23.5 → 23.3, append 37.5 → 39.4, clear 18.5
+→ 19.9). LeanRx moved with it: create 1,000 29.9 → 30.7 (script 2.7 → 2.7),
+replace 33.1 → 33.6 (script 5.4 → 5.4), partial update 19.3 → 18.9, select
+5.3 → 6.4, swap 20.3 → 23.1 (script 0.40 → 0.43, paint 17.6 → 19.5; Solid
+script 1.97 → 1.95, paint 19.3 → 18.7, so the row is the table relayout and a
+coin flip again), remove 16.9 → 16.8, append 35.8 → 36.6 (script 3.0 → 3.0),
+and clear 14.7 → 16.2; every CPU row is below Solid's. The shipped
+application grows from 9.9 to 10.1 KB uncompressed and from 3.4 to 3.5 KB
+Brotli (local baseline 10,087 → 10,380 raw, 3,449 → 3,540 Brotli bytes, of
+which `main.mjs` is 8,714 / 3,180 against Solid's single 11,563 / 4,358-byte
+module), the cost of the monotone check and the lazy index. First paint is
 one `performance.getEntriesByType("paint")` sample per framework and moved
-81.3 → 68.6 ms while Solid moved 76.8 → 73.1 ms and React Hooks 327.9 → 309.0
-ms; across the last four runs LeanRx measured 77.6, 77.8, 81.3, and 68.6 ms
-against Solid's 81.3, 81.5, 76.8, and 73.1 ms, so the two are not separable
-by this row. Memory after page load is 0.60 → 0.60 MB for LeanRx and 0.61 →
-0.53 MB for Solid, and after adding 1,000 rows 1.94 → 2.03 MB (Solid 2.69 →
-2.70).
+68.6 → 93.8 ms while Solid moved 73.1 → 78.9 ms and React Hooks 309.0 →
+333.7 ms; across the last five runs LeanRx measured 77.6, 77.8, 81.3, 68.6,
+and 93.8 ms against Solid's 81.3, 81.5, 76.8, 73.1, and 78.9 ms, so the row
+does not separate the two. Memory after page load is 0.60 → 0.60 MB for
+LeanRx and 0.53 → 0.61 MB for Solid, and after adding 1,000 rows 2.03 → 2.01
+MB (Solid 2.70 → 2.70).
 
 ## Where the remaining time goes
 
-Measured locally on 2026-08-23 (Playwright-driven headless Chromium, no CPU
-throttling, `performance.now()` around the click handler; a paired harness
-that loads LeanRx and the upstream vanilla implementation alternately and
-takes several measured clicks per page, so a difference of 0.1 ms is
-resolvable where fresh-page medians drift by about 0.5 ms between runs; a
-diagnostic, not the upstream runner): creating 10,000 rows costs LeanRx about
-2.4 ms more script than vanilla once the JIT is warm (about 3 ms from a fresh
-page, the upstream condition). That gap is not the key index: removing the
-index insertion entirely changes nothing visible, and in isolation the index
-costs about 0.5 ms per 10,000 BigInt keys while the per-row entry objects cost
-nothing measurable. It is the DOM shape and the id representation — giving
+Profiled locally on 2026-08-23 before ADR-0027 (Chrome DevTools sampling
+profiler at 50 µs through Playwright, started and stopped around each
+create-10,000 click with the clearing click unprofiled, 24 clicks, warm JIT;
+a diagnostic, not the upstream runner): the click handler costs LeanRx 24.7
+ms against vanilla's 22.5, and the self times that differ are garbage
+collection (11.8 against 9.7 ms, the survivor volume of the per-row entry,
+handle, row array, BigInt, and key string), the keyed region's `update` (0.85
+ms, almost all of it the key index), and `cloneNode` (13.1 against 12.4 ms,
+the two `data-lrx-action` attributes the row template carries). Storing the
+row handle as node properties, keeping the BigInt key itself as the node's
+key, and both together changed nothing in a paired comparison. ADR-0027
+removes the index work: with the monotone check and the lazily built index
+the handler measures 23.7 ms and the paired harness below puts create 10,000
+0.9 ms and create 1,000 and replace about 0.1 ms below the previous host,
+the other operations unchanged; against vanilla the remaining paired gaps are
+create 10,000 1.3 ms, replace 0.35, append 0.2, create 1,000 0.16, partial
+update 0.04, swap 0.01, and clear 0. Removing the two per-row action
+attributes from the template would recover about 0.4 ms of the create-10,000
+gap (measured by deleting them, which breaks the row clicks) but needs the
+delegated listener to resolve actions structurally instead of by attribute,
+a change to the DOM host's contract that was not made; a disjoint-key-range
+shortcut for a replacement with fresh ids measured 0.1 ms on replace for 103
+Brotli bytes and was not adopted either.
+
+Measured locally on 2026-08-23 before ADR-0027 (Playwright-driven headless
+Chromium, no CPU throttling, `performance.now()` around the click handler; a
+paired harness that loads LeanRx and the upstream vanilla implementation
+alternately and takes several measured clicks per page, so a difference of
+0.1 ms is resolvable where fresh-page medians drift by about 0.5 ms between
+runs; a diagnostic, not the upstream runner): creating 10,000 rows costs
+LeanRx about 2.4 ms more script than vanilla once the JIT is warm (about 3 ms
+from a fresh page, the upstream condition). That harness could not see the
+key index (removing the index insertion changed nothing visible there, and in
+isolation the index costs about 0.5 ms per 10,000 BigInt keys while the
+per-row entry objects cost nothing measurable; the profile above, with more
+clicks per page, puts it at 0.8 ms). The rest is the DOM shape and the id
+representation — giving
 vanilla LeanRx's row markup costs it 1.35 ms (the string key and its
 `String()` rendering about 0.9 ms, BigInt ids another 0.5 ms on top, the two
 `data-lrx-action` attributes per row about 0.3 ms; the empty text nodes
@@ -143,8 +173,9 @@ below both esbuild's bundle-and-minify of the same files (about 8,786 /
 3,124, measured as a reference, not adopted) and Solid's module, and
 ADR-0025 prints the generated part without redundant parentheses, with
 compound assignments, and without effect-only `return null` statements
-(7,675 / 2,857 bytes), and ADR-0026 adds the two targeted region operations
-back (8,421 / 3,089 bytes). What remains is code: the keyed region host, the DOM
+(7,675 / 2,857 bytes), ADR-0026 adds the two targeted region operations
+back (8,421 / 3,089 bytes), and ADR-0027 adds the monotone-key check and the
+lazily built index (8,714 / 3,180 bytes). What remains is code: the keyed region host, the DOM
 host with the disposer, the generated module, and `index.html` (1.7 KB /
 0.36 KB, excluded from the upstream size score, which counts JavaScript
 only); the next size step would be tree-shaking host functions this

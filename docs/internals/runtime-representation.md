@@ -158,11 +158,15 @@ mountItem, updateItem, disposeItem, rootItem?)` to generated code and shares
 unkeyed region hosts (they are not generated-code entry points). `update(items,
 context)` reconciles the whole target, where `items[i][0]` is the key: it
 validates every key before the first callback or DOM mutation, matching a
-retained key by position first (no hashing while the order is unchanged) and
-then through the key index, registering a new key as an unmounted entry, and
-unregistering the new entries and throwing `LRX-REGION-001` on a repeated key
-(into an empty region each key costs one index insertion and a size that did
-not grow reveals the repetition); it then forwards `context` to
+retained key by position first (no hashing while the order is unchanged); the
+first key away from its position decides the rest: keys that are all numbers,
+all bigints, or all strings and strictly increasing or decreasing are pairwise
+distinct, so the key index (built from the previous rows when an update first
+needs it, joined by every new key while it exists, dropped whenever nothing is
+retained) is consulted only while a previous row is still unmatched and fills,
+appends, and replacements in key order hash nothing; otherwise every key away
+from its position is looked up and a repeated key drops the index and throws
+`LRX-REGION-001`; it then forwards `context` to
 `mountItem(item, index, context)`, `updateItem(handle, item, index, context)`,
 and `disposeItem(handle, key, context)`. `updateAt(index, item, context)`
 re-runs `updateItem` for one retained position whose key must match
@@ -174,11 +178,11 @@ moves the higher node before the lower one and, unless they are adjacent, the
 lower node before the old successor of the higher one, then re-runs
 `updateItem` for both positions; `removeAt(index, key, context)` disposes the
 retained row at `index` (whose key must be `key`), detaches its node, and
-unregisters the key, and the later rows keep their handles and nodes one
-position earlier without an update callback. A backend that lowers an
-operation through one of these must argue that the result equals a full
-`update` (no other row's render payload changed, and for `removeAt` no row's
-payload depends on its position).
+unregisters the key from an existing index, and the later rows keep their
+handles and nodes one position earlier without an update callback. A backend
+that lowers an operation through one of these must argue that the result
+equals a full `update` (no other row's render payload changed, and for
+`removeAt` no row's payload depends on its position).
 Placement inserts new nodes and moves only the retained nodes outside one
 longest order-preserving subsequence after trimming the unchanged prefix and
 suffix, so a two-row swap costs two DOM moves; ties keep earlier target

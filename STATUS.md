@@ -443,6 +443,28 @@ Complete — M0 through M11
   17.8 → 16.9 ms against 17.6, the other CPU rows moving with Solid by drift
   and every CPU row below Solid's, at 9.9 KB shipped (3.4 KB Brotli against
   Solid's 11.5 / 4.5 KB).
+- Validated monotone keys without the key index in the keyed region
+  (ADR-0027, runtime ABI unchanged) after a CDP sampling profile of the
+  create-10,000 click put the index at 0.8 ms of the 2.2 ms script gap to
+  upstream vanilla (the rest: garbage-collection volume, the per-row action
+  attributes in the cloned template, and the BigInt id rendering): keys that
+  are all numbers, all bigints, or all strings and strictly increasing or
+  decreasing are pairwise distinct (`<` totally orders each type but is not
+  transitive across number and string keys, so mixed types never qualify),
+  the index is built from the previous rows only when a retained key is found
+  away from its position, and it is dropped when nothing is retained, so the
+  benchmark's id-ordered creates and appends never hash a key and the
+  duplicate-key contract is unchanged. A deterministic fuzz over number,
+  bigint, string, mixed, symbol, and object keys with repeated keys injected
+  at arbitrary positions and a differential fuzz against the previous host
+  (32,000 operations, no difference) lock the behavior. Locally (paired, 12
+  clicks per page, 10 rounds) create 10,000 falls 0.9 ms and create 1,000 and
+  replace about 0.1 ms; the baseline moves 10,087 → 10,380 raw, 3,449 → 3,540
+  Brotli (`main.mjs` alone 8,714 / 3,180 bytes). The headless run recorded in
+  `BENCHMARK.md` measured create 10,000 script 28.1 → 27.4 ms (Solid 34.6 →
+  36.7) for 325.0 → 323.1 ms total against Solid's 362.8 in a run that
+  drifted slower for every framework, every CPU row still below Solid's, at
+  10.1 KB shipped (3.5 KB Brotli against Solid's 11.5 / 4.5 KB).
 
 ## In progress
 

@@ -28,6 +28,7 @@
 | [0024](docs/adr/0024-compacted-benchmark-module.md) | Accepted | Compact the flattened js-framework-benchmark module with a Lean tokenizer | 2026-08-23 |
 | [0025](docs/adr/0025-precedence-aware-javascript-printer.md) | Accepted | Print JavaScript expressions by operator precedence and drop effect-only returns | 2026-08-23 |
 | [0026](docs/adr/0026-runtime-abi-v13-keyed-swap-and-remove.md) | Accepted | Bump the internal runtime ABI for keyed-region swap and single-row removal | 2026-08-23 |
+| [0027](docs/adr/0027-monotone-keys-without-index.md) | Accepted | Validate monotone keys without an index in the keyed region | 2026-08-23 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

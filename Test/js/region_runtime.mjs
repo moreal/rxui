@@ -504,6 +504,240 @@ function values(parent) {
 }
 
 {
+  // Monotone keys (strictly increasing or decreasing numbers, bigints, or
+  // strings) are validated without the key index, so fills, appends, and
+  // replacements in key order never hash a key; the index is built from the
+  // current rows only when a retained key is sought away from its position
+  // or the keys are not monotone. Every mode must still reject a repeated key
+  // (at any position, before any callback or mutation), keep identity across
+  // reorders, and survive symbol, object, and mixed-type keys.
+  let seed = 0x5eed1234;
+  const random = (bound) => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return seed % bound;
+  };
+  const parent = new FakeParent();
+  const identity = new Map();
+  let mounts = 0;
+  let updates = 0;
+  const region = createKeyedRegion(
+    parent,
+    (item) => {
+      mounts += 1;
+      const node = new FakeNode(item[1]);
+      identity.set(item[0], node);
+      return [node];
+    },
+    (handle, item) => { updates += 1; handle[0].value = item[1]; },
+    (handle, key) => { identity.delete(key); },
+    (handle) => handle[0],
+  );
+  const symbols = [Symbol("a"), Symbol("b"), Symbol("c")];
+  const objects = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  const keyFor = (mode, value) => {
+    if (mode === "bigint") return BigInt(value);
+    if (mode === "string") return String.fromCharCode(65 + value);
+    if (mode === "mixed") {
+      return value % 3 === 0 ? BigInt(value) : value % 3 === 1 ? value : String(value);
+    }
+    if (mode === "symbol") return symbols[value % 3];
+    if (mode === "object") return objects[value % 3];
+    return value;
+  };
+  const modes = ["number", "bigint", "string", "mixed", "symbol", "object"];
+  for (let round = 0; round < 600; round += 1) {
+    const mode = modes[random(modes.length)];
+    const shape = random(4); // 0 ascending, 1 descending, 2 random, 3 append to the current order
+    const bound = mode === "symbol" || mode === "object" ? 3 : 26;
+    const size = random(Math.min(bound, 12) + 1);
+    let values = [];
+    if (shape === 3) {
+      values = parent.children.slice(0, -1).map((node) => node.key);
+      const tagOf = (key) =>
+        typeof key === "object" || typeof key === "symbol" ? key : String(key);
+      const used = new Set(values.map(tagOf));
+      for (let added = 0; added < size && used.size < bound; added += 1) {
+        let candidate = keyFor(mode, random(bound));
+        let tag = tagOf(candidate);
+        while (used.has(tag)) {
+          candidate = keyFor(mode, random(bound));
+          tag = tagOf(candidate);
+        }
+        used.add(tag);
+        values.push(candidate);
+      }
+    } else {
+      const chosen = new Set();
+      while (chosen.size < size) chosen.add(random(bound));
+      const ordered = [...chosen].sort((a, b) => a - b);
+      if (shape === 1) ordered.reverse();
+      if (shape === 2) for (let index = ordered.length - 1; index > 0; index -= 1) {
+        const other = random(index + 1);
+        [ordered[index], ordered[other]] = [ordered[other], ordered[index]];
+      }
+      values = ordered.map((value) => keyFor(mode, value));
+    }
+    const items = values.map((key, index) => [key, `${String(key)}#${round}:${index}`]);
+    const before = JSON.stringify(parent.children.map((node) => node.value));
+    const mountsBefore = mounts;
+    const updatesBefore = updates;
+    if (items.length > 0 && random(3) === 0) {
+      // Repeat one key at an arbitrary position (possibly adjacent, possibly
+      // still looking sorted up to that point).
+      const source = random(items.length);
+      const target = random(items.length + 1);
+      const broken = items.slice();
+      broken.splice(target, 0, [items[source][0], "dup"]);
+      let failed = false;
+      try {
+        region.update(broken);
+      } catch (error) {
+        failed = String(error).includes("LRX-REGION-001");
+      }
+      if (!failed || mounts !== mountsBefore || updates !== updatesBefore ||
+          JSON.stringify(parent.children.map((node) => node.value)) !== before) {
+        throw new Error(`monotone fuzz round ${round} (${mode}) accepted a repeated key`);
+      }
+    }
+    const retainedNodes = items.filter(([key]) => identity.has(key))
+      .map(([key]) => [key, identity.get(key)]);
+    region.update(items);
+    if (JSON.stringify(parent.children.slice(0, -1).map((node) => node.value)) !==
+        JSON.stringify(items.map((item) => item[1]))) {
+      throw new Error(`monotone fuzz round ${round} (${mode}, ${shape}) produced the wrong order`);
+    }
+    for (const [key, node] of retainedNodes) {
+      if (identity.get(key) !== node || node.parentNode !== parent) {
+        throw new Error(`monotone fuzz round ${round} lost identity for ${String(key)}`);
+      }
+    }
+    if (mounts - mountsBefore !== items.length - retainedNodes.length ||
+        updates - updatesBefore !== retainedNodes.length) {
+      throw new Error(`monotone fuzz round ${round} mounted or updated the wrong rows`);
+    }
+    for (const node of parent.children.slice(0, -1)) {
+      node.key = items.find((item) => item[1] === node.value)[0];
+    }
+    if (identity.size !== items.length || parent.children.length !== items.length + 1) {
+      throw new Error(`monotone fuzz round ${round} leaked or lost nodes`);
+    }
+    if (random(5) === 0 && items.length > 0) {
+      const index = random(items.length);
+      region.removeAt(index, items[index][0]);
+      items.splice(index, 1);
+      if (identity.size !== items.length ||
+          JSON.stringify(parent.children.slice(0, -1).map((node) => node.value)) !==
+            JSON.stringify(items.map((item) => item[1]))) {
+        throw new Error(`monotone fuzz round ${round} removeAt diverged`);
+      }
+    }
+  }
+  region.dispose();
+  if (parent.children.length !== 0 || identity.size !== 0) {
+    throw new Error("monotone fuzz disposal leaked nodes");
+  }
+}
+
+{
+  // A repeated key that is only visible through the index (the prefix is
+  // retained by position, the tail is not monotone) is rejected; the region
+  // then reorders, which rebuilds the dropped index, and appends in key order
+  // without it.
+  const parent = new FakeParent();
+  let mounts = 0;
+  const region = createKeyedRegion(
+    parent,
+    (item) => { mounts += 1; return [new FakeNode(`${item[0]}`)]; },
+    () => {},
+    () => {},
+    (handle) => handle[0],
+  );
+  const rows = (keys) => keys.map((key) => [key, "x"]);
+  region.update(rows([1n, 2n, 3n]));
+  const nodes = parent.children.slice(0, 3);
+  // Mixed types are never monotone: < is not transitive across number and
+  // string keys ("10" < "5" < 6 < "10"), so these repeat a key that a
+  // consecutive comparison would miss.
+  for (const broken of [[1n, 2n, 3n, 2n], [1n, 2n, 3n, 5n, 4n, 1n], [1n, 2n, 2n], [3n, 1n, 3n],
+      ["10", "5", 6, "10"], [4, "10", "5", 6, "10"], [1n, 1, "1", 1n], [2, 3n, 2]]) {
+    let failed = false;
+    try {
+      region.update(rows(broken));
+    } catch (error) {
+      failed = String(error).includes("LRX-REGION-001");
+    }
+    if (!failed || mounts !== 3 || JSON.stringify(values(parent)) !== '["1","2","3"]') {
+      throw new Error(`keyed region accepted ${broken.map(String)}`);
+    }
+  }
+  region.update(rows([3n, 2n, 1n]));
+  if (parent.children[0] !== nodes[2] || parent.children[2] !== nodes[0] || mounts !== 3) {
+    throw new Error("keyed region lost identity after a rejected update");
+  }
+  region.update(rows([3n, 2n, 1n, 0n]));
+  region.update(rows([5n, 4n, 3n, 2n, 1n, 0n]));
+  if (mounts !== 6 || JSON.stringify(values(parent)) !== '["5","4","3","2","1","0"]' ||
+      parent.children[2] !== nodes[2]) {
+    throw new Error("keyed region mishandled descending appends");
+  }
+  region.update(rows([0n, 1n, 2n, 3n, 4n, 5n]));
+  if (mounts !== 6 || parent.children[3] !== nodes[2]) {
+    throw new Error("keyed region remounted a reversed list");
+  }
+  region.update(rows([0n, 1n, 2n, 3n, 4n, 5n, 6n]));
+  region.removeAt(6, 6n);
+  region.update(rows([0n, 1n, 2n, 3n, 4n, 5n, 6n]));
+  if (mounts !== 8 || JSON.stringify(values(parent)) !== '["0","1","2","3","4","5","6"]') {
+    throw new Error("keyed region mishandled removeAt with an index");
+  }
+  region.dispose();
+}
+
+{
+  // Monotone lists that share keys (at either end, in either direction)
+  // retain the shared rows, a swap and a restoring update keep identity, and
+  // string keys never match number keys.
+  const parent = new FakeParent();
+  let mounts = 0;
+  const region = createKeyedRegion(
+    parent,
+    (item) => { mounts += 1; return [new FakeNode(`${item[0]}`)]; },
+    () => {},
+    () => {},
+    (handle) => handle[0],
+  );
+  const rows = (keys) => keys.map((key) => [key, "x"]);
+  region.update(rows([1, 2, 3]));
+  const nodes = parent.children.slice(0, 3);
+  region.update(rows([3, 4, 5]));
+  if (mounts !== 5 || parent.children[0] !== nodes[2]) {
+    throw new Error("keyed region remounted the shared end of overlapping ranges");
+  }
+  region.update(rows([9, 8, 7, 5]));
+  if (mounts !== 8 || values(parent)[3] !== "5") {
+    throw new Error("keyed region mishandled a descending overlap");
+  }
+  const five = parent.children[3];
+  region.update(rows([5, 6]));
+  if (mounts !== 9 || parent.children[0] !== five) {
+    throw new Error("keyed region remounted a shared boundary key");
+  }
+  region.update(rows([10, 11]));
+  region.update(rows([1, 2, 3]));
+  const fresh = parent.children.slice(0, 3);
+  region.swapAt(0, 2, rows([3, 2, 1]));
+  region.update(rows([1, 2, 3]));
+  if (mounts !== 14 || parent.children[0] !== fresh[0] || parent.children[2] !== fresh[2]) {
+    throw new Error("keyed region lost identity restoring order after a swap");
+  }
+  region.update(rows(["1", "2", "3"]));
+  if (mounts !== 17 || JSON.stringify(values(parent)) !== '["1","2","3"]') {
+    throw new Error("keyed region confused number and string keys");
+  }
+  region.dispose();
+}
+
+{
   // The structural-delta region's full reconcile shares the same placement bound.
   const parent = new FakeParent();
   const region = createDeltaKeyedRegion(

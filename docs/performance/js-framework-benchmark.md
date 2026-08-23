@@ -20,8 +20,10 @@ so a commit builds no per-row payload array. Rows are mounted by deep-cloning
 one static row template that `mount` builds once through the DOM host, then
 writing only the per-row key (a `setKey` node property that the delegated click
 adapter resolves), texts, and selection class; the keyed region matches
-retained keys by position before hashing, registers keys added to an empty
-region with one index insertion each, places nodes minimally (prefix/suffix
+retained keys by position before hashing, validates the model's id-ordered
+rows without a key index (strictly monotone keys of one type are distinct, and
+the index is built only when a retained key leaves its position; ADR-0027),
+places nodes minimally (prefix/suffix
 trim plus a longest order-preserving subsequence, so a swap costs two DOM
 moves), and rebuilds a fully owned parent with one bulk removal and one
 detached bulk insertion. Selecting a row re-runs the update callback for
@@ -90,7 +92,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 10,087 | 3,449 | 3,913 |
+| Complete fetched application | 10,380 | 3,540 | 4,020 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.
