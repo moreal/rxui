@@ -236,3 +236,74 @@ test("nextText walks a template's text slots in document order without stopping 
     fromText: true,
   });
 });
+
+test("listenDelegatedCells resolves a keyed row's action from the clicked cell", async ({ page }) => {
+  await page.goto(origin);
+  const result = await page.evaluate(async () => {
+    const { listenDelegatedCells, setKey } = await import("/leanrx_dom.mjs");
+    const host = document.getElementById("two");
+    const table = document.createElement("table");
+    const body = document.createElement("tbody");
+    table.append(body);
+    host.append(table);
+    const makeRow = (key) => {
+      const row = document.createElement("tr");
+      const idCell = document.createElement("td");
+      idCell.append(document.createTextNode(key));
+      const labelCell = document.createElement("td");
+      const link = document.createElement("a");
+      link.append(document.createTextNode("label"));
+      labelCell.append(link);
+      const removeCell = document.createElement("td");
+      const removeLink = document.createElement("a");
+      const icon = document.createElement("span");
+      removeLink.append(icon);
+      removeCell.append(removeLink);
+      const filler = document.createElement("td");
+      row.append(idCell, labelCell, removeCell, filler);
+      setKey(row, key);
+      body.append(row);
+      return { row, idCell, labelCell, link, removeLink, icon, filler };
+    };
+    const first = makeRow("7");
+    const second = makeRow("8");
+    const unkeyed = document.createElement("tr");
+    const unkeyedCell = document.createElement("td");
+    const unkeyedLink = document.createElement("a");
+    unkeyedCell.append(unkeyedLink);
+    unkeyed.append(unkeyedCell);
+    body.append(unkeyed);
+    const state = ["state"];
+    const context = ["context"];
+    const calls = [];
+    const off = listenDelegatedCells(body, "click", state, context,
+      (...args) => calls.push(args), ["", "select", "remove", ""]);
+    const click = (node) => node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    click(first.link);
+    click(second.icon);
+    click(second.removeLink);
+    click(first.idCell);
+    click(first.filler);
+    click(second.labelCell);
+    click(second.row);
+    click(unkeyedLink);
+    click(body);
+    const dispatched = calls.length;
+    off();
+    click(first.link);
+    table.remove();
+    return {
+      calls: calls.map(([givenState, givenContext, action, key, value, checked, eventKey]) =>
+        [givenState === state && givenContext === context, action, key, value, checked, eventKey]),
+      afterDispose: calls.length - dispatched,
+    };
+  });
+  expect(result).toEqual({
+    calls: [
+      [true, "select", "7", "", false, ""],
+      [true, "remove", "8", "", false, ""],
+      [true, "remove", "8", "", false, ""],
+    ],
+    afterDispose: 0,
+  });
+});

@@ -32,7 +32,7 @@ def run : IO Unit := do
   let manifest := (LeanRx.Backend.ArtifactManifest.scalar
     "subtotal.mjs" subtotalModule).json
   unless manifest ==
-      "{\"compilerVersion\":\"0.1.0-dev\",\"leanToolchain\":\"leanprover/lean4:v4.33.0\",\"module\":\"subtotal.mjs\",\"runtimeAbi\":14,\"exports\":[\"subtotal\"],\"inputs\":[{\"name\":\"price\",\"generatedName\":\"price\",\"type\":\"int\"},{\"name\":\"quantity\",\"generatedName\":\"quantity\",\"type\":\"int\"},{\"name\":\"threshold\",\"generatedName\":\"threshold\",\"type\":\"int\"}],\"resultType\":\"int\",\"features\":[\"scalar\"]}\n" do
+      "{\"compilerVersion\":\"0.1.0-dev\",\"leanToolchain\":\"leanprover/lean4:v4.33.0\",\"module\":\"subtotal.mjs\",\"runtimeAbi\":15,\"exports\":[\"subtotal\"],\"inputs\":[{\"name\":\"price\",\"generatedName\":\"price\",\"type\":\"int\"},{\"name\":\"quantity\",\"generatedName\":\"quantity\",\"type\":\"int\"},{\"name\":\"threshold\",\"generatedName\":\"threshold\",\"type\":\"int\"}],\"resultType\":\"int\",\"features\":[\"scalar\"]}\n" do
     throw <| IO.userError s!"scalar artifact manifest changed:\n{manifest}"
   let intMod : LeanRx.ReactiveIR.Expr Int := .binary .intMod
     (.input .int 0 "left") (.input .int 1 "right")

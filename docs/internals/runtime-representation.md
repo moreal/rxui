@@ -69,7 +69,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 14. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 15. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -165,6 +165,18 @@ template guarantees the text slots it addresses. A cloned template's text
 slots are reached without wrapping the elements between them (three wrappers
 per js-framework-benchmark row instead of six). See
 [ADR-0028](../adr/0028-runtime-abi-v14-next-text.md).
+
+ABI 15 adds `listenDelegatedCells(node, type, state, context, dispatch,
+actions)` to the DOM host: a delegated listener for keyed rows that resolves
+the action from structure instead of an attribute — the row is the nearest
+ancestor-or-self of the event target (within `node`) marked by `setKey`, and
+the action is `actions[i]` where the row's child at `childNodes` index `i`
+contains the target strictly inside it (an empty or missing entry, a target
+that is that child itself, or no keyed row dispatches nothing); `dispatch`
+receives the same arguments as `listenDelegated`'s, with the row's key. Rows
+cloned from a template therefore carry no per-row `data-lrx-action`
+attributes. `listenDelegated` is unchanged for attribute-marked controls. See
+[ADR-0030](../adr/0030-runtime-abi-v15-structural-delegation.md).
 
 The keyed region host (`leanrx_region.mjs`) exposes `createKeyedRegion(parent,
 mountItem, updateItem, disposeItem, rootItem?)` to generated code and shares

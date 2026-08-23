@@ -515,6 +515,36 @@ Complete — M0 through M11
   333.7 ms total against Solid's 368.6, create 1,000 script 2.50 → 2.47,
   replace 5.27 → 5.25, every CPU row below Solid's, at 10.2 KB shipped (3.5
   KB Brotli against Solid's 11.5 / 4.5 KB).
+- Resolved the js-framework-benchmark's row clicks by structure instead of
+  per-row action attributes (ADR-0030, runtime ABI 15) after the paired CDP
+  profile had attributed about 0.4–0.6 ms of the create-10,000 `cloneNode`
+  time to the two `data-lrx-action` attributes every cloned row copied: the
+  DOM host gains `listenDelegatedCells(node, type, state, context, dispatch,
+  actions)` — the row is the nearest `setKey`-marked ancestor-or-self of the
+  target, the action is `actions[i]` for the row's child at `childNodes`
+  index `i` that contains the target strictly inside it, and `dispatch`
+  receives `listenDelegated`'s arguments — the benchmark's row template
+  carries only the `class` attributes upstream requires, and `mount`
+  registers the structural listener on the table body beside the attribute
+  listener that still serves the six buttons; `listenDelegated`, TodoMVC,
+  the data grid, the Lean model, and the region host are unchanged. The
+  counter browser suite locks the helper on real DOM (select/remove cells,
+  id/filler cells, cell and row targets, an unkeyed row, the listener's
+  node, disposal) and a differential fuzz against the previous host's
+  attribute resolution compared dispatch logs over about 20,000 random
+  clicks on benchmark-shaped rows with no difference. Locally (paired, 16
+  clicks per page, 10 rounds, forced collection) create 10,000 falls 0.63
+  ms (every round), create 1,000, replace, and append about 0.05 ms, select
+  is unchanged and remove costs 0.01 ms more; the baseline moves 10,484 →
+  10,902 raw, 3,584 → 3,699 Brotli (`main.mjs` alone 9,236 / 3,339 bytes).
+  Under the same protocol LeanRx's create-10,000 click now measures 0.67 ms
+  below upstream vanilla's. The headless run recorded in `BENCHMARK.md`
+  measured create 10,000 script 25.4 → 24.6 ms (Solid 37.4 → 36.3 in the
+  same run, so the runs' drift matches the change and LeanRx's share of
+  Solid's script stays 0.68) for 333.2 ms total against Solid's 361.0, the
+  paint-bound and throttled rows drifting slower with the run, every CPU
+  row below Solid's, at 10.6 KB shipped (3.6 KB Brotli against Solid's
+  11.5 / 4.5 KB).
 
 ## In progress
 

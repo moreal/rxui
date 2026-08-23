@@ -19,7 +19,10 @@ model state) to every row callback, which derives the selection flag from it,
 so a commit builds no per-row payload array. Rows are mounted by deep-cloning
 one static row template that `mount` builds once through the DOM host, then
 writing only the per-row key (a `setKey` node property that the delegated click
-adapter resolves), texts, and selection class; the keyed region matches
+adapter resolves), texts, and selection class — since ADR-0030 the cloned rows
+carry no `data-lrx-action` attributes: the table body's `listenDelegatedCells`
+listener resolves `select` and `remove` from the cell that contains the click
+and the buttons keep their attributes in the page; the keyed region matches
 retained keys by position before hashing, validates the model's id-ordered
 rows without a key index (strictly monotone keys of one type are distinct, and
 the index is built only when a retained key leaves its position; ADR-0027),
@@ -96,7 +99,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 10,484 | 3,584 | 4,069 |
+| Complete fetched application | 10,902 | 3,699 | 4,204 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.

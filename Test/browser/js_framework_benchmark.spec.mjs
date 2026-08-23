@@ -191,14 +191,13 @@ test("@framework-benchmark ignores operations whose model preconditions do not h
   await rows.nth(4).locator("td").nth(1).locator("a").click();
   await expect(rows.nth(4)).toHaveClass("danger");
 
-  const unknownSelect = rows.nth(5).locator('[data-lrx-action="select"]');
-  await unknownSelect.evaluate((link) => link.setAttribute("data-lrx-key", "1001"));
+  await rows.nth(5).evaluate((row) => { row.$lrxKey = "1001"; });
+  const unknownSelect = rows.nth(5).locator("td").nth(1).locator("a");
   await unknownSelect.click();
   await expect(rows.nth(4)).toHaveClass("danger");
   await expect(page.locator("tbody > tr.danger")).toHaveCount(1);
 
-  const unknownRemove = rows.nth(5).locator('[data-lrx-action="remove"]');
-  await unknownRemove.evaluate((link) => link.setAttribute("data-lrx-key", "1001"));
+  const unknownRemove = rows.nth(5).locator("td").nth(2).locator("a");
   await unknownRemove.evaluate((element) => element.click());
   await expect(rows).toHaveCount(1000);
   await expect(rows.nth(4)).toHaveClass("danger");

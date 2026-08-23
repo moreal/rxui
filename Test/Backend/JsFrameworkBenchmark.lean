@@ -17,7 +17,7 @@ def run : IO Unit := do
     | .error error => throw <| IO.userError s!"{error.code}: {error.message}"
   assertEq #["mount"] emitted.manifest.exports
   assertEq 8 emitted.manifest.eventCount
-  assertEq 14 emitted.manifest.runtimeAbi
+  assertEq 15 emitted.manifest.runtimeAbi
   assertEq #["./leanrx_dom.mjs", "./leanrx_region.mjs"]
     emitted.manifest.hostImports
   unless emitted.manifest.features.contains "keyed-region" &&
@@ -30,8 +30,8 @@ def run : IO Unit := do
   let compact ← match Js.Printer.module .compact emitted.module with
     | .ok source => pure source
     | .error error => throw <| IO.userError error.code
-  unless readable.contains "createKeyedRegion" && readable.contains "data-lrx-action" &&
-      readable.contains "runlots" && readable.contains "glyphicon-remove" &&
+  unless readable.contains "createKeyedRegion" && readable.contains "runlots" &&
+      readable.contains "glyphicon-remove" &&
       readable.contains "10000" && ¬readable.contains "createDeltaKeyedRegion" &&
       compact.length < readable.length do
     throw <| IO.userError "benchmark printer output lost the upstream keyed table lowering"
@@ -57,5 +57,11 @@ def run : IO Unit := do
       ¬readable.contains "BigInt" && ¬readable.contains "1n" &&
       emitted.manifest.features.contains "safe-integer-ids" do
     throw <| IO.userError "benchmark lowering lost the safe-integer id representation"
+  -- Row clicks are resolved by structure (ADR-0030): the table body's listener
+  -- maps the clicked cell's position to its action and the cloned rows carry
+  -- no action attribute (the buttons' attributes live in the page).
+  unless readable.contains "listenDelegatedCells(tbody, \"click\", state, context, $lrx_benchmarkDispatch, [\"\", \"select\", \"remove\", \"\"])" &&
+      ¬readable.contains "data-lrx-action" do
+    throw <| IO.userError "benchmark lowering lost the structural row-click delegation"
 
 end LeanRxTest.Backend.JsFrameworkBenchmark

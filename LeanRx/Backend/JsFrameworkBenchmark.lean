@@ -21,6 +21,7 @@ private structure RuntimeNames where
   cloneTemplate : Ident
   setKey : Ident
   listenDelegated : Ident
+  listenDelegatedCells : Ident
   createKeyedRegion : Ident
   makeDisposer : Ident
   array : Ident
@@ -67,6 +68,7 @@ private def runtimeNames : Except Error RuntimeNames := do
     cloneTemplate := ← Ident.checked "cloneTemplate"
     setKey := ← Ident.checked "setKey"
     listenDelegated := ← Ident.checked "listenDelegated"
+    listenDelegatedCells := ← Ident.checked "listenDelegatedCells"
     createKeyedRegion := ← Ident.checked "createKeyedRegion"
     makeDisposer := ← Ident.checked "makeDisposer"
     array := ← Ident.checked "Array"
@@ -168,6 +170,11 @@ private def findIndexFunction : Except Error Function := do
     ]
   }
 
+/-- Builds the static row prototype once: the cells, links, and icon with their
+Bootstrap classes. The links carry no action attribute — the row's click
+listener resolves `select` and `remove` from the cell that contains the click
+(ADR-0030), so a cloned row carries only the `class` attributes upstream
+requires. -/
 private def rowTemplateFunction (runtime : RuntimeNames) : Except Error Function := do
   let name ← Ident.checked "$lrx_benchmarkRowTemplate"
   let root ← Ident.checked "rowRoot"
@@ -191,14 +198,12 @@ private def rowTemplateFunction (runtime : RuntimeNames) : Except Error Function
       .const labelCell (call runtime.createElement [.literal (.string "td")]),
       setAttribute runtime (.ident labelCell) "class" (.literal (.string "col-md-4")),
       .const selectLink (call runtime.createElement [.literal (.string "a")]),
-      setAttribute runtime (.ident selectLink) "data-lrx-action" (.literal (.string "select")),
       .expr <| call runtime.append [.ident selectLink, emptyText],
       .expr <| call runtime.append [.ident labelCell, .ident selectLink],
       .expr <| call runtime.append [.ident root, .ident labelCell],
       .const removeCell (call runtime.createElement [.literal (.string "td")]),
       setAttribute runtime (.ident removeCell) "class" (.literal (.string "col-md-1")),
       .const removeLink (call runtime.createElement [.literal (.string "a")]),
-      setAttribute runtime (.ident removeLink) "data-lrx-action" (.literal (.string "remove")),
       .const removeIcon (call runtime.createElement [.literal (.string "span")]),
       setAttribute runtime (.ident removeIcon) "class"
         (.literal (.string "glyphicon glyphicon-remove")),
@@ -213,6 +218,14 @@ private def rowTemplateFunction (runtime : RuntimeNames) : Except Error Function
     ]
   }
 
+/-- The per-cell actions of a row, indexed by the row's child position: the
+id cell and the filler cell dispatch nothing, the label cell's link selects,
+and the remove cell's link removes. The benchmark's click listener on the
+table body resolves them by structure (`listenDelegatedCells`). -/
+private def cellActions : Expr := .array <| .ofList [
+  .literal (.string ""), .literal (.string "select"),
+  .literal (.string "remove"), .literal (.string "")]
+
 /-- The selection flag of a row item: the mount-local context carries the model
 state in slot 3, whose slot 2 is the selected id (`null` for none). -/
 private def selectedFlag (context item : Ident) : Expr :=
@@ -222,8 +235,8 @@ private def selectedFlag (context item : Ident) : Expr :=
 (carried in the mount-local context that the keyed region forwards with every
 update) and writing only the per-row key, texts, and selection class. The row
 item is the model row itself; the selection flag is derived from the context.
-The row root carries the delegated key, so both action links resolve it through
-their nearest keyed ancestor. The two text slots are the first two text nodes
+The row root carries the delegated key, which the table body's structural
+click listener reports with the clicked cell's action. The two text slots are the first two text nodes
 of the row in document order (the id cell's text, then the select link's
 text), reached through `nextText` so the cells and the link between them are
 never wrapped. -/
@@ -622,6 +635,7 @@ private def mountFunction (runtime : RuntimeNames) (rowTemplate mountRow updateR
   let region ← Ident.checked "region"
   let context ← Ident.checked "context"
   let off ← Ident.checked "off"
+  let offCells ← Ident.checked "offCells"
   let disposer ← Ident.checked "disposer"
   pure {
     name
@@ -640,9 +654,12 @@ private def mountFunction (runtime : RuntimeNames) (rowTemplate mountRow updateR
         .ident region, .ident metrics, .ident template, .ident state]),
       .const off (call runtime.listenDelegated [
         .ident target, .literal (.string "click"), .ident state, .ident context, .ident dispatch]),
+      .const offCells (call runtime.listenDelegatedCells [
+        .ident tbody, .literal (.string "click"), .ident state, .ident context, .ident dispatch,
+        cellActions]),
       .const disposer (call runtime.makeDisposer [
         .ident target,
-        .array <| .ofList [.ident off, property (.ident region) "dispose"],
+        .array <| .ofList [.ident off, .ident offCells, property (.ident region) "dispose"],
         .ident metrics,
         .array <| .ofList [.ident region]]),
       .return (.ident disposer)
@@ -718,6 +735,7 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
           (runtime.cloneTemplate, runtime.cloneTemplate),
           (runtime.setKey, runtime.setKey),
           (runtime.listenDelegated, runtime.listenDelegated),
+          (runtime.listenDelegatedCells, runtime.listenDelegatedCells),
           (runtime.makeDisposer, runtime.makeDisposer)
         ] },
       { source := "./leanrx_region.mjs", names := #[

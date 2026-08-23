@@ -14,7 +14,7 @@ if (
   manifest.module !== "LeanRxDocs.mjs" ||
   typeof manifest.graphHash !== "string" ||
   manifest.graphHash.length === 0 ||
-  manifest.runtimeAbi !== 14 ||
+  manifest.runtimeAbi !== 15 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !==
     JSON.stringify(["int", "string", "string", "string"]) ||

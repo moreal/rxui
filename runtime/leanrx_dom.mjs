@@ -96,6 +96,39 @@ export function listenDelegated(node, type, state, context, dispatch) {
   return () => node.removeEventListener(type, handler);
 }
 
+// Delegated events for keyed rows, resolved by structure instead of an
+// attribute: the row is the nearest ancestor-or-self of the target (within
+// node) marked by setKey, and the action is actions[i] where the row's child
+// at childNodes index i contains the target strictly inside it; an empty or
+// missing entry, a target that is that child itself, or no keyed row
+// dispatches nothing. dispatch receives listenDelegated's arguments.
+export function listenDelegatedCells(node, type, state, context, dispatch, actions) {
+  const handler = (event) => {
+    const target = event.target;
+    let child = null;
+    let row = target;
+    while (row !== null && row.$lrxKey === undefined) {
+      if (row === node) return;
+      child = row;
+      row = row.parentNode;
+    }
+    if (row === null || child === null || child === target) return;
+    const action = actions[Array.prototype.indexOf.call(row.childNodes, child)];
+    if (!action) return;
+    dispatch(
+      state,
+      context,
+      action,
+      row.$lrxKey,
+      typeof target.value === "string" ? target.value : "",
+      target.checked === true,
+      typeof event.key === "string" ? event.key : "",
+    );
+  };
+  node.addEventListener(type, handler);
+  return () => node.removeEventListener(type, handler);
+}
+
 export function listen(node, type, state, refs, dispatch) {
   const handler = () => dispatch(state, refs);
   node.addEventListener(type, handler);
