@@ -4,7 +4,7 @@ import {
   createPositionalRegion,
 } from "../../runtime/leanrx_unkeyed_region.mjs";
 import { createDeltaKeyedRegion } from "../../runtime/leanrx_delta_region.mjs";
-import { makeDisposer } from "../../runtime/leanrx_host.mjs";
+import { makeDisposer } from "../../runtime/leanrx_dom.mjs";
 
 class FakeNode {
   constructor(value) {

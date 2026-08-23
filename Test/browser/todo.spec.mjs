@@ -14,7 +14,6 @@ const files = new Set([
   "leanrx_form_events.mjs",
   "leanrx_region.mjs",
   "leanrx_unkeyed_region.mjs",
-  "leanrx_host.mjs",
 ]);
 let server;
 let origin;

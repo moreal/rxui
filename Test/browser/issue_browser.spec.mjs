@@ -12,7 +12,6 @@ const files = new Set([
   "IssueBrowser.expected.json",
   "leanrx_dom.mjs",
   "leanrx_form_events.mjs",
-  "leanrx_host.mjs",
   "leanrx_region.mjs",
   "leanrx_effects.mjs",
   "leanrx_issue_ports.mjs",

@@ -412,7 +412,6 @@ The repository SHOULD converge on this layout. Files may begin smaller, but resp
 │       └── Doctor.lean
 ├── runtime/
 │   ├── leanrx_dom.mjs
-│   ├── leanrx_host.mjs
 │   └── leanrx_devtools.mjs
 ├── examples/
 │   ├── 01-counter/

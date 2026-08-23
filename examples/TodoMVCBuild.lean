@@ -46,7 +46,6 @@ private def generateChecked (directory : System.FilePath) (checked : Spec.Checke
   IO.FS.writeFile (directory / "leanrx_region.mjs") (← IO.FS.readFile "runtime/leanrx_region.mjs")
   IO.FS.writeFile (directory / "leanrx_unkeyed_region.mjs")
     (← IO.FS.readFile "runtime/leanrx_unkeyed_region.mjs")
-  IO.FS.writeFile (directory / "leanrx_host.mjs") (← IO.FS.readFile "runtime/leanrx_host.mjs")
 
 def generateInto (directory : System.FilePath) : IO Unit :=
   match spec.check with

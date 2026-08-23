@@ -1,19 +1,16 @@
-/** Detaches `node` from its parent when it has one. Shared with
- * leanrx_delta_region.mjs; not a generated-code entry point. */
+// detach, anchor, snapshot, placeInOrder, and rebuild are shared with
+// leanrx_delta_region.mjs and leanrx_unkeyed_region.mjs; generated code imports
+// only createKeyedRegion.
 export function detach(node) {
   if (node.parentNode) node.parentNode.removeChild(node);
 }
 
-/** Appends and returns a region's comment marker. Shared with
- * leanrx_delta_region.mjs; not a generated-code entry point. */
 export function anchor(parent, label) {
   const marker = document.createComment(label);
   parent.append(marker);
   return marker;
 }
 
-/** Copies a region's counters. Shared with leanrx_delta_region.mjs; not a
- * generated-code entry point. */
 export function snapshot(metrics) {
   return metrics.slice();
 }
@@ -22,15 +19,14 @@ function duplicateKey(key) {
   return new Error(`LRX-REGION-001 duplicate key: ${String(key)}`);
 }
 
-// True when parent holds exactly the region's `count` nodes followed by marker.
+// True when parent holds exactly the region's count nodes followed by marker.
 function ownsWholeParent(parent, marker, first, count) {
   return parent.firstChild === first && marker.nextSibling === null &&
     parent.childNodes.length === count + 1;
 }
 
 // Flags one longest increasing subsequence of entries[start..end].pos (pos < 0
-// skipped). The scan runs from the end so that, among equally long choices,
-// earlier target positions stay in place (a two-row reversal keeps the first).
+// skipped), scanning from the end so earlier positions stay in place on ties.
 function markLongestIncreasing(entries, start, end, flags) {
   const length = end - start + 1;
   const tails = new Int32Array(length);
@@ -57,11 +53,9 @@ function markLongestIncreasing(entries, start, end, flags) {
   }
 }
 
-/** Places next (target order) given old[0..oldCount) (retained entries in DOM
- * order, all present in next). Inserts new nodes and moves only retained nodes
- * outside one longest order-preserving subsequence; returns the placement count.
- * Entries carry a scratch `pos` that is -1 outside this call. Shared with
- * leanrx_delta_region.mjs; not a generated-code entry point. */
+// Places next (target order) given old[0..oldCount) (retained, DOM order): inserts
+// new nodes, moves only retained nodes outside one longest order-preserving
+// subsequence, and returns the placement count. Entry.pos is -1 outside this call.
 export function placeInOrder(parent, marker, old, oldCount, next, newCount) {
   let start = 0;
   while (start < oldCount && start < newCount && old[start] === next[start]) start += 1;
@@ -96,13 +90,9 @@ export function placeInOrder(parent, marker, old, oldCount, next, newCount) {
   return placements;
 }
 
-/** Replaces every node of previous[0..previousCount) (already disposed) with
- * next[0..newCount) when no entry is retained; returns the placement count.
- * A region that owns its whole parent (its first node through its marker, no
- * foreign sibling) removes the old rows with one bulk clear and, while the
- * parent is connected, not focused, and about to receive rows, detaches that
- * parent so the browser attaches the rebuilt subtree once instead of per row.
- * Shared with leanrx_delta_region.mjs; not a generated-code entry point. */
+// Replaces previous[0..previousCount) (disposed, nothing retained) with
+// next[0..newCount); a region that owns its whole parent clears it in bulk and,
+// when connected, unfocused, and receiving rows, rebuilds it detached.
 export function rebuild(parent, marker, previous, previousCount, next, newCount) {
   const first = previousCount > 0 ? previous[0].node : marker;
   if (!ownsWholeParent(parent, marker, first, previousCount)) {
@@ -125,11 +115,9 @@ function mismatchedKey(index, key) {
   return new Error(`LRX-REGION-003 key ${String(key)} is not at position ${index}`);
 }
 
-/** update(items, context) reconciles the whole target (items[i][0] is the key)
- * and forwards context to mountItem(item, index, context), updateItem(handle,
- * item, index, context), and disposeItem(handle, key, context); updateAt(index,
- * item, context) re-runs updateItem for one retained position whose key must
- * match, changing no shape, order, or identity. */
+// update(items, context) reconciles the whole target (items[i][0] is the key),
+// forwarding context to the mount/update/dispose callbacks; updateAt(index,
+// item, context) re-runs updateItem for one retained, key-checked position.
 export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, rootItem = null) {
   const marker = anchor(parent, "leanrx:keyed");
   const metrics = [0, 0, 0, 0]; // mounts/updates/moves/disposals
@@ -144,12 +132,8 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       const previous = current;
       const previousCount = previous.length;
       stamp += 1;
-      // Validate the whole target before the first callback or DOM mutation. A
-      // retained key is matched by position first (no hashing while the order is
-      // unchanged), then through the key index; a new key registers an unmounted
-      // entry; a repeated key unregisters the new entries and fails. Into an
-      // empty region one insertion registers a key and a size that did not grow
-      // reveals the repeated key.
+      // Validate every key (by position, then the index) before the first
+      // callback or DOM mutation; a repeated key unregisters the new entries.
       const next = new Array(count);
       const empty = entries.size === 0;
       let retained = 0;

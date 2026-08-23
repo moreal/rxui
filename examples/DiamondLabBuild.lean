@@ -37,7 +37,6 @@ private def generateChecked (directory : System.FilePath)
   IO.FS.writeFile (directory / "DiamondLab.mjs.manifest.json") emitted.manifest.json
   IO.FS.writeFile (directory / "Diamond.graph.json") (checked.graph.toJson ++ "\n")
   IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")
-  IO.FS.writeFile (directory / "leanrx_host.mjs") (← IO.FS.readFile "runtime/leanrx_host.mjs")
   generateExpected directory
 
 def generateInto (directory : System.FilePath) : IO Unit :=

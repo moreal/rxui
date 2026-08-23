@@ -129,7 +129,7 @@ private def manifest (moduleName : String) (checked : TabsSpec.Checked n) : Comp
     derivedCount := 0
     textSinkCount := 1
     eventCount := 1
-    hostImports := #["./leanrx_dom.mjs", "./leanrx_host.mjs"]
+    hostImports := #["./leanrx_dom.mjs"]
     features := #["dependent", "immutable-props", "typed-events", "proof-erasure",
       "direct-dom", "actual-change", "instrumentation", "trace"] }
 
@@ -245,9 +245,7 @@ def emit (moduleName : String) (checked : TabsSpec.Checked n) : Except Error Emi
             (runtime.setAttribute, runtime.setAttribute),
             (runtime.append, runtime.append),
             (runtime.listen, runtime.listen),
-            (runtime.setText, runtime.setText)
-          ] },
-        { source := "./leanrx_host.mjs", names := #[
+            (runtime.setText, runtime.setText),
             (runtime.makeDisposer, runtime.makeDisposer)
           ] }
       ]

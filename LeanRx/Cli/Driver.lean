@@ -130,7 +130,7 @@ private def doctor : IO UInt32 := do
   let playwright ← toolVersion "corepack" #["pnpm", "exec", "playwright", "--version"]
   let mut hostsOk := true
   for host in ["runtime/leanrx_dom.mjs", "runtime/leanrx_form_events.mjs",
-      "runtime/leanrx_host.mjs", "runtime/leanrx_region.mjs", "runtime/leanrx_unkeyed_region.mjs",
+      "runtime/leanrx_region.mjs", "runtime/leanrx_unkeyed_region.mjs",
       "runtime/leanrx_delta_region.mjs", "runtime/leanrx_effects.mjs",
       "runtime/leanrx_issue_ports.mjs"] do
     unless ← (System.FilePath.mk host).pathExists do hostsOk := false

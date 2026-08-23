@@ -38,7 +38,6 @@ private def generateChecked (directory : System.FilePath)
   IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")
   IO.FS.writeFile (directory / "leanrx_form_events.mjs")
     (← IO.FS.readFile "runtime/leanrx_form_events.mjs")
-  IO.FS.writeFile (directory / "leanrx_host.mjs") (← IO.FS.readFile "runtime/leanrx_host.mjs")
 
 def generateInto (directory : System.FilePath) : IO Unit :=
   match spec.check with

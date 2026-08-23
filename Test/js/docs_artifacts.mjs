@@ -14,7 +14,7 @@ if (
   manifest.module !== "LeanRxDocs.mjs" ||
   typeof manifest.graphHash !== "string" ||
   manifest.graphHash.length === 0 ||
-  manifest.runtimeAbi !== 11 ||
+  manifest.runtimeAbi !== 12 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !==
     JSON.stringify(["int", "string", "string", "string"]) ||
@@ -23,7 +23,7 @@ if (
   manifest.textSinkCount !== 3 ||
   manifest.eventCount !== 7 ||
   JSON.stringify(manifest.hostImports) !==
-    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_host.mjs"]) ||
+    JSON.stringify(["./leanrx_dom.mjs"]) ||
   JSON.stringify(manifest.features) !==
     JSON.stringify(["scalar", "events", "transactions", "instrumentation", "trace"])
 ) {

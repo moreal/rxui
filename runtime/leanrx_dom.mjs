@@ -26,14 +26,12 @@ export function nextSibling(node) {
   return node.nextSibling;
 }
 
-/** Deep-clones a static prototype subtree that generated code built once. */
+// Deep-clones a static prototype subtree that generated code built once.
 export function cloneTemplate(template) {
   return template.cloneNode(true);
 }
 
-/** Marks `node` as a delegated-event key carrier. `listenDelegated` resolves
- * the nearest ancestor-or-self key from this property or a `data-lrx-key`
- * attribute, so a keyed row root serves every action node inside it. */
+// Marks node as a delegated-event key carrier for listenDelegated.
 export function setKey(node, key) {
   node.$lrxKey = key;
 }
@@ -53,8 +51,8 @@ export function uniqueId(prefix) {
   return `${prefix}-${nextIdValue}`;
 }
 
-// The key of the nearest ancestor-or-self of `actionNode` (up to `root`) that
-// carries a `setKey` value or a `data-lrx-key` attribute; "" when none does.
+// Key of the nearest ancestor-or-self (up to root) carrying a setKey value or a
+// data-lrx-key attribute; "" when none does.
 function delegatedKey(actionNode, root) {
   for (let current = actionNode; current !== null; current = current.parentNode) {
     const key = current.$lrxKey;
@@ -90,4 +88,33 @@ export function listen(node, type, state, refs, dispatch) {
   const handler = () => dispatch(state, refs);
   node.addEventListener(type, handler);
   return () => node.removeEventListener(type, handler);
+}
+
+export function makeDisposer(root, listenerDisposers, metrics, regions = [], gridWork = null) {
+  let disposed = false;
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    let firstError = null;
+    for (const removeListener of listenerDisposers.splice(0)) {
+      try {
+        removeListener();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    try {
+      root.remove();
+    } catch (error) {
+      firstError ??= error;
+    }
+    if (firstError) throw firstError;
+  }
+  dispose.instrumentation = () => [
+    metrics[0], metrics[1], metrics[2], metrics[3], metrics[4], metrics[5],
+    metrics[6], metrics[7].slice(), metrics[8], metrics[9],
+  ];
+  dispose.regionInstrumentation = () => regions.map((region) => region.instrumentation());
+  dispose.gridInstrumentation = () => gridWork?.slice() ?? [];
+  return dispose;
 }

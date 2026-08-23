@@ -861,8 +861,7 @@ private def manifest (moduleName : String) (checked : LeanRx.Grid.Spec.Checked) 
   derivedCount := 1
   textSinkCount := 2
   eventCount := 7
-  hostImports := #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_delta_region.mjs",
-    "./leanrx_host.mjs"]
+  hostImports := #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_delta_region.mjs"]
   features := #["direct-dom", "keyed-region", "structural-delta", "hybrid-cost-model",
     "instrumentation", "reference-propagation"]
 }
@@ -926,16 +925,14 @@ def emit (moduleName : String) (checked : LeanRx.Grid.Spec.Checked) : Except Err
           (runtime.setProperty, runtime.setProperty),
           (runtime.append, runtime.append),
           (runtime.setText, runtime.setText),
-          (runtime.listenDelegated, runtime.listenDelegated)
+          (runtime.listenDelegated, runtime.listenDelegated),
+          (runtime.makeDisposer, runtime.makeDisposer)
         ] },
       { source := "./leanrx_region.mjs", names := #[
           (runtime.createKeyedRegion, runtime.createKeyedRegion)
         ] },
       { source := "./leanrx_delta_region.mjs", names := #[
           (runtime.createDeltaKeyedRegion, runtime.createDeltaKeyedRegion)
-        ] },
-      { source := "./leanrx_host.mjs", names := #[
-          (runtime.makeDisposer, runtime.makeDisposer)
         ] }
     ]
     declarations

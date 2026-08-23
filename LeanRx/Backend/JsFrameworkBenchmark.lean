@@ -619,7 +619,7 @@ private def manifest (moduleName : String) (checked : LeanRx.JsFrameworkBenchmar
   derivedCount := 1
   textSinkCount := 2
   eventCount := 8
-  hostImports := #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_host.mjs"]
+  hostImports := #["./leanrx_dom.mjs", "./leanrx_region.mjs"]
   features := #["direct-dom", "template-clone", "keyed-region", "instrumentation",
     "benchmark-contract"]
 }
@@ -668,13 +668,11 @@ def emit (moduleName : String) (checked : LeanRx.JsFrameworkBenchmark.Spec.Check
           (runtime.nextSibling, runtime.nextSibling),
           (runtime.cloneTemplate, runtime.cloneTemplate),
           (runtime.setKey, runtime.setKey),
-          (runtime.listenDelegated, runtime.listenDelegated)
+          (runtime.listenDelegated, runtime.listenDelegated),
+          (runtime.makeDisposer, runtime.makeDisposer)
         ] },
       { source := "./leanrx_region.mjs", names := #[
           (runtime.createKeyedRegion, runtime.createKeyedRegion)
-        ] },
-      { source := "./leanrx_host.mjs", names := #[
-          (runtime.makeDisposer, runtime.makeDisposer)
         ] }
     ]
     declarations

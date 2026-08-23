@@ -350,7 +350,7 @@ private def manifest (moduleName : String) (checked : ValidatedFormSpec.Checked)
     derivedCount := 0
     textSinkCount := 4
     eventCount := 8
-    hostImports := #["./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_host.mjs"]
+    hostImports := #["./leanrx_dom.mjs", "./leanrx_form_events.mjs"]
     features := #["forms", "controlled-input", "checked", "disabled", "submit",
       "keyboard", "focus", "validation", "typed-command", "instrumentation", "trace"] }
 
@@ -557,7 +557,8 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
             (runtime.append, runtime.append),
             (runtime.setText, runtime.setText),
             (runtime.setProperty, runtime.setProperty),
-            (runtime.uniqueId, runtime.uniqueId)
+            (runtime.uniqueId, runtime.uniqueId),
+            (runtime.makeDisposer, runtime.makeDisposer)
           ] },
         { source := "./leanrx_form_events.mjs", names := #[
             (runtime.listenValue, runtime.listenValue),
@@ -565,9 +566,6 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
             (runtime.listenKey, runtime.listenKey),
             (runtime.listenFocus, runtime.listenFocus),
             (runtime.listenSubmit, runtime.listenSubmit)
-          ] },
-        { source := "./leanrx_host.mjs", names := #[
-            (runtime.makeDisposer, runtime.makeDisposer)
           ] }
       ]
       declarations := #[.function validator, .function render, .function editName,

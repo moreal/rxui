@@ -36,7 +36,6 @@ private def generateChecked (directory : System.FilePath)
   IO.FS.writeFile (directory / "Counter.graph.html") (checked.graph.toHtml ++ "\n")
   IO.FS.writeFile (directory / "Counter.generated.lean") generatedDeclarationsSource
   IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")
-  IO.FS.writeFile (directory / "leanrx_host.mjs") (← IO.FS.readFile "runtime/leanrx_host.mjs")
 
 def generateInto (directory : System.FilePath) : IO Unit :=
   match CounterSyntax_spec.check with

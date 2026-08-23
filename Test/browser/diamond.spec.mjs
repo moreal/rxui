@@ -11,7 +11,6 @@ const files = new Set([
   "DiamondLab.mjs",
   "Diamond.expected.json",
   "leanrx_dom.mjs",
-  "leanrx_host.mjs",
 ]);
 let server;
 let origin;

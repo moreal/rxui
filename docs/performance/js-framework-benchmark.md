@@ -29,7 +29,9 @@ exactly the previously and newly selected rows through the region's
 `updateAt` (ADR-0020); every other operation commits the whole row list. It
 does not use the optional structural delta path or the conditional/positional
 regions, or the typed form-event adapters, and since ABI 9/10/11 it ships none
-of those host modules. The benchmark lowering is currently
+of those host modules; since ABI 12 its disposer comes from the DOM host, so the
+page fetches five files (`index.html`, `main.mjs`, the generated module, the
+DOM host, the keyed region host). The benchmark lowering is currently
 a dedicated backend module; it is evidence for the current generated runtime
 rather than a claim that the general-purpose component compiler can yet lower
 every collection program.
@@ -71,7 +73,7 @@ The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 22,047 | 6,422 | 6,789 |
+| Complete fetched application | 20,684 | 5,415 | 6,240 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.

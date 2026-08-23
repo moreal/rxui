@@ -12,7 +12,6 @@ const files = new Set([
   "LeanRx.mjs",
   "leanrx_dom.mjs",
   "leanrx_region.mjs",
-  "leanrx_host.mjs",
 ]);
 let server;
 let origin;

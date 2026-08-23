@@ -91,7 +91,7 @@ private def packageLock : String :=
 
 private def assetManifest : String :=
   "{\"files\":[\"index.html\",\"main.mjs\",\"LeanRx.mjs\"," ++
-  "\"leanrx_dom.mjs\",\"leanrx_region.mjs\",\"leanrx_host.mjs\"]}\n"
+  "\"leanrx_dom.mjs\",\"leanrx_region.mjs\"]}\n"
 
 private def generateChecked (directory : System.FilePath)
     (checked : LeanRx.JsFrameworkBenchmark.Spec.Checked) : IO Unit := do
@@ -111,7 +111,6 @@ private def generateChecked (directory : System.FilePath)
   IO.FS.writeFile (directory / "package-lock.json") packageLock
   IO.FS.writeFile (directory / "leanrx_dom.mjs") (← IO.FS.readFile "runtime/leanrx_dom.mjs")
   IO.FS.writeFile (directory / "leanrx_region.mjs") (← IO.FS.readFile "runtime/leanrx_region.mjs")
-  IO.FS.writeFile (directory / "leanrx_host.mjs") (← IO.FS.readFile "runtime/leanrx_host.mjs")
 
 def generateInto (directory : System.FilePath) : IO Unit :=
   match spec.check with

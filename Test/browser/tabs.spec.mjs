@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test";
 const directory = process.env.LEANRX_TABS_DIST;
 if (!directory) throw new Error("LEANRX_TABS_DIST is required");
 
-const files = new Set(["DependentTabs.mjs", "leanrx_dom.mjs", "leanrx_host.mjs"]);
+const files = new Set(["DependentTabs.mjs", "leanrx_dom.mjs"]);
 let server;
 let origin;
 

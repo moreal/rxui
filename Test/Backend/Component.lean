@@ -26,12 +26,12 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
       ¬readable.contains "eval(" && ¬readable.contains "Function(" do
     throw <| IO.userError "Counter output introduced a banned runtime mechanism"
   unless emitted.manifest.moduleName == "Counter.mjs" &&
-      emitted.manifest.runtimeAbi == 11 &&
+      emitted.manifest.runtimeAbi == 12 &&
       emitted.manifest.exports == #["mount"] &&
       emitted.manifest.stateSlots == #[.int, .int, .string] &&
       emitted.manifest.sourceCount == 1 && emitted.manifest.derivedCount == 2 &&
       emitted.manifest.textSinkCount == 5 && emitted.manifest.eventCount == 4 &&
-      emitted.manifest.hostImports == #["./leanrx_dom.mjs", "./leanrx_host.mjs"] &&
+      emitted.manifest.hostImports == #["./leanrx_dom.mjs"] &&
       emitted.manifest.features ==
         #["scalar", "events", "transactions", "instrumentation", "trace"] do
     throw <| IO.userError "Counter manifest lost required deterministic metadata"

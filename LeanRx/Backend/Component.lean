@@ -386,7 +386,7 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
     derivedCount := checked.spec.values.size - checked.sourceCount
     textSinkCount := checked.view.textSinks.length
     eventCount := checked.spec.events.size
-    hostImports := #["./leanrx_dom.mjs", "./leanrx_host.mjs"]
+    hostImports := #["./leanrx_dom.mjs"]
     features := #["scalar", "events", "transactions", "instrumentation", "trace"] }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
@@ -471,9 +471,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             (runtime.setAttribute, runtime.setAttribute),
             (runtime.append, runtime.append),
             (runtime.listen, runtime.listen),
-            (runtime.setText, runtime.setText)
-          ] },
-        { source := "./leanrx_host.mjs", names := #[
+            (runtime.setText, runtime.setText),
             (runtime.makeDisposer, runtime.makeDisposer)
           ] }
       ]

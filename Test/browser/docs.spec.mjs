@@ -13,7 +13,6 @@ const files = new Set([
   "LeanRxDocs.mjs",
   "LeanRxDocs.graph.html",
   "leanrx_dom.mjs",
-  "leanrx_host.mjs",
 ]);
 let server;
 let origin;

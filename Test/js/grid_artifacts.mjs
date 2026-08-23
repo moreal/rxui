@@ -10,7 +10,7 @@ const expected = JSON.parse(fs.readFileSync(path.join(directory, "DataGrid.expec
 const readable = fs.readFileSync(path.join(directory, "DataGrid.mjs"), "utf8");
 const compact = fs.readFileSync(path.join(directory, "DataGrid.min.mjs"), "utf8");
 
-if (manifest.runtimeAbi !== 11 || manifest.module !== "DataGrid.mjs" ||
+if (manifest.runtimeAbi !== 12 || manifest.module !== "DataGrid.mjs" ||
     JSON.stringify(manifest.exports) !== '["mountFull","mountDelta","mountHybrid"]' ||
     manifest.graphHash !== "grid:10000:5000:10:1:9998:7777:256:8:3:1" ||
     JSON.stringify(manifest.stateSlots) !==
@@ -22,7 +22,7 @@ if (manifest.runtimeAbi !== 11 || manifest.module !== "DataGrid.mjs" ||
   throw new Error("data-grid manifest contract changed");
 }
 if (JSON.stringify(manifest.hostImports) !==
-    '["./leanrx_dom.mjs","./leanrx_region.mjs","./leanrx_delta_region.mjs","./leanrx_host.mjs"]') {
+    '["./leanrx_dom.mjs","./leanrx_region.mjs","./leanrx_delta_region.mjs"]') {
   throw new Error("data-grid host import contract changed");
 }
 if (expected.sourceCount !== 9000 || expected.visibleCount !== 5000 ||

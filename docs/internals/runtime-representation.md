@@ -64,7 +64,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 11. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 12. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -136,6 +136,36 @@ delegated-event adapter (`setKey`, `listenDelegated`). Backends that lower a
 `ControlEvent` import and list the new host; artifacts that only delegate events
 ship the smaller DOM host. See
 [ADR-0021](../adr/0021-runtime-abi-v11-form-events-host.md).
+
+ABI 12 moves `makeDisposer` unchanged from `leanrx_host.mjs` (deleted) into the
+DOM host, so every artifact imports its disposer from the module it already
+fetches; the host comments are condensed to the terse style of the other hosts
+and the keyed-region contract below is the reference for the prose they held.
+See [ADR-0022](../adr/0022-runtime-abi-v12-disposer-in-dom-host.md).
+
+The keyed region host (`leanrx_region.mjs`) exposes `createKeyedRegion(parent,
+mountItem, updateItem, disposeItem, rootItem?)` to generated code and shares
+`detach`, `anchor`, `snapshot`, `placeInOrder`, and `rebuild` with the delta and
+unkeyed region hosts (they are not generated-code entry points). `update(items,
+context)` reconciles the whole target, where `items[i][0]` is the key: it
+validates every key before the first callback or DOM mutation, matching a
+retained key by position first (no hashing while the order is unchanged) and
+then through the key index, registering a new key as an unmounted entry, and
+unregistering the new entries and throwing `LRX-REGION-001` on a repeated key
+(into an empty region each key costs one index insertion and a size that did
+not grow reveals the repetition); it then forwards `context` to
+`mountItem(item, index, context)`, `updateItem(handle, item, index, context)`,
+and `disposeItem(handle, key, context)`. `updateAt(index, item, context)`
+re-runs `updateItem` for one retained position whose key must match
+(`LRX-REGION-003` otherwise) and changes no shape, order, or identity.
+Placement inserts new nodes and moves only the retained nodes outside one
+longest order-preserving subsequence after trimming the unchanged prefix and
+suffix, so a two-row swap costs two DOM moves; ties keep earlier target
+positions in place. When nothing is retained, a region that owns its whole
+parent (its first node through its marker, no foreign sibling) removes the old
+rows with one bulk clear and, while the parent is connected, not focused, and
+about to receive rows, detaches that parent so the browser attaches the rebuilt
+subtree once instead of per row.
 
 Dynamic-region manifests use a separate `ManifestTypeId` for metadata-only
 `record<name>` and `list<element>` slot descriptions. Those constructors cannot

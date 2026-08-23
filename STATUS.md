@@ -361,6 +361,19 @@ Complete — M0 through M11
   with byte-identical generated and region code, so the CPU rows moved only
   by run-to-run drift (append 38.5 → 36.4 ms, partial update 20.9 → 19.8 ms,
   swap's mean 22.8 → 26.9 ms from one 62.8 ms sample with a 23.9 ms median).
+- Made the shipped runtime smaller a third time without touching the checked
+  Lean models (ADR-0022, runtime ABI 12): `makeDisposer` moved unchanged from
+  `runtime/leanrx_host.mjs` (deleted; 867 bytes, served uncompressed by the
+  upstream server's 1 KiB Brotli threshold) into the DOM host every artifact
+  already fetches, and the keyed region and DOM hosts' multi-line comments
+  were condensed to the terse style of the other hosts with the contract prose
+  moved to `docs/internals/runtime-representation.md`; every artifact fetches
+  one module fewer and the benchmark baseline moves 22,047 → 20,684 raw,
+  6,422 → 5,415 Brotli. The headless run recorded in `BENCHMARK.md` measured
+  21.5 → 20.2 KB shipped (6.3 → 5.3 KB Brotli) and first paint 73.5 → 74.5 ms
+  against Solid's 79.0 ms, with the CPU rows moving only by run-to-run drift
+  (swap's mean 26.9 → 23.6 ms because this run had no outlier sample; every
+  CPU row at or below Solid).
 
 ## In progress
 

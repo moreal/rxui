@@ -245,7 +245,7 @@ private def manifest (moduleName : String) (checked : TemperatureSpec.Checked) :
     derivedCount := 0
     textSinkCount := 1
     eventCount := 2
-    hostImports := #["./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_host.mjs"]
+    hostImports := #["./leanrx_dom.mjs", "./leanrx_form_events.mjs"]
     features := #["forms", "controlled-input", "typed-events", "validation",
       "actual-change", "instrumentation", "trace"] }
 
@@ -362,7 +362,8 @@ def emit (moduleName : String) (checked : TemperatureSpec.Checked) : Except Erro
             (runtime.append, runtime.append),
             (runtime.setText, runtime.setText),
             (runtime.setProperty, runtime.setProperty),
-            (runtime.uniqueId, runtime.uniqueId)
+            (runtime.uniqueId, runtime.uniqueId),
+            (runtime.makeDisposer, runtime.makeDisposer)
           ] },
         { source := "./leanrx_form_events.mjs", names := #[
             (runtime.listenValue, runtime.listenValue),
@@ -370,9 +371,6 @@ def emit (moduleName : String) (checked : TemperatureSpec.Checked) : Except Erro
             (runtime.listenKey, runtime.listenKey),
             (runtime.listenFocus, runtime.listenFocus),
             (runtime.listenSubmit, runtime.listenSubmit)
-          ] },
-        { source := "./leanrx_host.mjs", names := #[
-            (runtime.makeDisposer, runtime.makeDisposer)
           ] }
       ]
       declarations := #[.function editCelsius, .function editFahrenheit,

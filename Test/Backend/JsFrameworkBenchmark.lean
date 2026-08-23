@@ -17,8 +17,8 @@ def run : IO Unit := do
     | .error error => throw <| IO.userError s!"{error.code}: {error.message}"
   assertEq #["mount"] emitted.manifest.exports
   assertEq 8 emitted.manifest.eventCount
-  assertEq 11 emitted.manifest.runtimeAbi
-  assertEq #["./leanrx_dom.mjs", "./leanrx_region.mjs", "./leanrx_host.mjs"]
+  assertEq 12 emitted.manifest.runtimeAbi
+  assertEq #["./leanrx_dom.mjs", "./leanrx_region.mjs"]
     emitted.manifest.hostImports
   unless emitted.manifest.features.contains "keyed-region" &&
       emitted.manifest.features.contains "benchmark-contract" &&

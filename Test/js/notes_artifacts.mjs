@@ -10,7 +10,7 @@ const manifest = JSON.parse(
 );
 if (
   manifest.module !== "Notes.mjs" ||
-  manifest.runtimeAbi !== 11 ||
+  manifest.runtimeAbi !== 12 ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["string"]) ||
   manifest.sourceCount !== 1 ||
   manifest.derivedCount !== 0 ||
@@ -22,7 +22,6 @@ if (
   JSON.stringify(manifest.hostImports) !== JSON.stringify([
     "./leanrx_dom.mjs",
     "./leanrx_form_events.mjs",
-    "./leanrx_host.mjs",
     "./leanrx_effects.mjs",
   ])
 ) {

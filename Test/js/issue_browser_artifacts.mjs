@@ -20,7 +20,7 @@ const expectedPort = {
 };
 if (
   manifest.module !== "IssueBrowser.mjs" ||
-  manifest.runtimeAbi !== 11 ||
+  manifest.runtimeAbi !== 12 ||
   JSON.stringify(manifest.stateSlots) !==
     JSON.stringify(["string", "list<record<Issue>>", "nat", "bool"]) ||
   manifest.sourceCount !== 4 ||
@@ -34,7 +34,6 @@ if (
   JSON.stringify(manifest.hostImports) !== JSON.stringify([
     "./leanrx_dom.mjs",
     "./leanrx_form_events.mjs",
-    "./leanrx_host.mjs",
     "./leanrx_region.mjs",
     "./leanrx_effects.mjs",
     "./leanrx_issue_ports.mjs",
