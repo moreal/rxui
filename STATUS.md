@@ -391,6 +391,22 @@ Complete — M0 through M11
   the CPU rows moving only by run-to-run drift (swap 23.6 → 21.2 ms, remove
   17.9 → 18.2 ms against Solid's 18.0 ms within a ±2.2 ms spread; every other
   CPU row below Solid).
+- Made the shipped js-framework-benchmark application smaller a fifth time
+  without touching the checked Lean models or the runtime ABI (ADR-0024):
+  `LeanRx/Backend/JsCompact.lean` is a dependency-free, fail-closed
+  JavaScript compactor (tokenizer, whitespace-minimal printing, `x["name"]`
+  → `x.name`, top-level and per-function short identifiers) that the
+  benchmark build runs over the flattened module; it rejects every construct
+  it does not model (`LRX-BE-031`) and is covered by a golden/rejection test,
+  `node --check`, and the Playwright contract tests. The baseline moves
+  17,480 → 9,788 raw, 4,277 → 3,247 Brotli (`main.mjs` alone 8,122 / 2,887
+  bytes against Solid's 11,563 / 4,358), below Solid on both measures. The
+  headless run recorded in `BENCHMARK.md` measured 17.1 → 9.6 KB shipped
+  (4.2 → 3.2 KB Brotli against Solid's 11.5 / 4.5 KB) and first paint 77.8
+  ms against Solid's 81.5 ms, with the CPU rows moving only by run-to-run
+  drift (swap 21.2 → 24.6 ms against Solid's 23.7 ms, within one standard
+  deviation, LeanRx's script phase half of Solid's; every other CPU row
+  below Solid).
 
 ## In progress
 

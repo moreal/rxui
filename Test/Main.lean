@@ -15,6 +15,7 @@ import Test.Graph.IntProgram
 import Test.Backend.JsAst
 import Test.Backend.JsName
 import Test.Backend.JsPrinter
+import Test.Backend.JsCompact
 import Test.IR.Erasure
 import Test.Lower.RxExpr
 import Test.Backend.Scalar
@@ -82,6 +83,7 @@ def main : IO Unit := do
   LeanRxTest.Backend.JsAst.run
   LeanRxTest.Backend.JsName.run
   LeanRxTest.Backend.JsPrinter.run
+  LeanRxTest.Backend.JsCompact.run
   LeanRxTest.IR.Erasure.run
   LeanRxTest.Lower.RxExpr.run
   LeanRxTest.Backend.Scalar.run

@@ -1,4 +1,5 @@
 import examples.JsFrameworkBenchmark
+import LeanRx.Backend.JsCompact
 import LeanRx.Cli.AtomicOutput
 import LeanRx.Graph.Serialize
 
@@ -129,9 +130,17 @@ private def generateChecked (directory : System.FilePath)
   for hostImport in emitted.manifest.hostImports do
     let name := (hostImport.splitOn "/").getLastD hostImport
     hosts := hosts ++ (← inlineHost name (← IO.FS.readFile ("runtime" / name)))
+  -- ADR-0024: the flattened text is then compacted (whitespace, comments,
+  -- short identifiers, dot member access); the compactor fails closed on any
+  -- construct it does not model.
+  let main ← match Js.Compact.compact (hosts ++ compact ++ "\n" ++ mainStatement) with
+    | .ok source => pure (source ++ "\n")
+    | .error error =>
+        throw <| IO.userError
+          s!"JS framework benchmark compactor failed: {error.code}: {error.message}"
   IO.FS.createDirAll directory
   IO.FS.writeFile (directory / "index.html") (indexHtml checked.spec.name)
-  IO.FS.writeFile (directory / "main.mjs") (hosts ++ compact ++ "\n" ++ mainStatement)
+  IO.FS.writeFile (directory / "main.mjs") main
   IO.FS.writeFile (directory / "main.mjs.manifest.json") emitted.manifest.json
   IO.FS.writeFile (directory / "benchmark-assets.json") assetManifest
   IO.FS.writeFile (directory / "package.json") packageJson

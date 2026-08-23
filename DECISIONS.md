@@ -25,6 +25,7 @@
 | [0021](docs/adr/0021-runtime-abi-v11-form-events-host.md) | Accepted | Bump the internal runtime ABI for a separate form-event host | 2026-08-23 |
 | [0022](docs/adr/0022-runtime-abi-v12-disposer-in-dom-host.md) | Accepted | Bump the internal runtime ABI to ship the disposer in the DOM host | 2026-08-23 |
 | [0023](docs/adr/0023-flattened-benchmark-module.md) | Accepted | Flatten the js-framework-benchmark application into one module at build time | 2026-08-23 |
+| [0024](docs/adr/0024-compacted-benchmark-module.md) | Accepted | Compact the flattened js-framework-benchmark module with a Lean tokenizer | 2026-08-23 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
