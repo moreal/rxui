@@ -958,3 +958,61 @@ gate working as intended.
 `feat(elab): sugar component items and bind events by reference (ADR-0036)`,
 and `feat(backend): lower typed event payloads through the generic component
 backend (ADR-0037)`.
+
+## Controlled inputs and child components — Echo Lab and Nest Lab
+
+### Scenario exercised
+
+Echo Lab became a controlled form through the generic component backend
+(ADR-0038): `value={rx% draft}` and `checked={rx% loud}` reflections, a
+`type="checkbox"` input with a `Bool` typed event
+(`event toggleLoud (checked : Bool) := set loud checked;` bound with
+`onCheckedChange`), and a `form onSubmit={saveNote}` whose host adapter owns
+`preventDefault`. A new Nest Lab example nests a stateful `<Pulse/>` child
+inside `NestLab` (ADR-0039): the parent module imports `mount` from
+`./Pulse.mjs`, mounts it mid-tree in document order without a wrapper, and
+folds the child disposer into its own. Chromium gates controlled resets,
+mid-text cursor preservation, checkbox payloads, prevented submission,
+in-order child mounting, state independence, and child disposal.
+
+### What was pleasant
+
+Every host export needed already existed at ABI ≤ 15 — `setProperty`,
+`listenChecked`, `listenSubmit` — so the round shipped with no runtime edit
+and no ABI bump. Reflected properties turned out to be exactly text sinks
+with a property name: the same evaluator table, the same anyChanged guard,
+the same cache-compare-write shape, using the previously idle `tx[8]`/`tx[9]`
+metric slots. The WHATWG equal-value assignment rule made cursor preservation
+free — the cache-guarded write re-assigns the string the user just typed and
+the caret provably stays put, which the browser gate pins. Child composition
+by module import needed no event namespacing at all: module scope is the
+namespace, and mounting `mount(parent)` mid-sequence preserves document order
+without a wrapper element.
+
+### Friction
+
+`section` is a Lean keyword, so `<section>` cannot appear in `jsx%` (the tag
+was never in the whitelist; `<div class>` stands in). `ComponentSpec` values
+live in `Type 1`, so a build driver cannot `←`-bind a `CheckedComponent` in
+`IO` and must match instead — same for backend helper tuples, which forced a
+small `PropSlot` mirror struct. Widening `typedEvents` to `Bool` payloads
+required the closed `AnyTypedEvent` union rather than an array of one payload
+type. Child instrumentation is unreachable through the parent disposer, and
+transforming reflections legitimately move the caret to the end; both are
+recorded as ADR limitations.
+
+### Bugs found
+
+No framework defect. One test bug: focusing an input to keep typing places
+the caret at position 0 in Chromium, so the submit gate had to press `End`
+first — a useful reminder that controlled-input tests must manage selection
+explicitly.
+
+### Follow-up issue or commit
+
+`feat(view): model reflected properties, form submission, and child slots
+(ADR-0038, ADR-0039)`, `feat(backend): emit controlled inputs and static
+child mounts through the generic component backend`,
+`example(echo): make Echo Lab a controlled form`,
+`example(nest): nest a stateful Pulse child in Nest Lab`, and
+`docs(adr): sketch the App IR generalization of Backend.Todo (ADR-0040)`.
