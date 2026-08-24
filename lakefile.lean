@@ -67,7 +67,8 @@ lean_lib LeanRxTest where
 lean_lib LeanRxExamples where
   roots := #[`examples.ExpressionPlayground, `examples.GraphFixtures,
     `examples.Counter, `examples.CounterBuild,
-    `examples.DiamondLab, `examples.DiamondLabBuild, `examples.DependentTabs,
+    `examples.DiamondLab, `examples.DiamondLabBuild,
+    `examples.EchoLab, `examples.EchoLabBuild, `examples.DependentTabs,
     `examples.DependentTabsBuild, `examples.TemperatureConverter,
     `examples.TemperatureConverterBuild, `examples.ValidatedForm,
     `examples.ValidatedFormBuild, `examples.TodoMVC, `examples.TodoMVCBuild,
@@ -100,6 +101,9 @@ lean_exe leanrx_counter_js where
 
 lean_exe leanrx_diamond_js where
   root := `examples.DiamondLabMain
+
+lean_exe leanrx_echo_js where
+  root := `examples.EchoLabMain
 
 lean_exe leanrx_tabs_js where
   root := `examples.DependentTabsMain
