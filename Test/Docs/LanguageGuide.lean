@@ -65,6 +65,42 @@ component CounterExplicitSyntax (schema := CounterSchema) where {
   view := counterView;
 }
 
+/- The controlled-input snippet from guide section 7 (ADR-0038). -/
+abbrev EchoMiniSchema : Schema :=
+  .field "draft" String <| .field "loud" Bool .empty
+
+def draft : Field EchoMiniSchema String := .here
+def loud : Field EchoMiniSchema Bool := .there .here
+
+component EchoMini (schema := EchoMiniSchema) where {
+  state draft : String := "";
+  state loud : Bool := false;
+  event save := set draft "";
+  event setDraft (value : String) := set draft value;
+  event toggleLoud (checked : Bool) := set loud checked;
+  view := jsx% <main> [
+    <form onSubmit={save}> [
+      <input ariaLabel="Draft" value={rx% draft} onInput={setDraft} />,
+      <input ariaLabel="Loud" type="checkbox" checked={rx% loud} onCheckedChange={toggleLoud} />,
+      <button type="submit"> ["Save"]
+    ]
+  ];
+}
+
+/- The static child-nesting snippet from guide section 7 (ADR-0039). -/
+abbrev NestMiniSchema : Schema := .field "clicks" Int .empty
+
+def clicks : Field NestMiniSchema Int := .here
+
+component NestMini (schema := NestMiniSchema) where {
+  state clicks : Int := 0;
+  event bump := set clicks (clicks + 1);
+  view := jsx% <main> [
+    <button type="button" onClick={bump}> ["Bump"],
+    <EchoMini/>
+  ];
+}
+
 def run : IO Unit := do
   unless doubled.dependencies.ids == [0] && countText.dependencies.ids == [0] do
     throw <| IO.userError "language-guide expression dependencies changed"
@@ -79,5 +115,17 @@ def run : IO Unit := do
   | .ok _ => pure ()
   | .error error =>
       throw <| IO.userError s!"language-guide explicit component rejected: {error.render}"
+  match EchoMini_check with
+  | .ok controlled =>
+      unless controlled.view.props.map (·.binding.name) == ["value", "checked"] do
+        throw <| IO.userError "language-guide controlled snippet lost its reflections"
+  | .error error =>
+      throw <| IO.userError s!"language-guide controlled component rejected: {error.render}"
+  match NestMini_check with
+  | .ok nested =>
+      unless nested.spec.children.toList.map (·.name) == ["EchoMini"] do
+        throw <| IO.userError "language-guide nesting snippet lost its child table"
+  | .error error =>
+      throw <| IO.userError s!"language-guide nested component rejected: {error.render}"
 
 end LeanRxTest.Docs.LanguageGuide

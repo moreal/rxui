@@ -160,6 +160,37 @@ element. `onClick={increment}` binds by reference against the declared event
 inventory (or an `EventSpec` in scope outside a component). The explicit
 wrapper forms remain valid:
 
+Controlled inputs reflect state back into the DOM (ADR-0038): `value={rx% …}`
+and `checked={rx% …}` are property reflections valid only on `input` elements,
+`type="text"`/`type="checkbox"` select the input control, a `Bool` payload
+event (`event toggleLoud (checked : Bool) := set loud checked;`) binds with
+`onCheckedChange={toggleLoud}`, and a `form` element takes a payload-less
+`onSubmit={save}` whose host adapter owns `preventDefault`:
+
+```lean
+component EchoMini (schema := EchoMiniSchema) where {
+  state draft : String := "";
+  state loud : Bool := false;
+  event save := set draft "";
+  event setDraft (value : String) := set draft value;
+  event toggleLoud (checked : Bool) := set loud checked;
+  view := jsx% <main> [
+    <form onSubmit={save}> [
+      <input ariaLabel="Draft" value={rx% draft} onInput={setDraft} />,
+      <input ariaLabel="Loud" type="checkbox" checked={rx% loud} onCheckedChange={toggleLoud} />,
+      <button type="submit"> ["Save"]
+    ]
+  ];
+}
+```
+
+An attr-less capitalized element statically nests another checked component
+when its `_spec` is in scope (ADR-0039): `<EchoMini/>` inside a later
+component's view records `EchoMini` in the parent's child table, and the
+parent's generated module imports and mounts `./EchoMini.mjs` in document
+order with fully independent state and disposal. A capitalized head without a
+matching `_spec` keeps its ordinary meaning as a typed view-term application.
+
 ```lean
 component CounterExplicitSyntax (schema := CounterSchema) where {
   state count := ValueSpec.state count (.int 1);

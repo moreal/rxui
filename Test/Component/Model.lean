@@ -78,6 +78,22 @@ def run : IO Unit := do
         { role := .event, name := "roundTrip", span := .generated }
       ] }
   expectError "LRX-ELAB-103" mismatchedSurface.check
+  let undeclaredChild : ComponentSpec CounterSchema :=
+    { spec with view := View.node .main [View.child "Ghost"] }
+  expectError "LRX-VIEW-023" undeclaredChild.check
+  let badSpecifier : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [View.child "Ghost"]
+        children := #[{ name := "Ghost", moduleSpecifier := "../Ghost.mjs" }] }
+  expectError "LRX-VIEW-024" badSpecifier.check
+  let duplicateProps : ComponentSpec CounterSchema :=
+    { spec with view := (View.node .input []
+        (props := [.value countText, .value doubledText])) }
+  expectError "LRX-VIEW-021" duplicateProps.check
+  let reflectOnButton : ComponentSpec CounterSchema :=
+    { spec with view := (View.node .button [.text "Bad"]
+        (props := [.value countText])) }
+  expectError "LRX-VIEW-020" reflectOnButton.check
   let cycle : ComponentSpec (.field "a" Int <| .field "b" Int .empty) :=
     { name := "Cycle"
       values := #[

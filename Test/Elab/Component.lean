@@ -1,5 +1,6 @@
 import examples.Counter
 import examples.EchoLab
+import examples.NestLab
 
 namespace LeanRxTest.Elab.Component
 
@@ -18,17 +19,33 @@ private def verify (checked : CheckedComponent CounterSchema) : IO Unit := do
 private def verifyEcho (checked : CheckedComponent LeanRxExamples.EchoLab.EchoSchema) :
     IO Unit := do
   unless checked.spec.typedEvents.toList.map (·.name) ==
-      ["setDraft", "recordKey", "commitNote"] do
+      ["setDraft", "recordKey", "commitNote", "toggleLoud"] do
     throw <| IO.userError "typed event declarations lost their names"
   unless checked.spec.typedEvents.toList.map (·.parameterName) ==
-      ["value", "value", "value"] do
+      ["value", "value", "value", "checked"] do
     throw <| IO.userError "typed event declarations lost their payload parameters"
+  unless checked.spec.typedEvents.toList.map (·.payloadType.debug) ==
+      ["string", "string", "string", "bool"] do
+    throw <| IO.userError "typed event declarations lost their payload types"
   unless checked.view.events.map
       (fun mounted => (mounted.binding.kind.name, mounted.binding.eventName)) == [
-        ("input", "setDraft"), ("keydown", "recordKey"),
-        ("change", "commitNote"), ("click", "clear")
+        ("submit", "saveNote"), ("input", "setDraft"), ("keydown", "recordKey"),
+        ("change", "toggleLoud"), ("change", "commitNote"), ("click", "clear")
       ] do
     throw <| IO.userError "typed event references did not become mounted bindings"
+  unless checked.view.props.map (fun prop => (prop.binding.name, prop.path)) == [
+      ("value", [1, 0]), ("checked", [1, 1]), ("value", [2])
+    ] do
+    throw <| IO.userError "reflected properties did not become mounted prop sinks"
+
+private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSchema) :
+    IO Unit := do
+  unless checked.spec.children.toList.map (·.name) == ["Pulse"] do
+    throw <| IO.userError "child component table lost the nested Pulse reference"
+  unless checked.spec.children.toList.map (·.moduleSpecifier) == ["./Pulse.mjs"] do
+    throw <| IO.userError "child component table lost the module specifier convention"
+  unless checked.view.childRefs.map (fun ref => (ref.name, ref.path)) == [("Pulse", [3])] do
+    throw <| IO.userError "view split lost the mounted child reference"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [
@@ -44,12 +61,21 @@ def run : IO Unit := do
   | .error error => throw <| IO.userError s!"generated component rejected: {error.code}"
   | .ok checked => verify checked
   unless LeanRxExamples.EchoLab.EchoLab_declarations.map SurfaceDecl.debug == [
-      "state:draft", "state:lastKey", "state:note", "derived:summary",
-      "event:clear", "event:setDraft", "event:recordKey", "event:commitNote"
+      "state:draft", "state:lastKey", "state:note", "state:loud", "derived:summary",
+      "event:clear", "event:saveNote", "event:setDraft", "event:recordKey",
+      "event:commitNote", "event:toggleLoud"
     ] do
     throw <| IO.userError "typed component declaration inventory changed"
   match LeanRxExamples.EchoLab.EchoLab_check with
   | .error error => throw <| IO.userError s!"typed component rejected: {error.code}"
   | .ok checked => verifyEcho checked
+  match LeanRxExamples.NestLab.NestLab_check with
+  | .error error => throw <| IO.userError s!"nested component rejected: {error.code}"
+  | .ok checked => verifyNest checked
+  match LeanRxExamples.NestLab.Pulse_check with
+  | .error error => throw <| IO.userError s!"child component rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.children.isEmpty && checked.view.childRefs.isEmpty do
+        throw <| IO.userError "leaf child component unexpectedly nests children"
 
 end LeanRxTest.Elab.Component
