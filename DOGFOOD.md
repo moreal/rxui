@@ -906,3 +906,55 @@ comparison across thirteen reducer states all held on the first green build.
 `feat(elab): stage ordinary expression syntax with rx% (ADR-0033)` and
 `feat(elab): lower one JSX surface into typed views and the logical region
 model (ADR-0034)`.
+
+## Component sugar and typed payloads — items, references, and Echo Lab
+
+### Scenario exercised
+
+Counter and DiamondLab rewrote their `component` blocks in the sketched M4
+surface — `state count : Int := 1`, `derived doubled := rx% count * 2`,
+`event addTwo := set count (count + 1) then set count (count + 1)`,
+`dispatch` nesting, inline `rx%` sinks, and `onClick={increment}` reference
+bindings — with the generated `Counter.mjs`/`DiamondLab.mjs` byte-identical
+to the wrapper-style output. A new Echo Lab example declares typed payload
+events (`event setDraft (value : String) := set draft value;`) bound with
+`onInput`/`onKeyDown`/`onChange` on inputs beside a payload-less clear
+button, lowered through the generic component backend onto the existing
+`listenValue`/`listenKey` host adapters, and gated in Chromium
+(per-keystroke updates, blur-commit `change`, mixed listeners, disposal).
+
+### What was pleasant
+
+Because the sugar lowers onto the same `ValueSpec`/`EventSpec`/
+`TypedEventSpec` values, byte-identity was the acceptance test and it held on
+the first diff. Removing the reserved keyword atoms (ADR-0035) turned out to
+be a simplification, not a compromise: identifier-led item rules and
+name-dispatched attributes reuse the existing diagnostics, and `state`,
+`view`, `onClick`, and `id` became ordinary identifiers everywhere. The typed
+dispatch functions share the payload-less transaction shell verbatim, so the
+commit sweep, instrumentation, and trace vocabulary needed no new runtime.
+
+### Friction
+
+A non-reserved keyword (`&"state"`) cannot lead a syntax-category
+alternative — category dispatch never routes an identifier token to it — so
+the fix had to be identifier-led rules with elaborator dispatch rather than
+Lean's softer keyword flavor. `key` stays reserved because it follows a term
+position, and `component` stays a command keyword. The generic typed surface
+is one-way (payload to source): reflected DOM properties, `checked`, and
+`submit` remain with the bespoke form backends, so a controlled input still
+needs those. Typed events must be declared after payload-less events to keep
+the surface alignment order.
+
+### Bugs found
+
+No framework defect. The environment audit caught the elaborator rewrite
+renaming its generated unsafe helper (`unsafe_1` → `unsafe_5`), which is the
+gate working as intended.
+
+### Follow-up issue or commit
+
+`feat(elab): parse surface keywords as plain identifiers (ADR-0035)`,
+`feat(elab): sugar component items and bind events by reference (ADR-0036)`,
+and `feat(backend): lower typed event payloads through the generic component
+backend (ADR-0037)`.
