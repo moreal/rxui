@@ -90,6 +90,63 @@ test("payload-less click events coexist with typed events", async ({ page }) => 
   await expect(page.locator("#key-text")).toHaveText("Key: c");
 });
 
+test("controlled inputs reflect source resets back into the DOM", async ({ page }) => {
+  await mountEcho(page);
+  await page.locator("#draft").pressSequentially("abc");
+  await page.locator("#note").fill("memo");
+  await page.locator("#note").blur();
+  await expect(page.locator("#draft")).toHaveValue("abc");
+  await expect(page.locator("#note")).toHaveValue("memo");
+  await page.getByRole("button", { name: "Clear" }).click();
+  await expect(page.locator("#draft")).toHaveValue("");
+  await expect(page.locator("#note")).toHaveValue("");
+  const trace = await page.evaluate(() => globalThis.echoDispose.instrumentation()[7]);
+  expect(trace).toContain("dom:prop:0:value:write");
+});
+
+test("controlled typing preserves a mid-text cursor", async ({ page }) => {
+  await mountEcho(page);
+  await page.locator("#draft").pressSequentially("abcd");
+  await page.locator("#draft").evaluate((input) => input.setSelectionRange(2, 2));
+  await page.locator("#draft").press("X");
+  await expect(page.locator("#draft-text")).toHaveText("Draft: abXcd");
+  const cursor = await page.locator("#draft").evaluate((input) => ({
+    value: input.value,
+    cursor: input.selectionStart,
+  }));
+  expect(cursor).toEqual({ value: "abXcd", cursor: 3 });
+});
+
+test("checked payloads and checkbox reflection flow through listenChecked", async ({ page }) => {
+  await mountEcho(page);
+  await page.locator("#draft").pressSequentially("hi");
+  await expect(page.locator("#summary-text")).toHaveText("Summary: hi");
+  await page.locator("#loud").check();
+  await expect(page.locator("#loud")).toBeChecked();
+  await expect(page.locator("#summary-text")).toHaveText("Summary: hi!");
+  await page.locator("#loud").uncheck();
+  await expect(page.locator("#loud")).not.toBeChecked();
+  await expect(page.locator("#summary-text")).toHaveText("Summary: hi");
+  const trace = await page.evaluate(() => globalThis.echoDispose.instrumentation()[7]);
+  expect(trace).toContain("event:toggleLoud");
+  expect(trace).toContain("source:loud:write");
+});
+
+test("form submission is prevented and commits the draft", async ({ page }) => {
+  await mountEcho(page);
+  await page.locator("#draft").pressSequentially("ship it");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#note-text")).toHaveText("Note: ship it");
+  await expect(page.locator("#note")).toHaveValue("ship it");
+  await page.locator("#draft").press("End");
+  await page.locator("#draft").pressSequentially("!");
+  await page.locator("#draft").press("Enter");
+  await expect(page.locator("#note-text")).toHaveText("Note: ship it!");
+  const trace = await page.evaluate(() => globalThis.echoDispose.instrumentation()[7]);
+  expect(trace).toContain("event:saveNote");
+  await expect(page.locator("#app")).toHaveCount(1);
+});
+
 test("dispose removes typed listeners and the DOM", async ({ page }) => {
   await mountEcho(page);
   await page.locator("#draft").pressSequentially("x");
