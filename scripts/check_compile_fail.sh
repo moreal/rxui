@@ -44,6 +44,11 @@ fixtures=(
   Test/fixtures/compile-fail/KeyedListInTypedView.lean
   Test/fixtures/compile-fail/DynamicAttrInTypedView.lean
   Test/fixtures/compile-fail/EventInLogicalView.lean
+  Test/fixtures/compile-fail/TypedEventOnButton.lean
+  Test/fixtures/compile-fail/UnknownTypedEventBinding.lean
+  Test/fixtures/compile-fail/MalformedEventStep.lean
+  Test/fixtures/compile-fail/UnsupportedStateLiteral.lean
+  Test/fixtures/compile-fail/TypedEventIgnoresPayload.lean
 )
 fragments=(
   "Constructor for"
@@ -88,6 +93,11 @@ fragments=(
   "error[LRX-VIEW-011]"
   "error[LRX-VIEW-012]"
   "error[LRX-VIEW-013]"
+  "error[LRX-VIEW-016]"
+  "error[LRX-VIEW-017]"
+  "error[LRX-ELAB-104]"
+  "error[LRX-ELAB-105]"
+  "error[LRX-ELAB-108]"
 )
 
 for index in "${!fixtures[@]}"; do
