@@ -1,4 +1,5 @@
 import LeanRx.Graph.Topological
+import LeanRx.Component.Dependent
 import LeanRx.View.Model
 
 namespace LeanRx
@@ -118,6 +119,7 @@ structure ComponentSpec (Γ : Schema) where
   name : String
   values : Array (ValueSpec Γ)
   events : Array (EventSpec Γ)
+  typedEvents : Array (TypedEventSpec Γ String) := #[]
   view : View Γ
   surface : Array SurfaceDecl := #[]
   span : SourceSpan := .generated
@@ -231,6 +233,10 @@ private def actualSurface (spec : ComponentSpec Γ) : Array SurfaceDecl :=
     role := .event
     name := event.name
     span := event.span
+  }) ++ spec.typedEvents.map (fun event => {
+    role := .event
+    name := event.name
+    span := event.span
   })
 
 private def validateSurface (spec : ComponentSpec Γ) : Except ComponentError Unit := do
@@ -256,8 +262,16 @@ private def validateSurface (spec : ComponentSpec Γ) : Except ComponentError Un
 private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
     (split : ViewSplit Γ) : Except ComponentError Unit := do
   let names := spec.events.toList.map (·.name)
-  if names.any String.isEmpty || duplicate? names then
+  let typedNames := spec.typedEvents.toList.map (·.name)
+  if (names ++ typedNames).any String.isEmpty || duplicate? (names ++ typedNames) then
     throw { code := "LRX-ELAB-102", message := "component event names must be nonempty and unique" }
+  for event in spec.typedEvents do
+    unless event.target.index < sourceCount do
+      throw {
+        code := "LRX-TYPE-107"
+        message := s!"event {event.name} writes non-source value {event.target.index}"
+        spans := #[event.span]
+      }
   for event in spec.events do
     for target in event.update.directWriteTargets do
       unless target < sourceCount do
@@ -296,12 +310,20 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
           spans := error.spans
         }
   for mounted in split.events do
-    unless names.contains mounted.binding.eventName do
-      throw {
-        code := "LRX-VIEW-006"
-        message := s!"view references unknown event {mounted.binding.eventName}"
-        spans := #[mounted.binding.span]
-      }
+    if mounted.binding.kind.payload == .none then
+      unless names.contains mounted.binding.eventName do
+        throw {
+          code := "LRX-VIEW-006"
+          message := s!"view references unknown event {mounted.binding.eventName}"
+          spans := #[mounted.binding.span]
+        }
+    else
+      unless typedNames.contains mounted.binding.eventName do
+        throw {
+          code := "LRX-VIEW-017"
+          message := s!"view references unknown typed event {mounted.binding.eventName}"
+          spans := #[mounted.binding.span]
+        }
 
 private def eventByName? (events : Array (EventSpec Γ)) (name : String) : Option (EventSpec Γ) :=
   events.toList.find? (·.name == name)
@@ -322,6 +344,16 @@ private def effectiveReads (events : Array (EventSpec Γ)) : Nat → Update Γ �
         | some event => effectiveReads events fuel event.update
         | none => []).eraseDups
 
+private def summarizeTypedEvents (events : Array (TypedEventSpec Γ String)) : Array EventSummary :=
+  events.map fun event => {
+    name := event.name
+    directWrites := [event.target.index]
+    directReads := []
+    dispatchedEvents := []
+    effectiveWrites := [event.target.index]
+    effectiveReads := []
+  }
+
 private def summarizeEvents (events : Array (EventSpec Γ)) : Array EventSummary :=
   events.map fun event => {
     name := event.name
@@ -339,10 +371,16 @@ private def validateView : View Γ → Except ComponentError Unit
         throw { code := "LRX-VIEW-001", message := "element has duplicate static attributes", spans := #[span] }
       if duplicate? (events.map fun event => event.kind.name) then
         throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
-      if !events.isEmpty && tag != .button then
+      if events.any (fun event => event.kind.payload == .none) && tag != .button then
         throw {
           code := "LRX-VIEW-005"
           message := "click handlers require a native button in the M4 safe view"
+          spans := #[span]
+        }
+      if events.any (fun event => event.kind.payload != .none) && tag != .input then
+        throw {
+          code := "LRX-VIEW-016"
+          message := "typed payload events require a native input element"
           spans := #[span]
         }
       for attr in attrs do
@@ -387,7 +425,8 @@ def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ
                   path := error.path, spans := error.spans
                 }
               | .ok graph =>
-                  .ok ⟨spec, graph, sourceCount, summarizeEvents spec.events, split⟩
+                  .ok ⟨spec, graph, sourceCount,
+                    summarizeEvents spec.events ++ summarizeTypedEvents spec.typedEvents, split⟩
 
 def validationMessage (spec : ComponentSpec Γ) : String :=
   match spec.check with

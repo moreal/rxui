@@ -51,7 +51,7 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.ViewChildren.ofList._unsafe_rec,
     `LeanRx.ViewAttr.events._unsafe_rec,
     `LeanRx.ViewAttr.staticAttrs._unsafe_rec,
-    `LeanRxDsl._aux_LeanRx_Elab_Component___elabRules_LeanRxDsl_leanrxComponent_1.unsafe_1,
+    `LeanRxDsl._aux_LeanRx_Elab_Component___elabRules_LeanRxDsl_leanrxComponent_1.unsafe_5,
     `LeanRx.Abstract.Reference.runDerived._unsafe_rec,
     `LeanRx.Abstract.SourceTransaction.apply._unsafe_rec,
     `LeanRx.Abstract.NestedTransaction.apply._unsafe_rec,

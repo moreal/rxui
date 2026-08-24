@@ -64,11 +64,30 @@ def StaticAttr.value : StaticAttr → String
 inductive EventKind where
   | click
   | dblclick
+  | input
+  | keydown
+  | change
 deriving Repr, BEq, DecidableEq
 
 def EventKind.name : EventKind → String
   | .click => "click"
   | .dblclick => "dblclick"
+  | .input => "input"
+  | .keydown => "keydown"
+  | .change => "change"
+
+/-- Host payload class of one event kind. Payload-carrying kinds must bind a
+typed event and mount through the form-event host adapters. -/
+inductive EventPayload where
+  | none
+  | value
+  | key
+deriving Repr, BEq, DecidableEq
+
+def EventKind.payload : EventKind → EventPayload
+  | .click | .dblclick => .none
+  | .input | .change => .value
+  | .keydown => .key
 
 structure EventBinding where
   kind : EventKind

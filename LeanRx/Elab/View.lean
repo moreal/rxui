@@ -1,5 +1,6 @@
 import LeanRx.View.Model
 import LeanRx.Region.Keyed
+import LeanRx.Component.Model
 import LeanRx.Component.Dependent
 import Lean.Elab.Macro
 import Lean.Elab.Term
@@ -61,18 +62,17 @@ private def spanSyntax (stx : Syntax) : MacroM (TSyntax `term) := do
   let marker := spanMarker stx
   `(leanrx_source_span% $marker)
 
+/- Attribute names parse as plain identifiers wherever Lean allows it, so the
+DSL reserves no attribute tokens; `class` and `type` are Lean keywords and keep
+explicit atoms. Name dispatch happens during lowering with the same closed
+whitelist and diagnostics. -/
 declare_syntax_cat leanrxJsxAttr
 scoped syntax "class" "=" str : leanrxJsxAttr
-scoped syntax "id" "=" str : leanrxJsxAttr
-scoped syntax "ariaLabel" "=" str : leanrxJsxAttr
 scoped syntax "type" "=" str : leanrxJsxAttr
-scoped syntax "onClick" "=" str : leanrxJsxAttr
-scoped syntax ident "=" str : leanrxJsxAttr
+scoped syntax (name := leanrxJsxAttrNamed) ident "=" str : leanrxJsxAttr
 scoped syntax "class" "=" "{" term "}" : leanrxJsxAttr
-scoped syntax "id" "=" "{" term "}" : leanrxJsxAttr
-scoped syntax "ariaLabel" "=" "{" term "}" : leanrxJsxAttr
 scoped syntax "type" "=" "{" term "}" : leanrxJsxAttr
-scoped syntax ident "=" "{" term "}" : leanrxJsxAttr
+scoped syntax (name := leanrxJsxAttrDynamic) ident "=" "{" term "}" : leanrxJsxAttr
 
 declare_syntax_cat leanrxJsxChild
 declare_syntax_cat leanrxJsxElement
@@ -128,6 +128,12 @@ macro_rules
       `(LeanRx.ViewAttr.event { kind := .click, eventName := $event })
   | `(leanrx_jsx_attr% onDblClick = $event:str) =>
       `(LeanRx.ViewAttr.event { kind := .dblclick, eventName := $event })
+  | `(leanrx_jsx_attr% onInput = $event:str) =>
+      `(LeanRx.ViewAttr.event { kind := .input, eventName := $event })
+  | `(leanrx_jsx_attr% onKeyDown = $event:str) =>
+      `(LeanRx.ViewAttr.event { kind := .keydown, eventName := $event })
+  | `(leanrx_jsx_attr% onChange = $event:str) =>
+      `(LeanRx.ViewAttr.event { kind := .change, eventName := $event })
   | `(leanrx_jsx_attr% role = $value:str) =>
       `(LeanRx.ViewAttr.static (.role $value))
   | `(leanrx_jsx_attr% placeholder = $value:str) =>
@@ -202,19 +208,58 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
           `(LeanRx.ViewAttr.event {
             kind := LeanRx.EventKind.dblclick, eventName := $event, span := $span
           })
-      | `(leanrxJsxAttr| $_:ident = { $_:term }) =>
-          Macro.throwErrorAt attr
-            "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
+      | `(leanrxJsxAttr| onInput = $event:str) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.input, eventName := $event, span := $span
+          })
+      | `(leanrxJsxAttr| onKeyDown = $event:str) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.keydown, eventName := $event, span := $span
+          })
+      | `(leanrxJsxAttr| onChange = $event:str) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.change, eventName := $event, span := $span
+          })
+      | `(leanrxJsxAttr| onClick = { $event:term }) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.click
+            eventName := LeanRx.EventSpec.name $event, span := $span
+          })
+      | `(leanrxJsxAttr| onDblClick = { $event:term }) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.dblclick
+            eventName := LeanRx.EventSpec.name $event, span := $span
+          })
+      | `(leanrxJsxAttr| onInput = { $event:term }) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.input
+            eventName := LeanRx.TypedEventSpec.name $event, span := $span
+          })
+      | `(leanrxJsxAttr| onKeyDown = { $event:term }) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.keydown
+            eventName := LeanRx.TypedEventSpec.name $event, span := $span
+          })
+      | `(leanrxJsxAttr| onChange = { $event:term }) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.change
+            eventName := LeanRx.TypedEventSpec.name $event, span := $span
+          })
       | `(leanrxJsxAttr| class = { $_:term }) =>
           Macro.throwErrorAt attr
             "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
-      | `(leanrxJsxAttr| id = { $_:term }) =>
-          Macro.throwErrorAt attr
-            "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
-      | `(leanrxJsxAttr| ariaLabel = { $_:term }) =>
-          Macro.throwErrorAt attr
-            "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
       | `(leanrxJsxAttr| type = { $_:term }) =>
+          Macro.throwErrorAt attr
+            "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
+      | `(leanrxJsxAttr| $_:ident = { $_:term }) =>
           Macro.throwErrorAt attr
             "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
       | _ => `(leanrx_jsx_attr% $attrSyntax)
@@ -277,10 +322,11 @@ private def logicalAttr (attr : Syntax) : MacroM (TSyntax `term) := do
   | `(leanrxJsxAttr| ariaLabel = { $value:term }) => `(("aria-label", ($value : String)))
   | `(leanrxJsxAttr| type = $value:str) => `(("type", $value))
   | `(leanrxJsxAttr| type = { $value:term }) => `(("type", ($value : String)))
-  | `(leanrxJsxAttr| onClick = $_:str) =>
-      Macro.throwErrorAt attr
-        "error[LRX-VIEW-013]: event bindings are not representable in the logical reference view"
-  | `(leanrxJsxAttr| onDblClick = $_:str) =>
+  | `(leanrxJsxAttr| onClick = $_:str) | `(leanrxJsxAttr| onClick = { $_:term })
+  | `(leanrxJsxAttr| onDblClick = $_:str) | `(leanrxJsxAttr| onDblClick = { $_:term })
+  | `(leanrxJsxAttr| onInput = $_:str) | `(leanrxJsxAttr| onInput = { $_:term })
+  | `(leanrxJsxAttr| onKeyDown = $_:str) | `(leanrxJsxAttr| onKeyDown = { $_:term })
+  | `(leanrxJsxAttr| onChange = $_:str) | `(leanrxJsxAttr| onChange = { $_:term }) =>
       Macro.throwErrorAt attr
         "error[LRX-VIEW-013]: event bindings are not representable in the logical reference view"
   | `(leanrxJsxAttr| $name:ident = $value:str) => do

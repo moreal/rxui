@@ -36,6 +36,8 @@
 | [0032](docs/adr/0032-structural-benchmark-buttons.md) | Accepted | Resolve the js-framework-benchmark buttons by structure | 2026-08-23 |
 | [0033](docs/adr/0033-rx-expression-surface.md) | Accepted | Stage ordinary expression syntax with rx% | 2026-08-24 |
 | [0034](docs/adr/0034-dual-target-jsx-surface.md) | Accepted | Lower one JSX surface into typed views and the logical region model | 2026-08-24 |
+| [0035](docs/adr/0035-non-reserved-surface-keywords.md) | Accepted | Parse surface keywords as plain identifiers | 2026-08-24 |
+| [0036](docs/adr/0036-component-item-sugar.md) | Accepted | Sugar component items and bind events by reference | 2026-08-24 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
