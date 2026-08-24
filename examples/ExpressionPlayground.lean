@@ -9,15 +9,14 @@ def price : LeanRx.Field Pricing Int := .here
 def quantity : LeanRx.Field Pricing Int := .there .here
 def threshold : LeanRx.Field Pricing Int := .there (.there .here)
 
-def subtotal := LeanRx.RxExpr.binary .intMul
-  (LeanRx.RxExpr.read price) (LeanRx.RxExpr.read quantity)
+open scoped LeanRxDsl
 
-def isLarge := LeanRx.RxExpr.binary .intLt
-  (LeanRx.RxExpr.read threshold) subtotal
+/-- Staged with `rx%`; the tree matches the former hand-written constructor form. -/
+def subtotal := rx% price * quantity
 
-def label := LeanRx.RxExpr.ifThenElse isLarge
-  (LeanRx.RxExpr.literal (.string "large order"))
-  (LeanRx.RxExpr.literal (.string "small order"))
+def isLarge := rx% threshold < subtotal
+
+def label := rx% if isLarge then "large order" else "small order"
 
 def store (priceValue quantityValue thresholdValue : Int) : LeanRx.Store Pricing :=
   .cons priceValue <| .cons quantityValue <| .cons thresholdValue .empty

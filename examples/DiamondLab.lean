@@ -13,26 +13,27 @@ def left : Field DiamondSchema Int := .there .here
 def right : Field DiamondSchema Int := .there (.there .here)
 def total : Field DiamondSchema Int := .there (.there (.there .here))
 
-def leftValue := RxExpr.binary .intAdd
-  (RxExpr.read count) (RxExpr.literal (.int 10))
-def rightValue := RxExpr.binary .intMul
-  (RxExpr.read count) (RxExpr.literal (.int 2))
-def totalValue := RxExpr.binary .intAdd (RxExpr.read left) (RxExpr.read right)
+open scoped LeanRxDsl in
+/-- Staged with `rx%`; each tree matches the former hand-written constructor form. -/
+def leftValue := rx% count + 10
+open scoped LeanRxDsl in
+def rightValue := rx% count * 2
+open scoped LeanRxDsl in
+def totalValue := rx% left + right
 
-def leftText := RxExpr.binary .stringAppend (RxExpr.literal (.string "Left: "))
-  (RxExpr.unary .intToString (RxExpr.read left))
-def rightText := RxExpr.binary .stringAppend (RxExpr.literal (.string "Right: "))
-  (RxExpr.unary .intToString (RxExpr.read right))
-def totalText := RxExpr.binary .stringAppend (RxExpr.literal (.string "Total: "))
-  (RxExpr.unary .intToString (RxExpr.read total))
+open scoped LeanRxDsl in
+def leftText := rx% s!"Left: {left}"
+open scoped LeanRxDsl in
+def rightText := rx% s!"Right: {right}"
+open scoped LeanRxDsl in
+def totalText := rx% s!"Total: {total}"
 
+open scoped LeanRxDsl in
 def addTwo : EventSpec DiamondSchema :=
   { name := "addTwo"
     update := .sequence
-      (.set count <| RxExpr.binary .intAdd
-        (RxExpr.read count) (RxExpr.literal (.int 1)))
-      (.set count <| RxExpr.binary .intAdd
-        (RxExpr.read count) (RxExpr.literal (.int 1))) }
+      (.set count (rx% count + 1))
+      (.set count (rx% count + 1)) }
 
 private def click (name : String) : EventBinding := { kind := .click, eventName := name }
 

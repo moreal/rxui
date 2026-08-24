@@ -14,10 +14,11 @@ def downstream : Field ParitySchema Int := .there (.there .here)
 def parityAllInt : AllInt ParitySchema :=
   .field (.field (.field .empty))
 
-def parityExpr := RxExpr.binary .intMod
-  (RxExpr.read parityCount) (RxExpr.literal (.int 2))
-def downstreamExpr := RxExpr.binary .intAdd
-  (RxExpr.read parity) (RxExpr.literal (.int 100))
+open scoped LeanRxDsl in
+/-- Staged with `rx%`; each tree matches the former hand-written constructor form. -/
+def parityExpr := rx% parityCount % 2
+open scoped LeanRxDsl in
+def downstreamExpr := rx% parity + 100
 
 def paritySpec : IntProgramSpec ParitySchema :=
   { allInt := parityAllInt

@@ -11,56 +11,52 @@ def count : Field CounterSchema Int := .here
 def doubledField : Field CounterSchema Int := .there .here
 def parityField : Field CounterSchema String := .there (.there .here)
 
-def doubled := RxExpr.binary .intMul (RxExpr.read count) (RxExpr.literal (.int 2))
+open scoped LeanRxDsl in
+/-- Staged expressions use the `rx%` surface; each staged tree is identical to
+its previous hand-written `RxExpr` constructor form. -/
+def doubled := rx% count * 2
 
-def parity := RxExpr.ifThenElse
-  (RxExpr.binary .intEq
-    (RxExpr.binary .intMod (RxExpr.read count) (RxExpr.literal (.int 2)))
-    (RxExpr.literal (.int 0)))
-  (RxExpr.literal (.string "even"))
-  (RxExpr.literal (.string "odd"))
+open scoped LeanRxDsl in
+def parity := rx% if count % 2 == 0 then "even" else "odd"
 
-def countText := RxExpr.binary .stringAppend (RxExpr.literal (.string "Count: "))
-  (RxExpr.unary .intToString (RxExpr.read count))
+open scoped LeanRxDsl in
+def countText := rx% s!"Count: {count}"
 
-def doubledText := RxExpr.binary .stringAppend (RxExpr.literal (.string "Doubled: "))
-  (RxExpr.unary .intToString (RxExpr.read doubledField))
+open scoped LeanRxDsl in
+def doubledText := rx% s!"Doubled: {doubledField}"
 
-def parityText := RxExpr.binary .stringAppend (RxExpr.literal (.string "Parity: "))
-  (RxExpr.read parityField)
+open scoped LeanRxDsl in
+def parityText := rx% s!"Parity: {parityField}"
 
-def hostileText := RxExpr.literal (Γ := CounterSchema) <|
-  .string "<img src=x onerror=\"globalThis.leanrxXss=true\">"
+open scoped LeanRxDsl in
+def hostileText : RxExpr CounterSchema (DepSet.empty CounterSchema) String :=
+  rx% "<img src=x onerror=\"globalThis.leanrxXss=true\">"
 
-def stableText := RxExpr.ifThenElse
-  (RxExpr.binary .intEq (RxExpr.read count) (RxExpr.read count))
-  (RxExpr.literal (.string "Stable"))
-  (RxExpr.literal (.string "Stable"))
+open scoped LeanRxDsl in
+def stableText := rx% if count == count then "Stable" else "Stable"
 
+open scoped LeanRxDsl in
 def increment : EventSpec CounterSchema :=
   { name := "increment"
-    update := .set count <| RxExpr.binary .intAdd
-      (RxExpr.read count) (RxExpr.literal (.int 1)) }
+    update := .set count (rx% count + 1) }
 
+open scoped LeanRxDsl in
 def addTwo : EventSpec CounterSchema :=
   { name := "addTwo"
     update := .sequence
-      (.set count <| RxExpr.binary .intAdd
-        (RxExpr.read count) (RxExpr.literal (.int 1)))
-      (.set count <| RxExpr.binary .intAdd
-        (RxExpr.read count) (RxExpr.literal (.int 1))) }
+      (.set count (rx% count + 1))
+      (.set count (rx% count + 1)) }
 
 def nestedAddTwo : EventSpec CounterSchema :=
   { name := "nestedAddTwo"
     update := .sequence (.dispatch "increment") (.dispatch "increment") }
 
+open scoped LeanRxDsl in
 def roundTrip : EventSpec CounterSchema :=
   { name := "roundTrip"
     update := .sequence
-      (.set count <| RxExpr.binary .intAdd
-        (RxExpr.read count) (RxExpr.literal (.int 1)))
-      (.set count <| RxExpr.binary .intSub
-        (RxExpr.read count) (RxExpr.literal (.int 1))) }
+      (.set count (rx% count + 1))
+      (.set count (rx% count - 1)) }
 
 private def click (name : String) : EventBinding := { kind := .click, eventName := name }
 

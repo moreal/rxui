@@ -55,6 +55,7 @@ lean_lib LeanRxTest where
     `Test.Notes.Model,
     `Test.IssueBrowser.Model,
     `Test.Elab.Component,
+    `Test.Elab.Rx,
     `Test.Docs.LanguageGuide,
     `Test.Cli.Model,
     `Test.Cli.AtomicOutput,

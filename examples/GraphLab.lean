@@ -17,11 +17,13 @@ def total : Field DiamondSchema Int := .there (.there (.there .here))
 def diamondAllInt : AllInt DiamondSchema :=
   .field (.field (.field (.field .empty)))
 
-def leftExpr := RxExpr.binary .intAdd
-  (RxExpr.read count) (RxExpr.literal (.int 10))
-def rightExpr := RxExpr.binary .intMul
-  (RxExpr.read count) (RxExpr.literal (.int 2))
-def totalExpr := RxExpr.binary .intAdd (RxExpr.read left) (RxExpr.read right)
+open scoped LeanRxDsl in
+/-- Staged with `rx%`; each tree matches the former hand-written constructor form. -/
+def leftExpr := rx% count + 10
+open scoped LeanRxDsl in
+def rightExpr := rx% count * 2
+open scoped LeanRxDsl in
+def totalExpr := rx% left + right
 
 def diamondSpec : IntProgramSpec DiamondSchema :=
   { allInt := diamondAllInt

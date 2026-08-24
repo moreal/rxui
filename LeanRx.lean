@@ -6,6 +6,7 @@ import LeanRx.Core.Store
 import LeanRx.Core.RuntimeRep
 import LeanRx.Core.Equality
 import LeanRx.Core.Expr
+import LeanRx.Core.RxOps
 import LeanRx.Proofs.DependencySound
 import LeanRx.Graph.Model
 import LeanRx.Graph.Build
@@ -36,6 +37,7 @@ import LeanRx.Component.Model
 import LeanRx.Component.Dependent
 import LeanRx.Component.Tabs
 import LeanRx.Elab.Component
+import LeanRx.Elab.Rx
 import LeanRx.Semantics.Store
 import LeanRx.Semantics.Reference
 import LeanRx.Semantics.Optimized

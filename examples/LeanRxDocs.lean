@@ -14,17 +14,18 @@ def titleField : Field DocsSchema String := .there .here
 def bodyField : Field DocsSchema String := .there (.there .here)
 def detailField : Field DocsSchema String := .there (.there (.there .here))
 
-private def isPage (index : Int) :=
-  RxExpr.binary .intEq (RxExpr.read page) (RxExpr.literal (.int index))
+open scoped LeanRxDsl in
+/-- Staged with `rx%`; each tree matches the former hand-written constructor form. -/
+private def isPage (index : Int) := rx% page == index
 
+open scoped LeanRxDsl in
 private def choosePage (introduction counter graph tabs effects limitations viewer : String) :=
-  RxExpr.ifThenElse (isPage 0) (RxExpr.literal (.string introduction)) <|
-  RxExpr.ifThenElse (isPage 1) (RxExpr.literal (.string counter)) <|
-  RxExpr.ifThenElse (isPage 2) (RxExpr.literal (.string graph)) <|
-  RxExpr.ifThenElse (isPage 3) (RxExpr.literal (.string tabs)) <|
-  RxExpr.ifThenElse (isPage 4) (RxExpr.literal (.string effects)) <|
-  RxExpr.ifThenElse (isPage 5) (RxExpr.literal (.string limitations)) <|
-    RxExpr.literal (.string viewer)
+  rx% if isPage 0 then introduction else
+    if isPage 1 then counter else
+    if isPage 2 then graph else
+    if isPage 3 then tabs else
+    if isPage 4 then effects else
+    if isPage 5 then limitations else viewer
 
 def counterGraphDot : String :=
   match CounterSyntax_check with
@@ -58,8 +59,9 @@ def detail := choosePage
   "This documentation app uses state-driven native buttons instead of hiding the missing URL/history router behind another framework."
   "Open the standalone HTML graph artifact for card-based node metadata and the certified schedule."
 
+open scoped LeanRxDsl in
 private def selectPage (name : String) (index : Int) : EventSpec DocsSchema :=
-  { name, update := .set page (RxExpr.literal (.int index)) }
+  { name, update := .set page (rx% index) }
 
 def showIntroduction := selectPage "showIntroduction" 0
 def showCounter := selectPage "showCounter" 1
