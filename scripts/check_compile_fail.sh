@@ -49,6 +49,11 @@ fixtures=(
   Test/fixtures/compile-fail/MalformedEventStep.lean
   Test/fixtures/compile-fail/UnsupportedStateLiteral.lean
   Test/fixtures/compile-fail/TypedEventIgnoresPayload.lean
+  Test/fixtures/compile-fail/PayloadClassMismatch.lean
+  Test/fixtures/compile-fail/SubmitOnButton.lean
+  Test/fixtures/compile-fail/ReflectOnParagraph.lean
+  Test/fixtures/compile-fail/CheckboxTypeOnButton.lean
+  Test/fixtures/compile-fail/IntTypedEventPayload.lean
 )
 fragments=(
   "Constructor for"
@@ -98,6 +103,11 @@ fragments=(
   "error[LRX-ELAB-104]"
   "error[LRX-ELAB-105]"
   "error[LRX-ELAB-108]"
+  "error[LRX-VIEW-018]"
+  "error[LRX-VIEW-019]"
+  "error[LRX-VIEW-020]"
+  "error[LRX-VIEW-022]"
+  "error[LRX-ELAB-109]"
 )
 
 for index in "${!fixtures[@]}"; do
