@@ -47,6 +47,18 @@ def checked := spec.check
 open scoped LeanRxDsl
 
 component CounterSyntax (schema := CounterSchema) where {
+  state count : Int := 1;
+  derived label := rx% s!"Count: {count}";
+  event increment := set count (count + 1);
+  view := jsx% <main> [
+    <h1> ["Counter"],
+    <button type="button" onClick={increment}> ["Increment"],
+    <p> [{"countText": rx% s!"Count: {count}"}]
+  ];
+}
+
+/- The explicit right-hand sides remain valid alongside the sugared items. -/
+component CounterExplicitSyntax (schema := CounterSchema) where {
   state count := ValueSpec.state count (.int 1);
   derived label := ValueSpec.computed label countText;
   event increment := increment;
@@ -63,5 +75,9 @@ def run : IO Unit := do
         throw <| IO.userError "language-guide explicit and scoped graphs diverged"
   | .error error, _ | _, .error error =>
       throw <| IO.userError s!"language-guide component rejected: {error.render}"
+  match CounterExplicitSyntax_check with
+  | .ok _ => pure ()
+  | .error error =>
+      throw <| IO.userError s!"language-guide explicit component rejected: {error.render}"
 
 end LeanRxTest.Docs.LanguageGuide

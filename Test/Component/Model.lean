@@ -36,14 +36,14 @@ def run : IO Unit := do
   let writesDerived : ComponentSpec CounterSchema :=
     { spec with events := #[{
         name := "bad"
-        update := .set doubledField (RxExpr.literal (.int 9))
+        update := .set doubled (RxExpr.literal (.int 9))
       }] }
   expectError "LRX-TYPE-107" writesDerived.check
   let readsDerived : ComponentSpec CounterSchema :=
     { spec with events := #[{
         name := "badRead"
         update := .set count (RxExpr.binary .intAdd
-          (RxExpr.read doubledField) (RxExpr.literal (.int 1)))
+          (RxExpr.read doubled) (RxExpr.literal (.int 1)))
       }] }
   expectError "LRX-TYPE-108" readsDerived.check
   let unknownEvent : ComponentSpec CounterSchema :=

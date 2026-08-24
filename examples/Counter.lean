@@ -8,25 +8,25 @@ abbrev CounterSchema : Schema :=
   .field "count" Int <| .field "doubled" Int <| .field "parity" String .empty
 
 def count : Field CounterSchema Int := .here
-def doubledField : Field CounterSchema Int := .there .here
-def parityField : Field CounterSchema String := .there (.there .here)
+def doubled : Field CounterSchema Int := .there .here
+def parity : Field CounterSchema String := .there (.there .here)
 
 open scoped LeanRxDsl in
 /-- Staged expressions use the `rx%` surface; each staged tree is identical to
 its previous hand-written `RxExpr` constructor form. -/
-def doubled := rx% count * 2
+def doubledValue := rx% count * 2
 
 open scoped LeanRxDsl in
-def parity := rx% if count % 2 == 0 then "even" else "odd"
+def parityValue := rx% if count % 2 == 0 then "even" else "odd"
 
 open scoped LeanRxDsl in
 def countText := rx% s!"Count: {count}"
 
 open scoped LeanRxDsl in
-def doubledText := rx% s!"Doubled: {doubledField}"
+def doubledText := rx% s!"Doubled: {doubled}"
 
 open scoped LeanRxDsl in
-def parityText := rx% s!"Parity: {parityField}"
+def parityText := rx% s!"Parity: {parity}"
 
 open scoped LeanRxDsl in
 def hostileText : RxExpr CounterSchema (DepSet.empty CounterSchema) String :=
@@ -83,8 +83,8 @@ def spec : ComponentSpec CounterSchema :=
   { name := "Counter"
     values := #[
       ValueSpec.state count (.int 1),
-      ValueSpec.computed doubledField doubled,
-      ValueSpec.computed parityField parity
+      ValueSpec.computed doubled doubledValue,
+      ValueSpec.computed parity parityValue
     ]
     events := #[increment, addTwo, nestedAddTwo, roundTrip]
     view }
@@ -92,13 +92,15 @@ def spec : ComponentSpec CounterSchema :=
 open scoped LeanRxDsl
 
 /-- Lean-friendly M4 JSX surface: balanced `[...]` children avoid a custom
-closing-tag parser while preserving HTML-like tags and whitelisted attributes. -/
+closing-tag parser while preserving HTML-like tags and whitelisted attributes.
+Event attributes bind by reference: `onClick={increment}` names the declared
+`EventSpec` and lowers to its checked string binding. -/
 def syntaxView : View CounterSchema := jsx% <main class="counter"> [
   <h1> ["Counter"],
-  <button type="button" onClick="increment"> ["Increment"],
-  <button type="button" onClick="addTwo"> ["Add two"],
-  <button type="button" onClick="nestedAddTwo"> ["Nested add two"],
-  <button type="button" onClick="roundTrip"> ["Round trip"],
+  <button type="button" onClick={increment}> ["Increment"],
+  <button type="button" onClick={addTwo}> ["Add two"],
+  <button type="button" onClick={nestedAddTwo}> ["Nested add two"],
+  <button type="button" onClick={roundTrip}> ["Round trip"],
   <p> [{"countText": countText}],
   <p> [{"doubledText": doubledText}],
   <p> [{"parityText": parityText}],
@@ -107,14 +109,25 @@ def syntaxView : View CounterSchema := jsx% <main class="counter"> [
 ]
 
 component CounterSyntax (schema := CounterSchema) where {
-  state count := ValueSpec.state count (.int 1);
-  derived doubled := ValueSpec.computed doubledField doubled;
-  derived parity := ValueSpec.computed parityField parity;
-  event increment := increment;
-  event addTwo := addTwo;
-  event nestedAddTwo := nestedAddTwo;
-  event roundTrip := roundTrip;
-  view := syntaxView;
+  state count : Int := 1;
+  derived doubled := rx% count * 2;
+  derived parity := rx% if count % 2 == 0 then "even" else "odd";
+  event increment := set count (count + 1);
+  event addTwo := set count (count + 1) then set count (count + 1);
+  event nestedAddTwo := dispatch increment then dispatch increment;
+  event roundTrip := set count (count + 1) then set count (count - 1);
+  view := jsx% <main class="counter"> [
+    <h1> ["Counter"],
+    <button type="button" onClick={increment}> ["Increment"],
+    <button type="button" onClick={addTwo}> ["Add two"],
+    <button type="button" onClick={nestedAddTwo}> ["Nested add two"],
+    <button type="button" onClick={roundTrip}> ["Round trip"],
+    <p> [{"countText": rx% s!"Count: {count}"}],
+    <p> [{"doubledText": rx% s!"Doubled: {doubled}"}],
+    <p> [{"parityText": rx% s!"Parity: {parity}"}],
+    <p> [{"stableText": rx% if count == count then "Stable" else "Stable"}],
+    <p> [{"hostileText": hostileText}]
+  ];
 }
 
 end LeanRxExamples.Counter

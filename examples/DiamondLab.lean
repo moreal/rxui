@@ -61,19 +61,25 @@ open scoped LeanRxDsl
 
 def syntaxView : View DiamondSchema := jsx% <main class="diamond-lab"> [
   <h1> ["Diamond Lab"],
-  <button type="button" onClick="addTwo"> ["Add two"],
+  <button type="button" onClick={addTwo}> ["Add two"],
   <p> [{"leftText": leftText}],
   <p> [{"rightText": rightText}],
   <p> [{"totalText": totalText}]
 ]
 
 component DiamondSyntax (schema := DiamondSchema) where {
-  state count := ValueSpec.state count (.int 1);
-  derived left := ValueSpec.computed left leftValue;
-  derived right := ValueSpec.computed right rightValue;
-  derived total := ValueSpec.computed total totalValue;
-  event addTwo := addTwo;
-  view := syntaxView;
+  state count : Int := 1;
+  derived left := rx% count + 10;
+  derived right := rx% count * 2;
+  derived total := rx% left + right;
+  event addTwo := set count (count + 1) then set count (count + 1);
+  view := jsx% <main class="diamond-lab"> [
+    <h1> ["Diamond Lab"],
+    <button type="button" onClick={addTwo}> ["Add two"],
+    <p> [{"leftText": rx% s!"Left: {left}"}],
+    <p> [{"rightText": rx% s!"Right: {right}"}],
+    <p> [{"totalText": rx% s!"Total: {total}"}]
+  ];
 }
 
 def allInt : AllInt DiamondSchema := .field (.field (.field (.field .empty)))

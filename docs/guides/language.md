@@ -138,6 +138,30 @@ inspectable names. It is activated explicitly:
 open scoped LeanRxDsl
 
 component CounterSyntax (schema := CounterSchema) where {
+  state count : Int := 1;
+  derived label := rx% s!"Count: {count}";
+  event increment := set count (count + 1);
+  view := jsx% <main> [
+    <h1> ["Counter"],
+    <button type="button" onClick={increment}> ["Increment"],
+    <p> [{"countText": rx% s!"Count: {count}"}]
+  ];
+}
+```
+
+`state name : Type := literal` covers the closed literal types `Int`, `Nat`,
+`Bool`, and `String`; the declared identifier is also the schema `Field`
+reference. A `derived` right-hand side may be a staged `rx%` expression or an
+explicit `ValueSpec`. Events chain steps with `then`
+(`set count (count + 1) then dispatch increment`), and a typed payload event
+is declared `event setDraft (value : String) := set draft value;` and bound
+with `onInput={setDraft}`, `onKeyDown={…}`, or `onChange={…}` on an `input`
+element. `onClick={increment}` binds by reference against the declared event
+inventory (or an `EventSpec` in scope outside a component). The explicit
+wrapper forms remain valid:
+
+```lean
+component CounterExplicitSyntax (schema := CounterSchema) where {
   state count := ValueSpec.state count (.int 1);
   derived label := ValueSpec.computed label countText;
   event increment := increment;
