@@ -65,6 +65,19 @@ private def compileSinks (inputs : Array Scalar.InputSpec) :
         (Lower.rxExpr sink.value) state
       compileSinks inputs rest (index + 1) state
 
+private def compileProps (inputs : Array Scalar.InputSpec) :
+    List (MountedProp Γ) → Nat → EvalState → Except Error EvalState
+  | [], _, state => pure state
+  | prop :: rest, index, state => do
+      let state ← match prop.binding with
+        | .value expr _ =>
+            addEvaluator inputs s!"prop:{index}" s!"$lrx_prop_{index}"
+              (Lower.rxExpr expr) state
+        | .checked expr _ =>
+            addEvaluator inputs s!"prop:{index}" s!"$lrx_prop_{index}"
+              (Lower.rxExpr expr) state
+      compileProps inputs rest (index + 1) state
+
 private def compileUpdate (inputs : Array Scalar.InputSpec) (eventIndex : Nat) :
     Update Γ → Nat → EvalState → Except Error (Nat × EvalState)
   | .set _ value _, writeIndex, state => do
@@ -182,12 +195,52 @@ private def anyChanged (changed : Ident) (deps : List Nat) : Expr :=
     | [] => .literal (.boolean false)
     | head :: tail => tail.foldl (fun acc value => .binary .or acc value) head
 
+private structure RuntimeNames where
+  createElement : Ident
+  createText : Ident
+  setAttribute : Ident
+  setProperty : Ident
+  append : Ident
+  listen : Ident
+  setText : Ident
+  makeDisposer : Ident
+  listenValue : Ident
+  listenKey : Ident
+  listenChecked : Ident
+  listenSubmit : Ident
+
+private def runtimeNames : Except Error RuntimeNames := do
+  pure {
+    createElement := ← Ident.checked "createElement"
+    createText := ← Ident.checked "createText"
+    setAttribute := ← Ident.checked "setAttribute"
+    setProperty := ← Ident.checked "setProperty"
+    append := ← Ident.checked "append"
+    listen := ← Ident.checked "listen"
+    setText := ← Ident.checked "setText"
+    makeDisposer := ← Ident.checked "makeDisposer"
+    listenValue := ← Ident.checked "listenValue"
+    listenKey := ← Ident.checked "listenKey"
+    listenChecked := ← Ident.checked "listenChecked"
+    listenSubmit := ← Ident.checked "listenSubmit"
+  }
+
+private def propNextName (index : Nat) : Except Error Ident :=
+  Ident.checked s!"prop_next_{index}"
+
+private def propChangedName (index : Nat) : Except Error Ident :=
+  Ident.checked s!"prop_changed_{index}"
+
+private def propLabel (index : Nat) (prop : MountedProp Γ) : String :=
+  s!"prop:{index}:{prop.binding.name}"
+
 /-- Shared transaction shell for every generated dispatch function: begin
 bookkeeping, the provided write statements, and the commit sweep over derived
-values and text sinks. -/
+values, text sinks, and reflected properties. -/
 private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalState)
-    (setText : Ident) (name : Ident) (params : Array Ident) (label : String)
+    (runtime : RuntimeNames) (name : Ident) (params : Array Ident) (label : String)
     (writes : List Stmt) : Except Error Function := do
+  let setText := runtime.setText
   let context ← Ident.checked "context"
   let state ← Ident.checked "state"
   let refs ← Ident.checked "refs"
@@ -195,6 +248,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
   let oldSources ← Ident.checked "oldSources"
   let changed ← Ident.checked "changed"
   let sinkCache ← Ident.checked "sinkCache"
+  let propRefs ← Ident.checked "propRefs"
+  let propCache ← Ident.checked "propCache"
   let valueCount := checked.spec.values.size
   let mut body : List Stmt := [
     .const state (arrayAt context 0),
@@ -204,6 +259,11 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     .const changed (arrayAt context 4),
     .const sinkCache (arrayAt context 5)
   ]
+  unless checked.view.props.isEmpty do
+    body := body ++ [
+      .const propRefs (arrayAt context 6),
+      .const propCache (arrayAt context 7)
+    ]
   let mut beginBody : List Stmt := [pushTrace tx "transaction:begin"]
   for id in List.range valueCount do
     beginBody := beginBody ++ [
@@ -268,6 +328,27 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
         pushTrace tx s!"dom:{sink.name}:write"
       ]
     ]]
+  for (prop, propIndex) in checked.view.props.zipIdx do
+    let evalName ← evaluator evaluators s!"prop:{propIndex}"
+    let next ← propNextName propIndex
+    let differs ← propChangedName propIndex
+    let label := propLabel propIndex prop
+    commitBody := commitBody ++ [.ifThen (anyChanged changed prop.binding.dependencyIds) <|
+      .ofList [
+      incrementAt tx 8,
+      pushTrace tx s!"{label}:evaluated",
+      .const next (evaluatorCall evalName state valueCount),
+      .const differs <| .unary .not <|
+        .binary .eq (arrayAt propCache propIndex) (.ident next),
+      .ifThen (.ident differs) <| .ofList [
+        .assign (.index (.ident propCache) (uint propIndex)) (.ident next),
+        .expr <| call runtime.setProperty [
+          arrayAt propRefs propIndex, .literal (.string prop.binding.name), .ident next
+        ],
+        incrementAt tx 9,
+        pushTrace tx s!"dom:{label}:write"
+      ]
+    ]]
   commitBody := commitBody ++ [
     incrementAt tx 1,
     pushTrace tx "transaction:commit"
@@ -279,7 +360,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
   pure { name, params, body := body.toArray }
 
 private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
-    (setText : Ident) (eventNames : List String) (event : EventSpec Γ) (eventIndex : Nat) :
+    (runtime : RuntimeNames) (eventNames : List String) (event : EventSpec Γ) (eventIndex : Nat) :
     Except Error Function := do
   let context ← Ident.checked "context"
   let ignored ← Ident.checked "ignored"
@@ -287,7 +368,7 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
   let tx ← Ident.checked "tx"
   let (_, writes) ← updateStatements evaluators context state tx eventNames
     checked.spec.values.size eventIndex event.update 0
-  transactionShell checked evaluators setText (← eventName eventIndex)
+  transactionShell checked evaluators runtime (← eventName eventIndex)
     #[context, ignored] event.name writes
 
 private def typedEventName (index : Nat) : Except Error Ident :=
@@ -296,10 +377,11 @@ private def typedEventName (index : Nat) : Except Error Ident :=
 /-- Names owned by the dispatch shell; a typed payload parameter may not shadow
 them. -/
 private def shellLocals : List String :=
-  ["state", "refs", "tx", "oldSources", "changed", "sinkCache", "context", "hostState"]
+  ["state", "refs", "tx", "oldSources", "changed", "sinkCache", "propRefs",
+    "propCache", "context", "hostState"]
 
 private def typedEventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
-    (setText : Ident) (event : TypedEventSpec Γ String) (eventIndex : Nat) :
+    (runtime : RuntimeNames) (event : AnyTypedEvent Γ) (eventIndex : Nat) :
     Except Error Function := do
   unless !shellLocals.contains event.parameterName do
     throw {
@@ -312,36 +394,12 @@ private def typedEventFunction (checked : CheckedComponent Γ) (evaluators : Eva
   let state ← Ident.checked "state"
   let tx ← Ident.checked "tx"
   let writes : List Stmt := [
-    .assign (.index (.ident state) (uint event.target.index)) (.ident payload),
+    .assign (.index (.ident state) (uint event.targetIndex)) (.ident payload),
     incrementAt tx 2,
-    pushTrace tx s!"source:{event.target.name}:write"
+    pushTrace tx s!"source:{event.targetName}:write"
   ]
-  transactionShell checked evaluators setText (← typedEventName eventIndex)
+  transactionShell checked evaluators runtime (← typedEventName eventIndex)
     #[hostState, context, payload] event.name writes
-
-private structure RuntimeNames where
-  createElement : Ident
-  createText : Ident
-  setAttribute : Ident
-  append : Ident
-  listen : Ident
-  setText : Ident
-  makeDisposer : Ident
-  listenValue : Ident
-  listenKey : Ident
-
-private def runtimeNames : Except Error RuntimeNames := do
-  pure {
-    createElement := ← Ident.checked "createElement"
-    createText := ← Ident.checked "createText"
-    setAttribute := ← Ident.checked "setAttribute"
-    append := ← Ident.checked "append"
-    listen := ← Ident.checked "listen"
-    setText := ← Ident.checked "setText"
-    makeDisposer := ← Ident.checked "makeDisposer"
-    listenValue := ← Ident.checked "listenValue"
-    listenKey := ← Ident.checked "listenKey"
-  }
 
 private structure DomBinding where
   path : List Nat
@@ -351,10 +409,16 @@ private structure DomState where
   allocator : NameAllocator
   statements : List Stmt := []
   nodes : List DomBinding := []
+  childOffs : List Ident := []
 
 private structure SinkBinding where
   path : List Nat
   index : Nat
+  evaluator : Ident
+
+private structure PropSlot where
+  path : List Nat
+  name : String
   evaluator : Ident
 
 private def appendStatement (state : DomState) (statement : Stmt) : DomState :=
@@ -370,7 +434,7 @@ private def sinkAt (sinks : List SinkBinding) (path : List Nat) : Except Error S
 
 mutual
   private def mountNode (runtime : RuntimeNames) (stateName : Ident) (valueCount : Nat)
-      (sinks : List SinkBinding) (path : List Nat) :
+      (sinks : List SinkBinding) (childMounts : List (String × Ident)) (path : List Nat) :
       MountNode → DomState → Except Error (Ident × DomState)
     | .element tag attrs children, state => do
         let (name, allocator) ← state.allocator.allocate s!"node_{state.nodes.length}"
@@ -382,7 +446,8 @@ mutual
           state := appendStatement state <| .expr <| call runtime.setAttribute [
             .ident name, .literal (.string attr.name), .literal (.string attr.value)
           ]
-        let finalState ← mountChildren runtime stateName valueCount sinks name path 0 children state
+        let finalState ← mountChildren runtime stateName valueCount sinks childMounts
+          name path 0 children state
         pure (name, finalState)
     | .text value, state => do
         let (name, allocator) ← state.allocator.allocate s!"node_{state.nodes.length}"
@@ -395,16 +460,38 @@ mutual
         let state := addNode { state with allocator } path name
         pure (name, appendStatement state <| .const name <|
           call runtime.createText [evaluatorCall sink.evaluator stateName valueCount])
+    | .child _, _ =>
+        .error {
+          code := "LRX-BE-030"
+          message := "a child component cannot be the component view root"
+        }
 
   private def mountChildren (runtime : RuntimeNames) (stateName : Ident) (valueCount : Nat)
-      (sinks : List SinkBinding) (parent : Ident) (path : List Nat) (index : Nat) :
+      (sinks : List SinkBinding) (childMounts : List (String × Ident)) (parent : Ident)
+      (path : List Nat) (index : Nat) :
       MountChildren → DomState → Except Error DomState
     | .nil, state => pure state
+    | .cons (.child childName) tail, state => do
+        /- The child's `mount(parent)` appends its root right here, so document
+        order is preserved without a wrapper element (ADR-0039). -/
+        let mountName ← match childMounts.find? (·.1 == childName) with
+          | some entry => pure entry.2
+          | none => .error {
+              code := "LRX-BE-029"
+              message := s!"checked child component disappeared: {childName}"
+            }
+        let (off, allocator) ← state.allocator.allocate
+          s!"child_off_{state.childOffs.length}"
+        let state := { state with allocator, childOffs := state.childOffs ++ [off] }
+        let state := appendStatement state <| .const off <| call mountName [.ident parent]
+        mountChildren runtime stateName valueCount sinks childMounts parent
+          path (index + 1) tail state
     | .cons head tail, state => do
-        let (child, state) ← mountNode runtime stateName valueCount sinks
+        let (child, state) ← mountNode runtime stateName valueCount sinks childMounts
           (path ++ [index]) head state
         let state := appendStatement state <| .expr <| call runtime.append [.ident parent, .ident child]
-        mountChildren runtime stateName valueCount sinks parent path (index + 1) tail state
+        mountChildren runtime stateName valueCount sinks childMounts parent
+          path (index + 1) tail state
 end
 
 private def nodeAt (nodes : List DomBinding) (path : List Nat) : Except Error Ident :=
@@ -428,17 +515,22 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
     textSinkCount := checked.view.textSinks.length
     eventCount := checked.spec.events.size + checked.spec.typedEvents.size
     hostImports :=
-      if checked.view.events.any (fun mounted => mounted.binding.kind.payload != .none) then
+      (if checked.view.events.any (fun mounted =>
+          mounted.binding.kind.payload != .none || mounted.binding.kind == .submit) then
         #["./leanrx_dom.mjs", "./leanrx_form_events.mjs"]
-      else #["./leanrx_dom.mjs"]
+      else #["./leanrx_dom.mjs"]) ++
+      checked.spec.children.map (·.moduleSpecifier)
     features := #["scalar", "events", "transactions", "instrumentation", "trace"] ++
-      (if checked.spec.typedEvents.isEmpty then #[] else #["typed-events"]) }
+      (if checked.spec.typedEvents.isEmpty then #[] else #["typed-events"]) ++
+      (if checked.view.props.isEmpty then #[] else #["controlled-props"]) ++
+      (if checked.spec.children.isEmpty then #[] else #["child-components"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
 def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Emitted := do
   let runtime ← runtimeNames
   let inputs := inputSpecs checked.spec.values
   let evaluators ← compileEvents inputs checked.spec.events.toList 0 <|
+    ← compileProps inputs checked.view.props 0 <|
     ← compileSinks inputs checked.view.textSinks 0 <|
     ← compileValues inputs checked.spec.values.toList {}
   let state ← Ident.checked "state"
@@ -447,6 +539,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   let oldSources ← Ident.checked "oldSources"
   let changed ← Ident.checked "changed"
   let sinkCache ← Ident.checked "sinkCache"
+  let propRefs ← Ident.checked "propRefs"
+  let propCache ← Ident.checked "propCache"
   let context ← Ident.checked "context"
   let disposer ← Ident.checked "disposer"
   let target ← Ident.checked "target"
@@ -454,28 +548,53 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   let eventNames := checked.spec.events.toList.map (·.name)
   let typedNames := checked.spec.typedEvents.toList.map (·.name)
   let eventFunctions ← checked.spec.events.toList.zipIdx.mapM fun (event, index) =>
-    eventFunction checked evaluators runtime.setText eventNames event index
+    eventFunction checked evaluators runtime eventNames event index
   let typedEventFunctions ← checked.spec.typedEvents.toList.zipIdx.mapM fun (event, index) =>
-    typedEventFunction checked evaluators runtime.setText event index
+    typedEventFunction checked evaluators runtime event index
   let derivedInitial ← derivedOrder checked |>.mapM fun id => do
     pure (.assign (.index (.ident state) (uint id)) <|
       evaluatorCall (← evaluator evaluators s!"value:{id}") state valueCount)
   let sinkBindings ← checked.view.textSinks.zipIdx.mapM fun (sink, index) => do
     pure { path := sink.path, index, evaluator := ← evaluator evaluators s!"sink:{index}" }
+  let childMounts ← checked.spec.children.toList.zipIdx.mapM fun (child, index) => do
+    pure (child.name, ← Ident.checked s!"$lrx_child_{index}")
   let initialDom : DomState := { allocator := { used := [
-    "state", "refs", "tx", "oldSources", "changed", "sinkCache", "context",
-    "disposer", "target"
+    "state", "refs", "tx", "oldSources", "changed", "sinkCache", "propRefs",
+    "propCache", "context", "disposer", "target"
   ] } }
-  let (root, dom) ← mountNode runtime state valueCount sinkBindings [] checked.view.template initialDom
+  let (root, dom) ← mountNode runtime state valueCount sinkBindings childMounts []
+    checked.view.template initialDom
   let sinkRefs ← checked.view.textSinks.mapM fun sink => do
     pure (.ident (← nodeAt dom.nodes sink.path))
   let sinkInitialValues ← sinkBindings.mapM fun sink =>
     pure (evaluatorCall sink.evaluator state valueCount)
+  let propSlots : List PropSlot ← checked.view.props.zipIdx.mapM fun (prop, index) => do
+    pure {
+      path := prop.path
+      name := prop.binding.name
+      evaluator := ← evaluator evaluators s!"prop:{index}"
+    }
+  let propRefExprs ← propSlots.mapM fun slot => do
+    pure (Expr.ident (← nodeAt dom.nodes slot.path))
+  let propInitialValues := propSlots.map fun slot =>
+    evaluatorCall slot.evaluator state valueCount
   let mut mountBody : List Stmt := [
     .const state (.array <| .ofList (initialValues checked.spec.values.toList))
   ] ++ derivedInitial ++ dom.statements ++ [
     .const refs (.array <| .ofList sinkRefs),
-    .const sinkCache (.array <| .ofList sinkInitialValues),
+    .const sinkCache (.array <| .ofList sinkInitialValues)
+  ]
+  unless checked.view.props.isEmpty do
+    mountBody := mountBody ++ [
+      .const propRefs (.array <| .ofList propRefExprs),
+      .const propCache (.array <| .ofList propInitialValues)
+    ]
+    for (slot, index) in propSlots.zipIdx do
+      mountBody := mountBody ++ [Stmt.expr <| call runtime.setProperty [
+        arrayAt propRefs index, .literal (.string slot.name),
+        arrayAt propCache index
+      ]]
+  mountBody := mountBody ++ [
     .const tx (.array <| .ofList [
       uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil,
       uint 0, uint 0
@@ -484,13 +603,14 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       List.replicate checked.sourceCount (.literal .null)),
     .const changed (.array <| .ofList <|
       List.replicate valueCount (.literal (.boolean false))),
-    .const context (.array <| .ofList [
+    .const context (.array <| .ofList <| [
       .ident state, .ident refs, .ident tx, .ident oldSources, .ident changed,
       .ident sinkCache
-    ]),
+    ] ++ (if checked.view.props.isEmpty then []
+      else [.ident propRefs, .ident propCache])),
     .expr <| call runtime.append [.ident target, .ident root]
   ]
-  let mut disposers : List Expr := []
+  let mut disposers : List Expr := dom.childOffs.map Expr.ident
   for (mounted, index) in checked.view.events.zipIdx do
     let off ← Ident.checked s!"off_{index}"
     let node ← nodeAt dom.nodes mounted.path
@@ -500,17 +620,26 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           | some value => pure value
           | none => .error { code := "LRX-BE-026", message := "checked event binding disappeared" }
         let handler ← eventName eventIndex
-        mountBody := mountBody ++ [.const off <| call runtime.listen [
-          .ident node, .literal (.string mounted.binding.kind.name), .ident context,
-          .literal .null, .ident handler
-        ]]
-    | .value | .key =>
+        if mounted.binding.kind == .submit then
+          /- The submit adapter owns `preventDefault` and takes no event-type
+          argument (ADR-0021); state/refs mirror the plain `listen` wiring. -/
+          mountBody := mountBody ++ [.const off <| call runtime.listenSubmit [
+            .ident node, .ident context, .literal .null, .ident handler
+          ]]
+        else
+          mountBody := mountBody ++ [.const off <| call runtime.listen [
+            .ident node, .literal (.string mounted.binding.kind.name), .ident context,
+            .literal .null, .ident handler
+          ]]
+    | .value | .key | .checked =>
         let eventIndex ← match typedNames.idxOf? mounted.binding.eventName with
           | some value => pure value
           | none => .error { code := "LRX-BE-026", message := "checked event binding disappeared" }
         let handler ← typedEventName eventIndex
-        let listener := if mounted.binding.kind.payload == .key then runtime.listenKey
-          else runtime.listenValue
+        let listener := match mounted.binding.kind.payload with
+          | .key => runtime.listenKey
+          | .checked => runtime.listenChecked
+          | _ => runtime.listenValue
         mountBody := mountBody ++ [.const off <| call listener [
           .ident node, .literal (.string mounted.binding.kind.name), .ident state,
           .ident context, .ident handler
@@ -527,9 +656,19 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     fun mounted => mounted.binding.kind.payload == .value
   let usesKeyListener := checked.view.events.any
     fun mounted => mounted.binding.kind.payload == .key
+  let usesCheckedListener := checked.view.events.any
+    fun mounted => mounted.binding.kind.payload == .checked
+  let usesSubmitListener := checked.view.events.any
+    fun mounted => mounted.binding.kind == .submit
   let formImportNames : Array (Ident × Ident) :=
     (if usesValueListener then #[(runtime.listenValue, runtime.listenValue)] else #[]) ++
-    (if usesKeyListener then #[(runtime.listenKey, runtime.listenKey)] else #[])
+    (if usesKeyListener then #[(runtime.listenKey, runtime.listenKey)] else #[]) ++
+    (if usesCheckedListener then #[(runtime.listenChecked, runtime.listenChecked)] else #[]) ++
+    (if usesSubmitListener then #[(runtime.listenSubmit, runtime.listenSubmit)] else #[])
+  let childImports := checked.spec.children.toList.zip childMounts |>.map
+    fun (child, (_, localName)) =>
+      { source := child.moduleSpecifier
+        names := #[(mount, localName)] : Import }
   let module : Module :=
     { globals := #[← Ident.checked "String"]
       imports := #[
@@ -541,10 +680,11 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             (runtime.listen, runtime.listen),
             (runtime.setText, runtime.setText),
             (runtime.makeDisposer, runtime.makeDisposer)
-          ] }
+          ] ++ (if checked.view.props.isEmpty then #[]
+            else #[(runtime.setProperty, runtime.setProperty)]) }
       ] ++ (if formImportNames.isEmpty then #[] else #[
         { source := "./leanrx_form_events.mjs", names := formImportNames }
-      ])
+      ]) ++ childImports.toArray
       declarations := (evaluators.declarations ++ eventFunctions.map Decl.function ++
         typedEventFunctions.map Decl.function ++ [
         Decl.function { name := mount, params := #[target], body := mountBody.toArray }

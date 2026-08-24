@@ -39,6 +39,8 @@
 | [0035](docs/adr/0035-non-reserved-surface-keywords.md) | Accepted | Parse surface keywords as plain identifiers | 2026-08-24 |
 | [0036](docs/adr/0036-component-item-sugar.md) | Accepted | Sugar component items and bind events by reference | 2026-08-24 |
 | [0037](docs/adr/0037-typed-event-payloads-in-component-backend.md) | Accepted | Lower typed event payloads through the generic component backend | 2026-08-24 |
+| [0038](docs/adr/0038-controlled-inputs-in-component-backend.md) | Accepted | Reflect controlled inputs through the generic component backend | 2026-08-25 |
+| [0039](docs/adr/0039-static-child-component-composition.md) | Accepted | Compose stateful child components by static module import | 2026-08-25 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

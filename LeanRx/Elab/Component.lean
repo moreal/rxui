@@ -106,7 +106,7 @@ private def updateStepTerm? (step : TSyntax `term) :
   | _ => pure none
 
 private def eventAttrNames : List Name :=
-  [`onClick, `onDblClick, `onInput, `onKeyDown, `onChange]
+  [`onClick, `onDblClick, `onInput, `onKeyDown, `onChange, `onCheckedChange, `onSubmit]
 
 /-- Rewrite `onClick={declaredEvent}` (and the typed payload attributes) inside
 an inline view to the checked string binding when the identifier names an event
@@ -131,6 +131,28 @@ private partial def rewriteEventRefs (events : List String) (stx : Syntax) : Syn
 private def sepByElems (stx : Syntax) : Array Syntax :=
   (Array.range ((stx.getNumArgs + 1) / 2)).map fun index => stx[2 * index]
 
+/-- The head identifier of one attr-less, child-less JSX element — the only
+shape that can lower to a static child component reference (ADR-0039). -/
+private def childElementHead? (stx : Syntax) : Option (TSyntax `ident) :=
+  let element : TSyntax `leanrxJsxElement := ⟨stx⟩
+  match element with
+  | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* />) =>
+      if attrs.isEmpty then some tag else none
+  | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* > [$children:leanrxJsxChild,*]) =>
+      if attrs.isEmpty && children.getElems.isEmpty then some tag else none
+  | _ => none
+
+/-- Collect every capitalized head that the inline view could lower to a
+`View.child` reference, in first-occurrence order. -/
+private partial def collectComponentHeads (stx : Syntax)
+    (found : Array (TSyntax `ident) := #[]) : Array (TSyntax `ident) :=
+  let found := match childElementHead? stx with
+    | some tag => if componentHead? tag then found.push tag else found
+    | none => found
+  match stx with
+  | .node _ _ args => args.foldl (init := found) fun acc arg => collectComponentHeads arg acc
+  | _ => found
+
 scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" schemaTerm:term ")"
     "where" "{" items:leanrxComponentItem* "}" : command => do
       /- First pass: the declared event inventory, so an inline view can bind
@@ -152,6 +174,8 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
       let mut events : Array (TSyntax `term) := #[]
       let mut typedEvents : Array (TSyntax `term) := #[]
       let mut declarations : Array (TSyntax `term) := #[]
+      let mut childTerms : Array (TSyntax `term) := #[]
+      let mut childNames : List String := []
       let mut viewTerm? : Option (TSyntax `term) := none
       for item in items do
         let itemSpan ← sourceSpanTerm item
@@ -175,7 +199,12 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
               | _ =>
                   throwErrorAt rhs
                     "error[LRX-ELAB-108]: a typed event must assign its payload parameter with `set field param`"
-            typedEvents := typedEvents.push (← `((LeanRx.TypedEventSpec.assign
+            let wrapper ← match ty.getId.eraseMacroScopes.toString with
+              | "String" => `(LeanRx.AnyTypedEvent.string)
+              | "Bool" => `(LeanRx.AnyTypedEvent.bool)
+              | other => throwErrorAt ty
+                  s!"error[LRX-ELAB-109]: typed event payloads support String and Bool, not {other}"
+            typedEvents := typedEvents.push (← `($wrapper (LeanRx.TypedEventSpec.assign
               $nameLit $paramLit $assigned $itemSpan : LeanRx.TypedEventSpec _ $ty)))
             declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
               LeanRx.SurfaceRole.event $nameLit $itemSpan))
@@ -243,6 +272,17 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
                 s!"error[LRX-ELAB-003]: {roleName} items declare a name before `:=`"
             if viewTerm?.isSome then
               throwErrorAt item "error[LRX-ELAB-002]: component must have exactly one view"
+            /- The child table mirrors the jsx lowering: an attr-less capitalized
+            head becomes a `View.child` reference exactly when `{name}_spec` is
+            in scope, so collect those heads into `ComponentSpec.children`. -/
+            for tag in collectComponentHeads value.raw do
+              if ← liftTermElabM (resolvesToComponentSpec tag) then
+                let shortName := componentShortName tag
+                unless childNames.contains shortName do
+                  childNames := childNames ++ [shortName]
+                  let tagLit := Syntax.mkStrLit shortName
+                  childTerms := childTerms.push
+                    (← `(LeanRx.ChildComponent.of $tagLit $(← sourceSpanTerm tag)))
             let rewritten : TSyntax `term := ⟨rewriteEventRefs declaredEvents value.raw⟩
             viewTerm? := some (← `(LeanRx.View.withSpan $rewritten $itemSpan))
           else
@@ -264,6 +304,7 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
         typedEvents := #[$typedEvents,*]
         view := $viewTerm
         surface := #[$declarations,*]
+        children := #[$childTerms,*]
         span := $componentSpan }))
       elabCommand (← `(abbrev $checkName := LeanRx.ComponentSpec.check $specName))
       let messageTerm ← `(term| LeanRx.ComponentSpec.validationMessage $specName)

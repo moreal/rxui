@@ -54,4 +54,36 @@ def target (event : TypedEventSpec Γ α) : Field Γ α := event.update.target
 
 end TypedEventSpec
 
+/-- Closed union of the typed event payload types the generic component
+backend lowers (ADR-0038). `String` events accept `value`/`key` payload
+bindings; `Bool` events accept `checked` bindings. -/
+inductive AnyTypedEvent (Γ : Schema) where
+  | string (spec : TypedEventSpec Γ String)
+  | bool (spec : TypedEventSpec Γ Bool)
+
+namespace AnyTypedEvent
+
+def name : AnyTypedEvent Γ → String
+  | .string spec | .bool spec => spec.name
+
+def parameterName : AnyTypedEvent Γ → String
+  | .string spec | .bool spec => spec.parameterName
+
+def span : AnyTypedEvent Γ → SourceSpan
+  | .string spec | .bool spec => spec.span
+
+def targetIndex : AnyTypedEvent Γ → Nat
+  | .string spec => spec.target.index
+  | .bool spec => spec.target.index
+
+def targetName : AnyTypedEvent Γ → String
+  | .string spec => spec.target.name
+  | .bool spec => spec.target.name
+
+def payloadType : AnyTypedEvent Γ → RuntimeTypeId
+  | .string _ => .string
+  | .bool _ => .bool
+
+end AnyTypedEvent
+
 end LeanRx

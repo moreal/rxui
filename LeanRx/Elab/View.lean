@@ -107,6 +107,7 @@ macro_rules
   | `(leanrx_jsx_tag% label) => `(LeanRx.HtmlTag.label)
   | `(leanrx_jsx_tag% strong) => `(LeanRx.HtmlTag.strong)
   | `(leanrx_jsx_tag% em) => `(LeanRx.HtmlTag.em)
+  | `(leanrx_jsx_tag% form) => `(LeanRx.HtmlTag.form)
   | `(leanrx_jsx_tag% $unknown:ident) =>
       Macro.throwErrorAt unknown s!"error[LRX-VIEW-007]: unsupported element <{unknown.getId}>"
 
@@ -124,6 +125,13 @@ macro_rules
       `(LeanRx.ViewAttr.static (.buttonType .submit))
   | `(leanrx_jsx_attr% type = "reset") =>
       `(LeanRx.ViewAttr.static (.buttonType .reset))
+  | `(leanrx_jsx_attr% type = "text") =>
+      `(LeanRx.ViewAttr.static (.inputType .text))
+  | `(leanrx_jsx_attr% type = "checkbox") =>
+      `(LeanRx.ViewAttr.static (.inputType .checkbox))
+  | `(leanrx_jsx_attr% type = $value:str) =>
+      Macro.throwErrorAt value
+        s!"error[LRX-VIEW-008]: unknown or invalid type attribute value {value.getString}"
   | `(leanrx_jsx_attr% onClick = $event:str) =>
       `(LeanRx.ViewAttr.event { kind := .click, eventName := $event })
   | `(leanrx_jsx_attr% onDblClick = $event:str) =>
@@ -162,10 +170,35 @@ elab "leanrx_jsx_prop% " name:str value:term : term <= expectedType => do
     Term.elabTerm value expectedType
 
 /-- A capitalized element head nests another component by typed application. -/
-private def componentHead? (tag : TSyntax `ident) : Bool :=
+def componentHead? (tag : TSyntax `ident) : Bool :=
   match tag.getId.eraseMacroScopes with
   | .str _ shortName => shortName.length > 0 && shortName.front.isUpper
   | _ => false
+
+def componentShortName (tag : TSyntax `ident) : String :=
+  match tag.getId.eraseMacroScopes with
+  | .str _ shortName => shortName
+  | other => other.toString
+
+/-- The `component` command generates `{name}_spec` beside each checked
+component; a capitalized JSX head resolves against that convention. -/
+def resolvesToComponentSpec (tag : TSyntax `ident) : TermElabM Bool := do
+  let specIdent := mkIdentFrom tag (tag.getId.appendAfter "_spec")
+  try
+    pure (← Term.resolveId? specIdent).isSome
+  catch _ =>
+    pure false
+
+/-- An attr-less capitalized self-closing element statically nests the checked
+component `{name}_spec` when one is in scope (ADR-0039); otherwise it keeps the
+existing behavior and elaborates the identifier as an ordinary view term. -/
+elab "leanrx_jsx_component% " name:ident marker:str : term <= expectedType => do
+  if ← resolvesToComponentSpec name then
+    let nameLit := Syntax.mkStrLit (componentShortName name)
+    Term.elabTerm
+      (← `(LeanRx.View.child $nameLit (leanrx_source_span% $marker))) expectedType
+  else
+    Term.elabTerm name expectedType
 
 private def componentCall (tag : TSyntax `ident) (attrs : Array Syntax) :
     MacroM (TSyntax `term) := do
@@ -193,9 +226,28 @@ macro_rules
 private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
     (children : Array Syntax) (span : Syntax) : MacroM (TSyntax `term) := do
   if componentHead? tag then
-    componentCall tag attrs
+    if attrs.isEmpty && children.isEmpty then
+      `(leanrx_jsx_component% $tag $(spanMarker span))
+    else
+      componentCall tag attrs
   else do
-    let attrTerms ← attrs.mapM fun attr =>
+    let mut propTerms : Array (TSyntax `term) := #[]
+    for attr in attrs do
+      let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
+      match attrSyntax with
+      | `(leanrxJsxAttr| value = { $expr:term }) => do
+          let span ← spanSyntax attr
+          propTerms := propTerms.push (← `(LeanRx.PropBinding.value $expr $span))
+      | `(leanrxJsxAttr| checked = { $expr:term }) => do
+          let span ← spanSyntax attr
+          propTerms := propTerms.push (← `(LeanRx.PropBinding.checked $expr $span))
+      | _ => pure ()
+    let plainAttrs := attrs.filter fun attr =>
+      let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
+      match attrSyntax with
+      | `(leanrxJsxAttr| value = { $_:term }) | `(leanrxJsxAttr| checked = { $_:term }) => false
+      | _ => true
+    let attrTerms ← plainAttrs.mapM fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
       match attrSyntax with
       | `(leanrxJsxAttr| onClick = $event:str) => do
@@ -253,6 +305,28 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
             kind := LeanRx.EventKind.change
             eventName := LeanRx.TypedEventSpec.name $event, span := $span
           })
+      | `(leanrxJsxAttr| onCheckedChange = $event:str) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.checkedChange, eventName := $event, span := $span
+          })
+      | `(leanrxJsxAttr| onCheckedChange = { $event:term }) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.checkedChange
+            eventName := LeanRx.TypedEventSpec.name $event, span := $span
+          })
+      | `(leanrxJsxAttr| onSubmit = $event:str) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.submit, eventName := $event, span := $span
+          })
+      | `(leanrxJsxAttr| onSubmit = { $event:term }) => do
+          let span ← spanSyntax attr
+          `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.submit
+            eventName := LeanRx.EventSpec.name $event, span := $span
+          })
       | `(leanrxJsxAttr| class = { $_:term }) =>
           Macro.throwErrorAt attr
             "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
@@ -282,7 +356,7 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | _ => Macro.throwErrorAt child "error[LRX-VIEW-009]: malformed LeanRx JSX child"
     let spanTerm ← spanSyntax span
     `(LeanRx.View.nodeWith (leanrx_jsx_tag% $tag) [$childTerms,*]
-      (attrs := [$attrTerms,*]) (span := $spanTerm))
+      (attrs := [$attrTerms,*]) (span := $spanTerm) (props := [$propTerms,*]))
 
 macro_rules
   | `(leanrx_jsx_typed% $element:leanrxJsxElement) => do
@@ -326,7 +400,10 @@ private def logicalAttr (attr : Syntax) : MacroM (TSyntax `term) := do
   | `(leanrxJsxAttr| onDblClick = $_:str) | `(leanrxJsxAttr| onDblClick = { $_:term })
   | `(leanrxJsxAttr| onInput = $_:str) | `(leanrxJsxAttr| onInput = { $_:term })
   | `(leanrxJsxAttr| onKeyDown = $_:str) | `(leanrxJsxAttr| onKeyDown = { $_:term })
-  | `(leanrxJsxAttr| onChange = $_:str) | `(leanrxJsxAttr| onChange = { $_:term }) =>
+  | `(leanrxJsxAttr| onChange = $_:str) | `(leanrxJsxAttr| onChange = { $_:term })
+  | `(leanrxJsxAttr| onCheckedChange = $_:str)
+  | `(leanrxJsxAttr| onCheckedChange = { $_:term })
+  | `(leanrxJsxAttr| onSubmit = $_:str) | `(leanrxJsxAttr| onSubmit = { $_:term }) =>
       Macro.throwErrorAt attr
         "error[LRX-VIEW-013]: event bindings are not representable in the logical reference view"
   | `(leanrxJsxAttr| $name:ident = $value:str) => do

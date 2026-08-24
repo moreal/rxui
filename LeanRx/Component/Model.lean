@@ -115,13 +115,26 @@ deriving Repr, BEq
 def SurfaceDecl.debug (value : SurfaceDecl) : String :=
   value.role.name ++ ":" ++ value.name
 
+/-- One statically nested child component (ADR-0039). The parent's emitted
+module imports the child's `mount` export from `moduleSpecifier`; the child
+keeps its own independent state, schema, and events. -/
+structure ChildComponent where
+  name : String
+  moduleSpecifier : String
+  span : SourceSpan := .generated
+deriving Repr, BEq
+
+def ChildComponent.of (name : String) (span : SourceSpan := .generated) : ChildComponent :=
+  { name, moduleSpecifier := s!"./{name}.mjs", span }
+
 structure ComponentSpec (Γ : Schema) where
   name : String
   values : Array (ValueSpec Γ)
   events : Array (EventSpec Γ)
-  typedEvents : Array (TypedEventSpec Γ String) := #[]
+  typedEvents : Array (AnyTypedEvent Γ) := #[]
   view : View Γ
   surface : Array SurfaceDecl := #[]
+  children : Array ChildComponent := #[]
   span : SourceSpan := .generated
 
 structure ComponentError where
@@ -195,6 +208,13 @@ private def sinkNodes (values : Array (ValueSpec Γ))
       (← refsFor values sink.value.dependencies.ids) ("rx:" ++ sink.value.debug) sink.span
   pure nodes.toArray
 
+private def propNodes (values : Array (ValueSpec Γ))
+    (props : List (MountedProp Γ)) : Except ComponentError (Array NodeSpec) := do
+  let nodes ← props.zipIdx.mapM fun (prop, index) => do
+    pure <| NodeSpec.sink s!"prop:{index}:{prop.binding.name}" prop.binding.valueType
+      (← refsFor values prop.binding.dependencyIds) prop.binding.debug prop.binding.span
+  pure nodes.toArray
+
 private def validateValues (spec : ComponentSpec Γ) : Except ComponentError Nat := do
   if spec.values.isEmpty then
     throw { code := "LRX-TYPE-101", message := "component must declare at least one value" }
@@ -259,6 +279,13 @@ private def validateSurface (spec : ComponentSpec Γ) : Except ComponentError Un
         spans := #[declared.span, value.span]
       }
 
+/-- Payload classes one typed event declaration can satisfy: `String` events
+serve `value`/`key` bindings, `Bool` events serve `checked` bindings. -/
+private def acceptsPayload : AnyTypedEvent Γ → EventPayload → Bool
+  | .string _, .value | .string _, .key => true
+  | .bool _, .checked => true
+  | _, _ => false
+
 private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
     (split : ViewSplit Γ) : Except ComponentError Unit := do
   let names := spec.events.toList.map (·.name)
@@ -266,10 +293,10 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
   if (names ++ typedNames).any String.isEmpty || duplicate? (names ++ typedNames) then
     throw { code := "LRX-ELAB-102", message := "component event names must be nonempty and unique" }
   for event in spec.typedEvents do
-    unless event.target.index < sourceCount do
+    unless event.targetIndex < sourceCount do
       throw {
         code := "LRX-TYPE-107"
-        message := s!"event {event.name} writes non-source value {event.target.index}"
+        message := s!"event {event.name} writes non-source value {event.targetIndex}"
         spans := #[event.span]
       }
   for event in spec.events do
@@ -318,12 +345,20 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
           spans := #[mounted.binding.span]
         }
     else
-      unless typedNames.contains mounted.binding.eventName do
-        throw {
-          code := "LRX-VIEW-017"
-          message := s!"view references unknown typed event {mounted.binding.eventName}"
-          spans := #[mounted.binding.span]
-        }
+      match spec.typedEvents.toList.find? (·.name == mounted.binding.eventName) with
+      | none =>
+          throw {
+            code := "LRX-VIEW-017"
+            message := s!"view references unknown typed event {mounted.binding.eventName}"
+            spans := #[mounted.binding.span]
+          }
+      | some event =>
+          unless acceptsPayload event mounted.binding.kind.payload do
+            throw {
+              code := "LRX-VIEW-018"
+              message := s!"typed event {event.name} takes a {event.payloadType.debug} payload and cannot serve a {mounted.binding.kind.name} binding"
+              spans := #[mounted.binding.span, event.span]
+            }
 
 private def eventByName? (events : Array (EventSpec Γ)) (name : String) : Option (EventSpec Γ) :=
   events.toList.find? (·.name == name)
@@ -344,13 +379,13 @@ private def effectiveReads (events : Array (EventSpec Γ)) : Nat → Update Γ �
         | some event => effectiveReads events fuel event.update
         | none => []).eraseDups
 
-private def summarizeTypedEvents (events : Array (TypedEventSpec Γ String)) : Array EventSummary :=
+private def summarizeTypedEvents (events : Array (AnyTypedEvent Γ)) : Array EventSummary :=
   events.map fun event => {
     name := event.name
-    directWrites := [event.target.index]
+    directWrites := [event.targetIndex]
     directReads := []
     dispatchedEvents := []
-    effectiveWrites := [event.target.index]
+    effectiveWrites := [event.targetIndex]
     effectiveReads := []
   }
 
@@ -366,15 +401,22 @@ private def summarizeEvents (events : Array (EventSpec Γ)) : Array EventSummary
 
 mutual
 private def validateView : View Γ → Except ComponentError Unit
-  | .element tag attrs events children span => do
+  | .element tag attrs events children span props => do
       if duplicate? (attrs.map StaticAttr.name) then
         throw { code := "LRX-VIEW-001", message := "element has duplicate static attributes", spans := #[span] }
       if duplicate? (events.map fun event => event.kind.name) then
         throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
-      if events.any (fun event => event.kind.payload == .none) && tag != .button then
+      if events.any (fun event => event.kind == .click || event.kind == .dblclick) &&
+          tag != .button then
         throw {
           code := "LRX-VIEW-005"
           message := "click handlers require a native button in the M4 safe view"
+          spans := #[span]
+        }
+      if events.any (fun event => event.kind == .submit) && tag != .form then
+        throw {
+          code := "LRX-VIEW-019"
+          message := "submit handlers require a native form element"
           spans := #[span]
         }
       if events.any (fun event => event.kind.payload != .none) && tag != .input then
@@ -383,16 +425,32 @@ private def validateView : View Γ → Except ComponentError Unit
           message := "typed payload events require a native input element"
           spans := #[span]
         }
+      if !props.isEmpty && tag != .input then
+        throw {
+          code := "LRX-VIEW-020"
+          message := "reflected properties require a native input element"
+          spans := #[span]
+        }
+      if duplicate? (props.map PropBinding.name) then
+        throw {
+          code := "LRX-VIEW-021"
+          message := "element reflects duplicate properties"
+          spans := #[span]
+        }
       for attr in attrs do
         if let .buttonType _ := attr then
           unless tag == .button do
             throw { code := "LRX-VIEW-003", message := "button type is valid only on button elements", spans := #[span] }
+        if let .inputType _ := attr then
+          unless tag == .input do
+            throw { code := "LRX-VIEW-022", message := "input type is valid only on input elements", spans := #[span] }
       validateChildren children
   | .text _ _ => pure ()
   | .scalarText name _ span =>
       if name.isEmpty then
         throw { code := "LRX-VIEW-004", message := "text sink name must not be empty", spans := #[span] }
       else pure ()
+  | .child _ _ => pure ()
 
 private def validateChildren : ViewChildren Γ → Except ComponentError Unit
   | .nil => pure ()
@@ -400,6 +458,36 @@ private def validateChildren : ViewChildren Γ → Except ComponentError Unit
       validateView head
       validateChildren tail
 end
+
+/-- Every nested component reference must name a declared child, and the child
+table itself must be well formed: nonempty unique names and same-directory
+`.mjs` module specifiers. -/
+private def validateChildComponents (spec : ComponentSpec Γ)
+    (split : ViewSplit Γ) : Except ComponentError Unit := do
+  let names := spec.children.toList.map (·.name)
+  if names.any String.isEmpty || duplicate? names then
+    throw {
+      code := "LRX-VIEW-024"
+      message := "child component names must be nonempty and unique"
+      spans := spec.children.map (·.span)
+    }
+  for entry in spec.children do
+    unless entry.moduleSpecifier.startsWith "./" &&
+        entry.moduleSpecifier.endsWith ".mjs" &&
+        entry.moduleSpecifier.length > "./.mjs".length &&
+        !((entry.moduleSpecifier.drop 2).toString.toList.contains '/') do
+      throw {
+        code := "LRX-VIEW-024"
+        message := s!"child component {entry.name} has invalid module specifier {entry.moduleSpecifier}"
+        spans := #[entry.span]
+      }
+  for reference in split.childRefs do
+    unless names.contains reference.name do
+      throw {
+        code := "LRX-VIEW-023"
+        message := s!"view references unknown child component {reference.name}"
+        spans := #[reference.span]
+      }
 
 /-- Validate the explicit component contract and retain its certified graph. -/
 def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ) := do
@@ -415,18 +503,22 @@ def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ
         let split := spec.view.split
         match validateEvents spec sourceCount split with
         | .error error => .error error
-        | .ok _ => match valueNodes spec.values with
+        | .ok _ => match validateChildComponents spec split with
           | .error error => .error error
-          | .ok valueNodes => match sinkNodes spec.values split.textSinks with
+          | .ok _ => match valueNodes spec.values with
             | .error error => .error error
-            | .ok sinkNodes => match Graph.plan (valueNodes ++ sinkNodes) with
-              | .error error => .error {
-                  code := error.code, message := error.message,
-                  path := error.path, spans := error.spans
-                }
-              | .ok graph =>
-                  .ok ⟨spec, graph, sourceCount,
-                    summarizeEvents spec.events ++ summarizeTypedEvents spec.typedEvents, split⟩
+            | .ok valueNodes => match sinkNodes spec.values split.textSinks with
+              | .error error => .error error
+              | .ok sinkNodes => match propNodes spec.values split.props with
+                | .error error => .error error
+                | .ok propNodes => match Graph.plan (valueNodes ++ sinkNodes ++ propNodes) with
+                  | .error error => .error {
+                      code := error.code, message := error.message,
+                      path := error.path, spans := error.spans
+                    }
+                  | .ok graph =>
+                      .ok ⟨spec, graph, sourceCount,
+                        summarizeEvents spec.events ++ summarizeTypedEvents spec.typedEvents, split⟩
 
 def validationMessage (spec : ComponentSpec Γ) : String :=
   match spec.check with
