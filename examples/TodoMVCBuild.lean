@@ -26,8 +26,10 @@ private def logicalJson : Region.LogicalNode → String
         ",\"attributes\":" ++ attributesJson attributes ++
         ",\"children\":[" ++ String.intercalate "," (children.map logicalJson) ++ "]}"
 
+/- The golden logical projection is generated from the JSX view surface in
+`examples/TodoMVC.lean`; native tests pin it equal to `Todo.logical`. -/
 private def expectedJson : String :=
-  "{\"logical\":" ++ logicalJson (logical spec.name scenario) ++ "}\n"
+  "{\"logical\":" ++ logicalJson (todoView spec.name scenario) ++ "}\n"
 
 private def generateChecked (directory : System.FilePath) (checked : Spec.Checked) : IO Unit := do
   let emitted ← match Backend.Todo.emit "TodoMVC.mjs" checked with

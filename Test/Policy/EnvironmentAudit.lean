@@ -393,6 +393,8 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.StaticAttr.buttonType.injEq, #[``propext]),
     (`LeanRx.StaticAttr.className.injEq, #[``propext]),
     (`LeanRx.StaticAttr.id.injEq, #[``propext]),
+    (`LeanRx.StaticAttr.placeholder.injEq, #[``propext]),
+    (`LeanRx.StaticAttr.role.injEq, #[``propext]),
     (`LeanRx.TextSink.mk.injEq, #[``propext]),
     (`LeanRx.Update.sequence.injEq, #[``propext]),
     (`LeanRx.Update.dispatch.injEq, #[``propext]),

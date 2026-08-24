@@ -52,6 +52,8 @@ import Test.Notes.Model
 import Test.IssueBrowser.Model
 import Test.Elab.Component
 import Test.Elab.Rx
+import Test.Elab.TodoSurface
+import Test.Elab.ViewSurface
 import Test.Docs.LanguageGuide
 import Test.Cli.Model
 import Test.Cli.AtomicOutput
@@ -121,6 +123,8 @@ def main : IO Unit := do
   LeanRxTest.IssueBrowser.Model.run
   LeanRxTest.Elab.Component.run
   LeanRxTest.Elab.Rx.run
+  LeanRxTest.Elab.TodoSurface.run
+  LeanRxTest.Elab.ViewSurface.run
   LeanRxTest.Docs.LanguageGuide.run
   LeanRxTest.Cli.Model.run
   LeanRxTest.Cli.AtomicOutput.run

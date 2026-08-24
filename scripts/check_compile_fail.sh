@@ -40,6 +40,10 @@ fixtures=(
   Test/fixtures/compile-fail/ForgeGridState.lean
   Test/fixtures/compile-fail/CustomGridCostModel.lean
   Test/fixtures/compile-fail/UnstageableRxAtom.lean
+  Test/fixtures/compile-fail/UnsupportedTag.lean
+  Test/fixtures/compile-fail/KeyedListInTypedView.lean
+  Test/fixtures/compile-fail/DynamicAttrInTypedView.lean
+  Test/fixtures/compile-fail/EventInLogicalView.lean
 )
 fragments=(
   "Constructor for"
@@ -80,6 +84,10 @@ fragments=(
   'Constructor for `LeanRx.Grid.State` is marked as private'
   'Invalid argument name `costModel`'
   "error[LRX-RX-001]"
+  "error[LRX-VIEW-007]"
+  "error[LRX-VIEW-011]"
+  "error[LRX-VIEW-012]"
+  "error[LRX-VIEW-013]"
 )
 
 for index in "${!fixtures[@]}"; do

@@ -31,6 +31,10 @@ def keys (value : KeyedList) : List Nat := value.items.map (·.key)
 
 end KeyedList
 
+/-- Project keyed rows into plain logical children for embedding in a parent. -/
+def KeyedItem.nodes (items : List KeyedItem) : List LogicalNode :=
+  items.map (·.node)
+
 structure KeyedInstance where
   token : Nat
   key : Nat

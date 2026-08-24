@@ -3,9 +3,10 @@ import LeanRx.Core.SourceInfo
 
 namespace LeanRx
 
-/-- Closed M4 element whitelist. Arbitrary tag text never reaches the emitter. -/
+/-- Closed element whitelist. Arbitrary tag text never reaches the emitter. -/
 inductive HtmlTag where
   | main | div | button | p | span | h1
+  | h2 | h3 | header | footer | section | nav | ul | li | input | label | strong | em
 deriving Repr, BEq, DecidableEq
 
 def HtmlTag.name : HtmlTag → String
@@ -15,6 +16,18 @@ def HtmlTag.name : HtmlTag → String
   | .p => "p"
   | .span => "span"
   | .h1 => "h1"
+  | .h2 => "h2"
+  | .h3 => "h3"
+  | .header => "header"
+  | .footer => "footer"
+  | .section => "section"
+  | .nav => "nav"
+  | .ul => "ul"
+  | .li => "li"
+  | .input => "input"
+  | .label => "label"
+  | .strong => "strong"
+  | .em => "em"
 
 inductive ButtonType where
   | button | submit | reset
@@ -25,12 +38,14 @@ def ButtonType.name : ButtonType → String
   | .submit => "submit"
   | .reset => "reset"
 
-/-- Safe, context-specific static attributes supported in the first view slice. -/
+/-- Safe, context-specific static attributes supported in the safe view. -/
 inductive StaticAttr where
   | className (value : String)
   | id (value : String)
   | ariaLabel (value : String)
   | buttonType (value : ButtonType)
+  | role (value : String)
+  | placeholder (value : String)
 deriving Repr, BEq
 
 def StaticAttr.name : StaticAttr → String
@@ -38,17 +53,22 @@ def StaticAttr.name : StaticAttr → String
   | .id _ => "id"
   | .ariaLabel _ => "aria-label"
   | .buttonType _ => "type"
+  | .role _ => "role"
+  | .placeholder _ => "placeholder"
 
 def StaticAttr.value : StaticAttr → String
-  | .className value | .id value | .ariaLabel value => value
+  | .className value | .id value | .ariaLabel value | .role value
+  | .placeholder value => value
   | .buttonType value => value.name
 
 inductive EventKind where
   | click
+  | dblclick
 deriving Repr, BEq, DecidableEq
 
 def EventKind.name : EventKind → String
   | .click => "click"
+  | .dblclick => "dblclick"
 
 structure EventBinding where
   kind : EventKind

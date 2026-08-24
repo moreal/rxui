@@ -588,6 +588,21 @@ Complete — M0 through M11
   a cell; baseline 9,937 → 9,905 raw, 3,452 → 3,441 Brotli (`main.mjs`
   8,447 / 3,104 bytes), select and the measured clicks unchanged locally.
 
+- Raised the developer surface with performance frozen (2026-08-24): the scoped
+  `rx%` expression surface (ADR-0033) replaced every hand-written `RxExpr`
+  constructor tree in the examples with operator/`s!` syntax staging the exact
+  same trees, and the JSX surface became dual-target (ADR-0034) — expanded
+  tag/attribute whitelists plus `onDblClick` in the typed safe view, and a
+  logical `Region.LogicalNode` target with dynamic attributes/text, the keyed
+  list surface syntax lowering onto the keyed region IR, and nested components
+  with typed props (`ImmutableProp` auto-wrapping). TodoMVC's user surface in
+  `examples/TodoMVC.lean` now declares the row component, keyed rows, and the
+  full logical view; the differential golden projection is generated from that
+  surface, native suites pin it extensionally equal to the library reference
+  across thirteen reducer states, and the emitted `TodoMVC.mjs` bundle stayed
+  byte-identical. New compile-fail fixtures pin `LRX-RX-001` and
+  `LRX-VIEW-007/-011/-012/-013`.
+
 ## In progress
 
 - None. The planned M0–M11 implementation is complete.

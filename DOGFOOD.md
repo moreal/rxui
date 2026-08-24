@@ -859,3 +859,50 @@ writes per page. This is a deterministic work contract, not a latency claim.
 ### Follow-up issue or commit
 
 `example(docs): dogfood LeanRx documentation site`
+
+## Expression and view surface — rx%, keyed lists, and nested components
+
+### Scenario exercised
+
+The six expression-bearing examples dropped their hand-written `RxExpr`
+constructor trees for the scoped `rx%` surface (`count * 2`,
+`if count % 2 == 0 then "even" else "odd"`, `s!"Count: {count}"`), and TodoMVC
+was rewritten at the user surface: `examples/TodoMVC.lean` now declares a
+nested `TodoRow` component with typed props, the keyed row list through
+`for todo in visible model key todo.id => …`, and the full logical view in
+`jsx%`. The differential golden projection is generated from that surface, and
+the emitted `TodoMVC.mjs` bundle stayed byte-identical.
+
+### What was pleasant
+
+Typeclass-directed smart constructors made `rx%` a thin macro: every staged
+tree is the exact tree the explicit API builds, so goldens, dependency sets,
+and evaluator names did not move. Selecting the JSX lowering from the expected
+type meant one grammar serves both the schema-typed safe view and the logical
+region model, and nested components are ordinary typed Lean applications, so a
+mistyped prop is a plain Lean type error at the call site. An `ImmutableProp`
+prop wraps itself with its attribute name, connecting the M6 props model to
+the surface without new machinery.
+
+### Friction
+
+Scoped surface keywords (`state`, `derived`, `event`, `view`, `key`) still
+cannot be used as identifiers where `LeanRxDsl` is open; the TodoMVC surface
+names its state parameter `model` and its view `todoView`, and the typed test
+escapes the `view` structure field as `«view»`. `section` stays out of the tag
+whitelist because it is a Lean command keyword. The logical surface carries no
+events, so TodoMVC's delegated event wiring remains in the backend rather than
+the DSL, and the typed event surface still lacks payloads (`onInput`,
+`onKeyDown`) beyond the new `onDblClick`.
+
+### Bugs found
+
+No framework defect: the byte-diff against the previous bundle, the structural
+`rx%` equivalence suite, and the extensional TodoMVC surface/reference
+comparison across thirteen reducer states all held on the first green build.
+
+### Follow-up issue or commit
+
+`feat(elab): stage ordinary expression syntax with rx% (ADR-0033)` and
+`feat(elab): lower one JSX surface into typed views and the logical region
+model (ADR-0034)`.

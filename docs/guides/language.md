@@ -151,6 +151,54 @@ The complete form of this canonical snippet is compiled in
 inventory is checked against the actual roles and names; it is not decorative.
 Builds may emit a small `.generated.lean` alias module for editor inspection.
 
+### Stage expressions with rx%
+
+`rx%` stages ordinary Lean expression syntax into the same closed `RxExpr`
+core the explicit constructors build — identical primitives, literals, and
+dependency sets:
+
+```lean
+open scoped LeanRxDsl
+
+def doubled := rx% count * 2
+def parity := rx% if count % 2 == 0 then "even" else "odd"
+def countText := rx% s!"Count: {count}"
+def increment : EventSpec CounterSchema :=
+  { name := "increment", update := .set count (rx% count + 1) }
+```
+
+Leaves stage by type: schema fields read, staged expressions splice, and
+`Bool`/`Int`/`Nat`/`String` values lift into literals. Anything else fails
+with `error[LRX-RX-001]` at the leaf.
+
+### Target the logical region model
+
+`jsx%` selects its lowering from the expected type. Against
+`Region.LogicalNode` it produces the logical reference model used by dynamic
+region applications and differential tests: attributes and text may be dynamic
+terms, keyed list children lower onto the keyed region IR, and a capitalized
+element nests another component as a typed application:
+
+```lean
+def TodoRow (todo : Item) (editing : Bool) (draft : String) : LogicalNode :=
+  jsx% <li dataKey={toString todo.id}
+      class={if todo.completed then "completed" else "active"}> [
+    { if editing then draft else todo.title }
+  ]
+
+def rows (model : State) : List KeyedItem :=
+  jsx% for todo in visible model key todo.id =>
+    <TodoRow todo={todo} editing={model.editing == some todo.id}
+      draft={model.draft}/>
+```
+
+A prop declared as an M6 `ImmutableProp` wraps its value through
+`ImmutableProp.of` with the attribute name. Mode mismatches keep stable
+diagnostics (`LRX-VIEW-011` keyed list in a typed view, `LRX-VIEW-012` dynamic
+values in a typed view, `LRX-VIEW-013` events in the logical model). Surface
+keywords (`state`, `derived`, `event`, `view`, `key`) cannot double as
+identifiers where `LeanRxDsl` is open.
+
 ## 8. Compile and inspect
 
 Registered applications can be checked and built through the repository CLI:
