@@ -182,11 +182,13 @@ private def anyChanged (changed : Ident) (deps : List Nat) : Expr :=
     | [] => .literal (.boolean false)
     | head :: tail => tail.foldl (fun acc value => .binary .or acc value) head
 
-private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
-    (setText : Ident) (eventNames : List String) (event : EventSpec Γ) (eventIndex : Nat) :
-    Except Error Function := do
+/-- Shared transaction shell for every generated dispatch function: begin
+bookkeeping, the provided write statements, and the commit sweep over derived
+values and text sinks. -/
+private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalState)
+    (setText : Ident) (name : Ident) (params : Array Ident) (label : String)
+    (writes : List Stmt) : Except Error Function := do
   let context ← Ident.checked "context"
-  let ignored ← Ident.checked "ignored"
   let state ← Ident.checked "state"
   let refs ← Ident.checked "refs"
   let tx ← Ident.checked "tx"
@@ -214,10 +216,8 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
   body := body ++ [
     .ifThen (.binary .eq (txAt tx 0) (uint 0)) (.ofList beginBody),
     incrementAt tx 0,
-    pushTrace tx s!"event:{event.name}"
+    pushTrace tx s!"event:{label}"
   ]
-  let (_, writes) ← updateStatements evaluators context state tx eventNames
-    valueCount eventIndex event.update 0
   body := body ++ writes ++ [
     .assign (.index (.ident tx) (uint 0)) (.binary .sub (txAt tx 0) (uint 1))
   ]
@@ -276,11 +276,48 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
     .ifThen (.binary .eq (txAt tx 0) (uint 0)) (.ofList commitBody),
     .return (.literal .null)
   ]
-  pure {
-    name := ← eventName eventIndex
-    params := #[context, ignored]
-    body := body.toArray
-  }
+  pure { name, params, body := body.toArray }
+
+private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
+    (setText : Ident) (eventNames : List String) (event : EventSpec Γ) (eventIndex : Nat) :
+    Except Error Function := do
+  let context ← Ident.checked "context"
+  let ignored ← Ident.checked "ignored"
+  let state ← Ident.checked "state"
+  let tx ← Ident.checked "tx"
+  let (_, writes) ← updateStatements evaluators context state tx eventNames
+    checked.spec.values.size eventIndex event.update 0
+  transactionShell checked evaluators setText (← eventName eventIndex)
+    #[context, ignored] event.name writes
+
+private def typedEventName (index : Nat) : Except Error Ident :=
+  Ident.checked s!"$lrx_typed_event_{index}"
+
+/-- Names owned by the dispatch shell; a typed payload parameter may not shadow
+them. -/
+private def shellLocals : List String :=
+  ["state", "refs", "tx", "oldSources", "changed", "sinkCache", "context", "hostState"]
+
+private def typedEventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
+    (setText : Ident) (event : TypedEventSpec Γ String) (eventIndex : Nat) :
+    Except Error Function := do
+  unless !shellLocals.contains event.parameterName do
+    throw {
+      code := "LRX-BE-028"
+      message := s!"typed event parameter {event.parameterName} shadows a generated local"
+    }
+  let hostState ← Ident.checked "hostState"
+  let context ← Ident.checked "context"
+  let payload ← Ident.checked event.parameterName
+  let state ← Ident.checked "state"
+  let tx ← Ident.checked "tx"
+  let writes : List Stmt := [
+    .assign (.index (.ident state) (uint event.target.index)) (.ident payload),
+    incrementAt tx 2,
+    pushTrace tx s!"source:{event.target.name}:write"
+  ]
+  transactionShell checked evaluators setText (← typedEventName eventIndex)
+    #[hostState, context, payload] event.name writes
 
 private structure RuntimeNames where
   createElement : Ident
@@ -290,6 +327,8 @@ private structure RuntimeNames where
   listen : Ident
   setText : Ident
   makeDisposer : Ident
+  listenValue : Ident
+  listenKey : Ident
 
 private def runtimeNames : Except Error RuntimeNames := do
   pure {
@@ -300,6 +339,8 @@ private def runtimeNames : Except Error RuntimeNames := do
     listen := ← Ident.checked "listen"
     setText := ← Ident.checked "setText"
     makeDisposer := ← Ident.checked "makeDisposer"
+    listenValue := ← Ident.checked "listenValue"
+    listenKey := ← Ident.checked "listenKey"
   }
 
 private structure DomBinding where
@@ -385,9 +426,13 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
     sourceCount := checked.sourceCount
     derivedCount := checked.spec.values.size - checked.sourceCount
     textSinkCount := checked.view.textSinks.length
-    eventCount := checked.spec.events.size
-    hostImports := #["./leanrx_dom.mjs"]
-    features := #["scalar", "events", "transactions", "instrumentation", "trace"] }
+    eventCount := checked.spec.events.size + checked.spec.typedEvents.size
+    hostImports :=
+      if checked.view.events.any (fun mounted => mounted.binding.kind.payload != .none) then
+        #["./leanrx_dom.mjs", "./leanrx_form_events.mjs"]
+      else #["./leanrx_dom.mjs"]
+    features := #["scalar", "events", "transactions", "instrumentation", "trace"] ++
+      (if checked.spec.typedEvents.isEmpty then #[] else #["typed-events"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
 def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Emitted := do
@@ -407,8 +452,11 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   let target ← Ident.checked "target"
   let valueCount := checked.spec.values.size
   let eventNames := checked.spec.events.toList.map (·.name)
+  let typedNames := checked.spec.typedEvents.toList.map (·.name)
   let eventFunctions ← checked.spec.events.toList.zipIdx.mapM fun (event, index) =>
     eventFunction checked evaluators runtime.setText eventNames event index
+  let typedEventFunctions ← checked.spec.typedEvents.toList.zipIdx.mapM fun (event, index) =>
+    typedEventFunction checked evaluators runtime.setText event index
   let derivedInitial ← derivedOrder checked |>.mapM fun id => do
     pure (.assign (.index (.ident state) (uint id)) <|
       evaluatorCall (← evaluator evaluators s!"value:{id}") state valueCount)
@@ -444,16 +492,29 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   ]
   let mut disposers : List Expr := []
   for (mounted, index) in checked.view.events.zipIdx do
-    let eventIndex ← match eventNames.idxOf? mounted.binding.eventName with
-      | some value => pure value
-      | none => .error { code := "LRX-BE-026", message := "checked event binding disappeared" }
-    let handler ← eventName eventIndex
     let off ← Ident.checked s!"off_{index}"
     let node ← nodeAt dom.nodes mounted.path
-    mountBody := mountBody ++ [.const off <| call runtime.listen [
-      .ident node, .literal (.string mounted.binding.kind.name), .ident context,
-      .literal .null, .ident handler
-    ]]
+    match mounted.binding.kind.payload with
+    | .none =>
+        let eventIndex ← match eventNames.idxOf? mounted.binding.eventName with
+          | some value => pure value
+          | none => .error { code := "LRX-BE-026", message := "checked event binding disappeared" }
+        let handler ← eventName eventIndex
+        mountBody := mountBody ++ [.const off <| call runtime.listen [
+          .ident node, .literal (.string mounted.binding.kind.name), .ident context,
+          .literal .null, .ident handler
+        ]]
+    | .value | .key =>
+        let eventIndex ← match typedNames.idxOf? mounted.binding.eventName with
+          | some value => pure value
+          | none => .error { code := "LRX-BE-026", message := "checked event binding disappeared" }
+        let handler ← typedEventName eventIndex
+        let listener := if mounted.binding.kind.payload == .key then runtime.listenKey
+          else runtime.listenValue
+        mountBody := mountBody ++ [.const off <| call listener [
+          .ident node, .literal (.string mounted.binding.kind.name), .ident state,
+          .ident context, .ident handler
+        ]]
     disposers := disposers ++ [.ident off]
   mountBody := mountBody ++ [
     .const disposer <| call runtime.makeDisposer [
@@ -462,6 +523,13 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     .return (.ident disposer)
   ]
   let mount ← Ident.checked "mount"
+  let usesValueListener := checked.view.events.any
+    fun mounted => mounted.binding.kind.payload == .value
+  let usesKeyListener := checked.view.events.any
+    fun mounted => mounted.binding.kind.payload == .key
+  let formImportNames : Array (Ident × Ident) :=
+    (if usesValueListener then #[(runtime.listenValue, runtime.listenValue)] else #[]) ++
+    (if usesKeyListener then #[(runtime.listenKey, runtime.listenKey)] else #[])
   let module : Module :=
     { globals := #[← Ident.checked "String"]
       imports := #[
@@ -474,8 +542,11 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             (runtime.setText, runtime.setText),
             (runtime.makeDisposer, runtime.makeDisposer)
           ] }
-      ]
-      declarations := (evaluators.declarations ++ eventFunctions.map Decl.function ++ [
+      ] ++ (if formImportNames.isEmpty then #[] else #[
+        { source := "./leanrx_form_events.mjs", names := formImportNames }
+      ])
+      declarations := (evaluators.declarations ++ eventFunctions.map Decl.function ++
+        typedEventFunctions.map Decl.function ++ [
         Decl.function { name := mount, params := #[target], body := mountBody.toArray }
       ]).toArray
       exports := #[{ localName := mount, exportName := mount }] }
