@@ -1,3 +1,4 @@
+import examples.BranchLab
 import examples.Counter
 import examples.EchoLab
 import examples.FilterLab
@@ -80,7 +81,7 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
     throw <| IO.userError "region table lost the sealed row event vocabulary"
   unless checked.spec.regions.toList.map (fun region =>
       match region.template with
-      | .element _ _ _ _ _ classIf _ =>
+      | .element _ _ _ _ _ classIf =>
           classIf.map fun select =>
             (select.field, select.equals, select.whenTrue, select.whenFalse)
       | _ => []) == [[(1, "", "roster-row", "roster-row marked")]] do
@@ -93,6 +94,45 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
   | some addItem =>
       unless addItem.update.regionAppendTargets == [("roster", 3)] do
         throw <| IO.userError "region append target or arity changed"
+
+private def verifyBranch
+    (checked : CheckedComponent LeanRxExamples.BranchLab.BranchSchema) : IO Unit := do
+  unless checked.spec.regions.toList.map (·.fields) ==
+      [#["label", "draft", "mode"]] do
+    throw <| IO.userError "branch region lost its row field inventory"
+  unless checked.spec.regions.toList.map
+      (fun region => region.events.toList.map
+        (fun event => (event.name, event.action, event.takesPayload))) ==
+      [[("remove", .remove, false),
+        ("edit", .update [(2, .lit "edit"), (1, .field 0)], false),
+        ("retype", .update [(1, .payload)], true),
+        ("commit", .update [(0, .field 1), (2, .lit "view")], false)]] do
+    throw <| IO.userError "branch region lost the sealed row event vocabulary"
+  /- The sealed two-branch cell (ADR-0047): the first cell selects on
+  `mode == "view"`, the view branch is the label span, and the edit branch is
+  the input reflecting `draft` into its value property. -/
+  let cell ← match checked.spec.regions.toList with
+    | [region] =>
+        match region.template with
+        | .element _ _ _ (.cons cell _) _ _ _ => pure cell
+        | _ => throw <| IO.userError "branch region lost its row template root"
+    | _ => throw <| IO.userError "branch region table changed"
+  match cell with
+  | .branch field equals whenTrue whenFalse _ =>
+      unless field == 2 && equals == "view" do
+        throw <| IO.userError "branch cell lost its sealed predicate"
+      match whenTrue with
+      | .element tag _ _ _ _ _ reflects =>
+          unless tag == .span && reflects.isEmpty do
+            throw <| IO.userError "branch view subtree changed shape"
+      | _ => throw <| IO.userError "branch view subtree is not an element"
+      match whenFalse with
+      | .element tag _ events _ _ _ reflects =>
+          unless tag == .input && events.map (·.eventName) == ["retype"] &&
+              reflects.map (·.value) == [.field 1] do
+            throw <| IO.userError "branch edit subtree lost its binding or reflection"
+      | _ => throw <| IO.userError "branch edit subtree is not an element"
+  | _ => throw <| IO.userError "the first task cell is not a sealed branch cell"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [
@@ -122,6 +162,9 @@ def run : IO Unit := do
   match LeanRxExamples.NestLab.NestLab_check with
   | .error error => throw <| IO.userError s!"nested component rejected: {error.code}"
   | .ok checked => verifyNest checked
+  match LeanRxExamples.BranchLab.BranchLab_check with
+  | .error error => throw <| IO.userError s!"branch component rejected: {error.code}"
+  | .ok checked => verifyBranch checked
   match LeanRxExamples.NestLab.Pulse_check with
   | .error error => throw <| IO.userError s!"child component rejected: {error.code}"
   | .ok checked =>

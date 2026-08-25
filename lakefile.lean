@@ -68,6 +68,7 @@ lean_lib LeanRxExamples where
   roots := #[`examples.ExpressionPlayground, `examples.GraphFixtures,
     `examples.Counter, `examples.CounterBuild,
     `examples.DiamondLab, `examples.DiamondLabBuild,
+    `examples.BranchLab, `examples.BranchLabBuild,
     `examples.EchoLab, `examples.EchoLabBuild,
     `examples.FilterLab, `examples.FilterLabBuild,
     `examples.NestLab, `examples.NestLabBuild, `examples.DependentTabs,
@@ -112,6 +113,9 @@ lean_exe leanrx_nest_js where
 
 lean_exe leanrx_filter_js where
   root := `examples.FilterLabMain
+
+lean_exe leanrx_branch_js where
+  root := `examples.BranchLabMain
 
 lean_exe leanrx_tabs_js where
   root := `examples.DependentTabsMain
