@@ -165,6 +165,33 @@ component EditableRosterMini (schema := EditableRosterMiniSchema) where {
   ];
 }
 
+/- The two-branch row cell and value reflection snippet from guide section 7
+(ADR-0047). -/
+abbrev BranchRosterMiniSchema : Schema := .field "branchAdded" Int .empty
+
+def branchAdded : Field BranchRosterMiniSchema Int := .here
+
+component BranchRosterMini (schema := BranchRosterMiniSchema) where {
+  state branchAdded : Int := 0;
+  event addItem := append roster (s!"Item {branchAdded}", s!"Item {branchAdded}", "view")
+    then set branchAdded (branchAdded + 1);
+  row roster edit := set mode "edit" then set draft label;
+  row roster retype (value : String) := set draft value;
+  row roster commit := set label draft then set mode "view";
+  region roster (label, draft, mode) := jsx% <li> [
+    {if mode == "view"
+      then <span> [{label}]
+      else <input ariaLabel="Editor" value={draft} onInput={retype}/>},
+    <span> [<button type="button" ariaLabel="Edit" onClick={edit}> ["Edit"]],
+    <span> [<button type="button" ariaLabel="Commit" onClick={commit}> ["OK"]],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
 /- The state-scoped attribute selection snippet from guide section 7
 (ADR-0045). -/
 abbrev FilterMiniSchema : Schema := .field "filter" String .empty
@@ -263,6 +290,19 @@ def run : IO Unit := do
         throw <| IO.userError "language-guide payload snippet lost its event table"
   | .error error =>
       throw <| IO.userError s!"language-guide payload component rejected: {error.render}"
+  match BranchRosterMini_check with
+  | .ok branching =>
+      let cell? := branching.spec.regions.toList.head?.bind fun region =>
+        match region.template with
+        | .element _ _ _ (.cons cell _) _ _ _ => some cell
+        | _ => none
+      match cell? with
+      | some (.branch field equals _ _ _) =>
+          unless field == 2 && equals == "view" do
+            throw <| IO.userError "language-guide branch snippet lost its predicate"
+      | _ => throw <| IO.userError "language-guide branch snippet lost its branch cell"
+  | .error error =>
+      throw <| IO.userError s!"language-guide branch component rejected: {error.render}"
   match FilterMini_check with
   | .ok selecting =>
       unless selecting.view.attrSelects.map (·.select.name) ==

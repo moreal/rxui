@@ -285,6 +285,51 @@ row fields plus the declaring event's payload, `remove` and declared
 `update` events are the whole action vocabulary, and each cell binds at most
 one row event per delegated kind (`click`, `input`, `keydown`).
 
+A row cell may be a sealed two-branch selection (ADR-0047):
+`{if mode == "view" then <span…/> else <input…/>}` mounts one of two
+statically sealed template subtrees by equality of one row field against one
+string literal. The cell mounts as one wrapper element, so it occupies
+exactly one row-root child index; the retained-row update callback
+re-evaluates the predicate against the wrapper's compiler-owned `$lrxBranch`
+marker, updates the stable branch in place, and replaces the subtree with
+one `detach` plus one `append` only on a branch change — the absent branch
+does not exist in the DOM or the accessibility tree. Branch cells sit only
+directly under the row root and never nest (`LRX-VIEW-034`). Because the
+delegated action arrays are static, both branches must bind the same action
+for a kind; a one-branch binding is allowed only when the other branch
+cannot originate that kind — never for `click` (any content bubbles one),
+only input-free branches for `input`, and only input- and button-free
+branches for `keydown` (`LRX-VIEW-034`). A row `input` may also reflect a
+sealed row expression into its `value` property with `value={draft}` — at
+most once per element, inputs only (`LRX-VIEW-035`); a row update driven by
+the input's own payload writes back the string the input already holds, so
+the WHATWG equal-value assignment preserves the caret (ADR-0038, reused in
+row scope). Together these express the TodoMVC edit/view transition with
+retained row identity:
+
+```lean
+component BranchRosterMini (schema := BranchRosterMiniSchema) where {
+  state branchAdded : Int := 0;
+  event addItem := append roster (s!"Item {branchAdded}", s!"Item {branchAdded}", "view")
+    then set branchAdded (branchAdded + 1);
+  row roster edit := set mode "edit" then set draft label;
+  row roster retype (value : String) := set draft value;
+  row roster commit := set label draft then set mode "view";
+  region roster (label, draft, mode) := jsx% <li> [
+    {if mode == "view"
+      then <span> [{label}]
+      else <input ariaLabel="Editor" value={draft} onInput={retype}/>},
+    <span> [<button type="button" ariaLabel="Edit" onClick={edit}> ["Edit"]],
+    <span> [<button type="button" ariaLabel="Commit" onClick={commit}> ["OK"]],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
 A static view element may select its `class`, `aria-pressed`, or `disabled`
 from component state (ADR-0045):
 `class={if filter == "all" then "selected" else ""}` selects between two

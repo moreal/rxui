@@ -63,6 +63,10 @@ fixtures=(
   Test/fixtures/compile-fail/AttrSelectOnParagraph.lean
   Test/fixtures/compile-fail/RowTypedPayloadOnClick.lean
   Test/fixtures/compile-fail/IntRowPayload.lean
+  Test/fixtures/compile-fail/BranchInTypedView.lean
+  Test/fixtures/compile-fail/RowBranchUnknownField.lean
+  Test/fixtures/compile-fail/RowBranchOneSidedClick.lean
+  Test/fixtures/compile-fail/RowReflectOnSpan.lean
 )
 fragments=(
   "Constructor for"
@@ -126,6 +130,10 @@ fragments=(
   "error[LRX-VIEW-032]"
   "error[LRX-VIEW-033]"
   "error[LRX-ELAB-117]"
+  "error[LRX-VIEW-034]"
+  "error[LRX-ELAB-118]"
+  "error[LRX-VIEW-034]"
+  "error[LRX-VIEW-035]"
 )
 
 for index in "${!fixtures[@]}"; do

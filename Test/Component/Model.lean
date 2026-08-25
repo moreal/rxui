@@ -293,6 +293,107 @@ def run : IO Unit := do
     { goodRegion with regions := #[{ rosterRegion with
         events := #[{ name := "remove", action := .remove }, renameEvent] }] }
   expectError "LRX-VIEW-033" unboundTypedEvent.check
+  /- ADR-0047 sealed two-branch row cells and value reflections, exercised
+  through forged specifications. -/
+  let editEvent : RowEventSpec :=
+    { name := "edit", action := .update [(1, .lit "edit")] }
+  let retypeEvent : RowEventSpec :=
+    { name := "retype", action := .update [(0, .payload)], takesPayload := true }
+  let branchCell : RowNode := RowNode.branch 1 "view"
+    (RowNode.node .span [RowNode.fieldText 0])
+    (RowNode.node .input [] (events := [{ kind := .input, eventName := "retype" }])
+      (reflects := [{ value := .field 0 }]))
+  let branchTemplate : RowNode := RowNode.node .li [
+    branchCell,
+    RowNode.node .span [RowNode.node .button [RowNode.text "e"]
+      (attrs := [.buttonType .button])
+      (events := [{ kind := .click, eventName := "edit" }])]
+  ]
+  let branchRegion : RegionSpec := {
+    name := "r"
+    fields := #["label", "mode"]
+    template := branchTemplate
+    events := #[{ name := "remove", action := .remove }, editEvent, retypeEvent]
+  }
+  let branchSpec : ComponentSpec CounterSchema :=
+    { spec with view := regionView, regions := #[branchRegion] }
+  match branchSpec.check with
+  | .error error =>
+      throw <| IO.userError s!"forged branch region rejected: {error.code}"
+  | .ok _ => pure ()
+  let nestedBranch : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [RowNode.node .span [branchCell]] }] }
+  expectError "LRX-VIEW-034" nestedBranch.check
+  let branchFieldOutOfBounds : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [RowNode.branch 2 "view"
+          (RowNode.node .span [RowNode.fieldText 0])
+          (RowNode.node .span [RowNode.fieldText 0])]
+        events := #[{ name := "remove", action := .remove }, editEvent] }] }
+  expectError "LRX-VIEW-026" branchFieldOutOfBounds.check
+  let textBranch : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [RowNode.branch 1 "view"
+          (RowNode.node .span [RowNode.fieldText 0]) (RowNode.text "x")]
+        events := #[{ name := "remove", action := .remove }, editEvent] }] }
+  expectError "LRX-VIEW-034" textBranch.check
+  let oneSidedClick : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [RowNode.branch 1 "view"
+          (RowNode.node .span [RowNode.node .button [RowNode.text "e"]
+            (attrs := [.buttonType .button])
+            (events := [{ kind := .click, eventName := "edit" }])])
+          (RowNode.node .span [RowNode.fieldText 0])] }] }
+  expectError "LRX-VIEW-034" oneSidedClick.check
+  let disagreeingClicks : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [RowNode.branch 1 "view"
+          (RowNode.node .span [RowNode.node .button [RowNode.text "e"]
+            (attrs := [.buttonType .button])
+            (events := [{ kind := .click, eventName := "edit" }])])
+          (RowNode.node .span [RowNode.node .button [RowNode.text "r"]
+            (attrs := [.buttonType .button])
+            (events := [{ kind := .click, eventName := "remove" }])])] }] }
+  expectError "LRX-VIEW-034" disagreeingClicks.check
+  let inputInUnboundBranch : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [RowNode.branch 1 "view"
+          (RowNode.node .span [RowNode.node .input []])
+          (RowNode.node .input []
+            (events := [{ kind := .input, eventName := "retype" }]))] }] }
+  expectError "LRX-VIEW-034" inputInUnboundBranch.check
+  let stampEvent : RowEventSpec :=
+    { name := "stamp", action := .update [(0, .payload)], takesPayload := true }
+  let buttonInUnboundKeydownBranch : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [RowNode.branch 1 "view"
+          (RowNode.node .span [RowNode.node .button [RowNode.text "b"]
+            (attrs := [.buttonType .button])])
+          (RowNode.node .input []
+            (events := [{ kind := .keydown, eventName := "stamp" }]))]
+        events := #[{ name := "remove", action := .remove }, stampEvent] }] }
+  expectError "LRX-VIEW-034" buttonInUnboundKeydownBranch.check
+  let reflectOnSpan : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.node .span [RowNode.fieldText 0]
+          (reflects := [{ value := .field 0 }])] }] }
+  expectError "LRX-VIEW-035" reflectOnSpan.check
+  let doubleReflect : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.node .span [RowNode.node .input []
+          (reflects := [{ value := .field 0 }, { value := .lit "x" }])]] }] }
+  expectError "LRX-VIEW-035" doubleReflect.check
+  let payloadReflect : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.node .span [RowNode.node .input []
+          (reflects := [{ value := .payload }])]] }] }
+  expectError "LRX-VIEW-033" payloadReflect.check
+  let reflectOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.node .span [RowNode.node .input []
+          (reflects := [{ value := .field 1 }])]] }] }
+  expectError "LRX-VIEW-026" reflectOutOfBounds.check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check
