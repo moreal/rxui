@@ -304,8 +304,14 @@ sealed row expression into its `value` property with `value={draft}` — at
 most once per element, inputs only (`LRX-VIEW-035`); a row update driven by
 the input's own payload writes back the string the input already holds, so
 the WHATWG equal-value assignment preserves the caret (ADR-0038, reused in
-row scope). Together these express the TodoMVC edit/view transition with
-retained row identity:
+row scope). A branch-subtree input may additionally carry the bare
+`autoFocus` marker (ADR-0048): inputs only, branch subtrees only, at most
+one per subtree (`LRX-VIEW-036`). The update callback's replacement arm —
+and only that arm — calls the ABI 16 `focus(node)` host export on the
+freshly mounted branch's marked input, so focus moves exactly when the
+user's action swapped in an edit affordance; row mount, reorder, and
+stable-branch updates never touch focus. Together these express the TodoMVC
+edit/view transition with retained row identity:
 
 ```lean
 component BranchRosterMini (schema := BranchRosterMiniSchema) where {
@@ -318,7 +324,7 @@ component BranchRosterMini (schema := BranchRosterMiniSchema) where {
   region roster (label, draft, mode) := jsx% <li> [
     {if mode == "view"
       then <span> [{label}]
-      else <input ariaLabel="Editor" value={draft} onInput={retype}/>},
+      else <input ariaLabel="Editor" value={draft} onInput={retype} autoFocus/>},
     <span> [<button type="button" ariaLabel="Edit" onClick={edit}> ["Edit"]],
     <span> [<button type="button" ariaLabel="Commit" onClick={commit}> ["OK"]],
     <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]

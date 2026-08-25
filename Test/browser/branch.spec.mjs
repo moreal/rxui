@@ -100,6 +100,52 @@ test("entering the edit branch replaces the cell subtree inside a retained row",
   expect(after[3]).toBe(before[3]);
 });
 
+test("edit entry focuses the fresh input with the reflected draft (ADR-0048)", async ({ page }) => {
+  await mountBranch(page);
+  const add = page.getByRole("button", { name: "Add task" });
+  await add.click();
+  await add.click();
+  await page.locator("#tasks > li").nth(0).getByRole("button", { name: "Edit task" }).click();
+  const editor = page.locator("#tasks > li").nth(0).getByRole("textbox", { name: "Task editor" });
+  // The replacement arm calls the ABI 16 focus export on the autoFocus-marked
+  // input, so a keyboard-first user types without tabbing or clicking into it.
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue("Task 0");
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await expect(editor).toHaveValue("Task 0!");
+  await page.locator("#tasks > li").nth(0).getByRole("button", { name: "Commit task" }).click();
+  await expect(page.locator("#tasks > li .task-label")).toHaveText(["Task 0!", "Task 1"]);
+});
+
+test("row mount, commit, and reorder never steal focus (ADR-0048)", async ({ page }) => {
+  await mountBranch(page);
+  const add = page.getByRole("button", { name: "Add task" });
+  await add.click();
+  await add.click();
+  await add.click();
+  // Appending rows mounts the view branch through the row builder, which
+  // never calls focus — the clicked Add button keeps it.
+  await expect(add).toBeFocused();
+  await page.locator("#tasks > li").nth(1).getByRole("button", { name: "Edit task" }).click();
+  await expect(page.locator("#tasks > li").nth(1)
+    .getByRole("textbox", { name: "Task editor" })).toBeFocused();
+  // Committing replaces back to the label branch, whose subtree carries no
+  // marker: the clicked OK button keeps focus.
+  const commit = page.locator("#tasks > li").nth(1).getByRole("button", { name: "Commit task" });
+  await commit.click();
+  await expect(commit).toBeFocused();
+  // A structural reconcile (removing an earlier row) retains the editing row
+  // without a branch change, so the update callback never reaches focus: the
+  // editor is not re-focused behind the user's back.
+  await page.locator("#tasks > li").nth(2).getByRole("button", { name: "Edit task" }).click();
+  await page.locator("#tasks > li").nth(0).getByRole("button", { name: "Remove task" }).click();
+  const movedEditor = page.locator("#tasks > li").nth(1).getByRole("textbox", { name: "Task editor" });
+  await expect(movedEditor).toHaveValue("Task 2");
+  const editorFocused = await movedEditor.evaluate((node) => document.activeElement === node);
+  expect(editorFocused).toBe(false);
+});
+
 test("typing drains retained-row updates and the equal-value reflection preserves the caret", async ({ page }) => {
   await mountBranch(page);
   await page.getByRole("button", { name: "Add task" }).click();

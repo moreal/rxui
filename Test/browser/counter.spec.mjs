@@ -307,3 +307,25 @@ test("listenDelegatedCells resolves a keyed row's action from the clicked cell",
     afterDispose: 0,
   });
 });
+
+test("focus moves keyboard focus to an attached input and only then (ADR-0048)", async ({ page }) => {
+  await page.goto(origin);
+  const result = await page.evaluate(async () => {
+    const { focus } = await import("/leanrx_dom.mjs");
+    const host = document.getElementById("two");
+    const input = document.createElement("input");
+    input.value = "draft";
+    host.append(input);
+    const mountedInert = document.activeElement !== input;
+    focus(input);
+    const focused = document.activeElement === input;
+    const blocker = document.createElement("input");
+    host.append(blocker);
+    focus(blocker);
+    const moved = document.activeElement === blocker;
+    input.remove();
+    blocker.remove();
+    return { mountedInert, focused, moved };
+  });
+  expect(result).toEqual({ mountedInert: true, focused: true, moved: true });
+});

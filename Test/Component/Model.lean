@@ -394,6 +394,48 @@ def run : IO Unit := do
         template := RowNode.node .li [RowNode.node .span [RowNode.node .input []
           (reflects := [{ value := .field 1 }])]] }] }
   expectError "LRX-VIEW-026" reflectOutOfBounds.check
+  /- ADR-0048 autoFocus markers, exercised through forged specifications:
+  a marked branch input passes; a marked span, a marked input outside a
+  branch subtree, and a doubly marked subtree are rejected. -/
+  let focusedBranchSpec : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [
+          RowNode.branch 1 "view"
+            (RowNode.node .span [RowNode.fieldText 0])
+            (RowNode.node .input []
+              (events := [{ kind := .input, eventName := "retype" }])
+              (reflects := [{ value := .field 0 }]) (autoFocus := true)),
+          RowNode.node .span [RowNode.node .button [RowNode.text "e"]
+            (attrs := [.buttonType .button])
+            (events := [{ kind := .click, eventName := "edit" }])]] }] }
+  match focusedBranchSpec.check with
+  | .error error =>
+      throw <| IO.userError s!"forged autoFocus branch rejected: {error.code}"
+  | .ok _ => pure ()
+  let focusOnSpan : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [RowNode.branch 1 "view"
+          (RowNode.node .span [RowNode.fieldText 0] (autoFocus := true))
+          (RowNode.node .span [RowNode.fieldText 0])]
+        events := #[{ name := "remove", action := .remove }, editEvent] }] }
+  expectError "LRX-VIEW-036" focusOnSpan.check
+  let focusOutsideBranch : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.node .span [RowNode.node .input []
+          (events := [{ kind := .input, eventName := "rename" }])
+          (autoFocus := true)]]
+        events := #[{ name := "remove", action := .remove }, renameEvent] }] }
+  expectError "LRX-VIEW-036" focusOutsideBranch.check
+  let doubleFocusInSubtree : ComponentSpec CounterSchema :=
+    { branchSpec with regions := #[{ branchRegion with
+        template := RowNode.node .li [RowNode.branch 1 "view"
+          (RowNode.node .span [RowNode.fieldText 0])
+          (RowNode.node .span [
+            RowNode.node .input []
+              (events := [{ kind := .input, eventName := "retype" }])
+              (autoFocus := true),
+            RowNode.node .input [] (autoFocus := true)])] }] }
+  expectError "LRX-VIEW-036" doubleFocusInSubtree.check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check
