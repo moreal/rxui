@@ -58,6 +58,8 @@ fixtures=(
   Test/fixtures/compile-fail/RegionUnknownRowField.lean
   Test/fixtures/compile-fail/IntImmutableProp.lean
   Test/fixtures/compile-fail/ChildPropMismatch.lean
+  Test/fixtures/compile-fail/RowUpdateUnknownField.lean
+  Test/fixtures/compile-fail/RowClassSelectDynamic.lean
 )
 fragments=(
   "Constructor for"
@@ -116,6 +118,8 @@ fragments=(
   "error[LRX-ELAB-114]"
   "error[LRX-ELAB-113]"
   "error[LRX-ELAB-112]"
+  "error[LRX-ELAB-115]"
+  "error[LRX-ELAB-116]"
 )
 
 for index in "${!fixtures[@]}"; do

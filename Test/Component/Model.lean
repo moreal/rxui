@@ -153,6 +153,59 @@ def run : IO Unit := do
         ]
       }] }
   expectError "LRX-TYPE-110" appendWrongArity.check
+  /- ADR-0043 row update actions and row expressions, ADR-0044 class
+  selections, exercised through forged specifications. -/
+  let markEvent : RowEventSpec :=
+    { name := "mark", action := .update [(0, .append (.field 0) (.lit "!"))] }
+  let updatingTemplate : RowNode := RowNode.node .li [
+    RowNode.node .span [RowNode.exprText (.append (.field 0) (.lit "?"))],
+    RowNode.node .span [RowNode.node .button [RowNode.text "m"]
+      (attrs := [.buttonType .button])
+      (events := [{ kind := .click, eventName := "mark" }])]
+  ] (classIf := [{ field := 0, equals := "", whenTrue := "a", whenFalse := "b" }])
+  let updatingRegion : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := updatingTemplate
+        events := #[{ name := "remove", action := .remove }, markEvent] }] }
+  match updatingRegion.check with
+  | .error error =>
+      throw <| IO.userError s!"forged updating region rejected: {error.code}"
+  | .ok _ => pure ()
+  let emptyUpdate : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        events := #[{ name := "remove", action := .remove },
+          { name := "noop", action := .update [] }] }] }
+  expectError "LRX-VIEW-031" emptyUpdate.check
+  let duplicateUpdateTarget : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        events := #[{ name := "remove", action := .remove },
+          { name := "twice", action := .update [(0, .lit "x"), (0, .lit "y")] }] }] }
+  expectError "LRX-VIEW-031" duplicateUpdateTarget.check
+  let updateTargetOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        events := #[{ name := "remove", action := .remove },
+          { name := "far", action := .update [(1, .lit "x")] }] }] }
+  expectError "LRX-VIEW-031" updateTargetOutOfBounds.check
+  let updateReadOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        events := #[{ name := "remove", action := .remove },
+          { name := "deep", action := .update [(0, .field 1)] }] }] }
+  expectError "LRX-VIEW-031" updateReadOutOfBounds.check
+  let exprTextOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.exprText (.field 1)] }] }
+  expectError "LRX-VIEW-026" exprTextOutOfBounds.check
+  let classSelectOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.fieldText 0]
+          (classIf := [{ field := 1, equals := "", whenTrue := "a", whenFalse := "b" }]) }] }
+  expectError "LRX-VIEW-026" classSelectOutOfBounds.check
+  let classSelectBesideClass : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.fieldText 0]
+          (attrs := [.className "static"])
+          (classIf := [{ field := 0, equals := "", whenTrue := "a", whenFalse := "b" }]) }] }
+  expectError "LRX-VIEW-001" classSelectBesideClass.check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check

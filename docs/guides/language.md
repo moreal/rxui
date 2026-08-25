@@ -216,9 +216,42 @@ component RosterMini (schema := RosterMiniSchema) where {
 
 The delegated button must sit strictly inside a row cell (a direct child of
 the row root) so the dispatcher can resolve the action from row structure —
-`LRX-VIEW-027` rejects a button that is itself a cell. Row-scope staged
-expressions are not yet available: dynamic row content is limited to sealed
-field projections, and rows are immutable after mount.
+`LRX-VIEW-027` rejects a button that is itself a cell.
+
+A `row` item declares a sealed update action on a region's rows (ADR-0043):
+`row roster mark := set marks (marks ++ " ★");` writes new field values —
+evaluated simultaneously against the dispatching row's current fields — and
+re-renders exactly that row through the region handle's `updateAt`. Row
+expressions are sealed: bare row fields, string literals, and `++`
+(`LRX-ELAB-115` otherwise); they also serve dynamic row text, so `{label ++
+marks}` renders a concatenation that tracks row updates. A row element may
+select its class from row state (ADR-0044) with
+`class={if marks == "" then "roster-row" else "roster-row marked"}` — the
+predicate is equality of one row field against one string literal and both
+classes are static strings (`LRX-ELAB-116` otherwise):
+
+```lean
+component MarkedRosterMini (schema := MarkedRosterMiniSchema) where {
+  state markedAdded : Int := 0;
+  event addItem := append roster (s!"Item {markedAdded}", "")
+    then set markedAdded (markedAdded + 1);
+  row roster mark := set marks (marks ++ " ★");
+  region roster (label, marks) := jsx%
+    <li class={if marks == "" then "row" else "row marked"}> [
+      <span> [{label ++ marks}],
+      <span> [<button type="button" ariaLabel="Mark" onClick={mark}> ["★"]],
+      <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+    ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
+Rows never observe component state after mount: row expressions read only row
+fields, `remove` and declared `update` events are the whole action
+vocabulary, and each cell binds at most one row event.
 
 A `prop` item declares an immutable `String` input that the parent supplies
 through the mount ABI (ADR-0042): the child renders it with a `{title}` text

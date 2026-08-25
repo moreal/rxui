@@ -119,6 +119,29 @@ component RosterMini (schema := RosterMiniSchema) where {
   ];
 }
 
+/- The row-update and class-selection snippet from guide section 7
+(ADR-0043/0044). -/
+abbrev MarkedRosterMiniSchema : Schema := .field "markedAdded" Int .empty
+
+def markedAdded : Field MarkedRosterMiniSchema Int := .here
+
+component MarkedRosterMini (schema := MarkedRosterMiniSchema) where {
+  state markedAdded : Int := 0;
+  event addItem := append roster (s!"Item {markedAdded}", "")
+    then set markedAdded (markedAdded + 1);
+  row roster mark := set marks (marks ++ " ★");
+  region roster (label, marks) := jsx%
+    <li class={if marks == "" then "row" else "row marked"}> [
+      <span> [{label ++ marks}],
+      <span> [<button type="button" ariaLabel="Mark" onClick={mark}> ["★"]],
+      <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+    ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
 /- The immutable-prop snippets from guide section 7 (ADR-0042). -/
 abbrev TitledMiniSchema : Schema := .field "titledClicks" Int .empty
 
@@ -180,6 +203,13 @@ def run : IO Unit := do
         throw <| IO.userError "language-guide region snippet lost its region table"
   | .error error =>
       throw <| IO.userError s!"language-guide region component rejected: {error.render}"
+  match MarkedRosterMini_check with
+  | .ok marked =>
+      unless marked.spec.regions.toList.map
+          (fun region => region.events.toList.map (·.name)) == [["remove", "mark"]] do
+        throw <| IO.userError "language-guide row-update snippet lost its event table"
+  | .error error =>
+      throw <| IO.userError s!"language-guide row-update component rejected: {error.render}"
   match TitledMini_check, PropNestMini_check with
   | .ok titled, .ok host =>
       unless titled.spec.propNames == ["title"] &&
