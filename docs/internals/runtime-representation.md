@@ -180,6 +180,14 @@ buttons dispatch by wrapper position (ADR-0032). `listenDelegated` is
 unchanged for attribute-marked controls. See
 [ADR-0030](../adr/0030-runtime-abi-v15-structural-delegation.md).
 
+ABI 16 adds `focus(node)` to the DOM host: it moves keyboard focus to `node`
+(the WHATWG `focus()` steps). Generated code calls it from exactly one site —
+the retained-row update callback's branch replacement arm, on the freshly
+mounted branch subtree's `autoFocus`-marked input — so focus transfers when a
+user action swaps in an edit affordance, while row mount, reorder, and
+stable-branch updates never touch focus. See
+[ADR-0048](../adr/0048-row-focus-vocabulary.md).
+
 The keyed region host (`leanrx_region.mjs`) exposes `createKeyedRegion(parent,
 mountItem, updateItem, disposeItem, rootItem?)` to generated code and shares
 `detach`, `anchor`, `snapshot`, `placeInOrder`, and `rebuild` with the delta and

@@ -568,7 +568,7 @@ private def validateChildComponents (spec : ComponentSpec Γ)
 branch cell contributes the bindings of both of its sealed subtrees. -/
 mutual
   private def rowBindings : RowNode → List EventBinding
-    | .element _ _ events children _ _ _ => events ++ rowBindingsChildren children
+    | .element _ _ events children _ _ _ _ => events ++ rowBindingsChildren children
     | .text _ _ | .fieldText _ _ | .exprText _ _ => []
     | .branch _ _ whenTrue whenFalse _ => rowBindings whenTrue ++ rowBindings whenFalse
 
@@ -577,12 +577,27 @@ mutual
     | .cons head tail => rowBindings head ++ rowBindingsChildren tail
 end
 
+/- The autoFocus markers carried anywhere inside one sealed subtree; the
+ADR-0048 rule admits at most one per branch subtree so the replacement arm
+has one unambiguous focus target. -/
+mutual
+  private def rowFocusCount : RowNode → Nat
+    | .element _ _ _ children _ _ _ autoFocus =>
+        (if autoFocus then 1 else 0) + rowFocusCountChildren children
+    | .text _ _ | .fieldText _ _ | .exprText _ _ => 0
+    | .branch _ _ whenTrue whenFalse _ => rowFocusCount whenTrue + rowFocusCount whenFalse
+
+  private def rowFocusCountChildren : RowChildren → Nat
+    | .nil => 0
+    | .cons head tail => rowFocusCount head + rowFocusCountChildren tail
+end
+
 /- Whether one sealed subtree contains an element of the given tag; the
 one-sided delegation rule of ADR-0047 asks whether the unbound branch could
 originate events of a delegated kind. -/
 mutual
   private def rowContainsTag (tag : HtmlTag) : RowNode → Bool
-    | .element nodeTag _ _ children _ _ _ =>
+    | .element nodeTag _ _ children _ _ _ _ =>
         nodeTag == tag || rowContainsTagChildren tag children
     | .text _ _ | .fieldText _ _ | .exprText _ _ => false
     | .branch _ _ whenTrue whenFalse _ =>
@@ -600,11 +615,12 @@ private def rowEventKinds : List EventKind := [.click, .input, .keydown]
 /- Validate one sealed row template node (ADR-0041). `depth` is the distance
 from the row root: the root is 0, cells are 1, and delegated row events may
 only sit at depth ≥ 2 so structural resolution can find a strict cell
-descendant. -/
+descendant. `inBranch` marks the sealed subtrees of a two-branch cell — the
+only positions where the ADR-0048 autoFocus marker may sit. -/
 mutual
-  private def validateRowNode (region : RegionSpec) (depth : Nat) :
+  private def validateRowNode (region : RegionSpec) (depth : Nat) (inBranch : Bool) :
       RowNode → Except ComponentError Unit
-    | .element tag attrs events children span classIf reflects => do
+    | .element tag attrs events children span classIf reflects autoFocus => do
         /- A class selection counts as the element's `class` attribute, so a
         static `class` beside one (or two selections) duplicates (ADR-0044). -/
         if duplicate? (attrs.map StaticAttr.name ++ classIf.map fun _ => "class") then
@@ -645,6 +661,22 @@ mutual
                 message := s!"a row value reflection projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
                 spans := #[reflect.span]
               }
+        /- The sealed focus marker (ADR-0048): a native input inside a
+        two-branch cell's subtrees only, so the update callback's replacement
+        arm — and nothing else — can honor it. -/
+        if autoFocus then
+          unless tag == .input do
+            throw {
+              code := "LRX-VIEW-036"
+              message := "an autoFocus marker requires a native input element"
+              spans := #[span]
+            }
+          unless inBranch do
+            throw {
+              code := "LRX-VIEW-036"
+              message := s!"an autoFocus marker in region {region.name} must sit inside a two-branch row cell's subtrees"
+              spans := #[span]
+            }
         if duplicate? (events.map fun event => event.kind.name) then
           throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
         for event in events do
@@ -701,7 +733,7 @@ mutual
                   path := #[region.name, rowEvent.name]
                   spans := #[event.span]
                 }
-        validateRowChildren region (depth + 1) children
+        validateRowChildren region (depth + 1) inBranch children
     | .text _ _ => pure ()
     | .fieldText field span =>
         unless field < region.fields.size do
@@ -750,15 +782,21 @@ mutual
                 message := s!"both branches of a two-branch row cell in region {region.name} must be sealed template elements"
                 spans := #[span]
               }
-        validateRowNode region 2 whenTrue
-        validateRowNode region 2 whenFalse
+          unless rowFocusCount subtree ≤ 1 do
+            throw {
+              code := "LRX-VIEW-036"
+              message := s!"a branch subtree in region {region.name} carries more than one autoFocus marker"
+              spans := #[span]
+            }
+        validateRowNode region 2 true whenTrue
+        validateRowNode region 2 true whenFalse
 
-  private def validateRowChildren (region : RegionSpec) (depth : Nat) :
+  private def validateRowChildren (region : RegionSpec) (depth : Nat) (inBranch : Bool) :
       RowChildren → Except ComponentError Unit
     | .nil => pure ()
     | .cons head tail => do
-        validateRowNode region depth head
-        validateRowChildren region depth tail
+        validateRowNode region depth inBranch head
+        validateRowChildren region depth inBranch tail
 end
 
 private def regionChildCounts : ViewChildren Γ → Nat × Nat
@@ -857,7 +895,7 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
                 spans := #[event.span]
               }
     match region.template with
-    | .element _ _ events cells _ _ _ => do
+    | .element _ _ events cells _ _ _ _ => do
         unless events.isEmpty do
           throw {
             code := "LRX-VIEW-027"
@@ -938,7 +976,7 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
                 path := #[region.name, event.name]
                 spans := #[event.span]
               }
-        validateRowNode region 0 region.template
+        validateRowNode region 0 false region.template
     | _ =>
         throw {
           code := "LRX-VIEW-027"

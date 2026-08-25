@@ -127,10 +127,10 @@ private def verifyBranch
             throw <| IO.userError "branch view subtree changed shape"
       | _ => throw <| IO.userError "branch view subtree is not an element"
       match whenFalse with
-      | .element tag _ events _ _ _ reflects =>
+      | .element tag _ events _ _ _ reflects autoFocus =>
           unless tag == .input && events.map (·.eventName) == ["retype"] &&
-              reflects.map (·.value) == [.field 1] do
-            throw <| IO.userError "branch edit subtree lost its binding or reflection"
+              reflects.map (·.value) == [.field 1] && autoFocus do
+            throw <| IO.userError "branch edit subtree lost its binding, reflection, or autoFocus marker"
       | _ => throw <| IO.userError "branch edit subtree is not an element"
   | _ => throw <| IO.userError "the first task cell is not a sealed branch cell"
 

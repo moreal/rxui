@@ -274,14 +274,17 @@ mutual
         throwErrorAt child
           "error[LRX-ELAB-114]: malformed row template child"
 
-  /- A `class={…}` attribute lowers to the sealed class selection (ADR-0044)
-  and a `value={…}` attribute to the sealed value reflection (ADR-0047);
-  everything else stays a static attribute or row event reference. -/
+  /- A `class={…}` attribute lowers to the sealed class selection (ADR-0044),
+  a `value={…}` attribute to the sealed value reflection (ADR-0047), and the
+  bare `autoFocus` marker to the sealed focus marker (ADR-0048); everything
+  else stays a static attribute or row event reference. -/
   private partial def lowerRowAttrs (fields : List String) (attrs : Array Syntax) :
-      CommandElabM (Array (TSyntax `term) × Array (TSyntax `term) × Array (TSyntax `term)) := do
+      CommandElabM
+        (Array (TSyntax `term) × Array (TSyntax `term) × Array (TSyntax `term) × Bool) := do
     let mut attrTerms : Array (TSyntax `term) := #[]
     let mut selectTerms : Array (TSyntax `term) := #[]
     let mut reflectTerms : Array (TSyntax `term) := #[]
+    let mut autoFocus := false
     for attr in attrs do
       let attrStx : TSyntax `leanrxJsxAttr := ⟨attr⟩
       match attrStx with
@@ -291,26 +294,36 @@ mutual
           let exprTerm ← rowExprTerm fields none value
           let span ← sourceSpanTerm attr
           reflectTerms := reflectTerms.push (← `(LeanRx.RowReflect.mk $exprTerm $span))
+      | `(leanrxJsxAttr| $name:ident) =>
+          if name.getId.eraseMacroScopes == `autoFocus then do
+            if autoFocus then
+              throwErrorAt name "error[LRX-VIEW-036]: element carries duplicate autoFocus markers"
+            autoFocus := true
+          else
+            throwErrorAt name
+              s!"error[LRX-VIEW-008]: unknown or invalid view attribute {name.getId.eraseMacroScopes}"
       | _ => attrTerms := attrTerms.push (← rowAttrTerm attr)
-    pure (attrTerms, selectTerms, reflectTerms)
+    pure (attrTerms, selectTerms, reflectTerms, autoFocus)
 
   private partial def lowerRowElement (fields : List String)
       (element : TSyntax `leanrxJsxElement) : CommandElabM (TSyntax `term) := do
     match element with
     | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* >
           [$children:leanrxJsxChild,*]) => do
-        let (attrTerms, selectTerms, reflectTerms) ← lowerRowAttrs fields attrs
+        let (attrTerms, selectTerms, reflectTerms, autoFocus) ← lowerRowAttrs fields attrs
         let childTerms ← children.getElems.mapM (lowerRowChild fields ·)
         let span ← sourceSpanTerm element
+        let focusTerm ← if autoFocus then `(Bool.true) else `(Bool.false)
         `(LeanRx.RowNode.nodeWith (leanrx_jsx_tag% $tag) [$childTerms,*]
           (attrs := [$attrTerms,*]) (span := $span) (classIf := [$selectTerms,*])
-          (reflects := [$reflectTerms,*]))
+          (reflects := [$reflectTerms,*]) (autoFocus := $focusTerm))
     | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* />) => do
-        let (attrTerms, selectTerms, reflectTerms) ← lowerRowAttrs fields attrs
+        let (attrTerms, selectTerms, reflectTerms, autoFocus) ← lowerRowAttrs fields attrs
         let span ← sourceSpanTerm element
+        let focusTerm ← if autoFocus then `(Bool.true) else `(Bool.false)
         `(LeanRx.RowNode.nodeWith (leanrx_jsx_tag% $tag) []
           (attrs := [$attrTerms,*]) (span := $span) (classIf := [$selectTerms,*])
-          (reflects := [$reflectTerms,*]))
+          (reflects := [$reflectTerms,*]) (autoFocus := $focusTerm))
     | _ =>
         throwErrorAt element
           "error[LRX-ELAB-111]: a region item takes an inline jsx% row template element"

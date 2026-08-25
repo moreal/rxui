@@ -13,7 +13,7 @@ if (
   manifest.module !== "BranchLab.mjs" ||
   typeof manifest.graphHash !== "string" ||
   manifest.graphHash.length === 0 ||
-  manifest.runtimeAbi !== 15 ||
+  manifest.runtimeAbi !== 16 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int"]) ||
   manifest.sourceCount !== 1 ||
@@ -25,6 +25,7 @@ if (
   JSON.stringify(manifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
     "keyed-regions", "typed-row-events", "row-branches", "row-reflects",
+    "row-focus",
   ])
 ) {
   throw new Error("generated Branch Lab manifest is invalid");
@@ -37,8 +38,9 @@ for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
   }
 }
 for (const required of [
-  // ADR-0047: replacement composes from the existing detach/append host
-  // primitives — no new host export, runtime ABI unchanged.
+  // ADR-0047: replacement composes from the detach/append host primitives;
+  // ADR-0048 joins them with the ABI 16 focus export on the DOM host.
+  "import { createElement, createText, setAttribute, append, listen, setText, makeDisposer, setProperty, setKey, childAt, listenDelegatedCells, focus } from \"./leanrx_dom.mjs\";",
   "import { createKeyedRegion, detach } from \"./leanrx_region.mjs\";",
   // Both sealed branch subtrees are dedicated builder functions shared by the
   // row mount conditional and the update callback's replacement arm.
@@ -56,6 +58,9 @@ for (const required of [
   "  const branch_same_0 = branch_cell_0[\"$lrxBranch\"] === branch_want_0;",
   "    detach(childAt(branch_cell_0, 0));",
   "    append(branch_cell_0, branch_want_0 ? $lrx_region_0_branch_0_t(item) : $lrx_region_0_branch_0_f(item));",
+  // ADR-0048: only the replacement arm focuses, and only when the incoming
+  // branch is the autoFocus-marked edit input.
+  "    if (!branch_want_0) {\n      focus(childAt(branch_cell_0, 0));\n    }",
   // ADR-0047 row value reflection: the edit input's value property follows
   // the draft field at branch mount and in the stable-branch update arm.
   "  setProperty(row_0, \"value\", item[2]);",
@@ -69,6 +74,12 @@ for (const required of [
   if (!source.includes(required)) {
     throw new Error(`generated Branch Lab is missing ${required}`);
   }
+}
+
+// Row mount never focuses (ADR-0048): the single focus call site lives in
+// the update callback's replacement arm.
+if (source.split("\n      focus(").length !== 2) {
+  throw new Error("generated Branch Lab must call focus exactly once");
 }
 
 const generated = await import(pathToFileURL(path.join(directory, "BranchLab.mjs")).href);

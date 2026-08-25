@@ -56,6 +56,13 @@ export function setProperty(node, name, value) {
   node[name] = value;
 }
 
+// Moves keyboard focus to node (ADR-0048). Generated code calls this only
+// from the retained-row update callback's branch replacement arm, on the
+// freshly mounted branch's autoFocus-marked input; row mount never focuses.
+export function focus(node) {
+  node.focus();
+}
+
 let nextIdValue = 0;
 
 export function uniqueId(prefix) {

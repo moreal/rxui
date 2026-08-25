@@ -74,6 +74,9 @@ scoped syntax (name := leanrxJsxAttrNamed) ident "=" str : leanrxJsxAttr
 scoped syntax "class" "=" "{" term "}" : leanrxJsxAttr
 scoped syntax "type" "=" "{" term "}" : leanrxJsxAttr
 scoped syntax (name := leanrxJsxAttrDynamic) ident "=" "{" term "}" : leanrxJsxAttr
+/- A bare identifier attribute is the sealed marker shape; only the row
+templates' `autoFocus` marker inhabits it today (ADR-0048). -/
+scoped syntax (name := leanrxJsxAttrMarker) ident : leanrxJsxAttr
 
 declare_syntax_cat leanrxJsxChild
 declare_syntax_cat leanrxJsxElement
@@ -160,6 +163,11 @@ macro_rules
   | `(leanrx_jsx_attr% rawHtml = $_:str) =>
       Macro.throwError "error[LRX-VIEW-010]: raw HTML is excluded from the safe view DSL"
   | `(leanrx_jsx_attr% $name:ident = $_:str) =>
+      Macro.throwErrorAt name s!"error[LRX-VIEW-008]: unknown or invalid view attribute {name.getId}"
+  | `(leanrx_jsx_attr% autoFocus) =>
+      Macro.throwError
+        "error[LRX-VIEW-036]: an autoFocus marker is available on inputs inside sealed row branch subtrees only (ADR-0048)"
+  | `(leanrx_jsx_attr% $name:ident) =>
       Macro.throwErrorAt name s!"error[LRX-VIEW-008]: unknown or invalid view attribute {name.getId}"
 
 scoped syntax (name := leanrxJsxTerm) "jsx% " leanrxJsxElement : term
@@ -530,6 +538,13 @@ private def logicalAttr (attr : Syntax) : MacroM (TSyntax `term) := do
   | `(leanrxJsxAttr| $name:ident = { $value:term }) => do
       let mapped := Syntax.mkStrLit (← logicalAttrName name)
       `(($mapped, ($value : String)))
+  | `(leanrxJsxAttr| $name:ident) =>
+      if name.getId.eraseMacroScopes == `autoFocus then
+        Macro.throwErrorAt name
+          "error[LRX-VIEW-036]: an autoFocus marker is available on inputs inside sealed row branch subtrees only (ADR-0048)"
+      else
+        Macro.throwErrorAt name
+          s!"error[LRX-VIEW-008]: unknown or invalid view attribute {name.getId}"
   | _ => Macro.throwErrorAt attr "error[LRX-VIEW-009]: malformed LeanRx JSX attribute"
 
 /-- Lower logical children into one `List LogicalNode` term. Runs of plain

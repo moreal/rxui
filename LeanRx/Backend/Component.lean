@@ -302,6 +302,7 @@ private structure RuntimeNames where
   listenKey : Ident
   listenChecked : Ident
   listenSubmit : Ident
+  focus : Ident
 
 private def runtimeNames : Except Error RuntimeNames := do
   pure {
@@ -322,6 +323,7 @@ private def runtimeNames : Except Error RuntimeNames := do
     listenKey := ← Ident.checked "listenKey"
     listenChecked := ← Ident.checked "listenChecked"
     listenSubmit := ← Ident.checked "listenSubmit"
+    focus := ← Ident.checked "focus"
   }
 
 /-- The write statement of one attribute selection: `disabled` writes the
@@ -724,7 +726,7 @@ whichever branch binds the kind; the cross-branch agreement check
 (LRX-VIEW-034) keeps the static action array sound (ADR-0047). -/
 mutual
   private def rowActionOf (kind : EventKind) : RowNode → Option String
-    | .element _ _ events children _ _ _ =>
+    | .element _ _ events children _ _ _ _ =>
         match events.find? (·.kind == kind) with
         | some event => some event.eventName
         | none => rowActionOfChildren kind children
@@ -750,7 +752,7 @@ own action array so a click inside an input cell never resolves that cell's
 typed action (ADR-0046). -/
 private def regionActions (region : RegionSpec) (kind : EventKind) : List String :=
   match region.template with
-  | .element _ _ _ cells _ _ _ => cells.toList.map fun cell => (rowActionOf kind cell).getD ""
+  | .element _ _ _ cells _ _ _ _ => cells.toList.map fun cell => (rowActionOf kind cell).getD ""
   | _ => []
 
 /-- The closed delegated row event kinds, in listener registration order. -/
@@ -782,7 +784,7 @@ private def branchMarker : String := "$lrxBranch"
 mutual
   private def rowNodeStmts (runtime : RuntimeNames) (item : Ident) :
       RowNode → RowDom → Except Error (Ident × RowDom)
-    | .element tag attrs _ children _ classIf reflects, dom => do
+    | .element tag attrs _ children _ classIf reflects _, dom => do
         let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
         let dom := rowAppend { dom with allocator, count := dom.count + 1 } <| .const name <|
           call runtime.createElement [.literal (.string tag.name)]
@@ -864,17 +866,47 @@ validation confines them to cell positions, so the direct children of the
 row root are the whole inventory. -/
 private def templateBranches (template : RowNode) : List RowNode :=
   match template with
-  | .element _ _ _ cells _ _ _ => cells.toList.filter fun cell =>
+  | .element _ _ _ cells _ _ _ _ => cells.toList.filter fun cell =>
       match cell with
       | .branch .. => true
       | _ => false
   | _ => []
 
+/- The child-index path (relative to one sealed branch subtree's root) of the
+subtree's autoFocus-marked input, when one exists (ADR-0048). Validation
+admits at most one marker per branch subtree and never below a nested branch,
+so the first hit is the whole inventory. -/
+mutual
+  private def rowFocusPath? : RowNode → Option (List Nat)
+    | .element _ _ _ children _ _ _ autoFocus =>
+        if autoFocus then some [] else rowFocusPathChildren 0 children
+    | .text _ _ | .fieldText _ _ | .exprText _ _ | .branch .. => none
+
+  private def rowFocusPathChildren (index : Nat) : RowChildren → Option (List Nat)
+    | .nil => none
+    | .cons head tail =>
+        match rowFocusPath? head with
+        | some path => some (index :: path)
+        | none => rowFocusPathChildren (index + 1) tail
+end
+
+/-- Whether one region's generated module transfers focus (ADR-0048): the
+update callback's replacement arm is emitted only for regions with update
+actions, so a marker in an update-less region stays inert and imports
+nothing — components without a reachable marker emit byte-identical
+modules. -/
+private def regionUsesFocus (region : RegionSpec) : Bool :=
+  regionHasUpdates region && (templateBranches region.template).any fun cell =>
+    match cell with
+    | .branch _ _ whenTrue whenFalse _ =>
+        (rowFocusPath? whenTrue).isSome || (rowFocusPath? whenFalse).isSome
+    | _ => false
+
 /- Whether one sealed subtree carries a row value reflection (ADR-0047), for
 the manifest feature flag and the setProperty import. -/
 mutual
   private def rowHasReflect : RowNode → Bool
-    | .element _ _ _ children _ _ reflects =>
+    | .element _ _ _ children _ _ reflects _ =>
         !reflects.isEmpty || rowHasReflectChildren children
     | .text _ _ | .fieldText _ _ | .exprText _ _ => false
     | .branch _ _ whenTrue whenFalse _ => rowHasReflect whenTrue || rowHasReflect whenFalse
@@ -923,7 +955,7 @@ private inductive RowUpdateTarget where
 
 mutual
   private def rowUpdateTargets (path : List Nat) : RowNode → List RowUpdateTarget
-    | .element _ _ _ children _ classIf reflects =>
+    | .element _ _ _ children _ classIf reflects _ =>
         classIf.map (RowUpdateTarget.classSelect path) ++
           reflects.map (fun reflect => RowUpdateTarget.reflect path reflect.value) ++
           rowUpdateTargetsChildren path 0 children
@@ -1018,7 +1050,18 @@ private def regionUpdateFunction (runtime : RuntimeNames) (region : RegionSpec)
               else [Stmt.ifThen (.unary .not (.ident want)) (.ofList whenFalseWrites)])
           unless stable.isEmpty do
             body := body ++ [.ifThen (.ident same) (.ofList stable)]
-          body := body ++ [.ifThen (.unary .not (.ident same)) (.ofList [
+          /- The ADR-0048 focus transfer: only the replacement arm, after the
+          fresh subtree is appended, focuses the incoming branch's marked
+          input — row mount and the stable arm never call `focus`. -/
+          let focusTrue := match rowFocusPath? whenTrue with
+            | some path => [Stmt.ifThen (.ident want) (.ofList [
+                .expr <| call runtime.focus [rowNavigate runtime branchRoot path]])]
+            | none => []
+          let focusFalse := match rowFocusPath? whenFalse with
+            | some path => [Stmt.ifThen (.unary .not (.ident want)) (.ofList [
+                .expr <| call runtime.focus [rowNavigate runtime branchRoot path]])]
+            | none => []
+          body := body ++ [.ifThen (.unary .not (.ident same)) (.ofList ([
             .expr <| call runtime.detach [branchRoot],
             .expr <| call runtime.append [
               .ident cell,
@@ -1028,7 +1071,7 @@ private def regionUpdateFunction (runtime : RuntimeNames) (region : RegionSpec)
             .expr <| call runtime.setProperty [
               .ident cell, .literal (.string branchMarker), .ident want
             ]
-          ])]
+          ] ++ focusTrue ++ focusFalse))]
       | _ =>
           body := body ++ (← rowTargetWrites runtime item (.ident row) [target])
   pure { name, params := #[row, item, position, context]
@@ -1171,6 +1214,9 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       (if checked.spec.regions.toList.any
           (fun region => rowHasReflect region.template) then
         #["row-reflects"]
+      else #[]) ++
+      (if checked.spec.regions.toList.any regionUsesFocus then
+        #["row-focus"]
       else #[]) ++
       (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
 
@@ -1424,6 +1470,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     fun region => regionHasUpdates region && !(templateBranches region.template).isEmpty
   let usesReflects := checked.spec.regions.toList.any
     fun region => rowHasReflect region.template
+  let usesFocus := checked.spec.regions.toList.any regionUsesFocus
   let regionFunctionDecls :=
     regionFunctions.flatMap id ++ regionDispatches.filterMap (·.map (·.2))
   let mountParams := #[target] ++
@@ -1449,7 +1496,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           (if usesRowUpdates then #[(runtime.childAt, runtime.childAt)] else #[]) ++
           (if usesDelegation then
             #[(runtime.listenDelegatedCells, runtime.listenDelegatedCells)]
-          else #[]) }
+          else #[]) ++
+          (if usesFocus then #[(runtime.focus, runtime.focus)] else #[]) }
       ] ++ (if formImportNames.isEmpty then #[] else #[
         { source := "./leanrx_form_events.mjs", names := formImportNames }
       ]) ++ (if checked.spec.regions.isEmpty then #[] else #[
