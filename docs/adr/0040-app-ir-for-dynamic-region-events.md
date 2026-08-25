@@ -47,15 +47,19 @@ module, and move Todo's event lowering onto it in three steps:
    Todo (the module changes); behavior parity is the bar, and components
    without regions must stay byte-identical throughout.
 
-## Open questions (resolutions after stage 1)
+## Open questions (resolutions after stage 1–2)
 
 - ~~Row scope representation~~ — **decided in ADR-0041**: a sealed row binder
   (`RowNode.fieldText` projections plus a closed `RowAction` vocabulary), not
-  a schema embedding; `RxExpr`/`DepSet`/proofs stay untouched. General
-  row-scope staged expressions remain the recorded gap.
-- Todo's filter row (positional region over static content) may be
-  expressible as a degenerate keyed region; if not, the positional region
-  needs its own slot node. Still open; stage 2.
+  a schema embedding; `RxExpr`/`DepSet`/proofs stay untouched. **Extended in
+  ADR-0043**: sealed `RowExpr` staged expressions over row fields and the
+  `update` row action feeding `updateAt`, and in **ADR-0044**: row-scoped
+  class selection.
+- ~~Todo's filter row~~ — **decision drafted in ADR-0045**: neither a
+  degenerate keyed region nor a dedicated positional slot; the filter row is
+  static view structure whose missing capability is state-scoped attribute
+  selection (the component-state analogue of ADR-0044), to be confirmed when
+  that lands.
 - ~~Manifest counting~~ — **decided in ADR-0041**: manifests disclose the
   `keyed-regions` feature and the `./leanrx_region.mjs` host import only;
   `eventCount`/`textSinkCount` keep counting static component declarations,
@@ -86,13 +90,15 @@ of TodoMVC before `Backend.Todo` shrinks to a driver:
    `updateAt`/`swapAt`/`removeAt`.
 
 Capabilities the generic backend still lacks for this migration, in
-dependency order: row field mutation (rows are immutable in stage 1 —
-`updateAt` is never emitted), row-scoped dynamic attributes/classes
-(`completed`/`editing`), conditional structure inside rows (edit input vs
-label), typed payload row events (`input`/`keydown`/`change` delegation with
-values), a positional or degenerate-keyed filter region with a selection
-reflection, and focus scheduling on edit start. Each lands as its own
-ADR-0041-style sealed extension.
+dependency order: ~~row field mutation~~ (**ADR-0043**: sealed `RowExpr` and
+the `update` row action emit `updateAt`), ~~row-scoped dynamic
+classes~~ (**ADR-0044**: sealed class selection; other attribute names and
+multi-way selection remain open), conditional structure inside rows (edit
+input vs label), typed payload row events (`input`/`keydown`/`change`
+delegation with values), state-scoped attribute selection for the filter row
+(re-scoped by the ADR-0045 draft from the former positional-region item),
+and focus scheduling on edit start. Each lands as its own ADR-0041-style
+sealed extension.
 
 ## Consequences (if accepted)
 

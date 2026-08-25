@@ -44,6 +44,9 @@
 | [0040](docs/adr/0040-app-ir-for-dynamic-region-events.md) | Accepted | Sketch an App IR to generalize Backend.Todo's event lowering | 2026-08-25 |
 | [0041](docs/adr/0041-sealed-row-binders-for-keyed-regions.md) | Accepted | Bind keyed region rows through sealed row binders in the generic backend | 2026-08-25 |
 | [0042](docs/adr/0042-immutable-props-across-the-mount-abi.md) | Accepted | Pass immutable child props as a positional mount ABI array | 2026-08-25 |
+| [0043](docs/adr/0043-sealed-row-expressions-and-row-updates.md) | Accepted | Update keyed rows through sealed row expressions and updateAt | 2026-08-25 |
+| [0044](docs/adr/0044-row-scoped-class-selection.md) | Accepted | Select row classes through a sealed row-scoped predicate | 2026-08-25 |
+| [0045](docs/adr/0045-filter-region-as-static-view-selection.md) | Proposed | Express TodoMVC's filter row as static view with state-scoped selection | 2026-08-25 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
