@@ -1235,3 +1235,88 @@ limited to one per attribute per element with a single-field `String`
 equality predicate, row inputs uncontrolled (no row-field `value`
 reflection), and child instrumentation still unreachable through the parent
 disposer.
+
+## Conditional row structure — Branch Lab edit/view transition
+
+### Scenario exercised
+
+ADR-0047's confirmation bar closed with the sealed two-branch row cell
+shipped through the generic backend and a new Branch Lab example proving
+the TodoMVC edit/view transition in Chromium. A task row's first cell is
+`{if mode == "view" then <span…/> else <input…/>}`: `RowNode.branch`
+carries one row-field index, one comparison literal, and two statically
+sealed subtrees, mounts as one wrapper `span` whose rendered branch is the
+compiler-owned `$lrxBranch` marker, and the retained-row update callback
+updates the stable branch in place or replaces the subtree with one
+`detach` plus one `append` of a shared builder function
+(`$lrx_region_0_branch_0_t`/`_f`). The edit input reflects `draft` into its
+`value` property (the sealed row reflection), so Edit opens pre-filled;
+typing flows through the ADR-0046 delegated `input` payload and commit
+writes `label := draft` and returns to the view branch. The browser gate
+pins branch entry, mid-text typing with a preserved caret, commit with
+retained row identity (the same `li` node), draft retention across a
+structural reconcile, and update-only region instrumentation for every
+step. ADR-0048 records the focus-vocabulary decision draft.
+
+### What was pleasant
+
+The ABI-freeze bar held with room to spare: replacement needed no
+`replaceChild` host export because the wrapper cell turns it into
+`detach(childAt(cell, 0))` plus `append(cell, fresh)` — `detach` was
+already exported by the region host module for its siblings, and the marker
+rides the existing `setProperty` export. The ADR-0038 controlled-input
+finding transferred to row scope unchanged: because `retype` writes the
+delegated payload back into `draft`, the update callback's reflection write
+hands the input the string it already holds, and the WHATWG equal-value
+assignment left the caret mid-text on the first browser run. The wrapper
+also kept every structural invariant for free — one cell, one child index,
+`listenDelegatedCells` resolution, and the ADR-0046 action arrays — so the
+emitter's only new obligation was the builder-function pair.
+
+### Friction
+
+Static delegated action arrays forced a real design decision on
+cross-branch bindings, not just a check: a one-branch `click` binding is
+never safe (any content of the other branch bubbles a click into the cell,
+including a bare `<span/>` branch root), so clicks must agree exactly and
+Branch Lab keeps its Edit/OK/Remove buttons in unbranched cells. That in
+turn means the OK button is visible while viewing, and the example carries
+the `draft = label` invariant (rows append with both equal, commit restores
+it) so the visible OK is a no-op in the view branch — a modeling idiom the
+guide now documents rather than a framework guarantee. Validation ordering
+also bit once in the model gates: a template that drops a typed event's
+binding trips the bound-exactly-once check before the branch shape checks,
+so the negative fixtures had to pick their event tables deliberately.
+
+### Bugs found
+
+No framework defect surfaced: the generated module, the four compile-fail
+fixtures, and all seven Branch Lab browser tests (including the caret and
+identity pins) passed on their first run. The one example-design defect was
+caught before any gate ran — the initial draft appended rows with an empty
+`draft`, so OK in view mode would have wiped the label; the `draft = label`
+append invariant replaced it.
+
+### Performance observations
+
+Entering, typing in, and leaving the edit branch are each exactly one
+retained-row `updateAt` with zero region mounts, moves, or disposals — the
+branch swap is invisible to the region host by construction. Components
+without branch cells emit byte-identical modules, manifests, and graphs
+(runtimeAbi stays 15 and the codegen gate re-diffs every dist), and the
+js-framework-benchmark path is untouched, so BENCHMARK.md numbers carry
+forward unchanged under the performance freeze.
+
+### Follow-up issue or commit
+
+`feat(component): select conditional row structure through sealed branch
+cells (ADR-0047)`, `example(branch): prove the edit/view transition in
+Branch Lab`, `test(component): forge the branch and reflection gates and
+teach the guide`, and `docs(adr): accept the branch cell and draft the row
+focus vocabulary (ADR-0047, ADR-0048)`. Remaining gaps carried forward:
+focus transfer into fresh edit inputs (ADR-0048 decision draft — `focus`
+host export under a future ABI 16), `s!` interpolation absent from row
+scope (`++` only), attribute selection limited to one per attribute per
+element with a single-field `String` equality predicate, branch cells
+single-level and two-branch only with exact click agreement, and child
+instrumentation still unreachable through the parent disposer.
