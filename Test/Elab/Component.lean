@@ -80,7 +80,7 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
     throw <| IO.userError "region table lost the sealed row event vocabulary"
   unless checked.spec.regions.toList.map (fun region =>
       match region.template with
-      | .element _ _ _ _ _ classIf =>
+      | .element _ _ _ _ _ classIf _ =>
           classIf.map fun select =>
             (select.field, select.equals, select.whenTrue, select.whenFalse)
       | _ => []) == [[(1, "", "roster-row", "roster-row marked")]] do

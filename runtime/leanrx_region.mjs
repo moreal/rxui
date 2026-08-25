@@ -1,6 +1,6 @@
 // detach, anchor, snapshot, placeInOrder, and rebuild are shared with
 // leanrx_delta_region.mjs and leanrx_unkeyed_region.mjs; generated code imports
-// only createKeyedRegion.
+// createKeyedRegion plus, for ADR-0047 branch-cell replacement, detach.
 export function detach(node) {
   if (node.parentNode) node.parentNode.removeChild(node);
 }

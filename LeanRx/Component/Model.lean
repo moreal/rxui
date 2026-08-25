@@ -564,15 +564,33 @@ private def validateChildComponents (spec : ComponentSpec Γ)
         spans := #[reference.span]
       }
 
-/- Row event bindings bound anywhere inside one row-template subtree. -/
+/- Row event bindings bound anywhere inside one row-template subtree; a
+branch cell contributes the bindings of both of its sealed subtrees. -/
 mutual
   private def rowBindings : RowNode → List EventBinding
-    | .element _ _ events children _ _ => events ++ rowBindingsChildren children
+    | .element _ _ events children _ _ _ => events ++ rowBindingsChildren children
     | .text _ _ | .fieldText _ _ | .exprText _ _ => []
+    | .branch _ _ whenTrue whenFalse _ => rowBindings whenTrue ++ rowBindings whenFalse
 
   private def rowBindingsChildren : RowChildren → List EventBinding
     | .nil => []
     | .cons head tail => rowBindings head ++ rowBindingsChildren tail
+end
+
+/- Whether one sealed subtree contains an element of the given tag; the
+one-sided delegation rule of ADR-0047 asks whether the unbound branch could
+originate events of a delegated kind. -/
+mutual
+  private def rowContainsTag (tag : HtmlTag) : RowNode → Bool
+    | .element nodeTag _ _ children _ _ _ =>
+        nodeTag == tag || rowContainsTagChildren tag children
+    | .text _ _ | .fieldText _ _ | .exprText _ _ => false
+    | .branch _ _ whenTrue whenFalse _ =>
+        rowContainsTag tag whenTrue || rowContainsTag tag whenFalse
+
+  private def rowContainsTagChildren (tag : HtmlTag) : RowChildren → Bool
+    | .nil => false
+    | .cons head tail => rowContainsTag tag head || rowContainsTagChildren tag tail
 end
 
 /- The closed delegated row event kinds (ADR-0041/0046): one structural
@@ -586,7 +604,7 @@ descendant. -/
 mutual
   private def validateRowNode (region : RegionSpec) (depth : Nat) :
       RowNode → Except ComponentError Unit
-    | .element tag attrs events children span classIf => do
+    | .element tag attrs events children span classIf reflects => do
         /- A class selection counts as the element's `class` attribute, so a
         static `class` beside one (or two selections) duplicates (ADR-0044). -/
         if duplicate? (attrs.map StaticAttr.name ++ classIf.map fun _ => "class") then
@@ -598,6 +616,35 @@ mutual
               message := s!"class selection projects field {select.field} outside region {region.name}'s {region.fields.size} field(s)"
               spans := #[select.span]
             }
+        /- Sealed row value reflections (ADR-0047): the `value` property of a
+        native input, at most once per element, over payload-free in-bounds
+        row expressions. -/
+        unless reflects.length ≤ 1 do
+          throw {
+            code := "LRX-VIEW-035"
+            message := "element reflects the value property more than once"
+            spans := #[span]
+          }
+        for reflect in reflects do
+          unless tag == .input do
+            throw {
+              code := "LRX-VIEW-035"
+              message := "a row value reflection requires a native input element"
+              spans := #[reflect.span]
+            }
+          if reflect.value.hasPayload then
+            throw {
+              code := "LRX-VIEW-033"
+              message := s!"a row value reflection in region {region.name} cannot reference an event payload"
+              spans := #[reflect.span]
+            }
+          for field in reflect.value.fieldRefs do
+            unless field < region.fields.size do
+              throw {
+                code := "LRX-VIEW-026"
+                message := s!"a row value reflection projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
+                spans := #[reflect.span]
+              }
         if duplicate? (events.map fun event => event.kind.name) then
           throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
         for event in events do
@@ -677,6 +724,34 @@ mutual
               message := s!"row expression projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
               spans := #[span]
             }
+    | .branch field _ whenTrue whenFalse span => do
+        /- The sealed two-branch row cell (ADR-0047): only at a cell position
+        (depth 1), so it occupies exactly one row-root child index, its
+        subtrees mount inside the generated wrapper (depth 2, where delegated
+        events resolve structurally), and branches never nest. -/
+        unless depth == 1 do
+          throw {
+            code := "LRX-VIEW-034"
+            message := s!"a two-branch row cell in region {region.name} must be a direct cell of the row root"
+            spans := #[span]
+          }
+        unless field < region.fields.size do
+          throw {
+            code := "LRX-VIEW-026"
+            message := s!"a two-branch row cell projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
+            spans := #[span]
+          }
+        for subtree in [whenTrue, whenFalse] do
+          match subtree with
+          | .element .. => pure ()
+          | _ =>
+              throw {
+                code := "LRX-VIEW-034"
+                message := s!"both branches of a two-branch row cell in region {region.name} must be sealed template elements"
+                spans := #[span]
+              }
+        validateRowNode region 2 whenTrue
+        validateRowNode region 2 whenFalse
 
   private def validateRowChildren (region : RegionSpec) (depth : Nat) :
       RowChildren → Except ComponentError Unit
@@ -782,7 +857,7 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
                 spans := #[event.span]
               }
     match region.template with
-    | .element _ _ events cells _ _ => do
+    | .element _ _ events cells _ _ _ => do
         unless events.isEmpty do
           throw {
             code := "LRX-VIEW-027"
@@ -790,15 +865,67 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
             spans := #[region.span]
           }
         /- One row event per cell and per delegated kind: each kind's cell
-        action array carries at most one action per cell (ADR-0041/0046). -/
+        action array carries at most one action per cell (ADR-0041/0046). A
+        branch cell keeps that bound per branch and must agree across its
+        branches (ADR-0047): the delegated action arrays are static, so both
+        branches must bind the same action for a kind, or the unbound branch
+        must be unable to originate that kind — clicks bubble from any
+        content (exact agreement required), `input` events originate only
+        from native inputs, and `keydown` events only from the focusable
+        input/button elements. -/
         for cell in cells.toList do
-          for kind in rowEventKinds do
-            unless ((rowBindings cell).filter (·.kind == kind)).length ≤ 1 do
-              throw {
-                code := "LRX-VIEW-027"
-                message := s!"a row cell of region {region.name} binds more than one {kind.name} row event"
-                spans := #[region.span]
-              }
+          match cell with
+          | .branch _ _ whenTrue whenFalse _ =>
+              for kind in rowEventKinds do
+                for subtree in [whenTrue, whenFalse] do
+                  unless ((rowBindings subtree).filter (·.kind == kind)).length ≤ 1 do
+                    throw {
+                      code := "LRX-VIEW-027"
+                      message := s!"a row cell of region {region.name} binds more than one {kind.name} row event"
+                      spans := #[region.span]
+                    }
+                let boundTrue := (rowBindings whenTrue).find? (·.kind == kind)
+                let boundFalse := (rowBindings whenFalse).find? (·.kind == kind)
+                match boundTrue, boundFalse with
+                | some first, some second =>
+                    unless first.eventName == second.eventName do
+                      throw {
+                        code := "LRX-VIEW-034"
+                        message := s!"the branches of a row cell in region {region.name} bind different {kind.name} row events ({first.eventName}, {second.eventName})"
+                        spans := #[first.span, second.span]
+                      }
+                | none, none => pure ()
+                | some binding, none | none, some binding =>
+                    let other := if boundTrue.isSome then whenFalse else whenTrue
+                    match kind with
+                    | .click =>
+                        throw {
+                          code := "LRX-VIEW-034"
+                          message := s!"a click row event bound in one branch of a row cell in region {region.name} must be bound identically in the other branch"
+                          spans := #[binding.span]
+                        }
+                    | .input =>
+                        if rowContainsTag .input other then
+                          throw {
+                            code := "LRX-VIEW-034"
+                            message := s!"a one-branch input binding in region {region.name} requires the other branch to contain no input element"
+                            spans := #[binding.span]
+                          }
+                    | _ =>
+                        if rowContainsTag .input other || rowContainsTag .button other then
+                          throw {
+                            code := "LRX-VIEW-034"
+                            message := s!"a one-branch keydown binding in region {region.name} requires the other branch to contain no input or button element"
+                            spans := #[binding.span]
+                          }
+          | _ =>
+              for kind in rowEventKinds do
+                unless ((rowBindings cell).filter (·.kind == kind)).length ≤ 1 do
+                  throw {
+                    code := "LRX-VIEW-027"
+                    message := s!"a row cell of region {region.name} binds more than one {kind.name} row event"
+                    spans := #[region.span]
+                  }
         /- A payload-taking row event must be bound exactly once so its
         delegated payload class is determined by that binding (ADR-0046). -/
         let bindings := rowBindingsChildren cells

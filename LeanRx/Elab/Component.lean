@@ -255,40 +255,62 @@ mutual
     | `(leanrxJsxChild| { $_:str : $_:term }) =>
         throwErrorAt child
           "error[LRX-ELAB-114]: named text sinks are not available inside row templates"
+    | `(leanrxJsxChild| { if $field:ident == $lit:str then $whenTrue:leanrxJsxElement
+          else $whenFalse:leanrxJsxElement }) => do
+        /- The sealed two-branch row cell (ADR-0047): one row field equality
+        selects between two statically sealed template subtrees. -/
+        let span ← sourceSpanTerm child
+        match fields.idxOf? (field.getId.eraseMacroScopes.toString) with
+        | some index =>
+            let indexLit := Syntax.mkNumLit (toString index)
+            let whenTrueTerm ← lowerRowElement fields whenTrue
+            let whenFalseTerm ← lowerRowElement fields whenFalse
+            `(LeanRx.RowNode.branch $indexLit $lit $whenTrueTerm $whenFalseTerm $span)
+        | none =>
+            throwErrorAt field
+              s!"error[LRX-ELAB-118]: unknown row field {field.getId.eraseMacroScopes}; declared fields are {renderFields fields}"
     | `(leanrxJsxChild| $element:leanrxJsxElement) => lowerRowElement fields element
     | _ =>
         throwErrorAt child
           "error[LRX-ELAB-114]: malformed row template child"
 
-  /- A `class={…}` attribute lowers to the sealed class selection (ADR-0044);
+  /- A `class={…}` attribute lowers to the sealed class selection (ADR-0044)
+  and a `value={…}` attribute to the sealed value reflection (ADR-0047);
   everything else stays a static attribute or row event reference. -/
   private partial def lowerRowAttrs (fields : List String) (attrs : Array Syntax) :
-      CommandElabM (Array (TSyntax `term) × Array (TSyntax `term)) := do
+      CommandElabM (Array (TSyntax `term) × Array (TSyntax `term) × Array (TSyntax `term)) := do
     let mut attrTerms : Array (TSyntax `term) := #[]
     let mut selectTerms : Array (TSyntax `term) := #[]
+    let mut reflectTerms : Array (TSyntax `term) := #[]
     for attr in attrs do
       let attrStx : TSyntax `leanrxJsxAttr := ⟨attr⟩
       match attrStx with
       | `(leanrxJsxAttr| class = { $value:term }) =>
           selectTerms := selectTerms.push (← rowClassSelectTerm fields attr value)
+      | `(leanrxJsxAttr| value = { $value:term }) => do
+          let exprTerm ← rowExprTerm fields none value
+          let span ← sourceSpanTerm attr
+          reflectTerms := reflectTerms.push (← `(LeanRx.RowReflect.mk $exprTerm $span))
       | _ => attrTerms := attrTerms.push (← rowAttrTerm attr)
-    pure (attrTerms, selectTerms)
+    pure (attrTerms, selectTerms, reflectTerms)
 
   private partial def lowerRowElement (fields : List String)
       (element : TSyntax `leanrxJsxElement) : CommandElabM (TSyntax `term) := do
     match element with
     | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* >
           [$children:leanrxJsxChild,*]) => do
-        let (attrTerms, selectTerms) ← lowerRowAttrs fields attrs
+        let (attrTerms, selectTerms, reflectTerms) ← lowerRowAttrs fields attrs
         let childTerms ← children.getElems.mapM (lowerRowChild fields ·)
         let span ← sourceSpanTerm element
         `(LeanRx.RowNode.nodeWith (leanrx_jsx_tag% $tag) [$childTerms,*]
-          (attrs := [$attrTerms,*]) (span := $span) (classIf := [$selectTerms,*]))
+          (attrs := [$attrTerms,*]) (span := $span) (classIf := [$selectTerms,*])
+          (reflects := [$reflectTerms,*]))
     | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* />) => do
-        let (attrTerms, selectTerms) ← lowerRowAttrs fields attrs
+        let (attrTerms, selectTerms, reflectTerms) ← lowerRowAttrs fields attrs
         let span ← sourceSpanTerm element
         `(LeanRx.RowNode.nodeWith (leanrx_jsx_tag% $tag) []
-          (attrs := [$attrTerms,*]) (span := $span) (classIf := [$selectTerms,*]))
+          (attrs := [$attrTerms,*]) (span := $span) (classIf := [$selectTerms,*])
+          (reflects := [$reflectTerms,*]))
     | _ =>
         throwErrorAt element
           "error[LRX-ELAB-111]: a region item takes an inline jsx% row template element"

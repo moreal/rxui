@@ -297,6 +297,7 @@ private structure RuntimeNames where
   setText : Ident
   makeDisposer : Ident
   createKeyedRegion : Ident
+  detach : Ident
   listenValue : Ident
   listenKey : Ident
   listenChecked : Ident
@@ -316,6 +317,7 @@ private def runtimeNames : Except Error RuntimeNames := do
     setText := ← Ident.checked "setText"
     makeDisposer := ← Ident.checked "makeDisposer"
     createKeyedRegion := ← Ident.checked "createKeyedRegion"
+    detach := ← Ident.checked "detach"
     listenValue := ← Ident.checked "listenValue"
     listenKey := ← Ident.checked "listenKey"
     listenChecked := ← Ident.checked "listenChecked"
@@ -717,14 +719,20 @@ private def nodeAt (nodes : List DomBinding) (path : List Nat) : Except Error Id
 
 /- The first row event of one delegated kind bound in one row-template
 subtree: the delegated cell action for the enclosing cell and kind (at most
-one per cell and kind by LRX-VIEW-027). -/
+one per cell and kind by LRX-VIEW-027). A branch cell draws the action from
+whichever branch binds the kind; the cross-branch agreement check
+(LRX-VIEW-034) keeps the static action array sound (ADR-0047). -/
 mutual
   private def rowActionOf (kind : EventKind) : RowNode → Option String
-    | .element _ _ events children _ _ =>
+    | .element _ _ events children _ _ _ =>
         match events.find? (·.kind == kind) with
         | some event => some event.eventName
         | none => rowActionOfChildren kind children
     | .text _ _ | .fieldText _ _ | .exprText _ _ => none
+    | .branch _ _ whenTrue whenFalse _ =>
+        match rowActionOf kind whenTrue with
+        | some action => some action
+        | none => rowActionOf kind whenFalse
 
   private def rowActionOfChildren (kind : EventKind) : RowChildren → Option String
     | .nil => none
@@ -742,7 +750,7 @@ own action array so a click inside an input cell never resolves that cell's
 typed action (ADR-0046). -/
 private def regionActions (region : RegionSpec) (kind : EventKind) : List String :=
   match region.template with
-  | .element _ _ _ cells _ _ => cells.toList.map fun cell => (rowActionOf kind cell).getD ""
+  | .element _ _ _ cells _ _ _ => cells.toList.map fun cell => (rowActionOf kind cell).getD ""
   | _ => []
 
 /-- The closed delegated row event kinds, in listener registration order. -/
@@ -760,14 +768,21 @@ private structure RowDom where
   allocator : NameAllocator
   statements : List Stmt := []
   count : Nat := 0
+  /- The builder-function pairs of the template's branch cells in traversal
+  order (ADR-0047); each branch cell consumes one pair. -/
+  branchFns : List (Ident × Ident) := []
 
 private def rowAppend (dom : RowDom) (statement : Stmt) : RowDom :=
   { dom with statements := dom.statements ++ [statement] }
 
+/-- The compiler-owned marker property naming the rendered branch of one
+branch cell wrapper, in the `setKey`/`$lrxKey` style (ADR-0047). -/
+private def branchMarker : String := "$lrxBranch"
+
 mutual
   private def rowNodeStmts (runtime : RuntimeNames) (item : Ident) :
       RowNode → RowDom → Except Error (Ident × RowDom)
-    | .element tag attrs _ children _ classIf, dom => do
+    | .element tag attrs _ children _ classIf reflects, dom => do
         let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
         let dom := rowAppend { dom with allocator, count := dom.count + 1 } <| .const name <|
           call runtime.createElement [.literal (.string tag.name)]
@@ -780,8 +795,42 @@ mutual
           dom := rowAppend dom <| .expr <| call runtime.setAttribute [
             .ident name, .literal (.string "class"), rowClassJs item select
           ]
+        for reflect in reflects do
+          dom := rowAppend dom <| .expr <| call runtime.setProperty [
+            .ident name, .literal (.string "value"), rowExprJs item noPayload reflect.value
+          ]
         let finalDom ← rowChildrenStmts runtime item name children dom
         pure (name, finalDom)
+    | .branch field equals _ _ _, dom => do
+        /- The branch cell mounts as one wrapper element holding the selected
+        sealed subtree, so the cell keeps exactly one row-root child index
+        and replacement composes from the existing `detach`/`append` host
+        primitives; the wrapper carries the rendered branch as the
+        `$lrxBranch` marker property (ADR-0047). -/
+        let (whenTrueFn, whenFalseFn, rest) ← match dom.branchFns with
+          | (whenTrueFn, whenFalseFn) :: rest => pure (whenTrueFn, whenFalseFn, rest)
+          | [] => .error {
+              code := "LRX-BE-033"
+              message := "row branch cell has no builder functions"
+            }
+        let dom := { dom with branchFns := rest }
+        let (wrapper, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
+        let dom := { dom with allocator, count := dom.count + 1 }
+        let (flag, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
+        let dom := { dom with allocator, count := dom.count + 1 }
+        let dom := rowAppend dom <| .const wrapper <|
+          call runtime.createElement [.literal (.string HtmlTag.span.name)]
+        let dom := rowAppend dom <| .const flag <| .binary .eq
+          (.index (.ident item) (uint (field + 1))) (.literal (.string equals))
+        let dom := rowAppend dom <| .expr <| call runtime.append [
+          .ident wrapper,
+          .conditional (.ident flag) (call whenTrueFn [.ident item])
+            (call whenFalseFn [.ident item])
+        ]
+        let dom := rowAppend dom <| .expr <| call runtime.setProperty [
+          .ident wrapper, .literal (.string branchMarker), .ident flag
+        ]
+        pure (wrapper, dom)
     | .text value _, dom => do
         let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
         let dom := { dom with allocator, count := dom.count + 1 }
@@ -810,12 +859,49 @@ mutual
         rowChildrenStmts runtime item parent tail dom
 end
 
-private def regionRowFunction (runtime : RuntimeNames) (region : RegionSpec)
+/-- The branch cells of one row template in traversal order (ADR-0047):
+validation confines them to cell positions, so the direct children of the
+row root are the whole inventory. -/
+private def templateBranches (template : RowNode) : List RowNode :=
+  match template with
+  | .element _ _ _ cells _ _ _ => cells.toList.filter fun cell =>
+      match cell with
+      | .branch .. => true
+      | _ => false
+  | _ => []
+
+/- Whether one sealed subtree carries a row value reflection (ADR-0047), for
+the manifest feature flag and the setProperty import. -/
+mutual
+  private def rowHasReflect : RowNode → Bool
+    | .element _ _ _ children _ _ reflects =>
+        !reflects.isEmpty || rowHasReflectChildren children
+    | .text _ _ | .fieldText _ _ | .exprText _ _ => false
+    | .branch _ _ whenTrue whenFalse _ => rowHasReflect whenTrue || rowHasReflect whenFalse
+
+  private def rowHasReflectChildren : RowChildren → Bool
+    | .nil => false
+    | .cons head tail => rowHasReflect head || rowHasReflectChildren tail
+end
+
+/-- One sealed branch subtree builder (ADR-0047): the mount statements of the
+branch root against the row item, shared by the row mount conditional and the
+update callback's replacement arm. -/
+private def regionBranchFunction (runtime : RuntimeNames) (root : RowNode)
     (name : Ident) : Except Error Function := do
+  let item ← Ident.checked "item"
+  let initial : RowDom := { allocator := { used := ["item"] } }
+  let (rootName, dom) ← rowNodeStmts runtime item root initial
+  pure { name, params := #[item]
+         body := (dom.statements ++ [Stmt.return (.ident rootName)]).toArray }
+
+private def regionRowFunction (runtime : RuntimeNames) (region : RegionSpec)
+    (branchFns : List (Ident × Ident)) (name : Ident) : Except Error Function := do
   let item ← Ident.checked "item"
   let position ← Ident.checked "position"
   let context ← Ident.checked "context"
-  let initial : RowDom := { allocator := { used := ["item", "position", "context"] } }
+  let initial : RowDom :=
+    { allocator := { used := ["item", "position", "context"] }, branchFns }
   let (root, dom) ← rowNodeStmts runtime item region.template initial
   let body : List Stmt := dom.statements ++ [
     .expr <| call runtime.setKey [.ident root, .index (.ident item) (uint 0)],
@@ -824,19 +910,28 @@ private def regionRowFunction (runtime : RuntimeNames) (region : RegionSpec)
   pure { name, params := #[item, position, context], body := body.toArray }
 
 /- Dynamic positions of one row template with their child-index paths from the
-row root, re-rendered by the retained-row update callback (ADR-0043/0044). -/
+row root, re-rendered by the retained-row update callback
+(ADR-0043/0044/0047). A branch target carries its whole cell: the callback
+compares the predicate against the rendered marker and either updates the
+stable subtree in place or replaces it. -/
 private inductive RowUpdateTarget where
   | text (path : List Nat) (value : RowExpr)
   | classSelect (path : List Nat) (select : RowClassSelect)
+  | reflect (path : List Nat) (value : RowExpr)
+  | branchCell (path : List Nat) (field : Nat) (equals : String)
+      (whenTrue whenFalse : RowNode)
 
 mutual
   private def rowUpdateTargets (path : List Nat) : RowNode → List RowUpdateTarget
-    | .element _ _ _ children _ classIf =>
+    | .element _ _ _ children _ classIf reflects =>
         classIf.map (RowUpdateTarget.classSelect path) ++
+          reflects.map (fun reflect => RowUpdateTarget.reflect path reflect.value) ++
           rowUpdateTargetsChildren path 0 children
     | .text _ _ => []
     | .fieldText field _ => [.text path (.field field)]
     | .exprText value _ => [.text path value]
+    | .branch field equals whenTrue whenFalse _ =>
+        [.branchCell path field equals whenTrue whenFalse]
 
   private def rowUpdateTargetsChildren (path : List Nat) (index : Nat) :
       RowChildren → List RowUpdateTarget
@@ -846,33 +941,96 @@ mutual
           rowUpdateTargetsChildren path (index + 1) tail
 end
 
-/-- Structural navigation from the row root to one template position: every
+/-- Structural navigation from one base node to a template position: every
 direct child mounts exactly one DOM node, so template indices equal
 `childNodes` indices at runtime (the regionActions argument again). -/
-private def rowNavigate (runtime : RuntimeNames) (row : Ident) (path : List Nat) : Expr :=
-  path.foldl (fun acc index => call runtime.childAt [acc, uint index]) (.ident row)
+private def rowNavigate (runtime : RuntimeNames) (base : Expr) (path : List Nat) : Expr :=
+  path.foldl (fun acc index => call runtime.childAt [acc, uint index]) base
+
+/-- The in-place write statements of the non-branch targets of one subtree,
+rooted at `base` (ADR-0043/0044/0047). Branch targets cannot appear below a
+cell, so a nested branch is a compiler error. -/
+private def rowTargetWrites (runtime : RuntimeNames) (item : Ident) (base : Expr)
+    (targets : List RowUpdateTarget) : Except Error (List Stmt) := do
+  targets.mapM fun target =>
+    match target with
+    | .text path value =>
+        pure <| .expr <| call runtime.setText [
+          rowNavigate runtime base path, rowExprJs item noPayload value]
+    | .classSelect path select =>
+        pure <| .expr <| call runtime.setAttribute [
+          rowNavigate runtime base path, .literal (.string "class"), rowClassJs item select]
+    | .reflect path value =>
+        pure <| .expr <| call runtime.setProperty [
+          rowNavigate runtime base path, .literal (.string "value"),
+          rowExprJs item noPayload value]
+    | .branchCell .. =>
+        .error { code := "LRX-BE-033", message := "row branch cells cannot nest" }
 
 /-- The retained-row update callback: a no-op while the region's rows are
 immutable (ADR-0041); when the region declares update actions, it re-renders
-every dynamic text and class selection from the current item by structural
-`childAt` navigation — the navigate-and-write shape of the bespoke Todo row
-update (ADR-0043/0044). -/
+every dynamic text, class selection, and value reflection from the current
+item by structural `childAt` navigation — the navigate-and-write shape of the
+bespoke Todo row update (ADR-0043/0044) — and, for each branch cell,
+re-evaluates the sealed predicate against the wrapper's `$lrxBranch` marker:
+a stable branch is updated in place and a changed branch is replaced with one
+`detach` plus one `append` of the freshly built subtree (ADR-0047). -/
 private def regionUpdateFunction (runtime : RuntimeNames) (region : RegionSpec)
-    (name : Ident) : Except Error Function := do
+    (branchFns : List (Ident × Ident)) (name : Ident) : Except Error Function := do
   let row ← Ident.checked "row"
   let item ← Ident.checked "item"
   let position ← Ident.checked "position"
   let context ← Ident.checked "context"
   let mut body : List Stmt := []
+  let mut remainingBranchFns := branchFns
   if regionHasUpdates region then
     for target in rowUpdateTargets [] region.template do
       match target with
-      | .text path value =>
-          body := body ++ [.expr <| call runtime.setText [
-            rowNavigate runtime row path, rowExprJs item noPayload value]]
-      | .classSelect path select =>
-          body := body ++ [.expr <| call runtime.setAttribute [
-            rowNavigate runtime row path, .literal (.string "class"), rowClassJs item select]]
+      | .branchCell path field equals whenTrue whenFalse =>
+          let (whenTrueFn, whenFalseFn) ← match remainingBranchFns with
+            | pair :: rest =>
+                remainingBranchFns := rest
+                pure pair
+            | [] => .error {
+                code := "LRX-BE-033"
+                message := "row branch cell has no builder functions"
+              }
+          let branchIndex := branchFns.length - remainingBranchFns.length - 1
+          let cell ← Ident.checked s!"branch_cell_{branchIndex}"
+          let want ← Ident.checked s!"branch_want_{branchIndex}"
+          let same ← Ident.checked s!"branch_same_{branchIndex}"
+          body := body ++ [
+            .const cell (rowNavigate runtime (.ident row) path),
+            .const want (.binary .eq (.index (.ident item) (uint (field + 1)))
+              (.literal (.string equals))),
+            .const same (.binary .eq
+              (.index (.ident cell) (.literal (.string branchMarker))) (.ident want))
+          ]
+          let branchRoot := call runtime.childAt [.ident cell, uint 0]
+          let whenTrueWrites ← rowTargetWrites runtime item branchRoot
+            (rowUpdateTargets [] whenTrue)
+          let whenFalseWrites ← rowTargetWrites runtime item branchRoot
+            (rowUpdateTargets [] whenFalse)
+          let stable :=
+            (if whenTrueWrites.isEmpty then []
+              else [Stmt.ifThen (.ident want) (.ofList whenTrueWrites)]) ++
+            (if whenFalseWrites.isEmpty then []
+              else [Stmt.ifThen (.unary .not (.ident want)) (.ofList whenFalseWrites)])
+          unless stable.isEmpty do
+            body := body ++ [.ifThen (.ident same) (.ofList stable)]
+          body := body ++ [.ifThen (.unary .not (.ident same)) (.ofList [
+            .expr <| call runtime.detach [branchRoot],
+            .expr <| call runtime.append [
+              .ident cell,
+              .conditional (.ident want) (call whenTrueFn [.ident item])
+                (call whenFalseFn [.ident item])
+            ],
+            .expr <| call runtime.setProperty [
+              .ident cell, .literal (.string branchMarker), .ident want
+            ]
+          ])]
+      | _ =>
+          body := body ++ (← rowTargetWrites runtime item (.ident row) [target])
   pure { name, params := #[row, item, position, context]
          body := (body ++ [Stmt.return (.literal .null)]).toArray }
 
@@ -1006,6 +1164,14 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
           (fun region => region.events.toList.any (·.takesPayload)) then
         #["typed-row-events"]
       else #[]) ++
+      (if checked.spec.regions.toList.any
+          (fun region => !(templateBranches region.template).isEmpty) then
+        #["row-branches"]
+      else #[]) ++
+      (if checked.spec.regions.toList.any
+          (fun region => rowHasReflect region.template) then
+        #["row-reflects"]
+      else #[]) ++
       (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
@@ -1050,11 +1216,22 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       (← Ident.checked s!"$lrx_region_{index}_row",
         ← Ident.checked s!"$lrx_region_{index}_update",
         ← Ident.checked s!"$lrx_region_{index}_dispose"))
-  let regionFunctions ← checked.spec.regions.toList.zip regionMounts |>.mapM
-    fun (region, (_, (rowFn, updateFn, disposeFn))) => do
-      pure [← regionRowFunction runtime region rowFn,
-        ← regionUpdateFunction runtime region updateFn,
-        ← regionDisposeFunction disposeFn]
+  let regionBranchFns ← checked.spec.regions.toList.zipIdx.mapM fun (region, index) => do
+    (templateBranches region.template).zipIdx.mapM fun (_, branchIndex) => do
+      pure (← Ident.checked s!"$lrx_region_{index}_branch_{branchIndex}_t",
+        ← Ident.checked s!"$lrx_region_{index}_branch_{branchIndex}_f")
+  let regionFunctions ← (checked.spec.regions.toList.zip regionMounts).zip regionBranchFns
+    |>.mapM fun ((region, (_, (rowFn, updateFn, disposeFn))), branchFns) => do
+      let mut functions : List Function := []
+      for (cell, (whenTrueFn, whenFalseFn)) in
+          (templateBranches region.template).zip branchFns do
+        if let .branch _ _ whenTrue whenFalse _ := cell then
+          functions := functions ++ [
+            ← regionBranchFunction runtime whenTrue whenTrueFn,
+            ← regionBranchFunction runtime whenFalse whenFalseFn]
+      pure (functions ++ [← regionRowFunction runtime region branchFns rowFn,
+        ← regionUpdateFunction runtime region branchFns updateFn,
+        ← regionDisposeFunction disposeFn])
   let regionDispatches ← checked.spec.regions.toList.zipIdx.mapM fun (region, index) => do
     if regionEventKinds.any fun kind => (regionActions region kind).any (· ≠ "") then
       let name ← Ident.checked s!"$lrx_region_{index}_dispatch"
@@ -1241,6 +1418,12 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
         names := #[(mount, localName)] : Import }
   let usesDelegation := regionDispatches.any (·.isSome)
   let usesRowUpdates := checked.spec.regions.toList.any regionHasUpdates
+  let usesBranches := checked.spec.regions.toList.any
+    fun region => !(templateBranches region.template).isEmpty
+  let usesBranchReplace := checked.spec.regions.toList.any
+    fun region => regionHasUpdates region && !(templateBranches region.template).isEmpty
+  let usesReflects := checked.spec.regions.toList.any
+    fun region => rowHasReflect region.template
   let regionFunctionDecls :=
     regionFunctions.flatMap id ++ regionDispatches.filterMap (·.map (·.2))
   let mountParams := #[target] ++
@@ -1259,7 +1442,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           ] ++ (if checked.view.props.isEmpty && !checked.view.attrSelects.any
               (fun mounted => match mounted.select with
                 | .disabledSelect .. => true
-                | _ => false) then #[]
+                | _ => false) && !usesBranches && !usesReflects then #[]
             else #[(runtime.setProperty, runtime.setProperty)]) ++
           (if checked.spec.regions.isEmpty then #[]
             else #[(runtime.setKey, runtime.setKey)]) ++
@@ -1272,7 +1455,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       ]) ++ (if checked.spec.regions.isEmpty then #[] else #[
         { source := "./leanrx_region.mjs", names := #[
             (runtime.createKeyedRegion, runtime.createKeyedRegion)
-          ] }
+          ] ++ (if usesBranchReplace then #[(runtime.detach, runtime.detach)]
+            else #[]) }
       ]) ++ childImports.toArray
       declarations := (evaluators.declarations ++ eventFunctions.map Decl.function ++
         typedEventFunctions.map Decl.function ++ regionFunctionDecls.map Decl.function ++ [

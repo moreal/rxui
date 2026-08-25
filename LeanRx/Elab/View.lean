@@ -85,6 +85,10 @@ scoped syntax (name := leanrxJsxChildDynamic) "{" term "}" : leanrxJsxChild
 (ADR-0042); `{propName}` children become `propText% index` before lowering. -/
 scoped syntax (name := leanrxJsxPropText) "propText%" num : leanrxJsxChild
 scoped syntax leanrxJsxElement : leanrxJsxChild
+/- The sealed two-branch row cell (ADR-0047): valid only inside `region` row
+templates, where the component command lowers it to `RowNode.branch`. -/
+scoped syntax (name := leanrxJsxBranchChild)
+  "{" "if" ident "==" str "then" leanrxJsxElement "else" leanrxJsxElement "}" : leanrxJsxChild
 scoped syntax "for " ident " in " term " key " term " => " leanrxJsxElement : leanrxJsxKeyed
 scoped syntax leanrxJsxKeyed : leanrxJsxChild
 scoped syntax "<" ident leanrxJsxAttr* ">" "[" leanrxJsxChild,* "]" : leanrxJsxElement
@@ -453,6 +457,10 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | `(leanrxJsxChild| { $_:term }) =>
           Macro.throwErrorAt child
             "error[LRX-VIEW-012]: unnamed dynamic text requires the logical reference view"
+      | `(leanrxJsxChild| { if $_:ident == $_:str then $_:leanrxJsxElement
+            else $_:leanrxJsxElement }) =>
+          Macro.throwErrorAt child
+            "error[LRX-VIEW-034]: a two-branch cell is available inside sealed row templates only (ADR-0047)"
       | `(leanrxJsxChild| $_:leanrxJsxKeyed) =>
           Macro.throwErrorAt child
             "error[LRX-VIEW-011]: keyed list children require the logical reference view"
@@ -540,6 +548,10 @@ private def logicalChildren (children : Array Syntax) : MacroM (TSyntax `term) :
           "error[LRX-VIEW-015]: named text sinks require the typed component view"
     | `(leanrxJsxChild| { $value:term }) =>
         plain := plain.push (← `(LeanRx.Region.LogicalNode.text ($value : String)))
+    | `(leanrxJsxChild| { if $_:ident == $_:str then $_:leanrxJsxElement
+          else $_:leanrxJsxElement }) =>
+        Macro.throwErrorAt child
+          "error[LRX-VIEW-034]: a two-branch cell is available inside sealed row templates only (ADR-0047)"
     | `(leanrxJsxChild| $keyed:leanrxJsxKeyed) => do
         if !plain.isEmpty then
           segments := segments.push (← `([$plain,*]))

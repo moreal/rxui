@@ -183,7 +183,15 @@ unchanged for attribute-marked controls. See
 The keyed region host (`leanrx_region.mjs`) exposes `createKeyedRegion(parent,
 mountItem, updateItem, disposeItem, rootItem?)` to generated code and shares
 `detach`, `anchor`, `snapshot`, `placeInOrder`, and `rebuild` with the delta and
-unkeyed region hosts (they are not generated-code entry points). `update(items,
+unkeyed region hosts; of those, only `detach` is also a generated-code entry
+point — a component module whose row templates carry ADR-0047 branch cells
+imports it beside `createKeyedRegion`. Such a module mounts each branch cell
+as one wrapper element holding the selected sealed subtree, records the
+rendered branch on the wrapper as the `$lrxBranch` marker property (the
+`setKey`/`$lrxKey` style, written through `setProperty`), and its retained-row
+update callback replaces a changed branch with one `detach` of the old subtree
+plus one `append` of the freshly built one — a generated-code convention over
+existing exports, not an ABI change. `update(items,
 context)` reconciles the whole target, where `items[i][0]` is the key: it
 validates every key before the first callback or DOM mutation, matching a
 retained key by position first (no hashing while the order is unchanged); the

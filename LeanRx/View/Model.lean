@@ -281,20 +281,39 @@ def debug (select : AttrSelect Γ) : String :=
 
 end AttrSelect
 
-/- Sealed row template of a keyed region (ADR-0041/0043/0044). Dynamic row
-content is a typed projection of the row tuple (`fieldText`) or a sealed row
-expression over it (`exprText`), never an `RxExpr`; row events reference the
-region's declared row events and lower to one delegated listener per event
-kind on the region container; `classIf` carries at most one sealed class
-selection per element. -/
+/-- One sealed row-scoped value reflection (ADR-0047): the input element's
+`value` property follows the sealed row expression on mount and inside the
+retained-row update callback. The property name is compiler-owned (`value`
+only) and the write reuses the existing `setProperty` host export; because a
+row update driven by the input's own typed payload writes the string the
+input already holds, the WHATWG equal-value assignment is a caret no-op
+(ADR-0038's controlled-input finding, reused in row scope). -/
+structure RowReflect where
+  value : RowExpr
+  span : SourceSpan := .generated
+deriving Repr, BEq
+
+/- Sealed row template of a keyed region (ADR-0041/0043/0044/0047). Dynamic
+row content is a typed projection of the row tuple (`fieldText`) or a sealed
+row expression over it (`exprText`), never an `RxExpr`; row events reference
+the region's declared row events and lower to one delegated listener per
+event kind on the region container; `classIf` carries at most one sealed
+class selection per element and `reflects` at most one sealed `value`
+reflection per input element. A `branch` node is the sealed two-branch row
+cell (ADR-0047): it may sit only at a cell position (direct child of the row
+root), both subtrees are fixed at elaboration, the mounted branch follows
+equality of one projected row field against one literal, and the retained-row
+update callback replaces the cell's subtree only on a branch change. -/
 mutual
   inductive RowNode where
     | element (tag : HtmlTag) (attrs : List StaticAttr) (events : List EventBinding)
         (children : RowChildren) (span : SourceSpan := .generated)
-        (classIf : List RowClassSelect := [])
+        (classIf : List RowClassSelect := []) (reflects : List RowReflect := [])
     | text (value : String) (span : SourceSpan := .generated)
     | fieldText (field : Nat) (span : SourceSpan := .generated)
     | exprText (value : RowExpr) (span : SourceSpan := .generated)
+    | branch (field : Nat) (equals : String) (whenTrue whenFalse : RowNode)
+        (span : SourceSpan := .generated)
 
   inductive RowChildren where
     | nil
@@ -315,14 +334,17 @@ end RowChildren
 
 def RowNode.node (tag : HtmlTag) (children : List RowNode)
     (attrs : List StaticAttr := []) (events : List EventBinding := [])
-    (span : SourceSpan := .generated) (classIf : List RowClassSelect := []) : RowNode :=
-  .element tag attrs events (.ofList children) span classIf
+    (span : SourceSpan := .generated) (classIf : List RowClassSelect := [])
+    (reflects : List RowReflect := []) : RowNode :=
+  .element tag attrs events (.ofList children) span classIf reflects
 
 def RowNode.nodeWith (tag : HtmlTag) (children : List RowNode)
     (attrs : List ViewAttr := []) (span : SourceSpan := .generated)
-    (classIf : List RowClassSelect := []) : RowNode :=
+    (classIf : List RowClassSelect := [])
+    (reflects : List RowReflect := []) : RowNode :=
   RowNode.node tag children (attrs := ViewAttr.staticAttrs attrs)
     (events := ViewAttr.events attrs) (span := span) (classIf := classIf)
+    (reflects := reflects)
 
 /-- One keyed region declaration (ADR-0040/0041). Rows are tuples of `String`
 fields behind a monotone region-owned key; the template is the sealed row view
