@@ -1082,3 +1082,70 @@ forward: row-scope staged expressions (rows stay immutable, projections
 only), `disabled` reflection still bespoke-only, transforming reflections
 move the caret to the end (documented), and child instrumentation stays
 unreachable through the parent disposer.
+
+## Row updates and class selection — marking the Nest Lab roster
+
+### Scenario exercised
+
+The roster rows learned to change after mount, still entirely inside the
+`component` command (ADR-0040 stage 2, ADR-0043, ADR-0044): rows widened to
+`(label, marks)`, a `row roster mark := set marks (marks ++ " ★");` item
+declares the sealed update action, the template renders the sealed row
+expression `{label ++ marks}` and selects its root class with
+`class={if marks == "" then "roster-row" else "roster-row marked"}`, and the
+per-row `★` button dispatches through the same structural delegated listener
+as `remove`. An update-only transaction mutates the retained item in place
+and drains exactly one `updateAt` on commit; the generated retained-row
+callback re-renders the expression text and the class selection by `childAt`
+navigation. ADR-0045 records the filter-region decision draft: TodoMVC's
+filter row is static view plus future state-scoped attribute selection —
+neither a degenerate keyed region nor a new positional slot. Chromium gates
+per-row marking (text, class, and an updates-by-exactly-one instrumentation
+delta), repeat marking, field retention across removal and append, and the
+unchanged stage-1 behaviors.
+
+### What was pleasant
+
+`updateAt`, `childAt`, and the LRX-REGION-003 key re-check all predated the
+round — the runtime ABI stayed 15 for the fourth consecutive round, and all
+eleven non-region dists stayed byte-identical. Mirroring `RxExpr`'s shape
+without touching it worked again one level down: `RowExpr` is three
+constructors and a bounds check, yet it serves template text, update
+right-hand sides, and (via one sealed predicate) class selection. The
+`[cursor, match]` scan array dissolved the "no mutable locals in the
+validated JS subset" constraint without extending the AST, and the pending
+slot rode the region record without touching `tx` or the context layout.
+Deciding the filter question as "not a region" fell out of writing the ADR:
+the row set has static cardinality, so both proposed mechanisms encoded
+information the static view already knows.
+
+### Friction
+
+`throwErrorAt` parses its string literal as an interpolated string, so the
+LRX-ELAB-116 message describing `class={…}` needed `\{` escapes — invisible
+until the build broke on a backslash. The update dispatch needs the row's
+*position* while delegation hands it the *key*, forcing the linear key scan
+in generated code; fine at roster scale, but a future keyed-index handle API
+is the obvious escape hatch if a gate ever needs it. The retained-row
+callback re-renders unconditionally (bespoke-Todo precedent), which is
+correct but means structural reconciles rewrite equal strings; the WHATWG
+equal-value rule keeps it observably free. One new grammar rule
+(`row region event := …`) again demanded audit re-registration of ten
+generated `injEq`/`_unsafe_rec` names — scripted this time from the start.
+
+### Bugs found
+
+No framework defect and no test bug: every gate passed on its first run
+after the build went green, including byte identity on the first diff.
+
+### Follow-up issue or commit
+
+`feat(component): update keyed rows through sealed row expressions
+(ADR-0043, ADR-0044)`, `example(nest): mark roster rows through the sealed
+update action`, `docs(adr): draft the filter-region decision (ADR-0045)`.
+Remaining gaps carried forward: conditional structure inside rows, typed
+payload row events, state-scoped attribute selection (ADR-0045 confirmation
+bar; also closes `disabled`), `s!` interpolation absent from row scope
+(`++` only), one class selection per element with a single-field equality
+predicate, and child instrumentation still unreachable through the parent
+disposer.
