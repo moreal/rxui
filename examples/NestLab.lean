@@ -13,9 +13,13 @@ rows with region-owned monotone keys, the sealed row template renders the
 concatenation `{label ++ marks}` and selects the row class from the `marks`
 field, the row `★` button mutates the dispatching row through the sealed
 `mark` update action (one `updateAt` on commit), and the row `✕` button
-removes it — both resolved through one structural delegated listener on the
-`<ul>` container. Parent and child keep fully independent schemas, state, and
-events. -/
+removes it — resolved through structural delegated listeners on the `<ul>`
+container. The per-row edit input dogfoods typed row payloads (ADR-0046):
+`row roster rename (value : String) := set label value;` receives the
+delegated `input` value and `row roster record (pressed : String) := …`
+receives the delegated `keydown` key, each draining exactly one `updateAt`
+on commit (`key` itself stays a reserved surface keyword).
+Parent and child keep fully independent schemas, state, and events. -/
 
 namespace LeanRxExamples.NestLab
 
@@ -48,11 +52,17 @@ component NestLab (schema := NestSchema) where {
   state clicks : Int := 0;
   state added : Int := 0;
   event bump := set clicks (clicks + 1);
-  event addItem := append roster (s!"Item {added}", "") then set added (added + 1);
+  event addItem := append roster (s!"Item {added}", "", "") then set added (added + 1);
   row roster mark := set marks (marks ++ " ★");
-  region roster (label, marks) := jsx%
+  row roster rename (value : String) := set label value;
+  row roster record (pressed : String) := set lastKey ("key:" ++ pressed);
+  region roster (label, marks, lastKey) := jsx%
     <li class={if marks == "" then "roster-row" else "roster-row marked"}> [
       <span class="roster-label"> [{label ++ marks}],
+      <span class="roster-key"> [{lastKey}],
+      <span class="roster-edit"> [
+        <input ariaLabel="Rename row" onInput={rename} onKeyDown={record} />
+      ],
       <span class="roster-mark"> [
         <button type="button" ariaLabel="Mark row" onClick={mark}> ["★"]
       ],

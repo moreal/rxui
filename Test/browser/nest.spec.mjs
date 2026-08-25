@@ -150,6 +150,69 @@ test("the mark button updates exactly its own row through updateAt", async ({ pa
   ]);
 });
 
+test("typing in a row input renames exactly that row through the delegated value payload", async ({ page }) => {
+  await mountNest(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  const input = page.locator("#roster > li").nth(0).getByRole("textbox", { name: "Rename row" });
+  await input.click();
+  const before = await page.evaluate(() =>
+    globalThis.nestDispose.regionInstrumentation()[0],
+  );
+  await input.pressSequentially("abc");
+  await expect(page.locator("#roster > li .roster-label")).toHaveText(["abc", "Item 1"]);
+  // Each keystroke raises one keydown (record) and one input (rename)
+  // transaction; the retained row keeps its identity and its input keeps the
+  // typed value, so typing performs retained-row updates only — no mounts,
+  // moves, or disposals.
+  await expect(page.locator("#roster > li .roster-key").first()).toHaveText("key:c");
+  await expect(input).toHaveValue("abc");
+  const after = await page.evaluate(() =>
+    globalThis.nestDispose.regionInstrumentation()[0],
+  );
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1] + 6);
+  expect(after[2]).toBe(before[2]);
+  expect(after[3]).toBe(before[3]);
+});
+
+test("a keydown without input text records only the key payload", async ({ page }) => {
+  await mountNest(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  const input = page.locator("#roster > li").nth(0).getByRole("textbox", { name: "Rename row" });
+  await input.click();
+  const before = await page.evaluate(() =>
+    globalThis.nestDispose.regionInstrumentation()[0],
+  );
+  await input.press("Enter");
+  await expect(page.locator("#roster > li .roster-key")).toHaveText(["key:Enter"]);
+  await expect(page.locator("#roster > li .roster-label")).toHaveText(["Item 0"]);
+  const after = await page.evaluate(() =>
+    globalThis.nestDispose.regionInstrumentation()[0],
+  );
+  // Enter fires keydown but no input event: exactly one retained-row update.
+  expect(after[1]).toBe(before[1] + 1);
+  expect(after[0]).toBe(before[0]);
+});
+
+test("renamed and key-stamped rows keep their fields across marking and removal", async ({ page }) => {
+  await mountNest(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  const input = page.locator("#roster > li").nth(1).getByRole("textbox", { name: "Rename row" });
+  await input.click();
+  await input.pressSequentially("renamed");
+  await page.locator("#roster > li").nth(1).getByRole("button", { name: "Mark row" }).click();
+  await page.locator("#roster > li").nth(0).getByRole("button", { name: "Remove row" }).click();
+  await expect(page.locator("#roster > li .roster-label")).toHaveText([
+    "renamed ★", "Item 2",
+  ]);
+  await expect(page.locator("#roster > li .roster-key").first()).toHaveText("key:d");
+});
+
 test("marked rows keep their fields across structural reconciles", async ({ page }) => {
   await mountNest(page);
   const add = page.getByRole("button", { name: "Add item" });

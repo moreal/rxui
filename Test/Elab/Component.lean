@@ -1,5 +1,6 @@
 import examples.Counter
 import examples.EchoLab
+import examples.FilterLab
 import examples.NestLab
 
 namespace LeanRxTest.Elab.Component
@@ -38,6 +39,22 @@ private def verifyEcho (checked : CheckedComponent LeanRxExamples.EchoLab.EchoSc
     ] do
     throw <| IO.userError "reflected properties did not become mounted prop sinks"
 
+private def verifyFilter
+    (checked : CheckedComponent LeanRxExamples.FilterLab.FilterSchema) : IO Unit := do
+  unless checked.view.attrSelects.map (fun mounted =>
+      (mounted.select.name, mounted.select.fieldIndex, mounted.select.equals,
+        mounted.path)) == [
+      ("class", 0, "all", [1, 0]), ("aria-pressed", 0, "all", [1, 0]),
+      ("class", 0, "active", [1, 1]), ("aria-pressed", 0, "active", [1, 1]),
+      ("class", 0, "completed", [1, 2]), ("aria-pressed", 0, "completed", [1, 2]),
+      ("disabled", 0, "all", [2])
+    ] do
+    throw <| IO.userError "attribute selections did not become mounted selection sinks"
+  unless checked.graph.graph.nodes.map (·.name) == #["filter", "filterText",
+      "attr:0:class", "attr:1:aria-pressed", "attr:2:class", "attr:3:aria-pressed",
+      "attr:4:class", "attr:5:aria-pressed", "attr:6:disabled"] do
+    throw <| IO.userError "attribute selections did not join the planned graph"
+
 private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSchema) :
     IO Unit := do
   unless checked.spec.children.toList.map (·.name) == ["Pulse"] do
@@ -50,12 +67,16 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
     throw <| IO.userError "view split lost the immutable child prop bindings"
   unless checked.spec.regions.toList.map (·.name) == ["roster"] do
     throw <| IO.userError "region table lost the roster declaration"
-  unless checked.spec.regions.toList.map (·.fields) == [#["label", "marks"]] do
+  unless checked.spec.regions.toList.map (·.fields) ==
+      [#["label", "marks", "lastKey"]] do
     throw <| IO.userError "region table lost the row field inventory"
   unless checked.spec.regions.toList.map
-      (fun region => region.events.toList.map (fun event => (event.name, event.action))) ==
-      [[("remove", .remove),
-        ("mark", .update [(1, .append (.field 1) (.lit " ★"))])]] do
+      (fun region => region.events.toList.map
+        (fun event => (event.name, event.action, event.takesPayload))) ==
+      [[("remove", .remove, false),
+        ("mark", .update [(1, .append (.field 1) (.lit " ★"))], false),
+        ("rename", .update [(0, .payload)], true),
+        ("record", .update [(2, .append (.lit "key:") .payload)], true)]] do
     throw <| IO.userError "region table lost the sealed row event vocabulary"
   unless checked.spec.regions.toList.map (fun region =>
       match region.template with
@@ -70,7 +91,7 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
   match checked.spec.events.toList.find? (·.name == "addItem") with
   | none => throw <| IO.userError "region append event disappeared"
   | some addItem =>
-      unless addItem.update.regionAppendTargets == [("roster", 2)] do
+      unless addItem.update.regionAppendTargets == [("roster", 3)] do
         throw <| IO.userError "region append target or arity changed"
 
 def run : IO Unit := do
@@ -95,6 +116,9 @@ def run : IO Unit := do
   match LeanRxExamples.EchoLab.EchoLab_check with
   | .error error => throw <| IO.userError s!"typed component rejected: {error.code}"
   | .ok checked => verifyEcho checked
+  match LeanRxExamples.FilterLab.FilterLab_check with
+  | .error error => throw <| IO.userError s!"filter component rejected: {error.code}"
+  | .ok checked => verifyFilter checked
   match LeanRxExamples.NestLab.NestLab_check with
   | .error error => throw <| IO.userError s!"nested component rejected: {error.code}"
   | .ok checked => verifyNest checked
