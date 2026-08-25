@@ -29,6 +29,8 @@ def generateInto (directory : System.FilePath) : IO Unit := do
       emitComponent directory "NestLab.mjs" "Nest.graph.json" nest
       IO.FS.writeFile (directory / "leanrx_dom.mjs")
         (← IO.FS.readFile "runtime/leanrx_dom.mjs")
+      IO.FS.writeFile (directory / "leanrx_region.mjs")
+        (← IO.FS.readFile "runtime/leanrx_region.mjs")
 
 def generate (directory : System.FilePath) : IO Unit :=
   LeanRx.Cli.AtomicOutput.replaceDirectory directory generateInto

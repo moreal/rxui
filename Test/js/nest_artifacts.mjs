@@ -15,16 +15,16 @@ if (
   nestManifest.graphHash.length === 0 ||
   nestManifest.runtimeAbi !== 15 ||
   JSON.stringify(nestManifest.exports) !== JSON.stringify(["mount"]) ||
-  JSON.stringify(nestManifest.stateSlots) !== JSON.stringify(["int"]) ||
-  nestManifest.sourceCount !== 1 ||
+  JSON.stringify(nestManifest.stateSlots) !== JSON.stringify(["int", "int"]) ||
+  nestManifest.sourceCount !== 2 ||
   nestManifest.derivedCount !== 0 ||
   nestManifest.textSinkCount !== 1 ||
-  nestManifest.eventCount !== 1 ||
+  nestManifest.eventCount !== 2 ||
   JSON.stringify(nestManifest.hostImports) !==
-    JSON.stringify(["./leanrx_dom.mjs", "./Pulse.mjs"]) ||
+    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs", "./Pulse.mjs"]) ||
   JSON.stringify(nestManifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
-    "child-components",
+    "child-components", "keyed-regions",
   ])
 ) {
   throw new Error("generated Nest Lab manifest is invalid");
@@ -39,6 +39,7 @@ if (
     JSON.stringify(["./leanrx_dom.mjs"]) ||
   JSON.stringify(pulseManifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
+    "immutable-props",
   ])
 ) {
   throw new Error("generated Pulse manifest is invalid");
@@ -53,11 +54,24 @@ for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
 }
 for (const required of [
   "import { mount as $lrx_child_0 } from \"./Pulse.mjs\";",
-  "const child_off_0 = $lrx_child_0(node_0);",
-  "makeDisposer(node_0, [child_off_0, off_0], tx)",
+  "import { createKeyedRegion } from \"./leanrx_region.mjs\";",
+  "const child_off_0 = $lrx_child_0(node_0, [\"Pulse child\"]);",
+  "const region_0 = createKeyedRegion(node_9, $lrx_region_0_row, $lrx_region_0_update, $lrx_region_0_dispose);",
+  "const region_off_0 = listenDelegatedCells(node_9, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"remove\"]);",
+  "regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1])]);",
+  "setKey(row_0, item[0]);",
+  "makeDisposer(node_0, [child_off_0, off_0, off_1, region_off_0, region_0[\"dispose\"]], tx, [region_0])",
 ]) {
   if (!nestSource.includes(required)) {
     throw new Error(`generated Nest Lab is missing ${required}`);
+  }
+}
+for (const required of [
+  "function mount(target, props)",
+  "createText(props[0])",
+]) {
+  if (!pulseSource.includes(required)) {
+    throw new Error(`generated Pulse is missing ${required}`);
   }
 }
 if (pulseSource.includes("$lrx_child") || pulseSource.includes("Pulse.mjs")) {

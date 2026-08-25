@@ -11,6 +11,7 @@ const files = new Set([
   "NestLab.mjs",
   "Pulse.mjs",
   "leanrx_dom.mjs",
+  "leanrx_region.mjs",
 ]);
 let server;
 let origin;
@@ -52,16 +53,17 @@ async function mountNest(page) {
   });
 }
 
-test("the child component mounts inline in document order", async ({ page }) => {
+test("the child component mounts inline in document order with its prop", async ({ page }) => {
   await mountNest(page);
   await expect(page.locator("#nest-text")).toHaveText("Clicks: 0");
   await expect(page.locator("#pulse-text")).toHaveText("Beats: 0");
+  await expect(page.locator("#pulse-title")).toHaveText("Pulse child");
   const order = await page.evaluate(() =>
     Array.from(document.querySelector(".nest-lab").children).map((node) =>
       node.className || node.tagName.toLowerCase(),
     ),
   );
-  expect(order).toEqual(["h1", "button", "p", "pulse"]);
+  expect(order).toEqual(["h1", "button", "p", "button", "ul", "pulse"]);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });
@@ -77,10 +79,54 @@ test("parent and child state stay independent", async ({ page }) => {
   await expect(page.locator("#nest-text")).toHaveText("Clicks: 2");
 });
 
-test("disposing the parent disposes the child listeners and DOM", async ({ page }) => {
+test("the keyed roster appends rows with monotone labels", async ({ page }) => {
+  await mountNest(page);
+  await expect(page.locator("#roster > li")).toHaveCount(0);
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(page.locator("#roster > li .roster-label")).toHaveText([
+    "Item 0", "Item 1", "Item 2",
+  ]);
+});
+
+test("the row button removes exactly its own row through delegation", async ({ page }) => {
+  await mountNest(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  await page.locator("#roster > li").nth(1).getByRole("button", { name: "Remove row" }).click();
+  await expect(page.locator("#roster > li .roster-label")).toHaveText([
+    "Item 0", "Item 2",
+  ]);
+  await add.click();
+  await expect(page.locator("#roster > li .roster-label")).toHaveText([
+    "Item 0", "Item 2", "Item 3",
+  ]);
+});
+
+test("clicking row text dispatches no delegated action", async ({ page }) => {
+  await mountNest(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await page.locator("#roster > li .roster-label").first().click();
+  await page.locator("#roster").click();
+  await expect(page.locator("#roster > li")).toHaveCount(2);
+  const regionMetrics = await page.evaluate(() =>
+    globalThis.nestDispose.regionInstrumentation(),
+  );
+  expect(regionMetrics.length).toBe(1);
+  expect(regionMetrics[0][0]).toBe(2);
+});
+
+test("disposing the parent disposes the child, roster, and listeners", async ({ page }) => {
   await mountNest(page);
   await page.getByRole("button", { name: "Pulse" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
   await expect(page.locator("#pulse-text")).toHaveText("Beats: 1");
+  await expect(page.locator("#roster > li")).toHaveCount(1);
   await page.evaluate(() => {
     globalThis.pulseButton = document.querySelector(".pulse button");
     globalThis.nestDispose();
@@ -88,6 +134,7 @@ test("disposing the parent disposes the child listeners and DOM", async ({ page 
   });
   await expect(page.locator(".nest-lab")).toHaveCount(0);
   await expect(page.locator(".pulse")).toHaveCount(0);
+  await expect(page.locator("#roster")).toHaveCount(0);
   const stillAttached = await page.evaluate(() => {
     globalThis.pulseButton.dispatchEvent(new Event("click", { bubbles: true }));
     return document.contains(globalThis.pulseButton);

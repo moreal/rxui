@@ -44,8 +44,26 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
     throw <| IO.userError "child component table lost the nested Pulse reference"
   unless checked.spec.children.toList.map (·.moduleSpecifier) == ["./Pulse.mjs"] do
     throw <| IO.userError "child component table lost the module specifier convention"
-  unless checked.view.childRefs.map (fun ref => (ref.name, ref.path)) == [("Pulse", [3])] do
+  unless checked.view.childRefs.map (fun ref => (ref.name, ref.path)) == [("Pulse", [5])] do
     throw <| IO.userError "view split lost the mounted child reference"
+  unless checked.view.childRefs.map (·.props) == [[("title", "Pulse child")]] do
+    throw <| IO.userError "view split lost the immutable child prop bindings"
+  unless checked.spec.regions.toList.map (·.name) == ["roster"] do
+    throw <| IO.userError "region table lost the roster declaration"
+  unless checked.spec.regions.toList.map (·.fields) == [#["label"]] do
+    throw <| IO.userError "region table lost the row field inventory"
+  unless checked.spec.regions.toList.map
+      (fun region => region.events.toList.map (fun event => (event.name, event.action))) ==
+      [[("remove", .remove)]] do
+    throw <| IO.userError "region table lost the sealed row event vocabulary"
+  unless checked.view.regionRefs.map (fun ref => (ref.name, ref.path)) ==
+      [("roster", [4, 0])] do
+    throw <| IO.userError "view split lost the mounted region slot"
+  match checked.spec.events.toList.find? (·.name == "addItem") with
+  | none => throw <| IO.userError "region append event disappeared"
+  | some addItem =>
+      unless addItem.update.regionAppendTargets == [("roster", 1)] do
+        throw <| IO.userError "region append target or arity changed"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [
@@ -77,5 +95,10 @@ def run : IO Unit := do
   | .ok checked =>
       unless checked.spec.children.isEmpty && checked.view.childRefs.isEmpty do
         throw <| IO.userError "leaf child component unexpectedly nests children"
+      unless checked.spec.propNames == ["title"] do
+        throw <| IO.userError "child component lost its immutable prop table"
+      unless checked.view.propTexts.map (fun ref => (ref.path, ref.field)) ==
+          [([0, 0], 0)] do
+        throw <| IO.userError "child view lost its immutable prop text position"
 
 end LeanRxTest.Elab.Component
