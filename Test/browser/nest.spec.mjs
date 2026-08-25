@@ -121,6 +121,55 @@ test("clicking row text dispatches no delegated action", async ({ page }) => {
   expect(regionMetrics[0][0]).toBe(2);
 });
 
+test("the mark button updates exactly its own row through updateAt", async ({ page }) => {
+  await mountNest(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  const before = await page.evaluate(() =>
+    globalThis.nestDispose.regionInstrumentation()[0],
+  );
+  await page.locator("#roster > li").nth(0).getByRole("button", { name: "Mark row" }).click();
+  await expect(page.locator("#roster > li .roster-label")).toHaveText([
+    "Item 0 ★", "Item 1",
+  ]);
+  await expect(page.locator("#roster > li").nth(0)).toHaveClass("roster-row marked");
+  await expect(page.locator("#roster > li").nth(1)).toHaveClass("roster-row");
+  const after = await page.evaluate(() =>
+    globalThis.nestDispose.regionInstrumentation()[0],
+  );
+  // [mounts, updates, moves, disposals]: one mark is exactly one retained-row
+  // update (the updateAt path), never a mount, move, or disposal.
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1] + 1);
+  expect(after[2]).toBe(before[2]);
+  expect(after[3]).toBe(before[3]);
+  await page.locator("#roster > li").nth(0).getByRole("button", { name: "Mark row" }).click();
+  await expect(page.locator("#roster > li .roster-label")).toHaveText([
+    "Item 0 ★ ★", "Item 1",
+  ]);
+});
+
+test("marked rows keep their fields across structural reconciles", async ({ page }) => {
+  await mountNest(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  await page.locator("#roster > li").nth(1).getByRole("button", { name: "Mark row" }).click();
+  await page.locator("#roster > li").nth(0).getByRole("button", { name: "Remove row" }).click();
+  await expect(page.locator("#roster > li .roster-label")).toHaveText([
+    "Item 1 ★", "Item 2",
+  ]);
+  await expect(page.locator("#roster > li").nth(0)).toHaveClass("roster-row marked");
+  await add.click();
+  await expect(page.locator("#roster > li .roster-label")).toHaveText([
+    "Item 1 ★", "Item 2", "Item 3",
+  ]);
+  await expect(page.locator("#roster > li").nth(0)).toHaveClass("roster-row marked");
+  await expect(page.locator("#roster > li").nth(2)).toHaveClass("roster-row");
+});
+
 test("disposing the parent disposes the child, roster, and listeners", async ({ page }) => {
   await mountNest(page);
   await page.getByRole("button", { name: "Pulse" }).click();

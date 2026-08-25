@@ -2,16 +2,19 @@ import LeanRx
 
 /-! Nest Lab dogfoods static child-component composition (ADR-0039), immutable
 props across the mount ABI (ADR-0042), and the generic keyed region backend
-(ADR-0041). The `<Pulse title="…"/>` element inside the `NestLab` view resolves
-against the checked `Pulse_spec` in scope and lowers to a `View.child`
-reference whose prop values ride the child's `mount(target, props)` call, so
-the generated `NestLab.mjs` imports `mount` from `./Pulse.mjs`, mounts the
-child in document order without a wrapper element, and folds the child's
-disposer into its own. The `roster` region is a keyed list built entirely by
-the generic backend: `append roster (…)` pushes rows with region-owned
-monotone keys, the sealed row template projects the `label` field, and the row
-`✕` button resolves through one structural delegated listener on the `<ul>`
-container. Parent and child keep fully independent schemas, state, and
+(ADR-0041/0043/0044). The `<Pulse title="…"/>` element inside the `NestLab`
+view resolves against the checked `Pulse_spec` in scope and lowers to a
+`View.child` reference whose prop values ride the child's
+`mount(target, props)` call, so the generated `NestLab.mjs` imports `mount`
+from `./Pulse.mjs`, mounts the child in document order without a wrapper
+element, and folds the child's disposer into its own. The `roster` region is a
+keyed list built entirely by the generic backend: `append roster (…)` pushes
+rows with region-owned monotone keys, the sealed row template renders the
+concatenation `{label ++ marks}` and selects the row class from the `marks`
+field, the row `★` button mutates the dispatching row through the sealed
+`mark` update action (one `updateAt` on commit), and the row `✕` button
+removes it — both resolved through one structural delegated listener on the
+`<ul>` container. Parent and child keep fully independent schemas, state, and
 events. -/
 
 namespace LeanRxExamples.NestLab
@@ -45,13 +48,18 @@ component NestLab (schema := NestSchema) where {
   state clicks : Int := 0;
   state added : Int := 0;
   event bump := set clicks (clicks + 1);
-  event addItem := append roster (s!"Item {added}") then set added (added + 1);
-  region roster (label) := jsx% <li class="roster-row"> [
-    <span class="roster-label"> [{label}],
-    <span class="roster-actions"> [
-      <button type="button" ariaLabel="Remove row" onClick={remove}> ["✕"]
-    ]
-  ];
+  event addItem := append roster (s!"Item {added}", "") then set added (added + 1);
+  row roster mark := set marks (marks ++ " ★");
+  region roster (label, marks) := jsx%
+    <li class={if marks == "" then "roster-row" else "roster-row marked"}> [
+      <span class="roster-label"> [{label ++ marks}],
+      <span class="roster-mark"> [
+        <button type="button" ariaLabel="Mark row" onClick={mark}> ["★"]
+      ],
+      <span class="roster-actions"> [
+        <button type="button" ariaLabel="Remove row" onClick={remove}> ["✕"]
+      ]
+    ];
   view := jsx% <main class="nest-lab"> [
     <h1> ["Nest Lab"],
     <button type="button" onClick={bump}> ["Bump"],

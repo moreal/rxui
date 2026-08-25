@@ -57,9 +57,20 @@ for (const required of [
   "import { createKeyedRegion } from \"./leanrx_region.mjs\";",
   "const child_off_0 = $lrx_child_0(node_0, [\"Pulse child\"]);",
   "const region_0 = createKeyedRegion(node_9, $lrx_region_0_row, $lrx_region_0_update, $lrx_region_0_dispose);",
-  "const region_off_0 = listenDelegatedCells(node_9, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"remove\"]);",
-  "regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1])]);",
+  "const region_off_0 = listenDelegatedCells(node_9, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"mark\", \"remove\"]);",
+  "regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1]), $lrx_event_1_append_0_1(state[0], state[1])]);",
   "setKey(row_0, item[0]);",
+  "const regions = [[region_0, [], 0, false, []]];",
+  // ADR-0043: the mark dispatch mutates the retained item in place and the
+  // commit sweep drains exactly the pending positions through updateAt.
+  "const row_next_0 = row_item[2] + \" ★\";",
+  "regions[0][4][\"push\"](scan[1]);",
+  "regions[0][0][\"updateAt\"](pending_row, regions[0][1][pending_row], null);",
+  // ADR-0043/0044: the retained-row update callback re-renders the sealed
+  // expression text and the class selection by structural navigation.
+  "function $lrx_region_0_update(row, item, position, context) {",
+  "  setAttribute(row, \"class\", item[2] === \"\" ? \"roster-row\" : \"roster-row marked\");",
+  "  setText(childAt(childAt(row, 0), 0), item[1] + item[2]);",
   "makeDisposer(node_0, [child_off_0, off_0, off_1, region_off_0, region_0[\"dispose\"]], tx, [region_0])",
 ]) {
   if (!nestSource.includes(required)) {

@@ -50,19 +50,27 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
     throw <| IO.userError "view split lost the immutable child prop bindings"
   unless checked.spec.regions.toList.map (·.name) == ["roster"] do
     throw <| IO.userError "region table lost the roster declaration"
-  unless checked.spec.regions.toList.map (·.fields) == [#["label"]] do
+  unless checked.spec.regions.toList.map (·.fields) == [#["label", "marks"]] do
     throw <| IO.userError "region table lost the row field inventory"
   unless checked.spec.regions.toList.map
       (fun region => region.events.toList.map (fun event => (event.name, event.action))) ==
-      [[("remove", .remove)]] do
+      [[("remove", .remove),
+        ("mark", .update [(1, .append (.field 1) (.lit " ★"))])]] do
     throw <| IO.userError "region table lost the sealed row event vocabulary"
+  unless checked.spec.regions.toList.map (fun region =>
+      match region.template with
+      | .element _ _ _ _ _ classIf =>
+          classIf.map fun select =>
+            (select.field, select.equals, select.whenTrue, select.whenFalse)
+      | _ => []) == [[(1, "", "roster-row", "roster-row marked")]] do
+    throw <| IO.userError "region table lost the sealed class selection"
   unless checked.view.regionRefs.map (fun ref => (ref.name, ref.path)) ==
       [("roster", [4, 0])] do
     throw <| IO.userError "view split lost the mounted region slot"
   match checked.spec.events.toList.find? (·.name == "addItem") with
   | none => throw <| IO.userError "region append event disappeared"
   | some addItem =>
-      unless addItem.update.regionAppendTargets == [("roster", 1)] do
+      unless addItem.update.regionAppendTargets == [("roster", 2)] do
         throw <| IO.userError "region append target or arity changed"
 
 def run : IO Unit := do
