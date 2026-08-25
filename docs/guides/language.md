@@ -191,6 +191,54 @@ parent's generated module imports and mounts `./EchoMini.mjs` in document
 order with fully independent state and disposal. A capitalized head without a
 matching `_spec` keeps its ordinary meaning as a typed view-term application.
 
+A `region` item declares a keyed list with a sealed row template (ADR-0040,
+ADR-0041): rows are `String` tuples behind region-owned monotone keys,
+`{field}` children project row fields, and `onClick={remove}` binds the sealed
+`remove` row action, which lowers to one structural delegated listener on the
+region's container. `<region name/>` mounts the region as the only child of
+its container element, and the `append name (expr, …)` event step pushes a row
+whose field values are staged over component state:
+
+```lean
+component RosterMini (schema := RosterMiniSchema) where {
+  state added : Int := 0;
+  event addItem := append roster (s!"Item {added}") then set added (added + 1);
+  region roster (label) := jsx% <li> [
+    <span> [{label}],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
+The delegated button must sit strictly inside a row cell (a direct child of
+the row root) so the dispatcher can resolve the action from row structure —
+`LRX-VIEW-027` rejects a button that is itself a cell. Row-scope staged
+expressions are not yet available: dynamic row content is limited to sealed
+field projections, and rows are immutable after mount.
+
+A `prop` item declares an immutable `String` input that the parent supplies
+through the mount ABI (ADR-0042): the child renders it with a `{title}` text
+child, its module's signature becomes `mount(target, props)`, and a parent
+passes values as literal attributes — `<TitledMini title="Hello"/>` — which
+must match the child's declared prop names and order exactly
+(`LRX-ELAB-112` otherwise):
+
+```lean
+component TitledMini (schema := TitledMiniSchema) where {
+  state clicks : Int := 0;
+  prop title : String;
+  event bump := set clicks (clicks + 1);
+  view := jsx% <main> [
+    <h1> [{title}],
+    <button type="button" onClick={bump}> ["Bump"]
+  ];
+}
+```
+
 ```lean
 component CounterExplicitSyntax (schema := CounterSchema) where {
   state count := ValueSpec.state count (.int 1);

@@ -101,6 +101,52 @@ component NestMini (schema := NestMiniSchema) where {
   ];
 }
 
+/- The keyed region snippet from guide section 7 (ADR-0040/0041). -/
+abbrev RosterMiniSchema : Schema := .field "added" Int .empty
+
+def added : Field RosterMiniSchema Int := .here
+
+component RosterMini (schema := RosterMiniSchema) where {
+  state added : Int := 0;
+  event addItem := append roster (s!"Item {added}") then set added (added + 1);
+  region roster (label) := jsx% <li> [
+    <span> [{label}],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
+/- The immutable-prop snippets from guide section 7 (ADR-0042). -/
+abbrev TitledMiniSchema : Schema := .field "titledClicks" Int .empty
+
+def titledClicks : Field TitledMiniSchema Int := .here
+
+component TitledMini (schema := TitledMiniSchema) where {
+  state titledClicks : Int := 0;
+  prop title : String;
+  event bump := set titledClicks (titledClicks + 1);
+  view := jsx% <main> [
+    <h1> [{title}],
+    <button type="button" onClick={bump}> ["Bump"]
+  ];
+}
+
+abbrev PropNestMiniSchema : Schema := .field "hosts" Int .empty
+
+def hosts : Field PropNestMiniSchema Int := .here
+
+component PropNestMini (schema := PropNestMiniSchema) where {
+  state hosts : Int := 0;
+  event host := set hosts (hosts + 1);
+  view := jsx% <main> [
+    <button type="button" onClick={host}> ["Host"],
+    <TitledMini title="Hello"/>
+  ];
+}
+
 def run : IO Unit := do
   unless doubled.dependencies.ids == [0] && countText.dependencies.ids == [0] do
     throw <| IO.userError "language-guide expression dependencies changed"
@@ -127,5 +173,19 @@ def run : IO Unit := do
         throw <| IO.userError "language-guide nesting snippet lost its child table"
   | .error error =>
       throw <| IO.userError s!"language-guide nested component rejected: {error.render}"
+  match RosterMini_check with
+  | .ok roster =>
+      unless roster.spec.regions.toList.map (·.name) == ["roster"] &&
+          roster.view.regionRefs.map (·.name) == ["roster"] do
+        throw <| IO.userError "language-guide region snippet lost its region table"
+  | .error error =>
+      throw <| IO.userError s!"language-guide region component rejected: {error.render}"
+  match TitledMini_check, PropNestMini_check with
+  | .ok titled, .ok host =>
+      unless titled.spec.propNames == ["title"] &&
+          host.view.childRefs.map (·.props) == [[("title", "Hello")]] do
+        throw <| IO.userError "language-guide prop snippets lost their bindings"
+  | .error error, _ | _, .error error =>
+      throw <| IO.userError s!"language-guide prop component rejected: {error.render}"
 
 end LeanRxTest.Docs.LanguageGuide

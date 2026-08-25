@@ -94,6 +94,71 @@ def run : IO Unit := do
     { spec with view := (View.node .button [.text "Bad"]
         (props := [.value countText])) }
   expectError "LRX-VIEW-020" reflectOnButton.check
+  let rowTemplate : RowNode := RowNode.node .li [
+    RowNode.node .span [RowNode.fieldText 0],
+    RowNode.node .span [RowNode.node .button [RowNode.text "x"]
+      (attrs := [.buttonType .button])
+      (events := [{ kind := .click, eventName := "remove" }])]
+  ]
+  let rosterRegion : RegionSpec := {
+    name := "r"
+    fields := #["label"]
+    template := rowTemplate
+    events := #[{ name := "remove", action := .remove }]
+  }
+  let regionView : View CounterSchema := View.node .main [View.node .ul [View.region "r"]]
+  let goodRegion : ComponentSpec CounterSchema :=
+    { spec with view := regionView, regions := #[rosterRegion] }
+  match goodRegion.check with
+  | .error error =>
+      throw <| IO.userError s!"forged keyed region rejected: {error.code}"
+  | .ok checked =>
+      unless checked.view.regionRefs.map (·.path) == [[0, 0]] do
+        throw <| IO.userError "forged keyed region lost its mounted slot"
+  let unknownRegion : ComponentSpec CounterSchema :=
+    { spec with view := regionView }
+  expectError "LRX-VIEW-025" unknownRegion.check
+  let unmountedRegion : ComponentSpec CounterSchema :=
+    { spec with regions := #[rosterRegion] }
+  expectError "LRX-VIEW-025" unmountedRegion.check
+  let outOfBoundsField : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.fieldText 1] }] }
+  expectError "LRX-VIEW-026" outOfBoundsField.check
+  let buttonAsCell : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.node .button [RowNode.text "x"]
+          (attrs := [.buttonType .button])
+          (events := [{ kind := .click, eventName := "remove" }])] }] }
+  expectError "LRX-VIEW-027" buttonAsCell.check
+  let unknownRowEvent : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with events := #[] }] }
+  expectError "LRX-VIEW-028" unknownRowEvent.check
+  let regionWithSibling : ComponentSpec CounterSchema :=
+    { goodRegion with view := View.node .main [
+        View.node .ul [View.region "r", View.text "sibling"]] }
+  expectError "LRX-VIEW-029" regionWithSibling.check
+  let appendUnknownRegion : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "badAppend"
+        update := .regionAppend "ghost" [RowValue.of (RxExpr.literal (.string "x"))]
+      }] }
+  expectError "LRX-TYPE-109" appendUnknownRegion.check
+  let appendWrongArity : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "fatAppend"
+        update := .regionAppend "r" [
+          RowValue.of (RxExpr.literal (.string "x")),
+          RowValue.of (RxExpr.literal (.string "y"))
+        ]
+      }] }
+  expectError "LRX-TYPE-110" appendWrongArity.check
+  let danglingPropText : ComponentSpec CounterSchema :=
+    { spec with view := View.node .p [View.propText 0] }
+  expectError "LRX-VIEW-030" danglingPropText.check
+  let duplicatePropNames : ComponentSpec CounterSchema :=
+    { spec with props := #[{ name := "t" }, { name := "t" }] }
+  expectError "LRX-VIEW-030" duplicatePropNames.check
   let cycle : ComponentSpec (.field "a" Int <| .field "b" Int .empty) :=
     { name := "Cycle"
       values := #[
