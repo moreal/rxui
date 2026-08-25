@@ -1016,3 +1016,69 @@ child mounts through the generic component backend`,
 `example(echo): make Echo Lab a controlled form`,
 `example(nest): nest a stateful Pulse child in Nest Lab`, and
 `docs(adr): sketch the App IR generalization of Backend.Todo (ADR-0040)`.
+
+## Keyed regions and immutable props — Nest Lab roster
+
+### Scenario exercised
+
+Nest Lab grew a keyed list written entirely in the `component` command
+(ADR-0040 stage 1, ADR-0041): `region roster (label) := jsx% <li> […]`
+declares a sealed row template projecting `{label}`, `append roster
+(s!"Item {added}")` pushes rows with region-owned monotone keys inside the
+ordinary transaction shell, `<region roster/>` mounts the region as the only
+child of its `<ul>`, and the per-row `✕` button binds the sealed `remove`
+action through one `listenDelegatedCells` listener resolved by row structure.
+Pulse simultaneously became a configured child (ADR-0042): `prop title :
+String;` plus a `{title}` heading in the child, `<Pulse title="Pulse child"/>`
+in the parent, and the value crossing as `mount(target, ["Pulse child"])`.
+Chromium gates append order, removal of exactly the dispatching row, key
+monotonicity after removal, no-op clicks on row text, prop rendering, and
+disposal of region, child, and listeners together.
+
+### What was pleasant
+
+Every host export needed — `createKeyedRegion`, `listenDelegatedCells`,
+`setKey` — already existed at ABI 15, so the round again shipped with no
+runtime edit. Deciding the row-scope question as a sealed binder (projections
+plus a closed action vocabulary) kept `RxExpr`, `DepSet`, and the propagation
+proofs completely untouched while still deleting the `data-lrx-action`
+pattern: the cell action array falls out of the validated template shape.
+Region-owned keys dissolved the uniqueness question — no user key expression
+exists, so LRX-REGION-001 holds by construction and the ADR-0027 monotone
+fast path is automatic. The dirty-flag commit sweep slotted into the existing
+transaction shell after the prop sweep without disturbing any tx slot, and
+`makeDisposer`'s long-idle `regions` parameter finally carries generic
+handles, exposing region instrumentation for free.
+
+### Friction
+
+The structural-delegation contract (the action element must sit strictly
+inside a row cell) is easy to trip over — a `✕` button that *is* the cell
+dispatches nothing at runtime — so LRX-VIEW-027 rejects it at compile time
+and the guide spells out the required nesting. Two new quasiquote match arms
+pushed the single command elaborator past both the elaboration and LCNF
+heartbeat budgets; the fix was `getKind` dispatch into helper functions plus
+one scoped `set_option maxHeartbeats`. The audit's one-name-per-failure
+reporting made registering ~20 new `_unsafe_rec`/`injEq` entries a scripted
+loop rather than a single diff. Axe caught an h1→h3 heading skip in the
+first Pulse title. `<region roster/>` needed its own grammar alternative
+because a lowercase self-closing element otherwise lowers through the closed
+tag whitelist.
+
+### Bugs found
+
+One packaging gap rather than a framework defect: the Nest build driver did
+not copy `runtime/leanrx_region.mjs` beside the emitted modules, so the first
+artifact run failed on module resolution. Byte identity held on the first
+try for all eleven non-region dists.
+
+### Follow-up issue or commit
+
+`feat(component): bind keyed regions through sealed row binders (ADR-0040,
+ADR-0041)`, `feat(component): pass immutable child props across the mount ABI
+(ADR-0042)`, `example(nest): dogfood the keyed roster and the Pulse title
+prop`, and the ADR-0040 TodoMVC migration gate list. Remaining gaps carried
+forward: row-scope staged expressions (rows stay immutable, projections
+only), `disabled` reflection still bespoke-only, transforming reflections
+move the caret to the end (documented), and child instrumentation stays
+unreachable through the parent disposer.
