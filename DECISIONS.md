@@ -49,7 +49,8 @@
 | [0045](docs/adr/0045-filter-region-as-static-view-selection.md) | Accepted | Express TodoMVC's filter row as static view with state-scoped selection | 2026-08-25 |
 | [0046](docs/adr/0046-typed-row-event-payloads.md) | Accepted | Deliver typed row event payloads through structural delegation | 2026-08-25 |
 | [0047](docs/adr/0047-sealed-row-branch-structure.md) | Accepted | Select conditional row structure through a sealed row branch cell | 2026-08-25 |
-| [0048](docs/adr/0048-row-focus-vocabulary.md) | Proposed | Focus fresh row branch inputs through an explicit marker and host export | 2026-08-25 |
+| [0048](docs/adr/0048-row-focus-vocabulary.md) | Accepted | Focus fresh row branch inputs through an explicit marker and host export | 2026-08-25 |
+| [0049](docs/adr/0049-row-dblclick-and-checked-delegation.md) | Proposed | Extend the delegated row kinds with dblclick and checkbox toggles | 2026-08-25 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
