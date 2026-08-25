@@ -1149,3 +1149,89 @@ bar; also closes `disabled`), `s!` interpolation absent from row scope
 (`++` only), one class selection per element with a single-field equality
 predicate, and child instrumentation still unreachable through the parent
 disposer.
+
+## Attribute selection and typed row payloads — Filter Lab and roster editing
+
+### Scenario exercised
+
+Two of the carried gaps closed in one round, both without touching the
+runtime. A new Filter Lab example ships ADR-0045's state-scoped attribute
+selection: the TodoMVC-shaped filter row is plain static view — three
+buttons whose `class` and `aria-pressed` follow
+`class={if filter == "all" then "selected" else ""}` /
+`ariaPressed={filter == "all"}` sealed selections, plus a Reset button whose
+`disabled` property reflects `filter == "all"` — all seven selections
+joining the commit sweep beside text sinks and reflected properties with the
+evaluate-compare-write shape and appearing as `attr:{i}:{name}` sinks in the
+planned graph. Nest Lab's roster rows gained an edit input driven by
+ADR-0046 typed row payloads: `row roster rename (value : String) := set
+label value;` consumes the delegated `input` value and
+`row roster record (pressed : String) := set lastKey ("key:" ++ pressed);`
+the delegated `keydown` key, through one `listenDelegatedCells` listener per
+bound kind with kind-separated per-cell action arrays. ADR-0047 records the
+decision draft for the next gap — conditional row structure (edit input vs
+label) as a sealed two-branch row cell.
+
+### What was pleasant
+
+Both features were assembly, not invention. The attribute selection is
+exactly a reflected property with a compiler-owned name and a sealed
+predicate: the same anyChanged guard, the same cache-compare-write shape,
+the same tx[8]/tx[9] counters, and `Field Γ String` in the selection
+constructors makes a cross-typed predicate a plain Lean type error before
+any validator runs. The `disabled`-as-property decision fell out of the
+platform (a `disabled` attribute cannot be cleared by assignment) and
+`setProperty` was already imported machinery. On the row side,
+`listenDelegatedCells` had been passing `value` and `key` to every dispatch
+since ABI 15 — the whole feature was a `RowExpr.payload` constructor, a
+`takesPayload` flag, and per-kind action arrays; the browser gate then
+showed retained rows keep their input's typed value and caret through the
+updateAt re-render for free, because the update callback never navigates to
+the input.
+
+### Friction
+
+`key` is a reserved surface keyword (the jsx keyed-list binder), so the
+natural `row roster record (key : String)` fails to parse and the parameter
+had to be named `pressed`; the guide and LRX-ELAB-117 now spell the
+restriction out. The delegated payload class is chosen by the template
+binding kind, which forces the bound-exactly-once rule for typed row events
+— a declaration-site payload class would lift it but would diverge from the
+component-level typed events, which serve both `value` and `key` bindings
+from one declaration. Kind-separated action arrays exist because a click
+inside the input's cell would otherwise resolve the input's action with a
+click payload. Region instrumentation counts a retained-row reposition
+during append reconciles as a move, so the typing gate asserts deltas
+rather than absolute move counts.
+
+### Bugs found
+
+No framework defect: byte identity held for all eleven non-region dists
+(module, manifest, and graph bytes) on the first diff, and every new
+browser gate passed on its first run after the parser fix above. The one
+test bug was the absolute-move-count assertion corrected to deltas.
+
+### Performance observations
+
+The Filter Lab defining transition (all → active) records exactly seven
+selection evaluations and five writes — the Completed button's equal values
+and the sweep's cache guard make the difference observable — and
+reselecting the active filter records zero selection evaluations, zero DOM
+writes, one commit. Each roster keystroke is two transactions (keydown then
+input), each draining exactly one retained-row `updateAt` with zero mounts,
+moves, or disposals. These are deterministic work counters, not a timing
+claim; BENCHMARK.md numbers are untouched by this round.
+
+### Follow-up issue or commit
+
+`feat(component): select state-scoped attributes and typed row payloads
+(ADR-0045, ADR-0046)`, `example(filter): dogfood the state-scoped filter
+row`, `example(nest): edit roster rows through typed payloads`, and
+`docs(adr): draft the sealed row branch cell (ADR-0047)`. Remaining gaps
+carried forward: conditional structure inside rows (ADR-0047 confirmation
+bar — includes focus transfer and the replace-shaped host call question),
+`s!` interpolation absent from row scope (`++` only), attribute selection
+limited to one per attribute per element with a single-field `String`
+equality predicate, row inputs uncontrolled (no row-field `value`
+reflection), and child instrumentation still unreachable through the parent
+disposer.
