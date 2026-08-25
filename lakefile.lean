@@ -69,6 +69,7 @@ lean_lib LeanRxExamples where
     `examples.Counter, `examples.CounterBuild,
     `examples.DiamondLab, `examples.DiamondLabBuild,
     `examples.EchoLab, `examples.EchoLabBuild,
+    `examples.FilterLab, `examples.FilterLabBuild,
     `examples.NestLab, `examples.NestLabBuild, `examples.DependentTabs,
     `examples.DependentTabsBuild, `examples.TemperatureConverter,
     `examples.TemperatureConverterBuild, `examples.ValidatedForm,
@@ -108,6 +109,9 @@ lean_exe leanrx_echo_js where
 
 lean_exe leanrx_nest_js where
   root := `examples.NestLabMain
+
+lean_exe leanrx_filter_js where
+  root := `examples.FilterLabMain
 
 lean_exe leanrx_tabs_js where
   root := `examples.DependentTabsMain
