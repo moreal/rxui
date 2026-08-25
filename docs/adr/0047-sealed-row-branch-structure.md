@@ -1,6 +1,6 @@
 # ADR-0047: Conditional structure inside keyed rows (edit input vs label)
 
-- Status: Proposed (decision draft)
+- Status: Accepted
 - Date: 2026-08-25
 
 ## Context
@@ -15,7 +15,7 @@ row's element structure is fixed at elaboration time. Row scope still cannot
 observe component state, so the editing flag must live in a row field, as
 TodoMVC's `editing` already effectively does per item.
 
-## Decision (draft)
+## Decision
 
 Adopt a sealed **row branch cell** and reject the alternatives:
 
@@ -31,38 +31,65 @@ Adopt a sealed **row branch cell** and reject the alternatives:
    row identity retention during reorder — the retained-input-and-focus
    behavior the TodoMVC browser gate pins — and reopens the sealed-binder
    question by needing the edited row's fields in component scope.
-3. **Sealed row branch cell — adopted direction.** A row cell may be a
-   two-branch selection mirroring ADR-0044 one level up:
-   `{if field == "literal" then <template…/> else <template…/>}` lowers to a
+3. **Sealed row branch cell — adopted.** A row cell may be a two-branch
+   selection mirroring ADR-0044 one level up:
+   `{if field == "literal" then <template…/> else <template…/>}` lowers to
    `RowNode.branch` carrying one row field index, one comparison literal,
-   and two statically sealed subtrees. Both branches are fixed at
-   elaboration; the branch node occupies exactly one cell position, so the
-   ADR-0046 per-kind cell action arrays stay index-stable, with each kind's
-   action for that cell drawn from whichever branch binds it (the other
-   branch must bind the same or no action for that kind — checked). The row
-   mount renders the branch selected by the initial fields; the retained-row
-   update callback re-evaluates the predicate, compares it against the
-   rendered branch (a compiler-owned marker on the cell node, in the
-   `setKey`/`$lrxKey` style), and replaces the cell's subtree only on a
-   branch change — the ADR-0043 navigate-and-write shape plus one
-   `replaceChild`-shaped host call.
+   and two statically sealed subtrees. Branch cells sit only directly under
+   the row root and never nest (`LRX-VIEW-034`, enforced by the depth rule),
+   and both subtrees are sealed template elements fixed at elaboration.
 
-## Open questions the implementation must settle
+The implementation settled the draft's open questions as follows.
 
-- Whether `replaceChild` semantics need a new host export or compose from
-  existing `append`/removal primitives (the ABI-freeze bar of this round's
-  siblings should hold if possible).
-- Focus transfer into a newly mounted edit input (the bespoke Todo focuses
-  the input on entry; the generic backend has no focus vocabulary yet).
-- Whether branch-local delegated bindings may *differ* per branch and kind,
-  or must agree exactly — the draft requires agreement to keep the action
-  arrays static.
+**Replacement composes from existing primitives — no host export, ABI 15
+unchanged.** The branch cell mounts as one wrapper `span` holding the
+selected subtree, so the cell keeps exactly one row-root child index and the
+ADR-0046 per-kind cell action arrays stay index-stable. The emitter shares
+one builder function per branch
+(`$lrx_region_{r}_branch_{b}_t`/`_f`) between the row mount conditional and
+the update callback; the retained-row update callback re-evaluates the
+predicate against the wrapper's compiler-owned `$lrxBranch` marker property
+(written through the existing `setProperty` export, in the `setKey`/
+`$lrxKey` style), updates the stable branch in place by ADR-0043
+navigate-and-write, and on a branch change performs one
+`detach(childAt(cell, 0))` plus one `append(cell, freshBranch)` — `detach`
+was already exported by `runtime/leanrx_region.mjs` for the region hosts, so
+no new host export and no runtime ABI bump were needed. Components without
+branch cells emit byte-identical modules, manifests, and graphs.
 
-## Confirmation bar
+**Cross-branch delegated bindings must agree per kind and cell.** The
+delegated action arrays are static, so for each branch cell and delegated
+kind both branches must bind the same row event, or the unbound branch must
+be statically unable to originate that kind: a one-branch `click` binding is
+always rejected (any content of the other branch bubbles a click into the
+cell), a one-branch `input` binding requires the other branch to contain no
+`input` element, and a one-branch `keydown` binding requires it to contain
+no `input` or `button` element (the only focusable tags in the sealed
+template whitelist). All violations report `LRX-VIEW-034`. A typed row
+event still must be bound exactly once in the whole template
+(`LRX-VIEW-033`), so a payload-taking event lives in exactly one branch.
 
-This draft is confirmed (Status → Accepted) when a follow-up round ships the
-sealed row branch cell through the generic backend with a browser gate that
-mirrors TodoMVC's edit/view transition — enter editing, type through the
-ADR-0046 payload, commit, and observe the label branch return with retained
-row identity; it is revised instead if the implementation shows the
-always-mounted alternative or a new host primitive is unavoidable.
+**Row value reflection reuses the WHATWG equal-value caret no-op.** A row
+`input` may reflect one sealed row expression into its `value` property
+(`RowReflect`, surface `value={draft}`; inputs only, at most one per
+element, `LRX-VIEW-035`). The reflection writes at branch mount and in the
+stable-branch update arm; a row update driven by the input's own delegated
+payload writes back the string the input already holds, and the WHATWG
+equal-value assignment preserves the caret — the ADR-0038 controlled-input
+finding reused in row scope. This lets the edit branch open pre-filled with
+the current draft.
+
+**Focus transfer stays a recorded gap.** The generic backend still has no
+focus vocabulary, so entering the edit branch does not focus the fresh
+input the way the bespoke Todo does; ADR-0048 records the decision draft.
+
+## Confirmation
+
+Confirmed by the Branch Lab round: the sealed branch cell ships through the
+generic backend (`RowNode.branch` → wrapper cell, builder functions, marked
+replacement), and the Branch Lab browser gate mirrors TodoMVC's edit/view
+transition — enter editing, type through the ADR-0046 payload with the
+caret preserved mid-text, commit, and observe the label branch return with
+retained row identity (the same `li` node) and update-only region
+instrumentation. Neither rejected alternative was needed: no always-mounted
+branch and no new host primitive.
