@@ -547,8 +547,8 @@ private def validateChildComponents (spec : ComponentSpec Γ)
 /- Row events bound anywhere inside one row-template subtree. -/
 mutual
   private def rowEventCount : RowNode → Nat
-    | .element _ _ events children _ => events.length + rowEventCountChildren children
-    | .text _ _ | .fieldText _ _ => 0
+    | .element _ _ events children _ _ => events.length + rowEventCountChildren children
+    | .text _ _ | .fieldText _ _ | .exprText _ _ => 0
 
   private def rowEventCountChildren : RowChildren → Nat
     | .nil => 0
@@ -562,9 +562,18 @@ descendant. -/
 mutual
   private def validateRowNode (region : RegionSpec) (depth : Nat) :
       RowNode → Except ComponentError Unit
-    | .element tag attrs events children span => do
-        if duplicate? (attrs.map StaticAttr.name) then
+    | .element tag attrs events children span classIf => do
+        /- A class selection counts as the element's `class` attribute, so a
+        static `class` beside one (or two selections) duplicates (ADR-0044). -/
+        if duplicate? (attrs.map StaticAttr.name ++ classIf.map fun _ => "class") then
           throw { code := "LRX-VIEW-001", message := "element has duplicate static attributes", spans := #[span] }
+        for select in classIf do
+          unless select.field < region.fields.size do
+            throw {
+              code := "LRX-VIEW-026"
+              message := s!"class selection projects field {select.field} outside region {region.name}'s {region.fields.size} field(s)"
+              spans := #[select.span]
+            }
         if duplicate? (events.map fun event => event.kind.name) then
           throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
         for event in events do
@@ -602,6 +611,14 @@ mutual
             message := s!"row template projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
             spans := #[span]
           }
+    | .exprText value span => do
+        for field in value.fieldRefs do
+          unless field < region.fields.size do
+            throw {
+              code := "LRX-VIEW-026"
+              message := s!"row expression projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
+              spans := #[span]
+            }
 
   private def validateRowChildren (region : RegionSpec) (depth : Nat) :
       RowChildren → Except ComponentError Unit
@@ -670,8 +687,38 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
         message := s!"region {region.name} row event names must be nonempty and unique"
         spans := #[region.span]
       }
+    /- Row update actions (ADR-0043): nonempty simultaneous assignments over
+    distinct in-bounds targets, reading only in-bounds row fields. -/
+    for event in region.events do
+      if let .update assignments := event.action then
+        if assignments.isEmpty then
+          throw {
+            code := "LRX-VIEW-031"
+            message := s!"row event {event.name} of region {region.name} updates no field"
+            spans := #[event.span]
+          }
+        if duplicate? (assignments.map (toString ·.1)) then
+          throw {
+            code := "LRX-VIEW-031"
+            message := s!"row event {event.name} of region {region.name} assigns one field twice"
+            spans := #[event.span]
+          }
+        for (target, value) in assignments do
+          unless target < region.fields.size do
+            throw {
+              code := "LRX-VIEW-031"
+              message := s!"row event {event.name} writes field {target} outside region {region.name}'s {region.fields.size} field(s)"
+              spans := #[event.span]
+            }
+          for field in value.fieldRefs do
+            unless field < region.fields.size do
+              throw {
+                code := "LRX-VIEW-031"
+                message := s!"row event {event.name} reads field {field} outside region {region.name}'s {region.fields.size} field(s)"
+                spans := #[event.span]
+              }
     match region.template with
-    | .element _ _ events cells _ => do
+    | .element _ _ events cells _ _ => do
         unless events.isEmpty do
           throw {
             code := "LRX-VIEW-027"

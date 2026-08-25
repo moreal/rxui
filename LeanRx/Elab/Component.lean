@@ -53,6 +53,8 @@ scoped syntax (name := leanrxItemProp)
   atomic(ident ident ":" ident ";") : leanrxComponentItem
 scoped syntax (name := leanrxItemRegion)
   atomic(ident ident "(" ident,* ")" ":=") term ";" : leanrxComponentItem
+scoped syntax (name := leanrxItemRowEvent)
+  atomic(ident ident ident ":=") sepBy1(term, " then ") ";" : leanrxComponentItem
 scoped syntax (name := leanrxItemValue)
   atomic(ident ident ":=") sepBy1(term, " then ") ";" : leanrxComponentItem
 scoped syntax (name := leanrxItemView)
@@ -78,9 +80,9 @@ private def roleName (role : Ident) : String :=
 
 private def checkRole (role : Ident) : CommandElabM String := do
   let name := roleName role
-  unless ["state", "derived", "event", "view", "region", "prop"].contains name do
+  unless ["state", "derived", "event", "view", "region", "row", "prop"].contains name do
     throwErrorAt role
-      s!"error[LRX-ELAB-003]: unknown component item role {name}; expected state, derived, event, region, prop, or view"
+      s!"error[LRX-ELAB-003]: unknown component item role {name}; expected state, derived, event, region, row, prop, or view"
   pure name
 
 private def scalarLiteralTerm (ty : Ident) (value : TSyntax `term) :
@@ -168,10 +170,54 @@ private def rowAttrTerm (attr : Syntax) : CommandElabM (TSyntax `term) := do
   | `(leanrxJsxAttr| $_:ident = { $_:term }) =>
       throwErrorAt attr
         "error[LRX-ELAB-114]: row templates support static attributes and row event references only"
-  | `(leanrxJsxAttr| class = { $_:term }) | `(leanrxJsxAttr| type = { $_:term }) =>
+  | `(leanrxJsxAttr| type = { $_:term }) =>
       throwErrorAt attr
         "error[LRX-ELAB-114]: row templates support static attributes and row event references only"
   | _ => `(leanrx_jsx_attr% $attrStx)
+
+private def renderFields (fields : List String) : String :=
+  String.intercalate ", " fields
+
+/-- Lower one sealed row expression (ADR-0043): bare row fields, string
+literals, and `++` concatenation — nothing else enters row scope. -/
+private partial def rowExprTerm (fields : List String) (value : TSyntax `term) :
+    CommandElabM (TSyntax `term) := do
+  match value with
+  | `($first:term ++ $second:term) => do
+      let firstTerm ← rowExprTerm fields first
+      let secondTerm ← rowExprTerm fields second
+      `(LeanRx.RowExpr.append $firstTerm $secondTerm)
+  | `(($inner:term)) => rowExprTerm fields inner
+  | `($lit:str) => `(LeanRx.RowExpr.lit $lit)
+  | `($name:ident) =>
+      match fields.idxOf? name.getId.eraseMacroScopes.toString with
+      | some index =>
+          let indexLit := Syntax.mkNumLit (toString index)
+          `(LeanRx.RowExpr.field $indexLit)
+      | none =>
+          throwErrorAt value
+            s!"error[LRX-ELAB-115]: unknown row field {name.getId.eraseMacroScopes}; declared fields are {renderFields fields}"
+  | _ =>
+      throwErrorAt value
+        "error[LRX-ELAB-115]: row expressions are row fields, string literals, and ++"
+
+/-- Lower one sealed class selection (ADR-0044):
+`class={if field == "literal" then "a" else "b"}`. -/
+private def rowClassSelectTerm (fields : List String) (attr : Syntax)
+    (value : TSyntax `term) : CommandElabM (TSyntax `term) := do
+  match value with
+  | `(if $field:ident == $lit:str then $whenTrue:str else $whenFalse:str) =>
+      match fields.idxOf? field.getId.eraseMacroScopes.toString with
+      | some index =>
+          let indexLit := Syntax.mkNumLit (toString index)
+          let span ← sourceSpanTerm attr
+          `(LeanRx.RowClassSelect.mk $indexLit $lit $whenTrue $whenFalse $span)
+      | none =>
+          throwErrorAt field
+            s!"error[LRX-ELAB-116]: unknown row field {field.getId.eraseMacroScopes}; declared fields are {renderFields fields}"
+  | _ =>
+      throwErrorAt attr
+        "error[LRX-ELAB-116]: a row class selection is written class=\{if field == \"literal\" then \"whenTrue\" else \"whenFalse\"}"
 
 /- Lower one sealed row template (ADR-0041): dynamic content is restricted to
 declared row field projections, and events were already rewritten to string
@@ -186,16 +232,18 @@ mutual
         `(LeanRx.RowNode.text $value $span)
     | `(leanrxJsxChild| { $value:term }) => do
         let span ← sourceSpanTerm child
-        unless value.raw.isIdent do
-          throwErrorAt child
-            "error[LRX-ELAB-114]: row templates project declared row fields by bare name"
-        match fields.idxOf? (value.raw.getId.eraseMacroScopes.toString) with
-        | some index =>
-            let indexLit := Syntax.mkNumLit (toString index)
-            `(LeanRx.RowNode.fieldText $indexLit $span)
-        | none =>
-            throwErrorAt child
-              s!"error[LRX-ELAB-114]: unknown row field {value.raw.getId.eraseMacroScopes}; declared fields are {String.intercalate ", " fields}"
+        if value.raw.isIdent then
+          match fields.idxOf? (value.raw.getId.eraseMacroScopes.toString) with
+          | some index =>
+              let indexLit := Syntax.mkNumLit (toString index)
+              `(LeanRx.RowNode.fieldText $indexLit $span)
+          | none =>
+              throwErrorAt child
+                s!"error[LRX-ELAB-114]: unknown row field {value.raw.getId.eraseMacroScopes}; declared fields are {String.intercalate ", " fields}"
+        else
+          /- Sealed row expression content (ADR-0043). -/
+          let expr ← rowExprTerm fields value
+          `(LeanRx.RowNode.exprText $expr $span)
     | `(leanrxJsxChild| { $_:str : $_:term }) =>
         throwErrorAt child
           "error[LRX-ELAB-114]: named text sinks are not available inside row templates"
@@ -204,21 +252,35 @@ mutual
         throwErrorAt child
           "error[LRX-ELAB-114]: malformed row template child"
 
+  /- A `class={…}` attribute lowers to the sealed class selection (ADR-0044);
+  everything else stays a static attribute or row event reference. -/
+  private partial def lowerRowAttrs (fields : List String) (attrs : Array Syntax) :
+      CommandElabM (Array (TSyntax `term) × Array (TSyntax `term)) := do
+    let mut attrTerms : Array (TSyntax `term) := #[]
+    let mut selectTerms : Array (TSyntax `term) := #[]
+    for attr in attrs do
+      let attrStx : TSyntax `leanrxJsxAttr := ⟨attr⟩
+      match attrStx with
+      | `(leanrxJsxAttr| class = { $value:term }) =>
+          selectTerms := selectTerms.push (← rowClassSelectTerm fields attr value)
+      | _ => attrTerms := attrTerms.push (← rowAttrTerm attr)
+    pure (attrTerms, selectTerms)
+
   private partial def lowerRowElement (fields : List String)
       (element : TSyntax `leanrxJsxElement) : CommandElabM (TSyntax `term) := do
     match element with
     | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* >
           [$children:leanrxJsxChild,*]) => do
-        let attrTerms ← attrs.mapM rowAttrTerm
+        let (attrTerms, selectTerms) ← lowerRowAttrs fields attrs
         let childTerms ← children.getElems.mapM (lowerRowChild fields ·)
         let span ← sourceSpanTerm element
         `(LeanRx.RowNode.nodeWith (leanrx_jsx_tag% $tag) [$childTerms,*]
-          (attrs := [$attrTerms,*]) (span := $span))
+          (attrs := [$attrTerms,*]) (span := $span) (classIf := [$selectTerms,*]))
     | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* />) => do
-        let attrTerms ← attrs.mapM rowAttrTerm
+        let (attrTerms, selectTerms) ← lowerRowAttrs fields attrs
         let span ← sourceSpanTerm element
         `(LeanRx.RowNode.nodeWith (leanrx_jsx_tag% $tag) []
-          (attrs := [$attrTerms,*]) (span := $span))
+          (attrs := [$attrTerms,*]) (span := $span) (classIf := [$selectTerms,*]))
     | _ =>
         throwErrorAt element
           "error[LRX-ELAB-111]: a region item takes an inline jsx% row template element"
@@ -240,10 +302,61 @@ private def elabPropItem (item : Syntax) (itemSpan : TSyntax `term) :
   let nameLit := Syntax.mkStrLit itemName.getId.eraseMacroScopes.toString
   `(LeanRx.PropSpec.mk $nameLit $itemSpan)
 
+/-- The declared row field inventory of every region item, for row-event and
+row-expression elaboration (ADR-0043). -/
+private def collectRegionFields (items : Array Syntax) : List (String × List String) :=
+  items.foldl (init := []) fun acc item =>
+    if item.getKind == ``leanrxItemRegion then
+      let itemName : Ident := ⟨item[1]⟩
+      let fields := (sepByElems item[3]).toList.map fun field =>
+        (⟨field⟩ : Ident).getId.eraseMacroScopes.toString
+      acc ++ [(itemName.getId.eraseMacroScopes.toString, fields)]
+    else acc
+
+/-- Elaborate one `row region event := set field (expr) then …;` item to its
+region name, event name, and sealed `RowEventSpec` (ADR-0043). -/
+private def elabRowEventItem (regionFields : List (String × List String))
+    (item : Syntax) (itemSpan : TSyntax `term) :
+    CommandElabM (String × String × TSyntax `term) := do
+  let role : Ident := ⟨item[0]⟩
+  let regionName : Ident := ⟨item[1]⟩
+  let eventName : Ident := ⟨item[2]⟩
+  let roleName ← checkRole role
+  unless roleName == "row" do
+    throwErrorAt role
+      s!"error[LRX-ELAB-003]: two-name items are valid only on row items, not {roleName}"
+  let region := regionName.getId.eraseMacroScopes.toString
+  let fields ← match regionFields.find? (·.1 == region) with
+    | some entry => pure entry.2
+    | none =>
+        throwErrorAt regionName
+          s!"error[LRX-ELAB-115]: row event {eventName.getId.eraseMacroScopes} references unknown region {region}"
+  let steps := (sepByElems item[4]).map fun step => (⟨step⟩ : TSyntax `term)
+  let mut assignments : Array (TSyntax `term) := #[]
+  for step in steps do
+    match step with
+    | `($head:ident $field:ident $value:term) =>
+        unless head.getId.eraseMacroScopes == `set do
+          throwErrorAt step "error[LRX-ELAB-115]: row event steps are `set field (expr)`"
+        let fieldName := field.getId.eraseMacroScopes.toString
+        let index ← match fields.idxOf? fieldName with
+          | some index => pure index
+          | none =>
+              throwErrorAt field
+                s!"error[LRX-ELAB-115]: unknown row field {fieldName}; declared fields are {renderFields fields}"
+        let indexLit := Syntax.mkNumLit (toString index)
+        let exprTerm ← rowExprTerm fields value
+        assignments := assignments.push (← `(($indexLit, $exprTerm)))
+    | _ => throwErrorAt step "error[LRX-ELAB-115]: row event steps are `set field (expr)`"
+  let nameLit := Syntax.mkStrLit eventName.getId.eraseMacroScopes.toString
+  pure (region, eventName.getId.eraseMacroScopes.toString,
+    ← `(LeanRx.RowEventSpec.mk $nameLit (LeanRx.RowAction.update [$assignments,*]) $itemSpan))
+
 /-- Elaborate one `region name (fields) := jsx% …;` item to its `RegionSpec`
-(ADR-0041). The sealed row event vocabulary means every region declares exactly
-the `remove` row event; templates opt in by binding `onClick={remove}`. -/
-private def elabRegionItem (item : Syntax) (itemSpan : TSyntax `term) :
+(ADR-0041). Every region declares the sealed `remove` row event plus its `row`
+item update events (ADR-0043); templates opt in by binding `onClick={name}`. -/
+private def elabRegionItem (item : Syntax) (itemSpan : TSyntax `term)
+    (rowEvents : List (String × String × TSyntax `term)) :
     CommandElabM (TSyntax `term) := do
   let role : Ident := ⟨item[0]⟩
   let itemName : Ident := ⟨item[1]⟩
@@ -254,11 +367,15 @@ private def elabRegionItem (item : Syntax) (itemSpan : TSyntax `term) :
     throwErrorAt role
       s!"error[LRX-ELAB-003]: row field lists are valid only on region items, not {roleName}"
   let fieldNames := fields.map (·.getId.eraseMacroScopes.toString)
-  let nameLit := Syntax.mkStrLit itemName.getId.eraseMacroScopes.toString
+  let regionName := itemName.getId.eraseMacroScopes.toString
+  let nameLit := Syntax.mkStrLit regionName
+  let extras := rowEvents.filter (·.1 == regionName)
+  let extraNames := extras.map (·.2.1)
+  let extraTerms : Array (TSyntax `term) := (extras.map (·.2.2)).toArray
   let template ← match rhs with
     | `(jsx% $element:leanrxJsxElement) =>
         let rewritten : TSyntax `leanrxJsxElement :=
-          ⟨rewriteEventRefs ["remove"] element.raw⟩
+          ⟨rewriteEventRefs ("remove" :: extraNames) element.raw⟩
         lowerRowElement fieldNames.toList rewritten
     | _ =>
         throwErrorAt rhs
@@ -266,7 +383,8 @@ private def elabRegionItem (item : Syntax) (itemSpan : TSyntax `term) :
   let fieldLits : Array (TSyntax `term) :=
     fieldNames.map fun fieldName => ⟨Syntax.mkStrLit fieldName⟩
   `(LeanRx.RegionSpec.mk $nameLit #[$fieldLits,*] $template
-    #[LeanRx.RowEventSpec.mk "remove" LeanRx.RowAction.remove $itemSpan] $itemSpan)
+    #[LeanRx.RowEventSpec.mk "remove" LeanRx.RowAction.remove $itemSpan, $extraTerms,*]
+    $itemSpan)
 
 private def literalPropAttr? (attr : TSyntax `leanrxJsxAttr) : Bool :=
   match attr with
@@ -323,6 +441,15 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
               if roleName role == "event" then
                 let itemName : Ident := ⟨item.raw[1]⟩
                 declaredEvents := declaredEvents ++ [itemName.getId.eraseMacroScopes.toString]
+      /- Row-event pre-pass (ADR-0043): `row` items elaborate against the
+      region field inventory and join their region's sealed event table, so
+      item order between `row` and `region` items never matters. -/
+      let regionFields := collectRegionFields (items.map (·.raw))
+      let mut rowEventTerms : List (String × String × TSyntax `term) := []
+      for item in items do
+        if item.raw.getKind == ``leanrxItemRowEvent then
+          rowEventTerms := rowEventTerms ++
+            [← elabRowEventItem regionFields item.raw (← sourceSpanTerm item)]
       let mut values : Array (TSyntax `term) := #[]
       let mut events : Array (TSyntax `term) := #[]
       let mut typedEvents : Array (TSyntax `term) := #[]
@@ -378,7 +505,10 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
           if item.raw.getKind == ``leanrxItemProp then
             propTerms := propTerms.push (← elabPropItem item.raw itemSpan)
           else if item.raw.getKind == ``leanrxItemRegion then
-            regionTerms := regionTerms.push (← elabRegionItem item.raw itemSpan)
+            regionTerms := regionTerms.push
+              (← elabRegionItem item.raw itemSpan rowEventTerms)
+          else if item.raw.getKind == ``leanrxItemRowEvent then
+            pure ()
           else if item.raw.getKind == ``leanrxItemValue then
             let role : Ident := ⟨item.raw[0]⟩
             let itemName : Ident := ⟨item.raw[1]⟩

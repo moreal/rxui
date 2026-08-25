@@ -7,6 +7,10 @@ in the exact allowlist below requires an explicit trust-boundary review. -/
 elab "#leanrx_environment_audit" : command => do
   let env ← getEnv
   let reviewedUnsafe : Array Name := #[
+    `LeanRx.instReprRowExpr.repr._unsafe_rec,
+    `LeanRx.instDecidableEqRowExpr.decEq._unsafe_rec,
+    `LeanRx.instBEqRowExpr.beq._unsafe_rec,
+    `LeanRx.RowExpr.fieldRefs._unsafe_rec,
     `LeanRx.Field.index._unsafe_rec,
     `LeanRx.Field.name._unsafe_rec,
     `LeanRx.Field.toFin._unsafe_rec,
@@ -98,6 +102,12 @@ elab "#leanrx_environment_audit" : command => do
   -- standard proposition-extensionality axiom. Each exact pair is reviewed;
   -- every other theorem/axiom pair fails closed.
   let reviewedAxiomUses : Array (Name × Array Name) := #[
+    (`LeanRx.RowNode.exprText.injEq, #[``propext]),
+    (`LeanRx.RowExpr.lit.injEq, #[``propext]),
+    (`LeanRx.RowExpr.field.injEq, #[``propext]),
+    (`LeanRx.RowExpr.append.injEq, #[``propext]),
+    (`LeanRx.RowClassSelect.mk.injEq, #[``propext]),
+    (`LeanRx.RowAction.update.injEq, #[``propext]),
     (`LeanRx.Abstract.DerivedStep.mk.injEq, #[``propext]),
     (`LeanRx.Abstract.Eval.map._proof_1, #[``propext]),
     (`LeanRx.Abstract.Eval.map₂._proof_1, #[``propext]),

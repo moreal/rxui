@@ -177,6 +177,29 @@ private def regionSlot (checked : CheckedComponent Γ) : Nat :=
 private def regionEntry (regions : Ident) (regionIndex slot : Nat) : Expr :=
   .index (.index (.ident regions) (uint regionIndex)) (uint slot)
 
+/-- Whether one region declares any ADR-0043 update action, so its rows can
+mutate after mount and its record's pending slot can receive positions. -/
+private def regionHasUpdates (region : RegionSpec) : Bool :=
+  region.events.toList.any fun event =>
+    match event.action with
+    | .update _ => true
+    | .remove => false
+
+/-- Lower one sealed row expression against the row item array; fields sit
+behind the key slot (ADR-0041/0043). -/
+private def rowExprJs (item : Ident) : RowExpr → Expr
+  | .lit value => .literal (.string value)
+  | .field index => .index (.ident item) (uint (index + 1))
+  | .append first second => .binary .add (rowExprJs item first) (rowExprJs item second)
+
+/-- Lower one sealed class selection to its conditional value (ADR-0044). -/
+private def rowClassJs (item : Ident) (select : RowClassSelect) : Expr :=
+  .conditional
+    (.binary .eq (.index (.ident item) (uint (select.field + 1)))
+      (.literal (.string select.equals)))
+    (.literal (.string select.whenTrue))
+    (.literal (.string select.whenFalse))
+
 private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
     (regionSpecs : Array RegionSpec) (eventNames : List String)
     (valueCount eventIndex : Nat) :
@@ -238,6 +261,7 @@ private structure RuntimeNames where
   setAttribute : Ident
   setProperty : Ident
   setKey : Ident
+  childAt : Ident
   append : Ident
   listen : Ident
   listenDelegatedCells : Ident
@@ -256,6 +280,7 @@ private def runtimeNames : Except Error RuntimeNames := do
     setAttribute := ← Ident.checked "setAttribute"
     setProperty := ← Ident.checked "setProperty"
     setKey := ← Ident.checked "setKey"
+    childAt := ← Ident.checked "childAt"
     append := ← Ident.checked "append"
     listen := ← Ident.checked "listen"
     listenDelegatedCells := ← Ident.checked "listenDelegatedCells"
@@ -397,14 +422,34 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     ]]
   for (region, regionIndex) in checked.spec.regions.toList.zipIdx do
     /- The keyed region reconciles the whole target on commit; the dirty flag
-    keeps clean regions out of the sweep entirely (ADR-0041). -/
-    commitBody := commitBody ++ [.ifThen (regionEntry regions regionIndex 3) <| .ofList [
+    keeps clean regions out of the sweep entirely (ADR-0041). A structurally
+    dirty reconcile re-runs every retained row, so it drops pending update
+    positions unrendered; an update-only transaction drains them through
+    `updateAt` instead (ADR-0043). -/
+    commitBody := commitBody ++ [.ifThen (regionEntry regions regionIndex 3) <| .ofList ([
       .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
         (.literal (.boolean false)),
       .expr <| .call (.index (regionEntry regions regionIndex 0) (.literal (.string "update")))
         (.ofList [regionEntry regions regionIndex 1, .literal .null]),
       pushTrace tx s!"region:{region.name}:update"
-    ]]
+    ] ++ (if regionHasUpdates region then [
+      .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 4)) (.array .nil)
+    ] else []))]
+    if regionHasUpdates region then
+      let pendingRow ← Ident.checked "pending_row"
+      commitBody := commitBody ++ [.ifThen (.unary .not <| .binary .eq
+          (.index (regionEntry regions regionIndex 4) (.literal (.string "length"))) (uint 0)) <|
+        .ofList [
+          .forOf pendingRow (regionEntry regions regionIndex 4) (.ofList [
+            .expr <| .call
+              (.index (regionEntry regions regionIndex 0) (.literal (.string "updateAt")))
+              (.ofList [.ident pendingRow,
+                .index (regionEntry regions regionIndex 1) (.ident pendingRow),
+                .literal .null]),
+            pushTrace tx s!"region:{region.name}:updateAt"
+          ]),
+          .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 4)) (.array .nil)
+        ]]
   commitBody := commitBody ++ [
     incrementAt tx 1,
     pushTrace tx "transaction:commit"
@@ -597,11 +642,11 @@ private def nodeAt (nodes : List DomBinding) (path : List Nat) : Except Error Id
 action for the enclosing cell (at most one per cell by LRX-VIEW-027). -/
 mutual
   private def rowActionOf : RowNode → Option String
-    | .element _ _ events children _ =>
+    | .element _ _ events children _ _ =>
         match events.head? with
         | some event => some event.eventName
         | none => rowActionOfChildren children
-    | .text _ _ | .fieldText _ _ => none
+    | .text _ _ | .fieldText _ _ | .exprText _ _ => none
 
   private def rowActionOfChildren : RowChildren → Option String
     | .nil => none
@@ -617,7 +662,7 @@ child mounts exactly one DOM node, so template indices equal `childNodes`
 indices at runtime. -/
 private def regionActions (region : RegionSpec) : List String :=
   match region.template with
-  | .element _ _ _ cells _ => cells.toList.map fun cell => (rowActionOf cell).getD ""
+  | .element _ _ _ cells _ _ => cells.toList.map fun cell => (rowActionOf cell).getD ""
   | _ => []
 
 private structure RowDom where
@@ -631,7 +676,7 @@ private def rowAppend (dom : RowDom) (statement : Stmt) : RowDom :=
 mutual
   private def rowNodeStmts (runtime : RuntimeNames) (item : Ident) :
       RowNode → RowDom → Except Error (Ident × RowDom)
-    | .element tag attrs _ children _, dom => do
+    | .element tag attrs _ children _ classIf, dom => do
         let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
         let dom := rowAppend { dom with allocator, count := dom.count + 1 } <| .const name <|
           call runtime.createElement [.literal (.string tag.name)]
@@ -639,6 +684,10 @@ mutual
         for attr in attrs do
           dom := rowAppend dom <| .expr <| call runtime.setAttribute [
             .ident name, .literal (.string attr.name), .literal (.string attr.value)
+          ]
+        for select in classIf do
+          dom := rowAppend dom <| .expr <| call runtime.setAttribute [
+            .ident name, .literal (.string "class"), rowClassJs item select
           ]
         let finalDom ← rowChildrenStmts runtime item name children dom
         pure (name, finalDom)
@@ -649,11 +698,17 @@ mutual
           call runtime.createText [.literal (.string value)])
     | .fieldText field _, dom => do
         /- Sealed row binder (ADR-0041): the projection reads `item[field + 1]`
-        behind the key slot; rows never re-render, so no cache is needed. -/
+        behind the key slot; the retained-row update callback re-renders it
+        only when the region declares update actions (ADR-0043). -/
         let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
         let dom := { dom with allocator, count := dom.count + 1 }
         pure (name, rowAppend dom <| .const name <|
           call runtime.createText [.index (.ident item) (uint (field + 1))])
+    | .exprText value _, dom => do
+        let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
+        let dom := { dom with allocator, count := dom.count + 1 }
+        pure (name, rowAppend dom <| .const name <|
+          call runtime.createText [rowExprJs item value])
 
   private def rowChildrenStmts (runtime : RuntimeNames) (item : Ident) (parent : Ident) :
       RowChildren → RowDom → Except Error RowDom
@@ -677,15 +732,58 @@ private def regionRowFunction (runtime : RuntimeNames) (region : RegionSpec)
   ]
   pure { name, params := #[item, position, context], body := body.toArray }
 
-/-- Stage-1 rows are immutable after mount (no row field mutation exists in the
-sealed vocabulary), so the retained-row update callback is a no-op. -/
-private def regionUpdateFunction (name : Ident) : Except Error Function := do
+/- Dynamic positions of one row template with their child-index paths from the
+row root, re-rendered by the retained-row update callback (ADR-0043/0044). -/
+private inductive RowUpdateTarget where
+  | text (path : List Nat) (value : RowExpr)
+  | classSelect (path : List Nat) (select : RowClassSelect)
+
+mutual
+  private def rowUpdateTargets (path : List Nat) : RowNode → List RowUpdateTarget
+    | .element _ _ _ children _ classIf =>
+        classIf.map (RowUpdateTarget.classSelect path) ++
+          rowUpdateTargetsChildren path 0 children
+    | .text _ _ => []
+    | .fieldText field _ => [.text path (.field field)]
+    | .exprText value _ => [.text path value]
+
+  private def rowUpdateTargetsChildren (path : List Nat) (index : Nat) :
+      RowChildren → List RowUpdateTarget
+    | .nil => []
+    | .cons head tail =>
+        rowUpdateTargets (path ++ [index]) head ++
+          rowUpdateTargetsChildren path (index + 1) tail
+end
+
+/-- Structural navigation from the row root to one template position: every
+direct child mounts exactly one DOM node, so template indices equal
+`childNodes` indices at runtime (the regionActions argument again). -/
+private def rowNavigate (runtime : RuntimeNames) (row : Ident) (path : List Nat) : Expr :=
+  path.foldl (fun acc index => call runtime.childAt [acc, uint index]) (.ident row)
+
+/-- The retained-row update callback: a no-op while the region's rows are
+immutable (ADR-0041); when the region declares update actions, it re-renders
+every dynamic text and class selection from the current item by structural
+`childAt` navigation — the navigate-and-write shape of the bespoke Todo row
+update (ADR-0043/0044). -/
+private def regionUpdateFunction (runtime : RuntimeNames) (region : RegionSpec)
+    (name : Ident) : Except Error Function := do
   let row ← Ident.checked "row"
   let item ← Ident.checked "item"
   let position ← Ident.checked "position"
   let context ← Ident.checked "context"
-  let body : Array Stmt := #[.return (.literal .null)]
-  pure { name, params := #[row, item, position, context], body }
+  let mut body : List Stmt := []
+  if regionHasUpdates region then
+    for target in rowUpdateTargets [] region.template do
+      match target with
+      | .text path value =>
+          body := body ++ [.expr <| call runtime.setText [
+            rowNavigate runtime row path, rowExprJs item value]]
+      | .classSelect path select =>
+          body := body ++ [.expr <| call runtime.setAttribute [
+            rowNavigate runtime row path, .literal (.string "class"), rowClassJs item select]]
+  pure { name, params := #[row, item, position, context]
+         body := (body ++ [Stmt.return (.literal .null)]).toArray }
 
 private def regionDisposeFunction (name : Ident) : Except Error Function := do
   let row ← Ident.checked "row"
@@ -731,6 +829,45 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
             .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
               (.literal (.boolean true)),
             pushTrace tx s!"region:{region.name}:{event.name}"
+          ])
+        ]
+    | .update assignments =>
+        /- Resolve the dispatching row by key scan (`scan` is
+        `[cursor, match]`), evaluate every right-hand side against the old
+        tuple, write the targets, and queue the position for the commit
+        sweep's `updateAt` drain (ADR-0043). -/
+        let scan ← Ident.checked "scan"
+        let rowEntry ← Ident.checked "row_entry"
+        let rowItem ← Ident.checked "row_item"
+        let negativeOne : Expr := .unary .neg (uint 1)
+        let mut evaluateStmts : List Stmt := []
+        let mut assignStmts : List Stmt := []
+        for ((target, value), index) in assignments.zipIdx do
+          let temp ← Ident.checked s!"row_next_{index}"
+          evaluateStmts := evaluateStmts ++ [.const temp (rowExprJs rowItem value)]
+          assignStmts := assignStmts ++
+            [.assign (.index (.ident rowItem) (uint (target + 1))) (.ident temp)]
+        writes := writes ++ [
+          .ifThen (.binary .eq (.ident action) (.literal (.string event.name))) (.ofList [
+            .const scan (.array (.ofList [uint 0, negativeOne])),
+            .forOf rowEntry (regionEntry regions regionIndex 1) (.ofList [
+              .ifThen (.binary .eq (.index (.ident rowEntry) (uint 0)) (.ident key)) <|
+                .ofList [
+                  .assign (.index (.ident scan) (uint 1)) (.index (.ident scan) (uint 0))
+                ],
+              .assign (.index (.ident scan) (uint 0))
+                (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
+            ]),
+            .ifThen (.unary .not
+                (.binary .eq (.index (.ident scan) (uint 1)) negativeOne)) <| .ofList ([
+              .const rowItem (.index (regionEntry regions regionIndex 1)
+                (.index (.ident scan) (uint 1)))
+            ] ++ evaluateStmts ++ assignStmts ++ [
+              .expr <| .call
+                (.index (regionEntry regions regionIndex 4) (.literal (.string "push")))
+                (.ofList [.index (.ident scan) (uint 1)]),
+              pushTrace tx s!"region:{region.name}:{event.name}"
+            ])
           ])
         ]
   transactionShell checked evaluators runtime name
@@ -809,7 +946,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   let regionFunctions ← checked.spec.regions.toList.zip regionMounts |>.mapM
     fun (region, (_, (rowFn, updateFn, disposeFn))) => do
       pure [← regionRowFunction runtime region rowFn,
-        ← regionUpdateFunction updateFn,
+        ← regionUpdateFunction runtime region updateFn,
         ← regionDisposeFunction disposeFn]
   let regionDispatches ← checked.spec.regions.toList.zipIdx.mapM fun (region, index) => do
     if (regionActions region).any (· ≠ "") then
@@ -855,8 +992,10 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       ]]
   unless checked.spec.regions.isEmpty do
     /- One record per region in declaration order: `[handle, items, nextKey,
-    dirty]`. Keys are region-owned monotone safe integers (ADR-0027/0029), so
-    uniqueness holds by construction. -/
+    dirty, pending]`. Keys are region-owned monotone safe integers
+    (ADR-0027/0029), so uniqueness holds by construction; `pending` holds the
+    positions an update-only transaction drains through `updateAt`
+    (ADR-0043). -/
     let regionRecords ← checked.spec.regions.toList.mapM fun region => do
       let handle ← match dom.regionHandles.find? (·.1 == region.name) with
         | some entry => pure entry.2
@@ -865,7 +1004,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             message := s!"checked region {region.name} was never mounted"
           }
       pure <| Expr.array <| .ofList [
-        .ident handle, .array .nil, uint 0, .literal (.boolean false)
+        .ident handle, .array .nil, uint 0, .literal (.boolean false), .array .nil
       ]
     mountBody := mountBody ++ [
       .const regions (.array (.ofList regionRecords))
@@ -972,6 +1111,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       { source := child.moduleSpecifier
         names := #[(mount, localName)] : Import }
   let usesDelegation := regionDispatches.any (·.isSome)
+  let usesRowUpdates := checked.spec.regions.toList.any regionHasUpdates
   let regionFunctionDecls :=
     regionFunctions.flatMap id ++ regionDispatches.filterMap (·.map (·.2))
   let mountParams := #[target] ++
@@ -991,6 +1131,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             else #[(runtime.setProperty, runtime.setProperty)]) ++
           (if checked.spec.regions.isEmpty then #[]
             else #[(runtime.setKey, runtime.setKey)]) ++
+          (if usesRowUpdates then #[(runtime.childAt, runtime.childAt)] else #[]) ++
           (if usesDelegation then
             #[(runtime.listenDelegatedCells, runtime.listenDelegatedCells)]
           else #[]) }

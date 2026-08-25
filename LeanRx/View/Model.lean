@@ -163,15 +163,37 @@ def events : List ViewAttr → List EventBinding
 
 end ViewAttr
 
-/-- Closed row action vocabulary for keyed region rows (ADR-0041). Stage 1
-supports removing the dispatching row; the sealed constructor set is the whole
-semantics — row events never carry user update programs. -/
+/-- Sealed staged expression over one region's row fields (ADR-0043). The
+language mirrors the shape of `RxExpr` without touching it: `String`-only,
+no dependency sets, no schema — a row expression can never observe component
+state. Field references are positional projections of the row tuple and are
+bounds-checked by `ComponentSpec.check`. -/
+inductive RowExpr where
+  | lit (value : String)
+  | field (index : Nat)
+  | append (first second : RowExpr)
+deriving Repr, BEq, DecidableEq
+
+/-- Every row field index one row expression projects. -/
+def RowExpr.fieldRefs : RowExpr → List Nat
+  | .lit _ => []
+  | .field index => [index]
+  | .append first second => first.fieldRefs ++ second.fieldRefs
+
+/-- Closed row action vocabulary for keyed region rows (ADR-0041/0043).
+`remove` disposes the dispatching row; `update` writes new field values —
+sealed row expressions evaluated simultaneously against the dispatching row's
+current fields — and re-renders exactly that row through the region handle's
+`updateAt`. The sealed constructor set is the whole semantics — row events
+never carry user update programs. -/
 inductive RowAction where
   | remove
+  | update (assignments : List (Nat × RowExpr))
 deriving Repr, BEq, DecidableEq
 
 def RowAction.name : RowAction → String
   | .remove => "remove"
+  | .update _ => "update"
 
 /-- One declared row event of a keyed region. The name is what row templates
 bind with `onClick={…}` and what the delegated dispatcher receives as its
@@ -182,16 +204,33 @@ structure RowEventSpec where
   span : SourceSpan := .generated
 deriving Repr, BEq
 
-/- Sealed row template of a keyed region (ADR-0041). Dynamic row content is a
-typed projection of the row tuple (`fieldText`), never an `RxExpr`; row events
-reference the region's declared row events and lower to one delegated listener
-per event kind on the region container. -/
+/-- One sealed row-scoped class selection (ADR-0044): the element's `class`
+attribute is `whenTrue` while the projected row field equals the comparison
+literal and `whenFalse` otherwise. Both class values, the attribute name, and
+the predicate shape are fixed at elaboration time; the retained-row update
+callback re-emits the selection so it tracks ADR-0043 row field updates. -/
+structure RowClassSelect where
+  field : Nat
+  equals : String
+  whenTrue : String
+  whenFalse : String
+  span : SourceSpan := .generated
+deriving Repr, BEq
+
+/- Sealed row template of a keyed region (ADR-0041/0043/0044). Dynamic row
+content is a typed projection of the row tuple (`fieldText`) or a sealed row
+expression over it (`exprText`), never an `RxExpr`; row events reference the
+region's declared row events and lower to one delegated listener per event
+kind on the region container; `classIf` carries at most one sealed class
+selection per element. -/
 mutual
   inductive RowNode where
     | element (tag : HtmlTag) (attrs : List StaticAttr) (events : List EventBinding)
         (children : RowChildren) (span : SourceSpan := .generated)
+        (classIf : List RowClassSelect := [])
     | text (value : String) (span : SourceSpan := .generated)
     | fieldText (field : Nat) (span : SourceSpan := .generated)
+    | exprText (value : RowExpr) (span : SourceSpan := .generated)
 
   inductive RowChildren where
     | nil
@@ -212,13 +251,14 @@ end RowChildren
 
 def RowNode.node (tag : HtmlTag) (children : List RowNode)
     (attrs : List StaticAttr := []) (events : List EventBinding := [])
-    (span : SourceSpan := .generated) : RowNode :=
-  .element tag attrs events (.ofList children) span
+    (span : SourceSpan := .generated) (classIf : List RowClassSelect := []) : RowNode :=
+  .element tag attrs events (.ofList children) span classIf
 
 def RowNode.nodeWith (tag : HtmlTag) (children : List RowNode)
-    (attrs : List ViewAttr := []) (span : SourceSpan := .generated) : RowNode :=
+    (attrs : List ViewAttr := []) (span : SourceSpan := .generated)
+    (classIf : List RowClassSelect := []) : RowNode :=
   RowNode.node tag children (attrs := ViewAttr.staticAttrs attrs)
-    (events := ViewAttr.events attrs) (span := span)
+    (events := ViewAttr.events attrs) (span := span) (classIf := classIf)
 
 /-- One keyed region declaration (ADR-0040/0041). Rows are tuples of `String`
 fields behind a monotone region-owned key; the template is the sealed row view
