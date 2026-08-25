@@ -54,6 +54,10 @@ fixtures=(
   Test/fixtures/compile-fail/ReflectOnParagraph.lean
   Test/fixtures/compile-fail/CheckboxTypeOnButton.lean
   Test/fixtures/compile-fail/IntTypedEventPayload.lean
+  Test/fixtures/compile-fail/RegionButtonAsCell.lean
+  Test/fixtures/compile-fail/RegionUnknownRowField.lean
+  Test/fixtures/compile-fail/IntImmutableProp.lean
+  Test/fixtures/compile-fail/ChildPropMismatch.lean
 )
 fragments=(
   "Constructor for"
@@ -108,6 +112,10 @@ fragments=(
   "error[LRX-VIEW-020]"
   "error[LRX-VIEW-022]"
   "error[LRX-ELAB-109]"
+  "error[LRX-VIEW-027]"
+  "error[LRX-ELAB-114]"
+  "error[LRX-ELAB-113]"
+  "error[LRX-ELAB-112]"
 )
 
 for index in "${!fixtures[@]}"; do
