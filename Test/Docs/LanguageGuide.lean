@@ -142,6 +142,50 @@ component MarkedRosterMini (schema := MarkedRosterMiniSchema) where {
   ];
 }
 
+/- The typed row payload snippet from guide section 7 (ADR-0046). -/
+abbrev EditableRosterMiniSchema : Schema := .field "editAdded" Int .empty
+
+def editAdded : Field EditableRosterMiniSchema Int := .here
+
+component EditableRosterMini (schema := EditableRosterMiniSchema) where {
+  state editAdded : Int := 0;
+  event addItem := append roster (s!"Item {editAdded}", "")
+    then set editAdded (editAdded + 1);
+  row roster rename (value : String) := set label value;
+  row roster record (pressed : String) := set lastKey ("key:" ++ pressed);
+  region roster (label, lastKey) := jsx% <li> [
+    <span> [{label}],
+    <span> [{lastKey}],
+    <span> [<input ariaLabel="Rename" onInput={rename} onKeyDown={record} />],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
+/- The state-scoped attribute selection snippet from guide section 7
+(ADR-0045). -/
+abbrev FilterMiniSchema : Schema := .field "filter" String .empty
+
+def filter : Field FilterMiniSchema String := .here
+
+component FilterMini (schema := FilterMiniSchema) where {
+  state filter : String := "all";
+  event showAll := set filter "all";
+  event showActive := set filter "active";
+  view := jsx% <main> [
+    <button type="button" onClick={showAll}
+        class={if filter == "all" then "selected" else ""}
+        ariaPressed={filter == "all"}> ["All"],
+    <button type="button" onClick={showActive}
+        class={if filter == "active" then "selected" else ""}
+        ariaPressed={filter == "active"}> ["Active"],
+    <button type="button" onClick={showAll} disabled={filter == "all"}> ["Reset"]
+  ];
+}
+
 /- The immutable-prop snippets from guide section 7 (ADR-0042). -/
 abbrev TitledMiniSchema : Schema := .field "titledClicks" Int .empty
 
@@ -210,6 +254,22 @@ def run : IO Unit := do
         throw <| IO.userError "language-guide row-update snippet lost its event table"
   | .error error =>
       throw <| IO.userError s!"language-guide row-update component rejected: {error.render}"
+  match EditableRosterMini_check with
+  | .ok editable =>
+      unless editable.spec.regions.toList.map
+          (fun region => region.events.toList.map
+            (fun event => (event.name, event.takesPayload))) ==
+          [[("remove", false), ("rename", true), ("record", true)]] do
+        throw <| IO.userError "language-guide payload snippet lost its event table"
+  | .error error =>
+      throw <| IO.userError s!"language-guide payload component rejected: {error.render}"
+  match FilterMini_check with
+  | .ok selecting =>
+      unless selecting.view.attrSelects.map (·.select.name) ==
+          ["class", "aria-pressed", "class", "aria-pressed", "disabled"] do
+        throw <| IO.userError "language-guide selection snippet lost its selections"
+  | .error error =>
+      throw <| IO.userError s!"language-guide selection component rejected: {error.render}"
   match TitledMini_check, PropNestMini_check with
   | .ok titled, .ok host =>
       unless titled.spec.propNames == ["title"] &&

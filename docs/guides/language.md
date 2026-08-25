@@ -249,9 +249,72 @@ component MarkedRosterMini (schema := MarkedRosterMiniSchema) where {
 }
 ```
 
-Rows never observe component state after mount: row expressions read only row
-fields, `remove` and declared `update` events are the whole action
-vocabulary, and each cell binds at most one row event.
+A `row` item may declare one `String` payload parameter (ADR-0046):
+`row roster rename (value : String) := set label value;` receives the
+delegated payload in its right-hand sides through the parameter name. The
+template binds payload-taking events on native `input` elements —
+`onInput={rename}` delivers the input's value and `onKeyDown={record}`
+delivers the pressed key — and each payload-taking event must be bound
+exactly once so its payload class is determined by that binding
+(`LRX-VIEW-033` otherwise). Payloads are `String` only, the parameter cannot
+shadow a row field (`LRX-ELAB-117`), and `key` itself stays a reserved
+surface keyword, so name the keydown parameter something else:
+
+```lean
+component EditableRosterMini (schema := EditableRosterMiniSchema) where {
+  state editAdded : Int := 0;
+  event addItem := append roster (s!"Item {editAdded}", "")
+    then set editAdded (editAdded + 1);
+  row roster rename (value : String) := set label value;
+  row roster record (pressed : String) := set lastKey ("key:" ++ pressed);
+  region roster (label, lastKey) := jsx% <li> [
+    <span> [{label}],
+    <span> [{lastKey}],
+    <span> [<input ariaLabel="Rename" onInput={rename} onKeyDown={record} />],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
+Rows never observe component state after mount: row expressions read only
+row fields plus the declaring event's payload, `remove` and declared
+`update` events are the whole action vocabulary, and each cell binds at most
+one row event per delegated kind (`click`, `input`, `keydown`).
+
+A static view element may select its `class`, `aria-pressed`, or `disabled`
+from component state (ADR-0045):
+`class={if filter == "all" then "selected" else ""}` selects between two
+static class strings, `ariaPressed={filter == "all"}` reflects the equality
+as `"true"`/`"false"`, and `disabled={filter == "all"}` reflects it as the
+boolean element property. The predicate is equality of one `String`
+component value (source or derived) against one string literal; the field
+reference is the ordinary schema `Field`, so a non-`String` field is a plain
+Lean type error. Selections join the commit sweep beside text sinks and
+reflected properties with the evaluate-compare-write shape. A selection
+counts as its attribute for duplicate detection (`LRX-VIEW-001`), and
+`aria-pressed`/`disabled` selections require a native button
+(`LRX-VIEW-032`); other shapes report the sealed surface (`LRX-VIEW-012`):
+
+```lean
+component FilterMini (schema := FilterMiniSchema) where {
+  state filter : String := "all";
+  event showAll := set filter "all";
+  event showActive := set filter "active";
+  view := jsx% <main> [
+    <button type="button" onClick={showAll}
+        class={if filter == "all" then "selected" else ""}
+        ariaPressed={filter == "all"}> ["All"],
+    <button type="button" onClick={showActive}
+        class={if filter == "active" then "selected" else ""}
+        ariaPressed={filter == "active"}> ["Active"],
+    <button type="button" onClick={showAll} disabled={filter == "all"}> ["Reset"]
+  ];
+}
+```
 
 A `prop` item declares an immutable `String` input that the parent supplies
 through the mount ABI (ADR-0042): the child renders it with a `{title}` text

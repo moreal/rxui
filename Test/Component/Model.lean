@@ -206,6 +206,93 @@ def run : IO Unit := do
           (attrs := [.className "static"])
           (classIf := [{ field := 0, equals := "", whenTrue := "a", whenFalse := "b" }]) }] }
   expectError "LRX-VIEW-001" classSelectBesideClass.check
+  /- ADR-0045 state-scoped attribute selections, exercised through forged
+  specifications against the typed `parity` field. -/
+  let selectingButton : ComponentSpec CounterSchema :=
+    { spec with view := View.node .main [View.node .button [.text "Even"]
+        (attrs := [.buttonType .button])
+        (events := [{ kind := .click, eventName := "increment" }])
+        (selects := [.classSelect parity "even" "selected" "",
+          .pressedSelect parity "even", .disabledSelect parity "even"])] }
+  match selectingButton.check with
+  | .error error =>
+      throw <| IO.userError s!"forged attribute selection rejected: {error.code}"
+  | .ok checked =>
+      unless checked.view.attrSelects.map
+          (fun mounted => (mounted.select.name, mounted.path)) ==
+          [("class", [0]), ("aria-pressed", [0]), ("disabled", [0])] do
+        throw <| IO.userError "forged attribute selection lost its mounted positions"
+      unless (checked.graph.graph.nodes.map (·.name)).toList.drop 3 ==
+          ["attr:0:class", "attr:1:aria-pressed", "attr:2:disabled"] do
+        throw <| IO.userError "forged attribute selection lost its graph sinks"
+  let pressedOnParagraph : ComponentSpec CounterSchema :=
+    { spec with view := (View.node .p [.text "Bad"]
+        (selects := [.pressedSelect parity "even"])) }
+  expectError "LRX-VIEW-032" pressedOnParagraph.check
+  let disabledOnParagraph : ComponentSpec CounterSchema :=
+    { spec with view := (View.node .p [.text "Bad"]
+        (selects := [.disabledSelect parity "even"])) }
+  expectError "LRX-VIEW-032" disabledOnParagraph.check
+  let selectBesideStaticClass : ComponentSpec CounterSchema :=
+    { spec with view := (View.node .p [.text "Bad"]
+        (attrs := [.className "static"])
+        (selects := [.classSelect parity "even" "a" "b"])) }
+  expectError "LRX-VIEW-001" selectBesideStaticClass.check
+  let doubleClassSelect : ComponentSpec CounterSchema :=
+    { spec with view := (View.node .p [.text "Bad"]
+        (selects := [.classSelect parity "even" "a" "b",
+          .classSelect parity "odd" "c" "d"])) }
+  expectError "LRX-VIEW-001" doubleClassSelect.check
+  /- ADR-0046 typed row payloads, exercised through forged specifications. -/
+  let renameEvent : RowEventSpec :=
+    { name := "rename", action := .update [(0, .payload)], takesPayload := true }
+  let typedTemplate : RowNode := RowNode.node .li [
+    RowNode.node .span [RowNode.fieldText 0],
+    RowNode.node .span [RowNode.node .input []
+      (events := [{ kind := .input, eventName := "rename" }])]
+  ]
+  let typedRegion : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := typedTemplate
+        events := #[{ name := "remove", action := .remove }, renameEvent] }] }
+  match typedRegion.check with
+  | .error error =>
+      throw <| IO.userError s!"forged typed row region rejected: {error.code}"
+  | .ok _ => pure ()
+  let payloadInTemplate : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [RowNode.exprText .payload] }] }
+  expectError "LRX-VIEW-033" payloadInTemplate.check
+  let payloadWithoutDeclaration : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        events := #[{ name := "remove", action := .remove },
+          { name := "sneak", action := .update [(0, .payload)] }] }] }
+  expectError "LRX-VIEW-033" payloadWithoutDeclaration.check
+  let typedOnClick : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [
+          RowNode.node .span [RowNode.node .button [RowNode.text "r"]
+            (attrs := [.buttonType .button])
+            (events := [{ kind := .click, eventName := "rename" }])]]
+        events := #[{ name := "remove", action := .remove }, renameEvent] }] }
+  expectError "LRX-VIEW-033" typedOnClick.check
+  let inputBindingOnPayloadless : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [
+          RowNode.node .span [RowNode.node .input []
+            (events := [{ kind := .input, eventName := "remove" }])]] }] }
+  expectError "LRX-VIEW-033" inputBindingOnPayloadless.check
+  let inputBindingOnSpan : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [
+          RowNode.node .span [RowNode.node .span [RowNode.text "x"]
+            (events := [{ kind := .input, eventName := "rename" }])]]
+        events := #[{ name := "remove", action := .remove }, renameEvent] }] }
+  expectError "LRX-VIEW-033" inputBindingOnSpan.check
+  let unboundTypedEvent : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        events := #[{ name := "remove", action := .remove }, renameEvent] }] }
+  expectError "LRX-VIEW-033" unboundTypedEvent.check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check
