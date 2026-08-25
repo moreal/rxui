@@ -49,6 +49,10 @@ scoped syntax (name := leanrxItemTypedEvent)
   atomic(ident ident "(" ident ":" ident ")" ":=") term ";" : leanrxComponentItem
 scoped syntax (name := leanrxItemTypedState)
   atomic(ident ident ":" ident ":=") term ";" : leanrxComponentItem
+scoped syntax (name := leanrxItemProp)
+  atomic(ident ident ":" ident ";") : leanrxComponentItem
+scoped syntax (name := leanrxItemRegion)
+  atomic(ident ident "(" ident,* ")" ":=") term ";" : leanrxComponentItem
 scoped syntax (name := leanrxItemValue)
   atomic(ident ident ":=") sepBy1(term, " then ") ";" : leanrxComponentItem
 scoped syntax (name := leanrxItemView)
@@ -74,9 +78,9 @@ private def roleName (role : Ident) : String :=
 
 private def checkRole (role : Ident) : CommandElabM String := do
   let name := roleName role
-  unless ["state", "derived", "event", "view"].contains name do
+  unless ["state", "derived", "event", "view", "region", "prop"].contains name do
     throwErrorAt role
-      s!"error[LRX-ELAB-003]: unknown component item role {name}; expected state, derived, event, or view"
+      s!"error[LRX-ELAB-003]: unknown component item role {name}; expected state, derived, event, region, prop, or view"
   pure name
 
 private def scalarLiteralTerm (ty : Ident) (value : TSyntax `term) :
@@ -89,14 +93,23 @@ private def scalarLiteralTerm (ty : Ident) (value : TSyntax `term) :
   | other => throwErrorAt ty
       s!"error[LRX-ELAB-105]: state literals support Int, Nat, Bool, and String, not {other}"
 
-/-- Interpret one sugared event step (`set field (expr)` or `dispatch event`)
-as its explicit `Update` constructor; any other shape is not a step. -/
+/-- Interpret one sugared event step (`set field (expr)`, `dispatch event`, or
+`append region (expr, …)`) as its explicit `Update` constructor; any other
+shape is not a step. -/
 private def updateStepTerm? (step : TSyntax `term) :
     CommandElabM (Option (TSyntax `term)) := do
   match step with
   | `($head:ident $field:ident $value:term) =>
       if head.getId.eraseMacroScopes == `set then
         pure (some (← `(LeanRx.Update.set $field (rx% $value))))
+      else if head.getId.eraseMacroScopes == `append then
+        let regionLit := Syntax.mkStrLit field.getId.eraseMacroScopes.toString
+        let values ← match value with
+          | `(($first:term, $rest:term,*)) => pure (#[first] ++ rest.getElems)
+          | _ => pure #[value]
+        let rowValues ← values.mapM fun fieldValue =>
+          `(LeanRx.RowValue.of (rx% $fieldValue))
+        pure (some (← `(LeanRx.Update.regionAppend $regionLit [$rowValues,*])))
       else pure none
   | `($head:ident $target:ident) =>
       if head.getId.eraseMacroScopes == `dispatch then
@@ -131,15 +144,145 @@ private partial def rewriteEventRefs (events : List String) (stx : Syntax) : Syn
 private def sepByElems (stx : Syntax) : Array Syntax :=
   (Array.range ((stx.getNumArgs + 1) / 2)).map fun index => stx[2 * index]
 
-/-- The head identifier of one attr-less, child-less JSX element — the only
-shape that can lower to a static child component reference (ADR-0039). -/
+/-- Rewrite `{propName}` children of an inline view to the internal
+`propText% index` child when the identifier names a declared immutable prop
+(ADR-0042). -/
+private partial def rewritePropRefs (props : List String) (stx : Syntax) : Syntax :=
+  match stx with
+  | .node info kind args =>
+      if kind == ``LeanRxDsl.leanrxJsxChildDynamic && args.size == 3 &&
+          args[1]!.isIdent then
+        match props.idxOf? (args[1]!.getId.eraseMacroScopes.toString) with
+        | some index =>
+            let ref := args[1]!.getHeadInfo
+            .node info ``LeanRxDsl.leanrxJsxPropText
+              #[.atom ref "propText%", Syntax.mkNumLit (toString index) (info := ref)]
+        | none => .node info kind (args.map (rewritePropRefs props))
+      else
+        .node info kind (args.map (rewritePropRefs props))
+  | _ => stx
+
+private def rowAttrTerm (attr : Syntax) : CommandElabM (TSyntax `term) := do
+  let attrStx : TSyntax `leanrxJsxAttr := ⟨attr⟩
+  match attrStx with
+  | `(leanrxJsxAttr| $_:ident = { $_:term }) =>
+      throwErrorAt attr
+        "error[LRX-ELAB-114]: row templates support static attributes and row event references only"
+  | `(leanrxJsxAttr| class = { $_:term }) | `(leanrxJsxAttr| type = { $_:term }) =>
+      throwErrorAt attr
+        "error[LRX-ELAB-114]: row templates support static attributes and row event references only"
+  | _ => `(leanrx_jsx_attr% $attrStx)
+
+/- Lower one sealed row template (ADR-0041): dynamic content is restricted to
+declared row field projections, and events were already rewritten to string
+bindings against the sealed row event vocabulary. -/
+mutual
+  private partial def lowerRowChild (fields : List String) (child : Syntax) :
+      CommandElabM (TSyntax `term) := do
+    let childStx : TSyntax `leanrxJsxChild := ⟨child⟩
+    match childStx with
+    | `(leanrxJsxChild| $value:str) => do
+        let span ← sourceSpanTerm child
+        `(LeanRx.RowNode.text $value $span)
+    | `(leanrxJsxChild| { $value:term }) => do
+        let span ← sourceSpanTerm child
+        unless value.raw.isIdent do
+          throwErrorAt child
+            "error[LRX-ELAB-114]: row templates project declared row fields by bare name"
+        match fields.idxOf? (value.raw.getId.eraseMacroScopes.toString) with
+        | some index =>
+            let indexLit := Syntax.mkNumLit (toString index)
+            `(LeanRx.RowNode.fieldText $indexLit $span)
+        | none =>
+            throwErrorAt child
+              s!"error[LRX-ELAB-114]: unknown row field {value.raw.getId.eraseMacroScopes}; declared fields are {String.intercalate ", " fields}"
+    | `(leanrxJsxChild| { $_:str : $_:term }) =>
+        throwErrorAt child
+          "error[LRX-ELAB-114]: named text sinks are not available inside row templates"
+    | `(leanrxJsxChild| $element:leanrxJsxElement) => lowerRowElement fields element
+    | _ =>
+        throwErrorAt child
+          "error[LRX-ELAB-114]: malformed row template child"
+
+  private partial def lowerRowElement (fields : List String)
+      (element : TSyntax `leanrxJsxElement) : CommandElabM (TSyntax `term) := do
+    match element with
+    | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* >
+          [$children:leanrxJsxChild,*]) => do
+        let attrTerms ← attrs.mapM rowAttrTerm
+        let childTerms ← children.getElems.mapM (lowerRowChild fields ·)
+        let span ← sourceSpanTerm element
+        `(LeanRx.RowNode.nodeWith (leanrx_jsx_tag% $tag) [$childTerms,*]
+          (attrs := [$attrTerms,*]) (span := $span))
+    | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* />) => do
+        let attrTerms ← attrs.mapM rowAttrTerm
+        let span ← sourceSpanTerm element
+        `(LeanRx.RowNode.nodeWith (leanrx_jsx_tag% $tag) []
+          (attrs := [$attrTerms,*]) (span := $span))
+    | _ =>
+        throwErrorAt element
+          "error[LRX-ELAB-111]: a region item takes an inline jsx% row template element"
+end
+
+/-- Elaborate one `prop name : String;` item to its `PropSpec` (ADR-0042). -/
+private def elabPropItem (item : Syntax) (itemSpan : TSyntax `term) :
+    CommandElabM (TSyntax `term) := do
+  let role : Ident := ⟨item[0]⟩
+  let itemName : Ident := ⟨item[1]⟩
+  let ty : Ident := ⟨item[3]⟩
+  let roleName ← checkRole role
+  unless roleName == "prop" do
+    throwErrorAt role
+      s!"error[LRX-ELAB-003]: value-less type annotations are valid only on prop items, not {roleName}"
+  unless ty.getId.eraseMacroScopes.toString == "String" do
+    throwErrorAt ty
+      s!"error[LRX-ELAB-113]: immutable props support String, not {ty.getId.eraseMacroScopes}"
+  let nameLit := Syntax.mkStrLit itemName.getId.eraseMacroScopes.toString
+  `(LeanRx.PropSpec.mk $nameLit $itemSpan)
+
+/-- Elaborate one `region name (fields) := jsx% …;` item to its `RegionSpec`
+(ADR-0041). The sealed row event vocabulary means every region declares exactly
+the `remove` row event; templates opt in by binding `onClick={remove}`. -/
+private def elabRegionItem (item : Syntax) (itemSpan : TSyntax `term) :
+    CommandElabM (TSyntax `term) := do
+  let role : Ident := ⟨item[0]⟩
+  let itemName : Ident := ⟨item[1]⟩
+  let fields := sepByElems item[3] |>.map fun field => (⟨field⟩ : Ident)
+  let rhs : TSyntax `term := ⟨item[6]⟩
+  let roleName ← checkRole role
+  unless roleName == "region" do
+    throwErrorAt role
+      s!"error[LRX-ELAB-003]: row field lists are valid only on region items, not {roleName}"
+  let fieldNames := fields.map (·.getId.eraseMacroScopes.toString)
+  let nameLit := Syntax.mkStrLit itemName.getId.eraseMacroScopes.toString
+  let template ← match rhs with
+    | `(jsx% $element:leanrxJsxElement) =>
+        let rewritten : TSyntax `leanrxJsxElement :=
+          ⟨rewriteEventRefs ["remove"] element.raw⟩
+        lowerRowElement fieldNames.toList rewritten
+    | _ =>
+        throwErrorAt rhs
+          "error[LRX-ELAB-111]: a region item takes an inline jsx% row template"
+  let fieldLits : Array (TSyntax `term) :=
+    fieldNames.map fun fieldName => ⟨Syntax.mkStrLit fieldName⟩
+  `(LeanRx.RegionSpec.mk $nameLit #[$fieldLits,*] $template
+    #[LeanRx.RowEventSpec.mk "remove" LeanRx.RowAction.remove $itemSpan] $itemSpan)
+
+private def literalPropAttr? (attr : TSyntax `leanrxJsxAttr) : Bool :=
+  match attr with
+  | `(leanrxJsxAttr| $_:ident = $_:str) => true
+  | _ => false
+
+/-- The head identifier of one child-less JSX element whose attributes are all
+`name="text"` — the only shapes that can lower to a static child component
+reference, without (ADR-0039) or with (ADR-0042) immutable props. -/
 private def childElementHead? (stx : Syntax) : Option (TSyntax `ident) :=
   let element : TSyntax `leanrxJsxElement := ⟨stx⟩
   match element with
   | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* />) =>
-      if attrs.isEmpty then some tag else none
+      if attrs.all literalPropAttr? then some tag else none
   | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* > [$children:leanrxJsxChild,*]) =>
-      if attrs.isEmpty && children.getElems.isEmpty then some tag else none
+      if attrs.all literalPropAttr? && children.getElems.isEmpty then some tag else none
   | _ => none
 
 /-- Collect every capitalized head that the inline view could lower to a
@@ -153,11 +296,16 @@ private partial def collectComponentHeads (stx : Syntax)
   | .node _ _ args => args.foldl (init := found) fun acc arg => collectComponentHeads arg acc
   | _ => found
 
+/- The single command elaborator now dispatches eight item kinds; compiling
+its one large match needs more than the default heartbeat budget. -/
+set_option maxHeartbeats 800000 in
 scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" schemaTerm:term ")"
     "where" "{" items:leanrxComponentItem* "}" : command => do
-      /- First pass: the declared event inventory, so an inline view can bind
-      events by reference before the specification value exists. -/
+      /- First pass: the declared event and immutable prop inventories, so an
+      inline view can bind events and prop text positions by reference before
+      the specification value exists. -/
       let mut declaredEvents : List String := []
+      let mut declaredProps : List String := []
       for item in items do
         match item with
         | `(leanrxComponentItem| $role:ident $itemName:ident
@@ -165,7 +313,12 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
             if roleName role == "event" then
               declaredEvents := declaredEvents ++ [itemName.getId.eraseMacroScopes.toString]
         | _ =>
-            if item.raw.getKind == ``leanrxItemValue then
+            if item.raw.getKind == ``leanrxItemProp then
+              let role : Ident := ⟨item.raw[0]⟩
+              if roleName role == "prop" then
+                let itemName : Ident := ⟨item.raw[1]⟩
+                declaredProps := declaredProps ++ [itemName.getId.eraseMacroScopes.toString]
+            else if item.raw.getKind == ``leanrxItemValue then
               let role : Ident := ⟨item.raw[0]⟩
               if roleName role == "event" then
                 let itemName : Ident := ⟨item.raw[1]⟩
@@ -176,6 +329,8 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
       let mut declarations : Array (TSyntax `term) := #[]
       let mut childTerms : Array (TSyntax `term) := #[]
       let mut childNames : List String := []
+      let mut regionTerms : Array (TSyntax `term) := #[]
+      let mut propTerms : Array (TSyntax `term) := #[]
       let mut viewTerm? : Option (TSyntax `term) := none
       for item in items do
         let itemSpan ← sourceSpanTerm item
@@ -220,7 +375,11 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
             declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
               LeanRx.SurfaceRole.state $nameLit $itemSpan))
         | _ =>
-          if item.raw.getKind == ``leanrxItemValue then
+          if item.raw.getKind == ``leanrxItemProp then
+            propTerms := propTerms.push (← elabPropItem item.raw itemSpan)
+          else if item.raw.getKind == ``leanrxItemRegion then
+            regionTerms := regionTerms.push (← elabRegionItem item.raw itemSpan)
+          else if item.raw.getKind == ``leanrxItemValue then
             let role : Ident := ⟨item.raw[0]⟩
             let itemName : Ident := ⟨item.raw[1]⟩
             let steps := (sepByElems item.raw[3]).map fun step => (⟨step⟩ : TSyntax `term)
@@ -283,7 +442,8 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
                   let tagLit := Syntax.mkStrLit shortName
                   childTerms := childTerms.push
                     (← `(LeanRx.ChildComponent.of $tagLit $(← sourceSpanTerm tag)))
-            let rewritten : TSyntax `term := ⟨rewriteEventRefs declaredEvents value.raw⟩
+            let rewritten : TSyntax `term :=
+              ⟨rewriteEventRefs declaredEvents (rewritePropRefs declaredProps value.raw)⟩
             viewTerm? := some (← `(LeanRx.View.withSpan $rewritten $itemSpan))
           else
             throwErrorAt item "error[LRX-ELAB-003]: malformed component item"
@@ -305,6 +465,8 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
         view := $viewTerm
         surface := #[$declarations,*]
         children := #[$childTerms,*]
+        regions := #[$regionTerms,*]
+        props := #[$propTerms,*]
         span := $componentSpan }))
       elabCommand (← `(abbrev $checkName := LeanRx.ComponentSpec.check $specName))
       let messageTerm ← `(term| LeanRx.ComponentSpec.validationMessage $specName)

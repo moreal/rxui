@@ -41,7 +41,9 @@
 | [0037](docs/adr/0037-typed-event-payloads-in-component-backend.md) | Accepted | Lower typed event payloads through the generic component backend | 2026-08-24 |
 | [0038](docs/adr/0038-controlled-inputs-in-component-backend.md) | Accepted | Reflect controlled inputs through the generic component backend | 2026-08-25 |
 | [0039](docs/adr/0039-static-child-component-composition.md) | Accepted | Compose stateful child components by static module import | 2026-08-25 |
-| [0040](docs/adr/0040-app-ir-for-dynamic-region-events.md) | Proposed | Sketch an App IR to generalize Backend.Todo's event lowering | 2026-08-25 |
+| [0040](docs/adr/0040-app-ir-for-dynamic-region-events.md) | Accepted | Sketch an App IR to generalize Backend.Todo's event lowering | 2026-08-25 |
+| [0041](docs/adr/0041-sealed-row-binders-for-keyed-regions.md) | Accepted | Bind keyed region rows through sealed row binders in the generic backend | 2026-08-25 |
+| [0042](docs/adr/0042-immutable-props-across-the-mount-abi.md) | Accepted | Pass immutable child props as a positional mount ABI array | 2026-08-25 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

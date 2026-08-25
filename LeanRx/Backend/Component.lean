@@ -85,6 +85,13 @@ private def compileUpdate (inputs : Array Scalar.InputSpec) (eventIndex : Nat) :
         s!"$lrx_event_{eventIndex}_write_{writeIndex}" (Lower.rxExpr value) state
       pure (writeIndex + 1, state)
   | .dispatch .., writeIndex, state => pure (writeIndex, state)
+  | .regionAppend _ values _, writeIndex, state => do
+      let mut state := state
+      for (value, fieldIndex) in values.zipIdx do
+        state ← addEvaluator inputs s!"event:{eventIndex}:append:{writeIndex}:{fieldIndex}"
+          s!"$lrx_event_{eventIndex}_append_{writeIndex}_{fieldIndex}"
+          (Lower.rxExpr value.value) state
+      pure (writeIndex + 1, state)
   | .sequence first second, writeIndex, state => do
       let (writeIndex, state) ← compileUpdate inputs eventIndex first writeIndex state
       compileUpdate inputs eventIndex second writeIndex state
@@ -161,8 +168,18 @@ private def pushTrace (tx : Ident) (message : String) : Stmt :=
 private def eventName (index : Nat) : Except Error Ident :=
   Ident.checked s!"$lrx_event_{index}"
 
-private def updateStatements (evaluators : EvalState) (context state tx : Ident)
-    (eventNames : List String) (valueCount eventIndex : Nat) :
+/-- The context slot carrying the keyed region records: after the prop slots
+when reflected properties exist, directly after `sinkCache` otherwise
+(ADR-0041). Each record is `[handle, items, nextKey, dirty]`. -/
+private def regionSlot (checked : CheckedComponent Γ) : Nat :=
+  if checked.view.props.isEmpty then 6 else 8
+
+private def regionEntry (regions : Ident) (regionIndex slot : Nat) : Expr :=
+  .index (.index (.ident regions) (uint regionIndex)) (uint slot)
+
+private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
+    (regionSpecs : Array RegionSpec) (eventNames : List String)
+    (valueCount eventIndex : Nat) :
     Update Γ → Nat → Except Error (Nat × List Stmt)
   | .set field _ _, writeIndex => do
       let evaluator ← evaluator evaluators s!"event:{eventIndex}:write:{writeIndex}"
@@ -182,11 +199,31 @@ private def updateStatements (evaluators : EvalState) (context state tx : Ident)
       pure (writeIndex, [.expr <| call (← eventName targetIndex) [
         .ident context, .literal .null
       ]])
+  | .regionAppend regionName values _, writeIndex => do
+      let regionIndex ← match regionSpecs.toList.findIdx? (·.name == regionName) with
+        | some index => pure index
+        | none => .error {
+            code := "LRX-BE-031"
+            message := s!"checked region disappeared: {regionName}"
+          }
+      let fieldCalls ← values.zipIdx.mapM fun (_, fieldIndex) => do
+        let evaluator ← evaluator evaluators
+          s!"event:{eventIndex}:append:{writeIndex}:{fieldIndex}"
+        pure (evaluatorCall evaluator state valueCount)
+      pure (writeIndex + 1, [
+        .expr <| .call (.index (regionEntry regions regionIndex 1) (.literal (.string "push")))
+          (.ofList [.array (.ofList (regionEntry regions regionIndex 2 :: fieldCalls))]),
+        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 2))
+          (.binary .add (regionEntry regions regionIndex 2) (uint 1)),
+        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+          (.literal (.boolean true)),
+        pushTrace tx s!"region:{regionName}:append"
+      ])
   | .sequence first second, writeIndex => do
-      let (writeIndex, first) ← updateStatements evaluators context state tx eventNames
-        valueCount eventIndex first writeIndex
-      let (writeIndex, second) ← updateStatements evaluators context state tx eventNames
-        valueCount eventIndex second writeIndex
+      let (writeIndex, first) ← updateStatements evaluators context state tx regions
+        regionSpecs eventNames valueCount eventIndex first writeIndex
+      let (writeIndex, second) ← updateStatements evaluators context state tx regions
+        regionSpecs eventNames valueCount eventIndex second writeIndex
       pure (writeIndex, first ++ second)
 
 private def anyChanged (changed : Ident) (deps : List Nat) : Expr :=
@@ -200,10 +237,13 @@ private structure RuntimeNames where
   createText : Ident
   setAttribute : Ident
   setProperty : Ident
+  setKey : Ident
   append : Ident
   listen : Ident
+  listenDelegatedCells : Ident
   setText : Ident
   makeDisposer : Ident
+  createKeyedRegion : Ident
   listenValue : Ident
   listenKey : Ident
   listenChecked : Ident
@@ -215,10 +255,13 @@ private def runtimeNames : Except Error RuntimeNames := do
     createText := ← Ident.checked "createText"
     setAttribute := ← Ident.checked "setAttribute"
     setProperty := ← Ident.checked "setProperty"
+    setKey := ← Ident.checked "setKey"
     append := ← Ident.checked "append"
     listen := ← Ident.checked "listen"
+    listenDelegatedCells := ← Ident.checked "listenDelegatedCells"
     setText := ← Ident.checked "setText"
     makeDisposer := ← Ident.checked "makeDisposer"
+    createKeyedRegion := ← Ident.checked "createKeyedRegion"
     listenValue := ← Ident.checked "listenValue"
     listenKey := ← Ident.checked "listenKey"
     listenChecked := ← Ident.checked "listenChecked"
@@ -250,6 +293,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
   let sinkCache ← Ident.checked "sinkCache"
   let propRefs ← Ident.checked "propRefs"
   let propCache ← Ident.checked "propCache"
+  let regions ← Ident.checked "regions"
   let valueCount := checked.spec.values.size
   let mut body : List Stmt := [
     .const state (arrayAt context 0),
@@ -264,6 +308,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
       .const propRefs (arrayAt context 6),
       .const propCache (arrayAt context 7)
     ]
+  unless checked.spec.regions.isEmpty do
+    body := body ++ [.const regions (arrayAt context (regionSlot checked))]
   let mut beginBody : List Stmt := [pushTrace tx "transaction:begin"]
   for id in List.range valueCount do
     beginBody := beginBody ++ [
@@ -349,6 +395,16 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
         pushTrace tx s!"dom:{label}:write"
       ]
     ]]
+  for (region, regionIndex) in checked.spec.regions.toList.zipIdx do
+    /- The keyed region reconciles the whole target on commit; the dirty flag
+    keeps clean regions out of the sweep entirely (ADR-0041). -/
+    commitBody := commitBody ++ [.ifThen (regionEntry regions regionIndex 3) <| .ofList [
+      .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+        (.literal (.boolean false)),
+      .expr <| .call (.index (regionEntry regions regionIndex 0) (.literal (.string "update")))
+        (.ofList [regionEntry regions regionIndex 1, .literal .null]),
+      pushTrace tx s!"region:{region.name}:update"
+    ]]
   commitBody := commitBody ++ [
     incrementAt tx 1,
     pushTrace tx "transaction:commit"
@@ -366,8 +422,9 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
   let ignored ← Ident.checked "ignored"
   let state ← Ident.checked "state"
   let tx ← Ident.checked "tx"
-  let (_, writes) ← updateStatements evaluators context state tx eventNames
-    checked.spec.values.size eventIndex event.update 0
+  let regions ← Ident.checked "regions"
+  let (_, writes) ← updateStatements evaluators context state tx regions
+    checked.spec.regions eventNames checked.spec.values.size eventIndex event.update 0
   transactionShell checked evaluators runtime (← eventName eventIndex)
     #[context, ignored] event.name writes
 
@@ -378,7 +435,7 @@ private def typedEventName (index : Nat) : Except Error Ident :=
 them. -/
 private def shellLocals : List String :=
   ["state", "refs", "tx", "oldSources", "changed", "sinkCache", "propRefs",
-    "propCache", "context", "hostState"]
+    "propCache", "regions", "context", "hostState"]
 
 private def typedEventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
     (runtime : RuntimeNames) (event : AnyTypedEvent Γ) (eventIndex : Nat) :
@@ -410,6 +467,7 @@ private structure DomState where
   statements : List Stmt := []
   nodes : List DomBinding := []
   childOffs : List Ident := []
+  regionHandles : List (String × Ident) := []
 
 private structure SinkBinding where
   path : List Nat
@@ -433,8 +491,9 @@ private def sinkAt (sinks : List SinkBinding) (path : List Nat) : Except Error S
   | none => .error { code := "LRX-BE-024", message := "dynamic text has no scalar sink" }
 
 mutual
-  private def mountNode (runtime : RuntimeNames) (stateName : Ident) (valueCount : Nat)
-      (sinks : List SinkBinding) (childMounts : List (String × Ident)) (path : List Nat) :
+  private def mountNode (runtime : RuntimeNames) (stateName propsName : Ident)
+      (valueCount : Nat) (sinks : List SinkBinding) (childMounts : List (String × Ident))
+      (regionMounts : List (String × (Ident × Ident × Ident))) (path : List Nat) :
       MountNode → DomState → Except Error (Ident × DomState)
     | .element tag attrs children, state => do
         let (name, allocator) ← state.allocator.allocate s!"node_{state.nodes.length}"
@@ -446,8 +505,8 @@ mutual
           state := appendStatement state <| .expr <| call runtime.setAttribute [
             .ident name, .literal (.string attr.name), .literal (.string attr.value)
           ]
-        let finalState ← mountChildren runtime stateName valueCount sinks childMounts
-          name path 0 children state
+        let finalState ← mountChildren runtime stateName propsName valueCount sinks
+          childMounts regionMounts name path 0 children state
         pure (name, finalState)
     | .text value, state => do
         let (name, allocator) ← state.allocator.allocate s!"node_{state.nodes.length}"
@@ -460,20 +519,34 @@ mutual
         let state := addNode { state with allocator } path name
         pure (name, appendStatement state <| .const name <|
           call runtime.createText [evaluatorCall sink.evaluator stateName valueCount])
-    | .child _, _ =>
+    | .propText field, state => do
+        /- Immutable props are mount-time constants: the text node reads the
+        positional mount argument once and is never revisited (ADR-0042). -/
+        let (name, allocator) ← state.allocator.allocate s!"prop_text_{field}"
+        let state := addNode { state with allocator } path name
+        pure (name, appendStatement state <| .const name <|
+          call runtime.createText [.index (.ident propsName) (uint field)])
+    | .child _ _, _ =>
         .error {
           code := "LRX-BE-030"
           message := "a child component cannot be the component view root"
         }
+    | .region _, _ =>
+        .error {
+          code := "LRX-BE-032"
+          message := "a keyed region cannot be the component view root"
+        }
 
-  private def mountChildren (runtime : RuntimeNames) (stateName : Ident) (valueCount : Nat)
-      (sinks : List SinkBinding) (childMounts : List (String × Ident)) (parent : Ident)
+  private def mountChildren (runtime : RuntimeNames) (stateName propsName : Ident)
+      (valueCount : Nat) (sinks : List SinkBinding) (childMounts : List (String × Ident))
+      (regionMounts : List (String × (Ident × Ident × Ident))) (parent : Ident)
       (path : List Nat) (index : Nat) :
       MountChildren → DomState → Except Error DomState
     | .nil, state => pure state
-    | .cons (.child childName) tail, state => do
+    | .cons (.child childName propValues) tail, state => do
         /- The child's `mount(parent)` appends its root right here, so document
-        order is preserved without a wrapper element (ADR-0039). -/
+        order is preserved without a wrapper element (ADR-0039); immutable prop
+        values ride the call as one positional array (ADR-0042). -/
         let mountName ← match childMounts.find? (·.1 == childName) with
           | some entry => pure entry.2
           | none => .error {
@@ -483,21 +556,186 @@ mutual
         let (off, allocator) ← state.allocator.allocate
           s!"child_off_{state.childOffs.length}"
         let state := { state with allocator, childOffs := state.childOffs ++ [off] }
-        let state := appendStatement state <| .const off <| call mountName [.ident parent]
-        mountChildren runtime stateName valueCount sinks childMounts parent
-          path (index + 1) tail state
+        let args := [Expr.ident parent] ++ (if propValues.isEmpty then []
+          else [Expr.array (.ofList (propValues.map fun value => .literal (.string value)))])
+        let state := appendStatement state <| .const off <| call mountName args
+        mountChildren runtime stateName propsName valueCount sinks childMounts
+          regionMounts parent path (index + 1) tail state
+    | .cons (.region regionName) tail, state => do
+        /- `createKeyedRegion(parent, …)` appends its anchor marker right here;
+        rows are reconciled before it on commit (ADR-0041). -/
+        let (rowFn, updateFn, disposeFn) ← match regionMounts.find? (·.1 == regionName) with
+          | some entry => pure entry.2
+          | none => .error {
+              code := "LRX-BE-031"
+              message := s!"checked region disappeared: {regionName}"
+            }
+        let (handle, allocator) ← state.allocator.allocate
+          s!"region_{state.regionHandles.length}"
+        let state := { state with allocator }
+        let state :=
+          { state with regionHandles := state.regionHandles ++ [(regionName, handle)] }
+        let state := appendStatement state <| .const handle <| call runtime.createKeyedRegion [
+          .ident parent, .ident rowFn, .ident updateFn, .ident disposeFn
+        ]
+        mountChildren runtime stateName propsName valueCount sinks childMounts
+          regionMounts parent path (index + 1) tail state
     | .cons head tail, state => do
-        let (child, state) ← mountNode runtime stateName valueCount sinks childMounts
-          (path ++ [index]) head state
+        let (child, state) ← mountNode runtime stateName propsName valueCount sinks
+          childMounts regionMounts (path ++ [index]) head state
         let state := appendStatement state <| .expr <| call runtime.append [.ident parent, .ident child]
-        mountChildren runtime stateName valueCount sinks childMounts parent
-          path (index + 1) tail state
+        mountChildren runtime stateName propsName valueCount sinks childMounts
+          regionMounts parent path (index + 1) tail state
 end
 
 private def nodeAt (nodes : List DomBinding) (path : List Nat) : Except Error Ident :=
   match nodes.find? (·.path == path) with
   | some node => pure node.name
   | none => .error { code := "LRX-BE-025", message := "view binding path has no mounted node" }
+
+/- The first row event bound in one row-template subtree: the delegated cell
+action for the enclosing cell (at most one per cell by LRX-VIEW-027). -/
+mutual
+  private def rowActionOf : RowNode → Option String
+    | .element _ _ events children _ =>
+        match events.head? with
+        | some event => some event.eventName
+        | none => rowActionOfChildren children
+    | .text _ _ | .fieldText _ _ => none
+
+  private def rowActionOfChildren : RowChildren → Option String
+    | .nil => none
+    | .cons head tail =>
+        match rowActionOf head with
+        | some action => some action
+        | none => rowActionOfChildren tail
+end
+
+/-- Delegated cell actions of one region: per direct child of the row root, the
+row event name bound inside it, or `""` for an actionless cell. Every direct
+child mounts exactly one DOM node, so template indices equal `childNodes`
+indices at runtime. -/
+private def regionActions (region : RegionSpec) : List String :=
+  match region.template with
+  | .element _ _ _ cells _ => cells.toList.map fun cell => (rowActionOf cell).getD ""
+  | _ => []
+
+private structure RowDom where
+  allocator : NameAllocator
+  statements : List Stmt := []
+  count : Nat := 0
+
+private def rowAppend (dom : RowDom) (statement : Stmt) : RowDom :=
+  { dom with statements := dom.statements ++ [statement] }
+
+mutual
+  private def rowNodeStmts (runtime : RuntimeNames) (item : Ident) :
+      RowNode → RowDom → Except Error (Ident × RowDom)
+    | .element tag attrs _ children _, dom => do
+        let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
+        let dom := rowAppend { dom with allocator, count := dom.count + 1 } <| .const name <|
+          call runtime.createElement [.literal (.string tag.name)]
+        let mut dom := dom
+        for attr in attrs do
+          dom := rowAppend dom <| .expr <| call runtime.setAttribute [
+            .ident name, .literal (.string attr.name), .literal (.string attr.value)
+          ]
+        let finalDom ← rowChildrenStmts runtime item name children dom
+        pure (name, finalDom)
+    | .text value _, dom => do
+        let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
+        let dom := { dom with allocator, count := dom.count + 1 }
+        pure (name, rowAppend dom <| .const name <|
+          call runtime.createText [.literal (.string value)])
+    | .fieldText field _, dom => do
+        /- Sealed row binder (ADR-0041): the projection reads `item[field + 1]`
+        behind the key slot; rows never re-render, so no cache is needed. -/
+        let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
+        let dom := { dom with allocator, count := dom.count + 1 }
+        pure (name, rowAppend dom <| .const name <|
+          call runtime.createText [.index (.ident item) (uint (field + 1))])
+
+  private def rowChildrenStmts (runtime : RuntimeNames) (item : Ident) (parent : Ident) :
+      RowChildren → RowDom → Except Error RowDom
+    | .nil, dom => pure dom
+    | .cons head tail, dom => do
+        let (child, dom) ← rowNodeStmts runtime item head dom
+        let dom := rowAppend dom <| .expr <| call runtime.append [.ident parent, .ident child]
+        rowChildrenStmts runtime item parent tail dom
+end
+
+private def regionRowFunction (runtime : RuntimeNames) (region : RegionSpec)
+    (name : Ident) : Except Error Function := do
+  let item ← Ident.checked "item"
+  let position ← Ident.checked "position"
+  let context ← Ident.checked "context"
+  let initial : RowDom := { allocator := { used := ["item", "position", "context"] } }
+  let (root, dom) ← rowNodeStmts runtime item region.template initial
+  let body : List Stmt := dom.statements ++ [
+    .expr <| call runtime.setKey [.ident root, .index (.ident item) (uint 0)],
+    .return (.ident root)
+  ]
+  pure { name, params := #[item, position, context], body := body.toArray }
+
+/-- Stage-1 rows are immutable after mount (no row field mutation exists in the
+sealed vocabulary), so the retained-row update callback is a no-op. -/
+private def regionUpdateFunction (name : Ident) : Except Error Function := do
+  let row ← Ident.checked "row"
+  let item ← Ident.checked "item"
+  let position ← Ident.checked "position"
+  let context ← Ident.checked "context"
+  let body : Array Stmt := #[.return (.literal .null)]
+  pure { name, params := #[row, item, position, context], body }
+
+private def regionDisposeFunction (name : Ident) : Except Error Function := do
+  let row ← Ident.checked "row"
+  let key ← Ident.checked "key"
+  let context ← Ident.checked "context"
+  let body : Array Stmt := #[.return (.literal .null)]
+  pure { name, params := #[row, key, context], body }
+
+/-- The delegated dispatcher of one region: `listenDelegatedCells` resolves the
+action by row structure and calls this with the row key; each declared row
+event becomes one action branch running inside the shared transaction shell
+(ADR-0040/0041). -/
+private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
+    (runtime : RuntimeNames) (region : RegionSpec) (regionIndex : Nat) (name : Ident) :
+    Except Error Function := do
+  let hostState ← Ident.checked "hostState"
+  let context ← Ident.checked "context"
+  let action ← Ident.checked "action"
+  let key ← Ident.checked "key"
+  let value ← Ident.checked "value"
+  let checkedFlag ← Ident.checked "checked"
+  let eventKey ← Ident.checked "eventKey"
+  let regions ← Ident.checked "regions"
+  let tx ← Ident.checked "tx"
+  let mut writes : List Stmt := []
+  for event in region.events do
+    match event.action with
+    | .remove =>
+        let kept ← Ident.checked s!"kept_{regionIndex}"
+        let rowEntry ← Ident.checked "row_entry"
+        writes := writes ++ [
+          .ifThen (.binary .eq (.ident action) (.literal (.string event.name))) (.ofList [
+            .const kept (.array .nil),
+            .forOf rowEntry (regionEntry regions regionIndex 1) (.ofList [
+              .ifThen (.unary .not
+                  (.binary .eq (.index (.ident rowEntry) (uint 0)) (.ident key))) <| .ofList [
+                .expr <| .call (.index (.ident kept) (.literal (.string "push")))
+                  (.ofList [.ident rowEntry])
+              ]
+            ]),
+            .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 1))
+              (.ident kept),
+            .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+              (.literal (.boolean true)),
+            pushTrace tx s!"region:{region.name}:{event.name}"
+          ])
+        ]
+  transactionShell checked evaluators runtime name
+    #[hostState, context, action, key, value, checkedFlag, eventKey]
+    s!"region:{region.name}" writes
 
 private def manifest (moduleName : String) (checked : CheckedComponent Γ) : ComponentManifest :=
   let graph := checked.graph.toJson
@@ -519,11 +757,14 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
           mounted.binding.kind.payload != .none || mounted.binding.kind == .submit) then
         #["./leanrx_dom.mjs", "./leanrx_form_events.mjs"]
       else #["./leanrx_dom.mjs"]) ++
+      (if checked.spec.regions.isEmpty then #[] else #["./leanrx_region.mjs"]) ++
       checked.spec.children.map (·.moduleSpecifier)
     features := #["scalar", "events", "transactions", "instrumentation", "trace"] ++
       (if checked.spec.typedEvents.isEmpty then #[] else #["typed-events"]) ++
       (if checked.view.props.isEmpty then #[] else #["controlled-props"]) ++
-      (if checked.spec.children.isEmpty then #[] else #["child-components"]) }
+      (if checked.spec.children.isEmpty then #[] else #["child-components"]) ++
+      (if checked.spec.regions.isEmpty then #[] else #["keyed-regions"]) ++
+      (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
 def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Emitted := do
@@ -541,6 +782,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   let sinkCache ← Ident.checked "sinkCache"
   let propRefs ← Ident.checked "propRefs"
   let propCache ← Ident.checked "propCache"
+  let regions ← Ident.checked "regions"
   let context ← Ident.checked "context"
   let disposer ← Ident.checked "disposer"
   let target ← Ident.checked "target"
@@ -558,12 +800,29 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     pure { path := sink.path, index, evaluator := ← evaluator evaluators s!"sink:{index}" }
   let childMounts ← checked.spec.children.toList.zipIdx.mapM fun (child, index) => do
     pure (child.name, ← Ident.checked s!"$lrx_child_{index}")
+  let propsParam ← Ident.checked "props"
+  let regionMounts ← checked.spec.regions.toList.zipIdx.mapM fun (region, index) => do
+    pure (region.name,
+      (← Ident.checked s!"$lrx_region_{index}_row",
+        ← Ident.checked s!"$lrx_region_{index}_update",
+        ← Ident.checked s!"$lrx_region_{index}_dispose"))
+  let regionFunctions ← checked.spec.regions.toList.zip regionMounts |>.mapM
+    fun (region, (_, (rowFn, updateFn, disposeFn))) => do
+      pure [← regionRowFunction runtime region rowFn,
+        ← regionUpdateFunction updateFn,
+        ← regionDisposeFunction disposeFn]
+  let regionDispatches ← checked.spec.regions.toList.zipIdx.mapM fun (region, index) => do
+    if (regionActions region).any (· ≠ "") then
+      let name ← Ident.checked s!"$lrx_region_{index}_dispatch"
+      pure (some (name, ← regionDispatchFunction checked evaluators runtime region index name))
+    else
+      pure none
   let initialDom : DomState := { allocator := { used := [
     "state", "refs", "tx", "oldSources", "changed", "sinkCache", "propRefs",
-    "propCache", "context", "disposer", "target"
+    "propCache", "regions", "props", "context", "disposer", "target"
   ] } }
-  let (root, dom) ← mountNode runtime state valueCount sinkBindings childMounts []
-    checked.view.template initialDom
+  let (root, dom) ← mountNode runtime state propsParam valueCount sinkBindings childMounts
+    regionMounts [] checked.view.template initialDom
   let sinkRefs ← checked.view.textSinks.mapM fun sink => do
     pure (.ident (← nodeAt dom.nodes sink.path))
   let sinkInitialValues ← sinkBindings.mapM fun sink =>
@@ -594,6 +853,23 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
         arrayAt propRefs index, .literal (.string slot.name),
         arrayAt propCache index
       ]]
+  unless checked.spec.regions.isEmpty do
+    /- One record per region in declaration order: `[handle, items, nextKey,
+    dirty]`. Keys are region-owned monotone safe integers (ADR-0027/0029), so
+    uniqueness holds by construction. -/
+    let regionRecords ← checked.spec.regions.toList.mapM fun region => do
+      let handle ← match dom.regionHandles.find? (·.1 == region.name) with
+        | some entry => pure entry.2
+        | none => .error {
+            code := "LRX-BE-032"
+            message := s!"checked region {region.name} was never mounted"
+          }
+      pure <| Expr.array <| .ofList [
+        .ident handle, .array .nil, uint 0, .literal (.boolean false)
+      ]
+    mountBody := mountBody ++ [
+      .const regions (.array (.ofList regionRecords))
+    ]
   mountBody := mountBody ++ [
     .const tx (.array <| .ofList [
       uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, uint 0, .array .nil,
@@ -607,7 +883,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       .ident state, .ident refs, .ident tx, .ident oldSources, .ident changed,
       .ident sinkCache
     ] ++ (if checked.view.props.isEmpty then []
-      else [.ident propRefs, .ident propCache])),
+      else [.ident propRefs, .ident propCache]) ++
+      (if checked.spec.regions.isEmpty then [] else [.ident regions])),
     .expr <| call runtime.append [.ident target, .ident root]
   ]
   let mut disposers : List Expr := dom.childOffs.map Expr.ident
@@ -645,10 +922,35 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           .ident context, .ident handler
         ]]
     disposers := disposers ++ [.ident off]
+  for ((region, regionIndex), dispatch?) in checked.spec.regions.toList.zipIdx.zip
+      regionDispatches do
+    /- One structural delegated listener per region container (ADR-0030/0041);
+    the cell action array maps row-root child indices to row event names. -/
+    match dispatch? with
+    | none => pure ()
+    | some (dispatchName, _) =>
+        let reference ← match checked.view.regionRefs.find? (·.name == region.name) with
+          | some reference => pure reference
+          | none => .error {
+              code := "LRX-BE-031"
+              message := s!"checked region disappeared: {region.name}"
+            }
+        let container ← nodeAt dom.nodes reference.path.dropLast
+        let off ← Ident.checked s!"region_off_{regionIndex}"
+        mountBody := mountBody ++ [.const off <| call runtime.listenDelegatedCells [
+          .ident container, .literal (.string "click"), .ident state, .ident context,
+          .ident dispatchName,
+          .array (.ofList ((regionActions region).map fun action =>
+            .literal (.string action)))
+        ]]
+        disposers := disposers ++ [.ident off]
+  for (_, handle) in dom.regionHandles do
+    disposers := disposers ++ [.index (.ident handle) (.literal (.string "dispose"))]
   mountBody := mountBody ++ [
-    .const disposer <| call runtime.makeDisposer [
+    .const disposer <| call runtime.makeDisposer ([
       .ident root, .array (.ofList disposers), .ident tx
-    ],
+    ] ++ (if dom.regionHandles.isEmpty then []
+      else [.array (.ofList (dom.regionHandles.map fun (_, handle) => Expr.ident handle))])),
     .return (.ident disposer)
   ]
   let mount ← Ident.checked "mount"
@@ -669,6 +971,11 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     fun (child, (_, localName)) =>
       { source := child.moduleSpecifier
         names := #[(mount, localName)] : Import }
+  let usesDelegation := regionDispatches.any (·.isSome)
+  let regionFunctionDecls :=
+    regionFunctions.flatMap id ++ regionDispatches.filterMap (·.map (·.2))
+  let mountParams := #[target] ++
+    (if checked.spec.props.isEmpty then #[] else #[propsParam])
   let module : Module :=
     { globals := #[← Ident.checked "String"]
       imports := #[
@@ -681,13 +988,22 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             (runtime.setText, runtime.setText),
             (runtime.makeDisposer, runtime.makeDisposer)
           ] ++ (if checked.view.props.isEmpty then #[]
-            else #[(runtime.setProperty, runtime.setProperty)]) }
+            else #[(runtime.setProperty, runtime.setProperty)]) ++
+          (if checked.spec.regions.isEmpty then #[]
+            else #[(runtime.setKey, runtime.setKey)]) ++
+          (if usesDelegation then
+            #[(runtime.listenDelegatedCells, runtime.listenDelegatedCells)]
+          else #[]) }
       ] ++ (if formImportNames.isEmpty then #[] else #[
         { source := "./leanrx_form_events.mjs", names := formImportNames }
+      ]) ++ (if checked.spec.regions.isEmpty then #[] else #[
+        { source := "./leanrx_region.mjs", names := #[
+            (runtime.createKeyedRegion, runtime.createKeyedRegion)
+          ] }
       ]) ++ childImports.toArray
       declarations := (evaluators.declarations ++ eventFunctions.map Decl.function ++
-        typedEventFunctions.map Decl.function ++ [
-        Decl.function { name := mount, params := #[target], body := mountBody.toArray }
+        typedEventFunctions.map Decl.function ++ regionFunctionDecls.map Decl.function ++ [
+        Decl.function { name := mount, params := mountParams, body := mountBody.toArray }
       ]).toArray
       exports := #[{ localName := mount, exportName := mount }] }
   module.validate

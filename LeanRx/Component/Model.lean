@@ -55,28 +55,48 @@ def withSpan (value : ValueSpec Γ) (span : SourceSpan) : ValueSpec Γ :=
 
 end ValueSpec
 
-/-- Pure transaction-local update program. M4 validates writes target sources. -/
+/-- One appended row field value, evaluated against component state at event
+time (ADR-0041). Rows are `String` tuples in stage 1. -/
+structure RowValue (Γ : Schema) where
+  deps : DepSet Γ
+  value : RxExpr Γ deps String
+
+def RowValue.of {Γ : Schema} {d : DepSet Γ} (value : RxExpr Γ d String) : RowValue Γ :=
+  ⟨d, value⟩
+
+/-- Pure transaction-local update program. M4 validates writes target sources;
+`regionAppend` pushes one row (fresh region-owned key, evaluated field values)
+onto a declared keyed region (ADR-0041). -/
 inductive Update (Γ : Schema) where
   | set (field : Field Γ α) (value : RxExpr Γ deps α) (span : SourceSpan := .generated)
   | dispatch (eventName : String) (span : SourceSpan := .generated)
+  | regionAppend (region : String) (values : List (RowValue Γ))
+      (span : SourceSpan := .generated)
   | sequence (first second : Update Γ)
 
 namespace Update
 
 def directWriteTargets : Update Γ → List Nat
   | .set field _ _ => [field.index]
-  | .dispatch .. => []
+  | .dispatch .. | .regionAppend .. => []
   | .sequence first second => first.directWriteTargets ++ second.directWriteTargets
 
 def directReadDependencies : Update Γ → List Nat
   | .set _ value _ => value.dependencies.ids
   | .dispatch .. => []
+  | .regionAppend _ values _ => values.flatMap (·.deps.ids)
   | .sequence first second => first.directReadDependencies ++ second.directReadDependencies
 
 def dispatchTargets : Update Γ → List String
-  | .set .. => []
+  | .set .. | .regionAppend .. => []
   | .dispatch eventName _ => [eventName]
   | .sequence first second => first.dispatchTargets ++ second.dispatchTargets
+
+/-- Region append targets with their field arity, for region-table checks. -/
+def regionAppendTargets : Update Γ → List (String × Nat)
+  | .set .. | .dispatch .. => []
+  | .regionAppend region values _ => [(region, values.length)]
+  | .sequence first second => first.regionAppendTargets ++ second.regionAppendTargets
 
 end Update
 
@@ -127,6 +147,14 @@ deriving Repr, BEq
 def ChildComponent.of (name : String) (span : SourceSpan := .generated) : ChildComponent :=
   { name, moduleSpecifier := s!"./{name}.mjs", span }
 
+/-- One declared immutable component input (ADR-0042). The value arrives from
+the parent through the mount ABI (`mount(target, props)`); updates cannot
+target it and stage 1 fixes the payload type to `String`. -/
+structure PropSpec where
+  name : String
+  span : SourceSpan := .generated
+deriving Repr, BEq
+
 structure ComponentSpec (Γ : Schema) where
   name : String
   values : Array (ValueSpec Γ)
@@ -135,7 +163,14 @@ structure ComponentSpec (Γ : Schema) where
   view : View Γ
   surface : Array SurfaceDecl := #[]
   children : Array ChildComponent := #[]
+  regions : Array RegionSpec := #[]
+  props : Array PropSpec := #[]
   span : SourceSpan := .generated
+
+/-- Declared immutable prop names in declaration order; the parent-side jsx
+elaboration validates child prop bindings against this list (ADR-0042). -/
+def ComponentSpec.propNames (spec : ComponentSpec Γ) : List String :=
+  spec.props.toList.map (·.name)
 
 structure ComponentError where
   code : String
@@ -336,6 +371,24 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
           path := error.path
           spans := error.spans
         }
+  for event in spec.events do
+    for (target, arity) in event.update.regionAppendTargets do
+      match spec.regions.toList.find? (·.name == target) with
+      | none =>
+          throw {
+            code := "LRX-TYPE-109"
+            message := s!"event {event.name} appends to unknown region {target}"
+            path := #[event.name, target]
+            spans := #[event.span]
+          }
+      | some region =>
+          unless arity == region.fields.size do
+            throw {
+              code := "LRX-TYPE-110"
+              message := s!"event {event.name} appends {arity} field(s) to region {target}, which declares {region.fields.size}"
+              path := #[event.name, target]
+              spans := #[event.span, region.span]
+            }
   for mounted in split.events do
     if mounted.binding.kind.payload == .none then
       unless names.contains mounted.binding.eventName do
@@ -450,7 +503,9 @@ private def validateView : View Γ → Except ComponentError Unit
       if name.isEmpty then
         throw { code := "LRX-VIEW-004", message := "text sink name must not be empty", spans := #[span] }
       else pure ()
-  | .child _ _ => pure ()
+  | .child _ _ _ => pure ()
+  | .region _ _ => pure ()
+  | .propText _ _ => pure ()
 
 private def validateChildren : ViewChildren Γ → Except ComponentError Unit
   | .nil => pure ()
@@ -489,6 +544,197 @@ private def validateChildComponents (spec : ComponentSpec Γ)
         spans := #[reference.span]
       }
 
+/- Row events bound anywhere inside one row-template subtree. -/
+mutual
+  private def rowEventCount : RowNode → Nat
+    | .element _ _ events children _ => events.length + rowEventCountChildren children
+    | .text _ _ | .fieldText _ _ => 0
+
+  private def rowEventCountChildren : RowChildren → Nat
+    | .nil => 0
+    | .cons head tail => rowEventCount head + rowEventCountChildren tail
+end
+
+/- Validate one sealed row template node (ADR-0041). `depth` is the distance
+from the row root: the root is 0, cells are 1, and delegated row events may
+only sit at depth ≥ 2 so structural resolution can find a strict cell
+descendant. -/
+mutual
+  private def validateRowNode (region : RegionSpec) (depth : Nat) :
+      RowNode → Except ComponentError Unit
+    | .element tag attrs events children span => do
+        if duplicate? (attrs.map StaticAttr.name) then
+          throw { code := "LRX-VIEW-001", message := "element has duplicate static attributes", spans := #[span] }
+        if duplicate? (events.map fun event => event.kind.name) then
+          throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
+        for event in events do
+          unless event.kind == .click do
+            throw {
+              code := "LRX-VIEW-027"
+              message := s!"row events in region {region.name} support click bindings only"
+              spans := #[event.span]
+            }
+          unless tag == .button do
+            throw {
+              code := "LRX-VIEW-027"
+              message := "row click handlers require a native button in the sealed row template"
+              spans := #[event.span]
+            }
+          unless depth ≥ 2 do
+            throw {
+              code := "LRX-VIEW-027"
+              message := s!"row event {event.eventName} must sit strictly inside a row cell for structural delegation"
+              spans := #[event.span]
+            }
+          unless region.events.toList.any (·.name == event.eventName) do
+            throw {
+              code := "LRX-VIEW-028"
+              message := s!"row template references unknown row event {event.eventName}"
+              path := #[region.name, event.eventName]
+              spans := #[event.span]
+            }
+        validateRowChildren region (depth + 1) children
+    | .text _ _ => pure ()
+    | .fieldText field span =>
+        unless field < region.fields.size do
+          throw {
+            code := "LRX-VIEW-026"
+            message := s!"row template projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
+            spans := #[span]
+          }
+
+  private def validateRowChildren (region : RegionSpec) (depth : Nat) :
+      RowChildren → Except ComponentError Unit
+    | .nil => pure ()
+    | .cons head tail => do
+        validateRowNode region depth head
+        validateRowChildren region depth tail
+end
+
+private def regionChildCounts : ViewChildren Γ → Nat × Nat
+  | .nil => (0, 0)
+  | .cons head tail =>
+      let (total, regions) := regionChildCounts tail
+      (total + 1, if let View.region _ _ := head then regions + 1 else regions)
+
+/- Region positions must be the only child of their parent element so the
+container owns exactly the keyed rows plus the region marker (ADR-0041). -/
+mutual
+  private def regionPlacementView : View Γ → Except ComponentError Unit
+    | .element _ _ _ children span _ => do
+        let (total, regions) := regionChildCounts children
+        if regions > 0 && (total != 1 || regions != 1) then
+          throw {
+            code := "LRX-VIEW-029"
+            message := "a keyed region must be the only child of its container element"
+            spans := #[span]
+          }
+        regionPlacementChildren children
+    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .propText _ _ | .region _ _ => pure ()
+
+  private def regionPlacementChildren : ViewChildren Γ → Except ComponentError Unit
+    | .nil => pure ()
+    | .cons head tail => do
+        regionPlacementView head
+        regionPlacementChildren tail
+end
+
+/-- Validate the region table, its row templates, and the view's region
+references (ADR-0041). -/
+private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
+    Except ComponentError Unit := do
+  let names := spec.regions.toList.map (·.name)
+  if names.any String.isEmpty || duplicate? names then
+    throw {
+      code := "LRX-VIEW-025"
+      message := "region names must be nonempty and unique"
+      spans := spec.regions.map (·.span)
+    }
+  for region in spec.regions do
+    if region.fields.isEmpty then
+      throw {
+        code := "LRX-VIEW-026"
+        message := s!"region {region.name} must declare at least one row field"
+        spans := #[region.span]
+      }
+    if region.fields.toList.any String.isEmpty || duplicate? region.fields.toList then
+      throw {
+        code := "LRX-VIEW-026"
+        message := s!"region {region.name} row field names must be nonempty and unique"
+        spans := #[region.span]
+      }
+    let eventNames := region.events.toList.map (·.name)
+    if eventNames.any String.isEmpty || duplicate? eventNames then
+      throw {
+        code := "LRX-VIEW-025"
+        message := s!"region {region.name} row event names must be nonempty and unique"
+        spans := #[region.span]
+      }
+    match region.template with
+    | .element _ _ events cells _ => do
+        unless events.isEmpty do
+          throw {
+            code := "LRX-VIEW-027"
+            message := s!"the row root of region {region.name} cannot bind row events"
+            spans := #[region.span]
+          }
+        for cell in cells.toList do
+          unless rowEventCount cell ≤ 1 do
+            throw {
+              code := "LRX-VIEW-027"
+              message := s!"a row cell of region {region.name} binds more than one row event"
+              spans := #[region.span]
+            }
+        validateRowNode region 0 region.template
+    | _ =>
+        throw {
+          code := "LRX-VIEW-027"
+          message := s!"the row template of region {region.name} must be an element"
+          spans := #[region.span]
+        }
+  for reference in split.regionRefs do
+    unless names.contains reference.name do
+      throw {
+        code := "LRX-VIEW-025"
+        message := s!"view references unknown region {reference.name}"
+        spans := #[reference.span]
+      }
+  for region in spec.regions do
+    let references := split.regionRefs.filter (·.name == region.name)
+    unless references.length == 1 do
+      throw {
+        code := "LRX-VIEW-025"
+        message := s!"region {region.name} must be mounted exactly once, found {references.length} reference(s)"
+        spans := #[region.span]
+      }
+  unless spec.regions.isEmpty do
+    if let View.region _ span := spec.view then
+      throw {
+        code := "LRX-VIEW-029"
+        message := "a keyed region cannot be the component view root"
+        spans := #[span]
+      }
+    regionPlacementView spec.view
+
+/-- Validate the immutable prop table and the view's prop text positions
+(ADR-0042). -/
+private def validateProps (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
+    Except ComponentError Unit := do
+  let names := spec.props.toList.map (·.name)
+  if names.any String.isEmpty || duplicate? names then
+    throw {
+      code := "LRX-VIEW-030"
+      message := "immutable prop names must be nonempty and unique"
+      spans := spec.props.map (·.span)
+    }
+  for reference in split.propTexts do
+    unless reference.field < spec.props.size do
+      throw {
+        code := "LRX-VIEW-030"
+        message := s!"view projects immutable prop {reference.field} outside the {spec.props.size} declared prop(s)"
+        spans := #[reference.span]
+      }
+
 /-- Validate the explicit component contract and retain its certified graph. -/
 def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ) := do
   if spec.name.isEmpty then
@@ -505,20 +751,26 @@ def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ
         | .error error => .error error
         | .ok _ => match validateChildComponents spec split with
           | .error error => .error error
-          | .ok _ => match valueNodes spec.values with
+          | .ok _ => match validateRegions spec split with
             | .error error => .error error
-            | .ok valueNodes => match sinkNodes spec.values split.textSinks with
+            | .ok _ => match validateProps spec split with
               | .error error => .error error
-              | .ok sinkNodes => match propNodes spec.values split.props with
+              | .ok _ => match valueNodes spec.values with
                 | .error error => .error error
-                | .ok propNodes => match Graph.plan (valueNodes ++ sinkNodes ++ propNodes) with
-                  | .error error => .error {
-                      code := error.code, message := error.message,
-                      path := error.path, spans := error.spans
-                    }
-                  | .ok graph =>
-                      .ok ⟨spec, graph, sourceCount,
-                        summarizeEvents spec.events ++ summarizeTypedEvents spec.typedEvents, split⟩
+                | .ok valueNodes => match sinkNodes spec.values split.textSinks with
+                  | .error error => .error error
+                  | .ok sinkNodes => match propNodes spec.values split.props with
+                    | .error error => .error error
+                    | .ok propNodes =>
+                        match Graph.plan (valueNodes ++ sinkNodes ++ propNodes) with
+                        | .error error => .error {
+                            code := error.code, message := error.message,
+                            path := error.path, spans := error.spans
+                          }
+                        | .ok graph =>
+                            .ok ⟨spec, graph, sourceCount,
+                              summarizeEvents spec.events ++
+                                summarizeTypedEvents spec.typedEvents, split⟩
 
 def validationMessage (spec : ComponentSpec Γ) : String :=
   match spec.check with

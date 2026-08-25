@@ -5,6 +5,7 @@ import LeanRx.Component.Dependent
 import Lean.Elab.Macro
 import Lean.Elab.Term
 import Lean.Elab.SyntheticMVars
+import Lean.Meta.Eval
 
 open Lean Elab Macro Term Meta
 
@@ -79,12 +80,18 @@ declare_syntax_cat leanrxJsxElement
 declare_syntax_cat leanrxJsxKeyed
 scoped syntax str : leanrxJsxChild
 scoped syntax "{" str ":" term "}" : leanrxJsxChild
-scoped syntax "{" term "}" : leanrxJsxChild
+scoped syntax (name := leanrxJsxChildDynamic) "{" term "}" : leanrxJsxChild
+/- Internal target of the component command's immutable-prop rewrite
+(ADR-0042); `{propName}` children become `propText% index` before lowering. -/
+scoped syntax (name := leanrxJsxPropText) "propText%" num : leanrxJsxChild
 scoped syntax leanrxJsxElement : leanrxJsxChild
 scoped syntax "for " ident " in " term " key " term " => " leanrxJsxElement : leanrxJsxKeyed
 scoped syntax leanrxJsxKeyed : leanrxJsxChild
 scoped syntax "<" ident leanrxJsxAttr* ">" "[" leanrxJsxChild,* "]" : leanrxJsxElement
 scoped syntax "<" ident leanrxJsxAttr* "/>" : leanrxJsxElement
+/- A keyed region slot (ADR-0041); the name must be declared by a `region`
+item of the enclosing component. -/
+scoped syntax (name := leanrxJsxRegionSlot) "<" &"region" ident "/>" : leanrxJsxElement
 
 open scoped LeanRxDsl
 
@@ -189,16 +196,64 @@ def resolvesToComponentSpec (tag : TSyntax `ident) : TermElabM Bool := do
   catch _ =>
     pure false
 
+/-- Evaluate the declared immutable prop names of the checked component
+`{tag}_spec` (ADR-0042). This isolated compile-time evaluation mirrors the
+component command's validation-message evaluation. -/
+def componentPropNames (tag : TSyntax `ident) : TermElabM (List String) := do
+  let specIdent := mkIdentFrom tag (tag.getId.appendAfter "_spec")
+  let listString := mkApp (mkConst ``List [Level.zero]) (mkConst ``String)
+  let expression ← Term.elabTermEnsuringType
+    (← `(LeanRx.ComponentSpec.propNames $specIdent)) listString
+  Term.synthesizeSyntheticMVarsNoPostponing
+  let expression ← instantiateMVars expression
+  unsafe Meta.evalExpr (checkMeta := false) (List String) listString expression
+
+private def renderNames (names : List String) : String :=
+  String.intercalate ", " names
+
 /-- An attr-less capitalized self-closing element statically nests the checked
 component `{name}_spec` when one is in scope (ADR-0039); otherwise it keeps the
 existing behavior and elaborates the identifier as an ordinary view term. -/
 elab "leanrx_jsx_component% " name:ident marker:str : term <= expectedType => do
   if ← resolvesToComponentSpec name then
+    let declared ← componentPropNames name
+    unless declared.isEmpty do
+      throwErrorAt name
+        s!"error[LRX-ELAB-112]: child component {componentShortName name} declares immutable props ({renderNames declared}); pass them as attributes"
     let nameLit := Syntax.mkStrLit (componentShortName name)
     Term.elabTerm
       (← `(LeanRx.View.child $nameLit (leanrx_source_span% $marker))) expectedType
   else
     Term.elabTerm name expectedType
+
+/-- A capitalized self-closing element whose attributes are all `name="text"`
+nests the checked component `{name}_spec` with immutable prop values when one
+is in scope (ADR-0042); the bindings must match the child's declared prop names
+and order exactly. Without a checked spec the element stays an ordinary typed
+component call. -/
+elab "leanrx_jsx_component_props% " name:ident marker:str pairs:str* : term <= expectedType => do
+  let bindings := (List.range (pairs.size / 2)).map fun index =>
+    ((pairs[2 * index]!).getString, (pairs[2 * index + 1]!).getString)
+  if ← resolvesToComponentSpec name then
+    let declared ← componentPropNames name
+    unless bindings.map (·.1) == declared do
+      throwErrorAt name
+        s!"error[LRX-ELAB-112]: child component {componentShortName name} declares immutable props ({renderNames declared}); got ({renderNames (bindings.map (·.1))}) — bindings must match the declaration names and order"
+    let nameLit := Syntax.mkStrLit (componentShortName name)
+    let pairTerms ← bindings.mapM fun (bound, value) => do
+      let boundLit := Syntax.mkStrLit bound
+      let valueLit := Syntax.mkStrLit value
+      `(($boundLit, $valueLit))
+    Term.elabTerm (← `(LeanRx.View.child $nameLit (leanrx_source_span% $marker)
+      (props := [$(pairTerms.toArray),*]))) expectedType
+  else
+    let mut result : TSyntax `term := ⟨name.raw⟩
+    for (bound, value) in bindings do
+      let boundIdent := mkIdentFrom name (Name.mkSimple bound)
+      let boundLit := Syntax.mkStrLit bound
+      let valueLit := Syntax.mkStrLit value
+      result ← `($result ($boundIdent:ident := leanrx_jsx_prop% $boundLit $valueLit))
+    Term.elabTerm result expectedType
 
 private def componentCall (tag : TSyntax `ident) (attrs : Array Syntax) :
     MacroM (TSyntax `term) := do
@@ -223,13 +278,28 @@ macro_rules
       `(LeanRx.View.scalarText $name $value)
   | `(leanrx_jsx_child% $element:leanrxJsxElement) => `(leanrx_jsx_typed% $element)
 
+/-- The `name="text"` pairs of one attribute array, when every attribute has
+that shape — the only shape that can carry immutable child props (ADR-0042). -/
+private def literalPropPairs (attrs : Array Syntax) :
+    Option (Array (TSyntax `str)) := Id.run do
+  let mut pairs : Array (TSyntax `str) := #[]
+  for attr in attrs do
+    let attrStx : TSyntax `leanrxJsxAttr := ⟨attr⟩
+    match attrStx with
+    | `(leanrxJsxAttr| $name:ident = $value:str) =>
+        pairs := pairs.push ⟨Syntax.mkStrLit name.getId.toString (info := name.raw.getHeadInfo)⟩
+        pairs := pairs.push value
+    | _ => return none
+  return some pairs
+
 private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
     (children : Array Syntax) (span : Syntax) : MacroM (TSyntax `term) := do
   if componentHead? tag then
     if attrs.isEmpty && children.isEmpty then
       `(leanrx_jsx_component% $tag $(spanMarker span))
-    else
-      componentCall tag attrs
+    else match (if children.isEmpty then literalPropPairs attrs else none) with
+      | some pairs => `(leanrx_jsx_component_props% $tag $(spanMarker span) $pairs*)
+      | none => componentCall tag attrs
   else do
     let mut propTerms : Array (TSyntax `term) := #[]
     for attr in attrs do
@@ -346,6 +416,9 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | `(leanrxJsxChild| { $name:str : $value:term }) => do
           let span ← spanSyntax child
           `(LeanRx.View.scalarText $name $value $span)
+      | `(leanrxJsxChild| propText% $index:num) => do
+          let span ← spanSyntax child
+          `(LeanRx.View.propText $index $span)
       | `(leanrxJsxChild| { $_:term }) =>
           Macro.throwErrorAt child
             "error[LRX-VIEW-012]: unnamed dynamic text requires the logical reference view"
@@ -361,6 +434,11 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
 macro_rules
   | `(leanrx_jsx_typed% $element:leanrxJsxElement) => do
       match element with
+      | `(leanrxJsxElement| <region $name:ident />) => do
+          let nameLit := Syntax.mkStrLit name.getId.eraseMacroScopes.toString
+            (info := name.raw.getHeadInfo)
+          let spanTerm ← spanSyntax element
+          `(LeanRx.View.region $nameLit $spanTerm)
       | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* >
             [$children:leanrxJsxChild,*]) =>
           typedElement tag attrs children.getElems element
@@ -459,6 +537,9 @@ private def logicalElement (tag : TSyntax `ident) (attrs : Array Syntax)
 macro_rules
   | `(leanrx_jsx_logical% $element:leanrxJsxElement) => do
       match element with
+      | `(leanrxJsxElement| <region $_:ident />) =>
+          Macro.throwErrorAt element
+            "error[LRX-VIEW-025]: keyed region slots require the typed component view"
       | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* >
             [$children:leanrxJsxChild,*]) =>
           logicalElement tag attrs children.getElems

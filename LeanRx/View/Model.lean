@@ -163,9 +163,79 @@ def events : List ViewAttr → List EventBinding
 
 end ViewAttr
 
+/-- Closed row action vocabulary for keyed region rows (ADR-0041). Stage 1
+supports removing the dispatching row; the sealed constructor set is the whole
+semantics — row events never carry user update programs. -/
+inductive RowAction where
+  | remove
+deriving Repr, BEq, DecidableEq
+
+def RowAction.name : RowAction → String
+  | .remove => "remove"
+
+/-- One declared row event of a keyed region. The name is what row templates
+bind with `onClick={…}` and what the delegated dispatcher receives as its
+action string. -/
+structure RowEventSpec where
+  name : String
+  action : RowAction
+  span : SourceSpan := .generated
+deriving Repr, BEq
+
+/- Sealed row template of a keyed region (ADR-0041). Dynamic row content is a
+typed projection of the row tuple (`fieldText`), never an `RxExpr`; row events
+reference the region's declared row events and lower to one delegated listener
+per event kind on the region container. -/
+mutual
+  inductive RowNode where
+    | element (tag : HtmlTag) (attrs : List StaticAttr) (events : List EventBinding)
+        (children : RowChildren) (span : SourceSpan := .generated)
+    | text (value : String) (span : SourceSpan := .generated)
+    | fieldText (field : Nat) (span : SourceSpan := .generated)
+
+  inductive RowChildren where
+    | nil
+    | cons (head : RowNode) (tail : RowChildren)
+end
+
+namespace RowChildren
+
+def ofList : List RowNode → RowChildren
+  | [] => .nil
+  | head :: tail => .cons head (ofList tail)
+
+def toList : RowChildren → List RowNode
+  | .nil => []
+  | .cons head tail => head :: toList tail
+
+end RowChildren
+
+def RowNode.node (tag : HtmlTag) (children : List RowNode)
+    (attrs : List StaticAttr := []) (events : List EventBinding := [])
+    (span : SourceSpan := .generated) : RowNode :=
+  .element tag attrs events (.ofList children) span
+
+def RowNode.nodeWith (tag : HtmlTag) (children : List RowNode)
+    (attrs : List ViewAttr := []) (span : SourceSpan := .generated) : RowNode :=
+  RowNode.node tag children (attrs := ViewAttr.staticAttrs attrs)
+    (events := ViewAttr.events attrs) (span := span)
+
+/-- One keyed region declaration (ADR-0040/0041). Rows are tuples of `String`
+fields behind a monotone region-owned key; the template is the sealed row view
+instantiated per row; row events form the closed delegated vocabulary. -/
+structure RegionSpec where
+  name : String
+  fields : Array String
+  template : RowNode
+  events : Array RowEventSpec
+  span : SourceSpan := .generated
+
 /- Explicit safe M4 view. Interpolation is text-only; raw HTML has no
 constructor. A `child` position statically nests another checked component by
-name (ADR-0039); the parent's `ComponentSpec.children` table must declare it. -/
+name (ADR-0039), optionally passing immutable props as name/value pairs in the
+child's declaration order (ADR-0042). A `region` position mounts a declared
+keyed region (ADR-0041), and `propText` renders one of this component's own
+immutable props as static mount-time text. -/
 mutual
   inductive View (Γ : Schema) where
     | element (tag : HtmlTag) (attrs : List StaticAttr) (events : List EventBinding)
@@ -175,6 +245,9 @@ mutual
     | scalarText (name : String) (value : RxExpr Γ deps String)
         (span : SourceSpan := .generated)
     | child (name : String) (span : SourceSpan := .generated)
+        (props : List (String × String) := [])
+    | region (name : String) (span : SourceSpan := .generated)
+    | propText (field : Nat) (span : SourceSpan := .generated)
 
   inductive ViewChildren (Γ : Schema) where
     | nil
@@ -198,7 +271,11 @@ def withSpan (view : View Γ) (span : SourceSpan) : View Γ :=
   | .text value existing => .text value (if existing.file.isEmpty then span else existing)
   | .scalarText name value existing =>
       .scalarText name value (if existing.file.isEmpty then span else existing)
-  | .child name existing => .child name (if existing.file.isEmpty then span else existing)
+  | .child name existing props =>
+      .child name (if existing.file.isEmpty then span else existing) props
+  | .region name existing => .region name (if existing.file.isEmpty then span else existing)
+  | .propText field existing =>
+      .propText field (if existing.file.isEmpty then span else existing)
 
 def node (tag : HtmlTag) (children : List (View Γ))
     (attrs : List StaticAttr := []) (events : List EventBinding := [])
@@ -214,13 +291,17 @@ def nodeWith (tag : HtmlTag) (children : List (View Γ))
 end View
 
 /- Static mount tree. Dynamic text positions are placeholders, never HTML; a
-child position names the statically nested component mounted there. -/
+child position names the statically nested component mounted there together
+with the prop values it receives; a region position names the keyed region
+mounted there; a prop text position renders one own immutable prop. -/
 mutual
   inductive MountNode where
     | element (tag : HtmlTag) (attrs : List StaticAttr) (children : MountChildren)
     | text (value : String)
     | dynamicText
-    | child (name : String)
+    | child (name : String) (propValues : List String := [])
+    | region (name : String)
+    | propText (field : Nat)
 
   inductive MountChildren where
     | nil
@@ -247,6 +328,19 @@ structure MountedChild where
   path : List Nat
   name : String
   span : SourceSpan
+  props : List (String × String) := []
+deriving Repr, BEq
+
+structure MountedRegion where
+  path : List Nat
+  name : String
+  span : SourceSpan
+deriving Repr, BEq
+
+structure MountedPropText where
+  path : List Nat
+  field : Nat
+  span : SourceSpan
 deriving Repr, BEq
 
 structure ViewSplit (Γ : Schema) where
@@ -255,13 +349,17 @@ structure ViewSplit (Γ : Schema) where
   events : List MountedEvent
   props : List (MountedProp Γ) := []
   childRefs : List MountedChild := []
+  regionRefs : List MountedRegion := []
+  propTexts : List MountedPropText := []
 
 mutual
   private def View.mountNode : View Γ → MountNode
     | .element tag attrs _ children _ _ => .element tag attrs (children.mountChildren)
     | .text value _ => .text value
     | .scalarText _ _ _ => .dynamicText
-    | .child name _ => .child name
+    | .child name _ props => .child name (props.map (·.2))
+    | .region name _ => .region name
+    | .propText field _ => .propText field
 
   private def ViewChildren.mountChildren : ViewChildren Γ → MountChildren
     | .nil => .nil
@@ -271,7 +369,7 @@ end
 mutual
   private def View.textSinksAt (path : List Nat) : View Γ → List (TextSink Γ)
     | .element _ _ _ children _ _ => children.textSinksAt path 0
-    | .text _ _ | .child _ _ => []
+    | .text _ _ | .child _ _ _ | .region _ _ | .propText _ _ => []
     | .scalarText name value span =>
         [{ deps := value.dependencies, name, path, value, span }]
 
@@ -286,7 +384,7 @@ mutual
   private def View.eventsAt (path : List Nat) : View Γ → List MountedEvent
     | .element _ _ bindings children _ _ =>
         bindings.map (fun binding => { path, binding }) ++ children.eventsAt path 0
-    | .text _ _ | .scalarText _ _ _ | .child _ _ => []
+    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _ | .propText _ _ => []
 
   private def ViewChildren.eventsAt (path : List Nat) (index : Nat) :
       ViewChildren Γ → List MountedEvent
@@ -299,7 +397,7 @@ mutual
   private def View.propsAt (path : List Nat) : View Γ → List (MountedProp Γ)
     | .element _ _ _ children _ props =>
         props.map (fun binding => { path, binding }) ++ children.propsAt path 0
-    | .text _ _ | .scalarText _ _ _ | .child _ _ => []
+    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _ | .propText _ _ => []
 
   private def ViewChildren.propsAt (path : List Nat) (index : Nat) :
       ViewChildren Γ → List (MountedProp Γ)
@@ -311,8 +409,8 @@ end
 mutual
   private def View.childRefsAt (path : List Nat) : View Γ → List MountedChild
     | .element _ _ _ children _ _ => children.childRefsAt path 0
-    | .text _ _ | .scalarText _ _ _ => []
-    | .child name span => [{ path, name, span }]
+    | .text _ _ | .scalarText _ _ _ | .region _ _ | .propText _ _ => []
+    | .child name span props => [{ path, name, span, props }]
 
   private def ViewChildren.childRefsAt (path : List Nat) (index : Nat) :
       ViewChildren Γ → List MountedChild
@@ -321,13 +419,42 @@ mutual
         head.childRefsAt (path ++ [index]) ++ tail.childRefsAt path (index + 1)
 end
 
+mutual
+  private def View.regionRefsAt (path : List Nat) : View Γ → List MountedRegion
+    | .element _ _ _ children _ _ => children.regionRefsAt path 0
+    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .propText _ _ => []
+    | .region name span => [{ path, name, span }]
+
+  private def ViewChildren.regionRefsAt (path : List Nat) (index : Nat) :
+      ViewChildren Γ → List MountedRegion
+    | .nil => []
+    | .cons head tail =>
+        head.regionRefsAt (path ++ [index]) ++ tail.regionRefsAt path (index + 1)
+end
+
+mutual
+  private def View.propTextsAt (path : List Nat) : View Γ → List MountedPropText
+    | .element _ _ _ children _ _ => children.propTextsAt path 0
+    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _ => []
+    | .propText field span => [{ path, field, span }]
+
+  private def ViewChildren.propTextsAt (path : List Nat) (index : Nat) :
+      ViewChildren Γ → List MountedPropText
+    | .nil => []
+    | .cons head tail =>
+        head.propTextsAt (path ++ [index]) ++ tail.propTextsAt path (index + 1)
+end
+
 /-- Purely split a safe view into its mount tree, scalar sinks, event bindings,
-reflected properties, and nested component references. -/
+reflected properties, nested component references, keyed region slots, and
+immutable prop text positions. -/
 def View.split (value : View Γ) : ViewSplit Γ :=
   { template := value.mountNode
     textSinks := value.textSinksAt []
     events := value.eventsAt []
     props := value.propsAt []
-    childRefs := value.childRefsAt [] }
+    childRefs := value.childRefsAt []
+    regionRefs := value.regionRefsAt []
+    propTexts := value.propTextsAt [] }
 
 end LeanRx
