@@ -168,11 +168,18 @@ private def pushTrace (tx : Ident) (message : String) : Stmt :=
 private def eventName (index : Nat) : Except Error Ident :=
   Ident.checked s!"$lrx_event_{index}"
 
-/-- The context slot carrying the keyed region records: after the prop slots
-when reflected properties exist, directly after `sinkCache` otherwise
-(ADR-0041). Each record is `[handle, items, nextKey, dirty]`. -/
-private def regionSlot (checked : CheckedComponent Γ) : Nat :=
+/-- The context slot carrying the attribute-selection refs (ADR-0045): after
+the prop slots when reflected properties exist, directly after `sinkCache`
+otherwise. The cache rides one slot later. -/
+private def attrSlot (checked : CheckedComponent Γ) : Nat :=
   if checked.view.props.isEmpty then 6 else 8
+
+/-- The context slot carrying the keyed region records: after the prop and
+attribute-selection slots when those exist, directly after `sinkCache`
+otherwise (ADR-0041/0045). Each record is `[handle, items, nextKey, dirty]`
+(plus the pending-update slot for updating regions, ADR-0043). -/
+private def regionSlot (checked : CheckedComponent Γ) : Nat :=
+  attrSlot checked + (if checked.view.attrSelects.isEmpty then 0 else 2)
 
 private def regionEntry (regions : Ident) (regionIndex slot : Nat) : Expr :=
   .index (.index (.ident regions) (uint regionIndex)) (uint slot)
@@ -186,11 +193,19 @@ private def regionHasUpdates (region : RegionSpec) : Bool :=
     | .remove => false
 
 /-- Lower one sealed row expression against the row item array; fields sit
-behind the key slot (ADR-0041/0043). -/
-private def rowExprJs (item : Ident) : RowExpr → Expr
+behind the key slot (ADR-0041/0043). `payload` is the delegated payload
+expression of the dispatching typed row event (ADR-0046); validation keeps
+payload references out of every other row expression position, so the
+template/update-callback callers pass an inert empty string. -/
+private def rowExprJs (item : Ident) (payload : Expr) : RowExpr → Expr
   | .lit value => .literal (.string value)
   | .field index => .index (.ident item) (uint (index + 1))
-  | .append first second => .binary .add (rowExprJs item first) (rowExprJs item second)
+  | .payload => payload
+  | .append first second =>
+      .binary .add (rowExprJs item payload first) (rowExprJs item payload second)
+
+/-- The inert payload expression for payload-free row expression positions. -/
+private def noPayload : Expr := .literal (.string "")
 
 /-- Lower one sealed class selection to its conditional value (ADR-0044). -/
 private def rowClassJs (item : Ident) (select : RowClassSelect) : Expr :=
@@ -199,6 +214,20 @@ private def rowClassJs (item : Ident) (select : RowClassSelect) : Expr :=
       (.literal (.string select.equals)))
     (.literal (.string select.whenTrue))
     (.literal (.string select.whenFalse))
+
+/-- Lower one sealed state-scoped attribute selection to its value expression
+(ADR-0045): `class` selects between its two static strings, `aria-pressed`
+reflects the equality as `"true"`/`"false"`, and `disabled` is the bare
+boolean equality written as an element property. -/
+private def attrSelectJs (state : Ident) (select : AttrSelect Γ) : Expr :=
+  let predicate := Expr.binary .eq (stateAt state select.fieldIndex)
+    (.literal (.string select.equals))
+  match select with
+  | .classSelect _ _ whenTrue whenFalse _ =>
+      .conditional predicate (.literal (.string whenTrue)) (.literal (.string whenFalse))
+  | .pressedSelect .. =>
+      .conditional predicate (.literal (.string "true")) (.literal (.string "false"))
+  | .disabledSelect .. => predicate
 
 private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
     (regionSpecs : Array RegionSpec) (eventNames : List String)
@@ -293,6 +322,26 @@ private def runtimeNames : Except Error RuntimeNames := do
     listenSubmit := ← Ident.checked "listenSubmit"
   }
 
+/-- The write statement of one attribute selection: `disabled` writes the
+boolean element property (`setAttribute` cannot clear `disabled`); the other
+selections write their attribute string. -/
+private def attrSelectWrite (runtime : RuntimeNames) (node : Expr)
+    (select : AttrSelect Γ) (value : Expr) : Stmt :=
+  match select with
+  | .disabledSelect .. =>
+      .expr <| call runtime.setProperty [node, .literal (.string "disabled"), value]
+  | _ =>
+      .expr <| call runtime.setAttribute [node, .literal (.string select.name), value]
+
+private def attrNextName (index : Nat) : Except Error Ident :=
+  Ident.checked s!"attr_next_{index}"
+
+private def attrChangedName (index : Nat) : Except Error Ident :=
+  Ident.checked s!"attr_changed_{index}"
+
+private def attrLabel (index : Nat) (mounted : MountedAttrSelect Γ) : String :=
+  s!"attr:{index}:{mounted.select.name}"
+
 private def propNextName (index : Nat) : Except Error Ident :=
   Ident.checked s!"prop_next_{index}"
 
@@ -318,6 +367,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
   let sinkCache ← Ident.checked "sinkCache"
   let propRefs ← Ident.checked "propRefs"
   let propCache ← Ident.checked "propCache"
+  let attrRefs ← Ident.checked "attrRefs"
+  let attrCache ← Ident.checked "attrCache"
   let regions ← Ident.checked "regions"
   let valueCount := checked.spec.values.size
   let mut body : List Stmt := [
@@ -332,6 +383,11 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     body := body ++ [
       .const propRefs (arrayAt context 6),
       .const propCache (arrayAt context 7)
+    ]
+  unless checked.view.attrSelects.isEmpty do
+    body := body ++ [
+      .const attrRefs (arrayAt context (attrSlot checked)),
+      .const attrCache (arrayAt context (attrSlot checked + 1))
     ]
   unless checked.spec.regions.isEmpty do
     body := body ++ [.const regions (arrayAt context (regionSlot checked))]
@@ -420,6 +476,27 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
         pushTrace tx s!"dom:{label}:write"
       ]
     ]]
+  /- State-scoped attribute selections join the commit sweep beside the
+  reflected properties with the same evaluate-compare-write shape and the
+  same tx[8]/tx[9] counters (ADR-0045). -/
+  for (mounted, attrIndex) in checked.view.attrSelects.zipIdx do
+    let next ← attrNextName attrIndex
+    let differs ← attrChangedName attrIndex
+    let label := attrLabel attrIndex mounted
+    commitBody := commitBody ++ [.ifThen (anyChanged changed [mounted.select.fieldIndex]) <|
+      .ofList [
+      incrementAt tx 8,
+      pushTrace tx s!"{label}:evaluated",
+      .const next (attrSelectJs state mounted.select),
+      .const differs <| .unary .not <|
+        .binary .eq (arrayAt attrCache attrIndex) (.ident next),
+      .ifThen (.ident differs) <| .ofList [
+        .assign (.index (.ident attrCache) (uint attrIndex)) (.ident next),
+        attrSelectWrite runtime (arrayAt attrRefs attrIndex) mounted.select (.ident next),
+        incrementAt tx 9,
+        pushTrace tx s!"dom:{label}:write"
+      ]
+    ]]
   for (region, regionIndex) in checked.spec.regions.toList.zipIdx do
     /- The keyed region reconciles the whole target on commit; the dirty flag
     keeps clean regions out of the sweep entirely (ADR-0041). A structurally
@@ -480,7 +557,7 @@ private def typedEventName (index : Nat) : Except Error Ident :=
 them. -/
 private def shellLocals : List String :=
   ["state", "refs", "tx", "oldSources", "changed", "sinkCache", "propRefs",
-    "propCache", "regions", "context", "hostState"]
+    "propCache", "attrRefs", "attrCache", "regions", "context", "hostState"]
 
 private def typedEventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
     (runtime : RuntimeNames) (event : AnyTypedEvent Γ) (eventIndex : Nat) :
@@ -638,32 +715,46 @@ private def nodeAt (nodes : List DomBinding) (path : List Nat) : Except Error Id
   | some node => pure node.name
   | none => .error { code := "LRX-BE-025", message := "view binding path has no mounted node" }
 
-/- The first row event bound in one row-template subtree: the delegated cell
-action for the enclosing cell (at most one per cell by LRX-VIEW-027). -/
+/- The first row event of one delegated kind bound in one row-template
+subtree: the delegated cell action for the enclosing cell and kind (at most
+one per cell and kind by LRX-VIEW-027). -/
 mutual
-  private def rowActionOf : RowNode → Option String
+  private def rowActionOf (kind : EventKind) : RowNode → Option String
     | .element _ _ events children _ _ =>
-        match events.head? with
+        match events.find? (·.kind == kind) with
         | some event => some event.eventName
-        | none => rowActionOfChildren children
+        | none => rowActionOfChildren kind children
     | .text _ _ | .fieldText _ _ | .exprText _ _ => none
 
-  private def rowActionOfChildren : RowChildren → Option String
+  private def rowActionOfChildren (kind : EventKind) : RowChildren → Option String
     | .nil => none
     | .cons head tail =>
-        match rowActionOf head with
+        match rowActionOf kind head with
         | some action => some action
-        | none => rowActionOfChildren tail
+        | none => rowActionOfChildren kind tail
 end
 
-/-- Delegated cell actions of one region: per direct child of the row root, the
-row event name bound inside it, or `""` for an actionless cell. Every direct
-child mounts exactly one DOM node, so template indices equal `childNodes`
-indices at runtime. -/
-private def regionActions (region : RegionSpec) : List String :=
+/-- Delegated cell actions of one region and event kind: per direct child of
+the row root, the row event name bound inside it with that kind, or `""` for
+an actionless cell. Every direct child mounts exactly one DOM node, so
+template indices equal `childNodes` indices at runtime. Each kind gets its
+own action array so a click inside an input cell never resolves that cell's
+typed action (ADR-0046). -/
+private def regionActions (region : RegionSpec) (kind : EventKind) : List String :=
   match region.template with
-  | .element _ _ _ cells _ _ => cells.toList.map fun cell => (rowActionOf cell).getD ""
+  | .element _ _ _ cells _ _ => cells.toList.map fun cell => (rowActionOf kind cell).getD ""
   | _ => []
+
+/-- The closed delegated row event kinds, in listener registration order. -/
+private def regionEventKinds : List EventKind := [.click, .input, .keydown]
+
+/-- The template binding kind of one row event, for payload lowering: a
+payload-taking event is bound exactly once (LRX-VIEW-033), so the first
+binding is the binding. -/
+private def rowEventBindingKind? (region : RegionSpec) (name : String) :
+    Option EventKind :=
+  regionEventKinds.find? fun kind =>
+    (regionActions region kind).contains name
 
 private structure RowDom where
   allocator : NameAllocator
@@ -708,7 +799,7 @@ mutual
         let (name, allocator) ← dom.allocator.allocate s!"row_{dom.count}"
         let dom := { dom with allocator, count := dom.count + 1 }
         pure (name, rowAppend dom <| .const name <|
-          call runtime.createText [rowExprJs item value])
+          call runtime.createText [rowExprJs item noPayload value])
 
   private def rowChildrenStmts (runtime : RuntimeNames) (item : Ident) (parent : Ident) :
       RowChildren → RowDom → Except Error RowDom
@@ -778,7 +869,7 @@ private def regionUpdateFunction (runtime : RuntimeNames) (region : RegionSpec)
       match target with
       | .text path value =>
           body := body ++ [.expr <| call runtime.setText [
-            rowNavigate runtime row path, rowExprJs item value]]
+            rowNavigate runtime row path, rowExprJs item noPayload value]]
       | .classSelect path select =>
           body := body ++ [.expr <| call runtime.setAttribute [
             rowNavigate runtime row path, .literal (.string "class"), rowClassJs item select]]
@@ -835,16 +926,25 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
         /- Resolve the dispatching row by key scan (`scan` is
         `[cursor, match]`), evaluate every right-hand side against the old
         tuple, write the targets, and queue the position for the commit
-        sweep's `updateAt` drain (ADR-0043). -/
+        sweep's `updateAt` drain (ADR-0043). A typed row event's payload is
+        the delegated `value` or `key` argument selected by its template
+        binding kind (ADR-0046). -/
+        let payloadExpr : Expr :=
+          if event.takesPayload then
+            match rowEventBindingKind? region event.name with
+            | some .keydown => .ident eventKey
+            | _ => .ident value
+          else noPayload
         let scan ← Ident.checked "scan"
         let rowEntry ← Ident.checked "row_entry"
         let rowItem ← Ident.checked "row_item"
         let negativeOne : Expr := .unary .neg (uint 1)
         let mut evaluateStmts : List Stmt := []
         let mut assignStmts : List Stmt := []
-        for ((target, value), index) in assignments.zipIdx do
+        for ((target, rhs), index) in assignments.zipIdx do
           let temp ← Ident.checked s!"row_next_{index}"
-          evaluateStmts := evaluateStmts ++ [.const temp (rowExprJs rowItem value)]
+          evaluateStmts := evaluateStmts ++
+            [.const temp (rowExprJs rowItem payloadExpr rhs)]
           assignStmts := assignStmts ++
             [.assign (.index (.ident rowItem) (uint (target + 1))) (.ident temp)]
         writes := writes ++ [
@@ -899,8 +999,13 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
     features := #["scalar", "events", "transactions", "instrumentation", "trace"] ++
       (if checked.spec.typedEvents.isEmpty then #[] else #["typed-events"]) ++
       (if checked.view.props.isEmpty then #[] else #["controlled-props"]) ++
+      (if checked.view.attrSelects.isEmpty then #[] else #["attr-selections"]) ++
       (if checked.spec.children.isEmpty then #[] else #["child-components"]) ++
       (if checked.spec.regions.isEmpty then #[] else #["keyed-regions"]) ++
+      (if checked.spec.regions.toList.any
+          (fun region => region.events.toList.any (·.takesPayload)) then
+        #["typed-row-events"]
+      else #[]) ++
       (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
@@ -919,6 +1024,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   let sinkCache ← Ident.checked "sinkCache"
   let propRefs ← Ident.checked "propRefs"
   let propCache ← Ident.checked "propCache"
+  let attrRefs ← Ident.checked "attrRefs"
+  let attrCache ← Ident.checked "attrCache"
   let regions ← Ident.checked "regions"
   let context ← Ident.checked "context"
   let disposer ← Ident.checked "disposer"
@@ -949,14 +1056,15 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
         ← regionUpdateFunction runtime region updateFn,
         ← regionDisposeFunction disposeFn]
   let regionDispatches ← checked.spec.regions.toList.zipIdx.mapM fun (region, index) => do
-    if (regionActions region).any (· ≠ "") then
+    if regionEventKinds.any fun kind => (regionActions region kind).any (· ≠ "") then
       let name ← Ident.checked s!"$lrx_region_{index}_dispatch"
       pure (some (name, ← regionDispatchFunction checked evaluators runtime region index name))
     else
       pure none
   let initialDom : DomState := { allocator := { used := [
     "state", "refs", "tx", "oldSources", "changed", "sinkCache", "propRefs",
-    "propCache", "regions", "props", "context", "disposer", "target"
+    "propCache", "attrRefs", "attrCache", "regions", "props", "context",
+    "disposer", "target"
   ] } }
   let (root, dom) ← mountNode runtime state propsParam valueCount sinkBindings childMounts
     regionMounts [] checked.view.template initialDom
@@ -990,6 +1098,21 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
         arrayAt propRefs index, .literal (.string slot.name),
         arrayAt propCache index
       ]]
+  unless checked.view.attrSelects.isEmpty do
+    /- Attribute selections mirror the reflected-property mount shape: the
+    cache holds the evaluated initial values and the initial writes reuse
+    the sweep's write statements (ADR-0045). -/
+    let attrRefExprs ← checked.view.attrSelects.mapM fun mounted => do
+      pure (Expr.ident (← nodeAt dom.nodes mounted.path))
+    let attrInitialValues := checked.view.attrSelects.map fun mounted =>
+      attrSelectJs state mounted.select
+    mountBody := mountBody ++ [
+      .const attrRefs (.array <| .ofList attrRefExprs),
+      .const attrCache (.array <| .ofList attrInitialValues)
+    ]
+    for (mounted, index) in checked.view.attrSelects.zipIdx do
+      mountBody := mountBody ++ [attrSelectWrite runtime (arrayAt attrRefs index)
+        mounted.select (arrayAt attrCache index)]
   unless checked.spec.regions.isEmpty do
     /- One record per region in declaration order: `[handle, items, nextKey,
     dirty, pending]`. Keys are region-owned monotone safe integers
@@ -1023,6 +1146,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       .ident sinkCache
     ] ++ (if checked.view.props.isEmpty then []
       else [.ident propRefs, .ident propCache]) ++
+      (if checked.view.attrSelects.isEmpty then []
+      else [.ident attrRefs, .ident attrCache]) ++
       (if checked.spec.regions.isEmpty then [] else [.ident regions])),
     .expr <| call runtime.append [.ident target, .ident root]
   ]
@@ -1063,8 +1188,9 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     disposers := disposers ++ [.ident off]
   for ((region, regionIndex), dispatch?) in checked.spec.regions.toList.zipIdx.zip
       regionDispatches do
-    /- One structural delegated listener per region container (ADR-0030/0041);
-    the cell action array maps row-root child indices to row event names. -/
+    /- One structural delegated listener per region container and bound event
+    kind (ADR-0030/0041/0046); each kind's cell action array maps row-root
+    child indices to that kind's row event names. -/
     match dispatch? with
     | none => pure ()
     | some (dispatchName, _) =>
@@ -1075,14 +1201,17 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
               message := s!"checked region disappeared: {region.name}"
             }
         let container ← nodeAt dom.nodes reference.path.dropLast
-        let off ← Ident.checked s!"region_off_{regionIndex}"
-        mountBody := mountBody ++ [.const off <| call runtime.listenDelegatedCells [
-          .ident container, .literal (.string "click"), .ident state, .ident context,
-          .ident dispatchName,
-          .array (.ofList ((regionActions region).map fun action =>
-            .literal (.string action)))
-        ]]
-        disposers := disposers ++ [.ident off]
+        for kind in regionEventKinds do
+          let actions := regionActions region kind
+          if actions.any (· ≠ "") then
+            let off ← Ident.checked (if kind == .click then s!"region_off_{regionIndex}"
+              else s!"region_off_{regionIndex}_{kind.name}")
+            mountBody := mountBody ++ [.const off <| call runtime.listenDelegatedCells [
+              .ident container, .literal (.string kind.name), .ident state, .ident context,
+              .ident dispatchName,
+              .array (.ofList (actions.map fun action => .literal (.string action)))
+            ]]
+            disposers := disposers ++ [.ident off]
   for (_, handle) in dom.regionHandles do
     disposers := disposers ++ [.index (.ident handle) (.literal (.string "dispose"))]
   mountBody := mountBody ++ [
@@ -1127,7 +1256,10 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             (runtime.listen, runtime.listen),
             (runtime.setText, runtime.setText),
             (runtime.makeDisposer, runtime.makeDisposer)
-          ] ++ (if checked.view.props.isEmpty then #[]
+          ] ++ (if checked.view.props.isEmpty && !checked.view.attrSelects.any
+              (fun mounted => match mounted.select with
+                | .disabledSelect .. => true
+                | _ => false) then #[]
             else #[(runtime.setProperty, runtime.setProperty)]) ++
           (if checked.spec.regions.isEmpty then #[]
             else #[(runtime.setKey, runtime.setKey)]) ++

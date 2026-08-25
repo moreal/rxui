@@ -312,10 +312,35 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
           let span ← spanSyntax attr
           propTerms := propTerms.push (← `(LeanRx.PropBinding.checked $expr $span))
       | _ => pure ()
+    /- Sealed state-scoped attribute selections (ADR-0045): `class` takes the
+    two-branch equality conditional, `aria-pressed`/`disabled` take the bare
+    equality; the field is an ordinary schema `Field` reference. -/
+    let mut selectTerms : Array (TSyntax `term) := #[]
+    for attr in attrs do
+      let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
+      match attrSyntax with
+      | `(leanrxJsxAttr| class = {
+            if $field:ident == $lit:str then $whenTrue:str else $whenFalse:str }) => do
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.classSelect $field $lit $whenTrue $whenFalse $span))
+      | `(leanrxJsxAttr| ariaPressed = { $field:ident == $lit:str }) => do
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.pressedSelect $field $lit $span))
+      | `(leanrxJsxAttr| disabled = { $field:ident == $lit:str }) => do
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.disabledSelect $field $lit $span))
+      | _ => pure ()
     let plainAttrs := attrs.filter fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
       match attrSyntax with
       | `(leanrxJsxAttr| value = { $_:term }) | `(leanrxJsxAttr| checked = { $_:term }) => false
+      | `(leanrxJsxAttr| class = {
+            if $_:ident == $_:str then $_:str else $_:str }) => false
+      | `(leanrxJsxAttr| ariaPressed = { $_:ident == $_:str }) => false
+      | `(leanrxJsxAttr| disabled = { $_:ident == $_:str }) => false
       | _ => true
     let attrTerms ← plainAttrs.mapM fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
@@ -399,10 +424,16 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
           })
       | `(leanrxJsxAttr| class = { $_:term }) =>
           Macro.throwErrorAt attr
-            "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
+            "error[LRX-VIEW-012]: a state-scoped class selection is written class={if field == \"literal\" then \"a\" else \"b\"} (ADR-0045); other dynamic attribute values require the logical reference view"
       | `(leanrxJsxAttr| type = { $_:term }) =>
           Macro.throwErrorAt attr
             "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
+      | `(leanrxJsxAttr| ariaPressed = { $_:term }) =>
+          Macro.throwErrorAt attr
+            "error[LRX-VIEW-012]: a state-scoped aria-pressed selection is written ariaPressed={field == \"literal\"} (ADR-0045)"
+      | `(leanrxJsxAttr| disabled = { $_:term }) =>
+          Macro.throwErrorAt attr
+            "error[LRX-VIEW-012]: a state-scoped disabled selection is written disabled={field == \"literal\"} (ADR-0045)"
       | `(leanrxJsxAttr| $_:ident = { $_:term }) =>
           Macro.throwErrorAt attr
             "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
@@ -429,7 +460,8 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | _ => Macro.throwErrorAt child "error[LRX-VIEW-009]: malformed LeanRx JSX child"
     let spanTerm ← spanSyntax span
     `(LeanRx.View.nodeWith (leanrx_jsx_tag% $tag) [$childTerms,*]
-      (attrs := [$attrTerms,*]) (span := $spanTerm) (props := [$propTerms,*]))
+      (attrs := [$attrTerms,*]) (span := $spanTerm) (props := [$propTerms,*])
+      (selects := [$selectTerms,*]))
 
 macro_rules
   | `(leanrx_jsx_typed% $element:leanrxJsxElement) => do

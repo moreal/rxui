@@ -167,18 +167,29 @@ end ViewAttr
 language mirrors the shape of `RxExpr` without touching it: `String`-only,
 no dependency sets, no schema — a row expression can never observe component
 state. Field references are positional projections of the row tuple and are
-bounds-checked by `ComponentSpec.check`. -/
+bounds-checked by `ComponentSpec.check`. `payload` references the dispatching
+typed row event's `String` payload (ADR-0046) and is valid only in the
+right-hand sides of a payload-taking row event. -/
 inductive RowExpr where
   | lit (value : String)
   | field (index : Nat)
+  | payload
   | append (first second : RowExpr)
 deriving Repr, BEq, DecidableEq
 
 /-- Every row field index one row expression projects. -/
 def RowExpr.fieldRefs : RowExpr → List Nat
-  | .lit _ => []
+  | .lit _ | .payload => []
   | .field index => [index]
   | .append first second => first.fieldRefs ++ second.fieldRefs
+
+/-- Whether the expression references the dispatching event's payload
+(ADR-0046). Payload references are rejected outside typed row event
+right-hand sides. -/
+def RowExpr.hasPayload : RowExpr → Bool
+  | .lit _ | .field _ => false
+  | .payload => true
+  | .append first second => first.hasPayload || second.hasPayload
 
 /-- Closed row action vocabulary for keyed region rows (ADR-0041/0043).
 `remove` disposes the dispatching row; `update` writes new field values —
@@ -196,11 +207,15 @@ def RowAction.name : RowAction → String
   | .update _ => "update"
 
 /-- One declared row event of a keyed region. The name is what row templates
-bind with `onClick={…}` and what the delegated dispatcher receives as its
-action string. -/
+bind with `onClick={…}` (or, for payload-taking events, `onInput={…}`/
+`onKeyDown={…}` — ADR-0046) and what the delegated dispatcher receives as its
+action string. `takesPayload` marks a typed row event whose update
+right-hand sides may reference the delegated `String` payload; the template
+binding kind selects between the delegated `value` and `key` payloads. -/
 structure RowEventSpec where
   name : String
   action : RowAction
+  takesPayload : Bool := false
   span : SourceSpan := .generated
 deriving Repr, BEq
 
@@ -216,6 +231,55 @@ structure RowClassSelect where
   whenFalse : String
   span : SourceSpan := .generated
 deriving Repr, BEq
+
+/-- One sealed state-scoped attribute selection on a static view element
+(ADR-0045): the element's attribute follows equality of one `String`
+component value (source or derived) against one string literal, joining the
+commit sweep beside text sinks and reflected properties with the same
+evaluate-compare-write shape. The attribute vocabulary is compiler-owned and
+closed: `class` selects between two static class strings, `aria-pressed`
+reflects the equality as `"true"`/`"false"`, and `disabled` reflects it as
+the boolean element property (a `disabled` attribute cannot be cleared by
+assignment, so the property write reuses the existing `setProperty` host
+export). The typed `Field Γ String` makes cross-typed predicates
+unrepresentable. -/
+inductive AttrSelect (Γ : Schema) where
+  | classSelect (field : Field Γ String) (equals whenTrue whenFalse : String)
+      (span : SourceSpan := .generated)
+  | pressedSelect (field : Field Γ String) (equals : String)
+      (span : SourceSpan := .generated)
+  | disabledSelect (field : Field Γ String) (equals : String)
+      (span : SourceSpan := .generated)
+
+namespace AttrSelect
+
+def name : AttrSelect Γ → String
+  | .classSelect .. => "class"
+  | .pressedSelect .. => "aria-pressed"
+  | .disabledSelect .. => "disabled"
+
+def fieldIndex : AttrSelect Γ → Nat
+  | .classSelect field _ _ _ _ | .pressedSelect field _ _
+  | .disabledSelect field _ _ => field.index
+
+def equals : AttrSelect Γ → String
+  | .classSelect _ equals _ _ _ | .pressedSelect _ equals _
+  | .disabledSelect _ equals _ => equals
+
+/-- The written value type: `disabled` writes a boolean property; the other
+selections write attribute strings. -/
+def valueType : AttrSelect Γ → RuntimeTypeId
+  | .classSelect .. | .pressedSelect .. => .string
+  | .disabledSelect .. => .bool
+
+def span : AttrSelect Γ → SourceSpan
+  | .classSelect _ _ _ _ span | .pressedSelect _ _ span
+  | .disabledSelect _ _ span => span
+
+def debug (select : AttrSelect Γ) : String :=
+  s!"select:{select.name}:{select.fieldIndex}"
+
+end AttrSelect
 
 /- Sealed row template of a keyed region (ADR-0041/0043/0044). Dynamic row
 content is a typed projection of the row tuple (`fieldText`) or a sealed row
@@ -274,13 +338,14 @@ structure RegionSpec where
 constructor. A `child` position statically nests another checked component by
 name (ADR-0039), optionally passing immutable props as name/value pairs in the
 child's declaration order (ADR-0042). A `region` position mounts a declared
-keyed region (ADR-0041), and `propText` renders one of this component's own
-immutable props as static mount-time text. -/
+keyed region (ADR-0041), `propText` renders one of this component's own
+immutable props as static mount-time text, and `selects` carries the
+element's sealed state-scoped attribute selections (ADR-0045). -/
 mutual
   inductive View (Γ : Schema) where
     | element (tag : HtmlTag) (attrs : List StaticAttr) (events : List EventBinding)
         (children : ViewChildren Γ) (span : SourceSpan := .generated)
-        (props : List (PropBinding Γ) := [])
+        (props : List (PropBinding Γ) := []) (selects : List (AttrSelect Γ) := [])
     | text (value : String) (span : SourceSpan := .generated)
     | scalarText (name : String) (value : RxExpr Γ deps String)
         (span : SourceSpan := .generated)
@@ -306,8 +371,9 @@ namespace View
 
 def withSpan (view : View Γ) (span : SourceSpan) : View Γ :=
   match view with
-  | .element tag attrs events children existing props =>
-      .element tag attrs events children (if existing.file.isEmpty then span else existing) props
+  | .element tag attrs events children existing props selects =>
+      .element tag attrs events children (if existing.file.isEmpty then span else existing)
+        props selects
   | .text value existing => .text value (if existing.file.isEmpty then span else existing)
   | .scalarText name value existing =>
       .scalarText name value (if existing.file.isEmpty then span else existing)
@@ -319,14 +385,17 @@ def withSpan (view : View Γ) (span : SourceSpan) : View Γ :=
 
 def node (tag : HtmlTag) (children : List (View Γ))
     (attrs : List StaticAttr := []) (events : List EventBinding := [])
-    (span : SourceSpan := .generated) (props : List (PropBinding Γ) := []) : View Γ :=
-  .element tag attrs events (.ofList children) span props
+    (span : SourceSpan := .generated) (props : List (PropBinding Γ) := [])
+    (selects : List (AttrSelect Γ) := []) : View Γ :=
+  .element tag attrs events (.ofList children) span props selects
 
 def nodeWith (tag : HtmlTag) (children : List (View Γ))
     (attrs : List ViewAttr := []) (span : SourceSpan := .generated)
-    (props : List (PropBinding Γ) := []) : View Γ :=
+    (props : List (PropBinding Γ) := [])
+    (selects : List (AttrSelect Γ) := []) : View Γ :=
   node tag children (attrs := ViewAttr.staticAttrs attrs)
     (events := ViewAttr.events attrs) (span := span) (props := props)
+    (selects := selects)
 
 end View
 
@@ -364,6 +433,10 @@ structure MountedProp (Γ : Schema) where
   path : List Nat
   binding : PropBinding Γ
 
+structure MountedAttrSelect (Γ : Schema) where
+  path : List Nat
+  select : AttrSelect Γ
+
 structure MountedChild where
   path : List Nat
   name : String
@@ -388,13 +461,14 @@ structure ViewSplit (Γ : Schema) where
   textSinks : List (TextSink Γ)
   events : List MountedEvent
   props : List (MountedProp Γ) := []
+  attrSelects : List (MountedAttrSelect Γ) := []
   childRefs : List MountedChild := []
   regionRefs : List MountedRegion := []
   propTexts : List MountedPropText := []
 
 mutual
   private def View.mountNode : View Γ → MountNode
-    | .element tag attrs _ children _ _ => .element tag attrs (children.mountChildren)
+    | .element tag attrs _ children _ _ _ => .element tag attrs (children.mountChildren)
     | .text value _ => .text value
     | .scalarText _ _ _ => .dynamicText
     | .child name _ props => .child name (props.map (·.2))
@@ -408,7 +482,7 @@ end
 
 mutual
   private def View.textSinksAt (path : List Nat) : View Γ → List (TextSink Γ)
-    | .element _ _ _ children _ _ => children.textSinksAt path 0
+    | .element _ _ _ children _ _ _ => children.textSinksAt path 0
     | .text _ _ | .child _ _ _ | .region _ _ | .propText _ _ => []
     | .scalarText name value span =>
         [{ deps := value.dependencies, name, path, value, span }]
@@ -422,7 +496,7 @@ end
 
 mutual
   private def View.eventsAt (path : List Nat) : View Γ → List MountedEvent
-    | .element _ _ bindings children _ _ =>
+    | .element _ _ bindings children _ _ _ =>
         bindings.map (fun binding => { path, binding }) ++ children.eventsAt path 0
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _ | .propText _ _ => []
 
@@ -435,7 +509,7 @@ end
 
 mutual
   private def View.propsAt (path : List Nat) : View Γ → List (MountedProp Γ)
-    | .element _ _ _ children _ props =>
+    | .element _ _ _ children _ props _ =>
         props.map (fun binding => { path, binding }) ++ children.propsAt path 0
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _ | .propText _ _ => []
 
@@ -447,8 +521,21 @@ mutual
 end
 
 mutual
+  private def View.selectsAt (path : List Nat) : View Γ → List (MountedAttrSelect Γ)
+    | .element _ _ _ children _ _ selects =>
+        selects.map (fun select => { path, select }) ++ children.selectsAt path 0
+    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _ | .propText _ _ => []
+
+  private def ViewChildren.selectsAt (path : List Nat) (index : Nat) :
+      ViewChildren Γ → List (MountedAttrSelect Γ)
+    | .nil => []
+    | .cons head tail =>
+        head.selectsAt (path ++ [index]) ++ tail.selectsAt path (index + 1)
+end
+
+mutual
   private def View.childRefsAt (path : List Nat) : View Γ → List MountedChild
-    | .element _ _ _ children _ _ => children.childRefsAt path 0
+    | .element _ _ _ children _ _ _ => children.childRefsAt path 0
     | .text _ _ | .scalarText _ _ _ | .region _ _ | .propText _ _ => []
     | .child name span props => [{ path, name, span, props }]
 
@@ -461,7 +548,7 @@ end
 
 mutual
   private def View.regionRefsAt (path : List Nat) : View Γ → List MountedRegion
-    | .element _ _ _ children _ _ => children.regionRefsAt path 0
+    | .element _ _ _ children _ _ _ => children.regionRefsAt path 0
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .propText _ _ => []
     | .region name span => [{ path, name, span }]
 
@@ -474,7 +561,7 @@ end
 
 mutual
   private def View.propTextsAt (path : List Nat) : View Γ → List MountedPropText
-    | .element _ _ _ children _ _ => children.propTextsAt path 0
+    | .element _ _ _ children _ _ _ => children.propTextsAt path 0
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _ => []
     | .propText field span => [{ path, field, span }]
 
@@ -486,13 +573,14 @@ mutual
 end
 
 /-- Purely split a safe view into its mount tree, scalar sinks, event bindings,
-reflected properties, nested component references, keyed region slots, and
-immutable prop text positions. -/
+reflected properties, state-scoped attribute selections, nested component
+references, keyed region slots, and immutable prop text positions. -/
 def View.split (value : View Γ) : ViewSplit Γ :=
   { template := value.mountNode
     textSinks := value.textSinksAt []
     events := value.eventsAt []
     props := value.propsAt []
+    attrSelects := value.selectsAt []
     childRefs := value.childRefsAt []
     regionRefs := value.regionRefsAt []
     propTexts := value.propTextsAt [] }

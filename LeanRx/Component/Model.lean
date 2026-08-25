@@ -250,6 +250,13 @@ private def propNodes (values : Array (ValueSpec Γ))
       (← refsFor values prop.binding.dependencyIds) prop.binding.debug prop.binding.span
   pure nodes.toArray
 
+private def attrSelectNodes (values : Array (ValueSpec Γ))
+    (selects : List (MountedAttrSelect Γ)) : Except ComponentError (Array NodeSpec) := do
+  let nodes ← selects.zipIdx.mapM fun (mounted, index) => do
+    pure <| NodeSpec.sink s!"attr:{index}:{mounted.select.name}" mounted.select.valueType
+      (← refsFor values [mounted.select.fieldIndex]) mounted.select.debug mounted.select.span
+  pure nodes.toArray
+
 private def validateValues (spec : ComponentSpec Γ) : Except ComponentError Nat := do
   if spec.values.isEmpty then
     throw { code := "LRX-TYPE-101", message := "component must declare at least one value" }
@@ -454,9 +461,22 @@ private def summarizeEvents (events : Array (EventSpec Γ)) : Array EventSummary
 
 mutual
 private def validateView : View Γ → Except ComponentError Unit
-  | .element tag attrs events children span props => do
-      if duplicate? (attrs.map StaticAttr.name) then
+  | .element tag attrs events children span props selects => do
+      /- A state-scoped attribute selection counts as its attribute for
+      duplicate detection, so a static attribute beside one — or two
+      selections of the same attribute — duplicates (ADR-0045). -/
+      if duplicate? (attrs.map StaticAttr.name ++ selects.map AttrSelect.name) then
         throw { code := "LRX-VIEW-001", message := "element has duplicate static attributes", spans := #[span] }
+      for select in selects do
+        match select with
+        | .classSelect .. => pure ()
+        | .pressedSelect .. | .disabledSelect .. =>
+            unless tag == .button do
+              throw {
+                code := "LRX-VIEW-032"
+                message := s!"a {select.name} selection requires a native button element"
+                spans := #[select.span]
+              }
       if duplicate? (events.map fun event => event.kind.name) then
         throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
       if events.any (fun event => event.kind == .click || event.kind == .dblclick) &&
@@ -544,16 +564,20 @@ private def validateChildComponents (spec : ComponentSpec Γ)
         spans := #[reference.span]
       }
 
-/- Row events bound anywhere inside one row-template subtree. -/
+/- Row event bindings bound anywhere inside one row-template subtree. -/
 mutual
-  private def rowEventCount : RowNode → Nat
-    | .element _ _ events children _ _ => events.length + rowEventCountChildren children
-    | .text _ _ | .fieldText _ _ | .exprText _ _ => 0
+  private def rowBindings : RowNode → List EventBinding
+    | .element _ _ events children _ _ => events ++ rowBindingsChildren children
+    | .text _ _ | .fieldText _ _ | .exprText _ _ => []
 
-  private def rowEventCountChildren : RowChildren → Nat
-    | .nil => 0
-    | .cons head tail => rowEventCount head + rowEventCountChildren tail
+  private def rowBindingsChildren : RowChildren → List EventBinding
+    | .nil => []
+    | .cons head tail => rowBindings head ++ rowBindingsChildren tail
 end
+
+/- The closed delegated row event kinds (ADR-0041/0046): one structural
+delegated listener per kind on the region container. -/
+private def rowEventKinds : List EventKind := [.click, .input, .keydown]
 
 /- Validate one sealed row template node (ADR-0041). `depth` is the distance
 from the row root: the root is 0, cells are 1, and delegated row events may
@@ -577,31 +601,59 @@ mutual
         if duplicate? (events.map fun event => event.kind.name) then
           throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
         for event in events do
-          unless event.kind == .click do
-            throw {
-              code := "LRX-VIEW-027"
-              message := s!"row events in region {region.name} support click bindings only"
-              spans := #[event.span]
-            }
-          unless tag == .button do
-            throw {
-              code := "LRX-VIEW-027"
-              message := "row click handlers require a native button in the sealed row template"
-              spans := #[event.span]
-            }
+          match event.kind with
+          | .click =>
+              unless tag == .button do
+                throw {
+                  code := "LRX-VIEW-027"
+                  message := "row click handlers require a native button in the sealed row template"
+                  spans := #[event.span]
+                }
+          | .input | .keydown =>
+              /- Typed row payload bindings (ADR-0046) delegate the host
+              `value`/`key` payloads by row structure, so they require the
+              native input element that produces them. -/
+              unless tag == .input do
+                throw {
+                  code := "LRX-VIEW-033"
+                  message := s!"row {event.kind.name} bindings require a native input element"
+                  spans := #[event.span]
+                }
+          | _ =>
+              throw {
+                code := "LRX-VIEW-027"
+                message := s!"row events in region {region.name} support click, input, and keydown bindings only"
+                spans := #[event.span]
+              }
           unless depth ≥ 2 do
             throw {
               code := "LRX-VIEW-027"
               message := s!"row event {event.eventName} must sit strictly inside a row cell for structural delegation"
               spans := #[event.span]
             }
-          unless region.events.toList.any (·.name == event.eventName) do
-            throw {
-              code := "LRX-VIEW-028"
-              message := s!"row template references unknown row event {event.eventName}"
-              path := #[region.name, event.eventName]
-              spans := #[event.span]
-            }
+          match region.events.toList.find? (·.name == event.eventName) with
+          | none =>
+              throw {
+                code := "LRX-VIEW-028"
+                message := s!"row template references unknown row event {event.eventName}"
+                path := #[region.name, event.eventName]
+                spans := #[event.span]
+              }
+          | some rowEvent =>
+              if event.kind == .click && rowEvent.takesPayload then
+                throw {
+                  code := "LRX-VIEW-033"
+                  message := s!"typed row event {rowEvent.name} takes a payload and cannot serve a click binding"
+                  path := #[region.name, rowEvent.name]
+                  spans := #[event.span]
+                }
+              if event.kind != .click && !rowEvent.takesPayload then
+                throw {
+                  code := "LRX-VIEW-033"
+                  message := s!"row event {rowEvent.name} takes no payload and cannot serve a {event.kind.name} binding"
+                  path := #[region.name, rowEvent.name]
+                  spans := #[event.span]
+                }
         validateRowChildren region (depth + 1) children
     | .text _ _ => pure ()
     | .fieldText field span =>
@@ -612,6 +664,12 @@ mutual
             spans := #[span]
           }
     | .exprText value span => do
+        if value.hasPayload then
+          throw {
+            code := "LRX-VIEW-033"
+            message := s!"row template text in region {region.name} cannot reference an event payload"
+            spans := #[span]
+          }
         for field in value.fieldRefs do
           unless field < region.fields.size do
             throw {
@@ -638,7 +696,7 @@ private def regionChildCounts : ViewChildren Γ → Nat × Nat
 container owns exactly the keyed rows plus the region marker (ADR-0041). -/
 mutual
   private def regionPlacementView : View Γ → Except ComponentError Unit
-    | .element _ _ _ children span _ => do
+    | .element _ _ _ children span _ _ => do
         let (total, regions) := regionChildCounts children
         if regions > 0 && (total != 1 || regions != 1) then
           throw {
@@ -710,6 +768,12 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               message := s!"row event {event.name} writes field {target} outside region {region.name}'s {region.fields.size} field(s)"
               spans := #[event.span]
             }
+          if value.hasPayload && !event.takesPayload then
+            throw {
+              code := "LRX-VIEW-033"
+              message := s!"row event {event.name} of region {region.name} references an event payload but declares none"
+              spans := #[event.span]
+            }
           for field in value.fieldRefs do
             unless field < region.fields.size do
               throw {
@@ -725,13 +789,28 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
             message := s!"the row root of region {region.name} cannot bind row events"
             spans := #[region.span]
           }
+        /- One row event per cell and per delegated kind: each kind's cell
+        action array carries at most one action per cell (ADR-0041/0046). -/
         for cell in cells.toList do
-          unless rowEventCount cell ≤ 1 do
-            throw {
-              code := "LRX-VIEW-027"
-              message := s!"a row cell of region {region.name} binds more than one row event"
-              spans := #[region.span]
-            }
+          for kind in rowEventKinds do
+            unless ((rowBindings cell).filter (·.kind == kind)).length ≤ 1 do
+              throw {
+                code := "LRX-VIEW-027"
+                message := s!"a row cell of region {region.name} binds more than one {kind.name} row event"
+                spans := #[region.span]
+              }
+        /- A payload-taking row event must be bound exactly once so its
+        delegated payload class is determined by that binding (ADR-0046). -/
+        let bindings := rowBindingsChildren cells
+        for event in region.events do
+          if event.takesPayload then
+            unless (bindings.filter (·.eventName == event.name)).length == 1 do
+              throw {
+                code := "LRX-VIEW-033"
+                message := s!"typed row event {event.name} of region {region.name} must be bound exactly once in the row template"
+                path := #[region.name, event.name]
+                spans := #[event.span]
+              }
         validateRowNode region 0 region.template
     | _ =>
         throw {
@@ -808,16 +887,19 @@ def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ
                   | .error error => .error error
                   | .ok sinkNodes => match propNodes spec.values split.props with
                     | .error error => .error error
-                    | .ok propNodes =>
-                        match Graph.plan (valueNodes ++ sinkNodes ++ propNodes) with
-                        | .error error => .error {
-                            code := error.code, message := error.message,
-                            path := error.path, spans := error.spans
-                          }
-                        | .ok graph =>
-                            .ok ⟨spec, graph, sourceCount,
-                              summarizeEvents spec.events ++
-                                summarizeTypedEvents spec.typedEvents, split⟩
+                    | .ok propNodes => match attrSelectNodes spec.values split.attrSelects with
+                      | .error error => .error error
+                      | .ok attrNodes =>
+                          match Graph.plan
+                              (valueNodes ++ sinkNodes ++ propNodes ++ attrNodes) with
+                          | .error error => .error {
+                              code := error.code, message := error.message,
+                              path := error.path, spans := error.spans
+                            }
+                          | .ok graph =>
+                              .ok ⟨spec, graph, sourceCount,
+                                summarizeEvents spec.events ++
+                                  summarizeTypedEvents spec.typedEvents, split⟩
 
 def validationMessage (spec : ComponentSpec Γ) : String :=
   match spec.check with
