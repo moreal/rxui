@@ -14,10 +14,8 @@ keep the run short.
 ./scripts/run_js_framework_benchmark.sh --framework keyed/react-hooks --framework keyed/solid --headless --no-results
 ```
 
-- Measured at: 2026-08-23 21:28:30 UTC
-- LeanRx commit: `c7bdbf316575de4bc0903ab1ae203675816da09f` (ADR-0032) plus the
-  uncommitted compactor trailing-comma fold (tree state: dirty; see the
-  archived `repository-changes.patch`)
+- Measured at: 2026-08-25 09:52:56 UTC
+- LeanRx commit: `aa388a0b32b813a1f12d48d3fde14f9fe98ca65a` (tree state: clean)
 - Chrome mode: headless (headless is suitable for
   regression tracking; see the integration guide for why visible Chrome is
   preferred for publishable comparisons)
@@ -27,7 +25,7 @@ keep the run short.
 
 Full raw JSON per benchmark, Chrome traces, the generated LeanRx framework
 snapshot, the exact repository patch, and this environment metadata are
-archived under `.tmp/js-framework-benchmark-results/20260823T212830Z/` (not
+archived under `.tmp/js-framework-benchmark-results/20260825T095256Z/` (not
 committed; regenerate with the command above).
 
 Lower is better in every table below.
@@ -36,23 +34,23 @@ Lower is better in every table below.
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Create 1,000 rows (ms) | 39.5 | 33.3 | 30.6 |
-| Replace all 1,000 rows (ms) | 48.4 | 37.0 | 35.4 |
-| Partial update, every 10th row, 4× CPU slowdown (ms) | 30.3 | 23.7 | 22.2 |
-| Select row, 4× CPU slowdown (ms) | 11.9 | 8.3 | 6.2 |
-| Swap rows, 4× CPU slowdown (ms) | 156.3 | 28.0 | 25.1 |
-| Remove row, 2× CPU slowdown (ms) | 22.4 | 20.0 | 18.5 |
-| Create 10,000 rows (ms) | 674.0 | 367.6 | 329.7 |
-| Append 1,000 rows to 1,000 rows (ms) | 46.6 | 38.9 | 37.4 |
-| Clear 1,000 rows, 4× CPU slowdown (ms) | 29.2 | 19.8 | 15.8 |
+| Create 1,000 rows (ms) | 38.9 | 31.9 | 30.2 |
+| Replace all 1,000 rows (ms) | 48.4 | 36.8 | 34.5 |
+| Partial update, every 10th row, 4× CPU slowdown (ms) | 30.7 | 23.3 | 22.8 |
+| Select row, 4× CPU slowdown (ms) | 10.7 | 7.6 | 6.3 |
+| Swap rows, 4× CPU slowdown (ms) | 153.3 | 26.5 | 23.0 |
+| Remove row, 2× CPU slowdown (ms) | 20.8 | 19.3 | 17.8 |
+| Create 10,000 rows (ms) | 663.6 | 347.8 | 325.7 |
+| Append 1,000 rows to 1,000 rows (ms) | 45.0 | 37.9 | 37.2 |
+| Clear 1,000 rows, 4× CPU slowdown (ms) | 27.8 | 18.7 | 15.0 |
 
 ## Memory
 
 | Benchmark | React Hooks | Solid | **LeanRx** |
 |---|---:|---:|---:|
-| Memory after page load (MB) | 1.18 | 0.61 | 0.60 |
-| Memory after adding 1,000 rows (MB) | 4.42 | 2.69 | 2.03 |
-| Memory after adding then clearing rows (MB) | 1.97 | 0.79 | 0.78 |
+| Memory after page load (MB) | 1.18 | 0.52 | 0.60 |
+| Memory after adding 1,000 rows (MB) | 4.42 | 2.70 | 2.03 |
+| Memory after adding then clearing rows (MB) | 1.96 | 0.79 | 0.77 |
 
 ## Startup and size
 
@@ -60,44 +58,40 @@ Lower is better in every table below.
 |---|---:|---:|---:|
 | Uncompressed JS size (KB) | 190.30 | 11.50 | 9.70 |
 | Compressed (Brotli) JS size (KB) | 51.40 | 4.50 | 3.40 |
-| Startup time to first paint (ms) | 319.80 | 78.30 | 70.30 |
+| Startup time to first paint (ms) | 319.70 | 79.60 | 73.30 |
 
 ## Change from the previous run
 
-The previous recorded run (commit `7f4dfbf` plus the then-uncommitted
-ADR-0032 change, same runner, headless, the same three frameworks, measured
-7.7 hours earlier) measured LeanRx at 30.2 ms create 1,000, 34.4 ms replace,
-23.6 ms partial update, 6.5 ms select, 22.2 ms swap, 17.2 ms remove, 314.3
-ms create 10,000, 36.1 ms append, and 14.3 ms clear, with 9.70 KB
-uncompressed / 3.40 KB Brotli, 1.91 MB after adding 1,000 rows, and 79.7 ms
-to first paint. This run ships one size-only change and no host change
-(runtime ABI stays 15): the compactor folds the three trailing commas the
-readable hosts carried into the flattened module — a dispatch call, an
-instrumentation array, the region host's returned object literal — which is
-byte-identical at runtime (the served module differs only in those three
-parse-time bytes), so no measured operation changed. The KB rows are
-unchanged (locally 9,905 → 9,902 raw, 3,441 → 3,440 Brotli bytes).
+The previous recorded run (commit `c7bdbf3` plus the then-uncommitted
+compactor trailing-comma fold, same runner, headless, the same three
+frameworks, measured about 1.7 days earlier) measured LeanRx at 30.6 ms
+create 1,000, 35.4 ms replace, 22.2 ms partial update, 6.2 ms select, 25.1
+ms swap, 18.5 ms remove, 329.7 ms create 10,000, 37.4 ms append, and 15.8
+ms clear, with 9.70 KB uncompressed / 3.40 KB Brotli, 2.03 MB after adding
+1,000 rows, and 70.3 ms to first paint. The commits between the two runs
+(ADR-0033 through ADR-0046, plus example/test/ADR-doc work) are all in the
+component/JSX DSL surface — `git diff` over `runtime/` and every path
+matching `*JsFrameworkBenchmark*` between the two measured commits is empty,
+and `LeanRx/Core/Version.lean` still reads `runtimeAbi := 15` — so this run
+ships no host, backend, or benchmark-example change; the KB rows are
+unchanged (9.70 / 3.40) and every CPU/memory/first-paint delta below is
+run-to-run drift, not a measured effect of any change.
 
-The CPU rows moved with the run, which drifted slower for every framework
-this time: create-10,000 script 23.6 → 24.3 ms (15 samples, σ 0.5) for
-329.7 ms total with paint 279.9 → 293.3, while Solid's script moved 34.9 →
-36.9 and its paint 299.4 → 317.7 in the same run, so LeanRx's share of
-Solid's script reads 0.66 against 0.68 in the previous two runs (the ratio,
-not the absolute row, is the comparable signal); create 1,000 total 30.2 →
-30.6 (Solid 32.6 → 33.3), replace 34.4 → 35.4 (Solid 37.4 → 37.0), swap
-22.2 → 25.1 (Solid 24.7 → 28.0), remove 17.2 → 18.5 (Solid 18.2 → 20.0),
-append 36.1 → 37.4 (Solid 37.3 → 38.9), and clear 14.3 → 15.8 (Solid 18.4 →
-19.8) drifted the same way, while select moved 6.5 → 6.2 as Solid moved 6.6
-→ 8.3. Partial update 23.6 → 22.2 reads below Solid's 23.7 again (script
-1.45 against 1.95, paint 16.96 against 18.17); the row is paint-bound and
-has flipped between the two across runs (20.9 against 20.7, 21.2 against
-23.1, 24.6 against 25.1, 23.6 against 22.8). Memory after adding 1,000 rows
-reads 1.91 → 2.03 MB (Solid 2.60 → 2.69), after clearing 0.70 → 0.78 (Solid
-0.69 → 0.79), after page load 0.60 → 0.60. First paint moved 79.7 → 70.3 ms
-while Solid moved 75.8 → 78.3 ms; across the last nine runs LeanRx measured
-77.8, 81.3, 68.6, 93.8, 72.3, 75.3, 74.1, 79.7, and 70.3 ms against Solid's
-81.5, 76.8, 73.1, 78.9, 74.5, 70.7, 77.2, 75.8, and 78.3 ms, so the row
-does not separate the two.
+The CPU rows moved with the run, mostly faster this time: create-10,000
+total 329.7 → 325.7 ms (Solid 367.6 → 347.8, React 674.0 → 663.6), create
+1,000 30.6 → 30.2 (Solid 33.3 → 31.9), replace 35.4 → 34.5 (Solid 37.0 →
+36.8), swap 25.1 → 23.0 (Solid 28.0 → 26.5), remove 18.5 → 17.8 (Solid 20.0
+→ 19.3), append 37.4 → 37.2 (Solid 38.9 → 37.9), clear 15.8 → 15.0 (Solid
+19.8 → 18.7), select 6.2 → 6.3 (Solid 8.3 → 7.6), and partial update 22.2 →
+22.8 (Solid 23.7 → 23.3, the one row that moved up and the one that has
+flipped sign against Solid across recent runs — it is paint-bound and
+close between the two). Memory after adding 1,000 rows reads 2.03 → 2.03 MB
+(Solid 2.69 → 2.70), after clearing 0.78 → 0.77 (Solid 0.79 → 0.79), after
+page load 0.60 → 0.60 (Solid 0.61 → 0.52, a Solid-side drift, not LeanRx).
+First paint moved 70.3 → 73.3 ms while Solid moved 78.3 → 79.6 ms; across
+the last ten runs LeanRx measured 81.3, 68.6, 93.8, 72.3, 75.3, 74.1, 79.7,
+70.3, and now 73.3 ms against Solid's 76.8, 73.1, 78.9, 74.5, 70.7, 77.2,
+75.8, 78.3, and now 79.6 ms, so the row continues not to separate the two.
 
 ## Where the remaining time goes
 
