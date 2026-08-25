@@ -1320,3 +1320,85 @@ scope (`++` only), attribute selection limited to one per attribute per
 element with a single-field `String` equality predicate, branch cells
 single-level and two-branch only with exact click agreement, and child
 instrumentation still unreachable through the parent disposer.
+
+## Row focus vocabulary — Branch Lab keyboard-first edit entry
+
+### Scenario exercised
+
+ADR-0048's confirmation bar closed with the sealed `autoFocus` marker and
+the `focus(node)` DOM-host export shipped under runtime ABI 16. Branch
+Lab's edit input became `<input … value={draft} onInput={retype}
+autoFocus/>`: the bare marker is the first inhabitant of the surface
+grammar's bare-identifier attribute shape, lowers to one compiler-owned
+flag on the sealed row element, and is validated like `value={…}` one rule
+further in — inputs only, branch subtrees only, at most one per subtree
+(`LRX-VIEW-036`, with three compile-fail fixtures and outright rejection in
+the typed and logical views). The update callback's replacement arm — and
+only that arm — calls `focus` on the incoming branch's marked input after
+`append`, guarded by the same `want` flag that selected the builder. Two
+new Chromium gates prove both directions on top of the seven retained
+branch gates: clicking Edit focuses the fresh editor with the reflected
+draft and typing proceeds keyboard-first, while adding rows keeps focus on
+the Add button, commit keeps it on the OK button, and removing a row above
+an editing row does not re-focus its editor. In parallel, ADR-0049 drafts
+the next TodoMVC gap decision: extending the delegated row kinds with
+`dblclick` (click's exact cross-branch agreement) and `checkedChange`
+(input's origin rule, `"true"`/`"false"` payload strings) over the existing
+`listenDelegatedCells` plumbing — expected to need no further host change.
+
+### What was pleasant
+
+The ABI bump convention made the expensive half mechanical: one
+`runtimeAbi := 16`, twenty-one manifest/test reference bumps, and the ADR —
+nothing else moved. The emitter's obligation was one guarded statement per
+branch side because the replacement arm already knew `want` and the fresh
+subtree root (`childAt(cell, 0)`); the focus path navigates from there with
+the same `childAt` composition the update targets use. Lean's
+default-valued constructor fields meant the new `autoFocus` flag slotted
+into `RowNode.element` without touching any construction site, and the
+bare-identifier attribute syntax parsed beside `name=value` and
+`name={term}` on the first try with no grammar ambiguity.
+
+### Friction
+
+Lean patterns fill omitted default-valued constructor arguments with their
+defaults, not wildcards: every pre-existing seven-argument
+`.element … reflects` pattern silently became an `autoFocus == false`
+match. The build stayed green and the mismatch surfaced only as a runtime
+gate failure ("branch edit subtree is not an element") in the elaboration
+test, so the fix was an audit of every RowNode element pattern in the
+repository — worth remembering for the next model field. Focus stealing
+also resists direct browser assertion: a Playwright click focuses the
+clicked button, so the no-steal gates pin focus on the clicked control (Add
+on row mount, OK on commit) and pin the editor unfocused after a
+reorder, rather than asserting an untouched activeElement.
+
+### Bugs found
+
+No framework defect surfaced: the generated module, the three new
+compile-fail fixtures, and all browser gates (including the two focus
+gates) passed on their first run after the pattern-default audit above.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: the js-framework-benchmark
+`main.mjs` is byte-identical to the pre-round baseline and its manifest
+differs only by `"runtimeAbi":16`, so BENCHMARK.md numbers carry forward
+unchanged. Components without a reachable marker emit byte-identical
+modules — the `focus` import and `row-focus` manifest feature appear only
+when a region both declares update actions and carries a marked branch
+input — and Branch Lab's single `focus` call site is counted by the
+artifact gate.
+
+### Follow-up issue or commit
+
+`feat(component): transfer focus into fresh branch inputs (ABI 16)`,
+`test(component): forge the focus gates and teach the guide`, and
+`docs(adr): accept the row focus vocabulary and draft the delegation kinds
+(ADR-0048, ADR-0049)`. Remaining gaps carried forward: `dblclick`
+edit entry and checkbox toggles for TodoMVC parity (ADR-0049 decision
+draft — no host change expected), `s!` interpolation absent from row scope
+(`++` only), attribute selection limited to one per attribute per element
+with a single-field `String` equality predicate, branch cells single-level
+and two-branch only with exact click agreement, and child instrumentation
+still unreachable through the parent disposer.
