@@ -73,6 +73,9 @@ fixtures=(
   Test/fixtures/compile-fail/RowBranchOneSidedDblClick.lean
   Test/fixtures/compile-fail/RowChangeOnTextInput.lean
   Test/fixtures/compile-fail/RowCheckedReflectOnTextInput.lean
+  Test/fixtures/compile-fail/BroadcastUnknownRowField.lean
+  Test/fixtures/compile-fail/RemoveIfUnknownRegion.lean
+  Test/fixtures/compile-fail/CountUnknownRegion.lean
 )
 fragments=(
   "Constructor for"
@@ -146,6 +149,9 @@ fragments=(
   "error[LRX-VIEW-034]"
   "error[LRX-VIEW-037]"
   "error[LRX-VIEW-037]"
+  "error[LRX-ELAB-115]"
+  "error[LRX-ELAB-119]"
+  "error[LRX-ELAB-119]"
 )
 
 for index in "${!fixtures[@]}"; do

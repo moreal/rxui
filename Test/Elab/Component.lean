@@ -189,6 +189,25 @@ private def verifyToggle
           | _, _ => throw <| IO.userError "toggle branch subtrees are not elements"
       | _ => throw <| IO.userError "the second item cell is not a sealed branch cell"
   | _ => throw <| IO.userError "toggle row template lost its cells"
+  /- The ADR-0050 broadcast, predicate removal, and sealed count forms: the
+  `update`/`remove` event steps lower against the region field inventory and
+  the `{count …}` children become mounted count positions in document
+  order. -/
+  match checked.spec.events.toList.find? (·.name == "completeAll") with
+  | none => throw <| IO.userError "toggle broadcast event disappeared"
+  | some event =>
+      unless event.update.regionBroadcastTargets ==
+          [("items", [(2, .lit "true")])] do
+        throw <| IO.userError "toggle broadcast lost its target or sealed assignment"
+  match checked.spec.events.toList.find? (·.name == "clearCompleted") with
+  | none => throw <| IO.userError "toggle removal event disappeared"
+  | some event =>
+      unless event.update.regionRemoveIfTargets == [("items", 2)] do
+        throw <| IO.userError "toggle removal lost its target or predicate field"
+  unless checked.view.regionCounts.map
+      (fun count => (count.region, count.predicate)) ==
+      [("items", some (2, "false")), ("items", none)] do
+    throw <| IO.userError "toggle count positions lost their region or predicates"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [

@@ -518,6 +518,79 @@ def run : IO Unit := do
             (events := [{ kind := .dblclick, eventName := "toggle" }])]]
         events := #[{ name := "remove", action := .remove }, toggleEvent] }] }
   expectError "LRX-VIEW-033" dblClickOnTypedEvent.check
+  /- ADR-0050 region broadcasts, predicate removals, and sealed row
+  aggregates, exercised through forged specifications. -/
+  let broadcastSpec : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "stampAll"
+        update := .regionBroadcast "r" [(0, .append (.field 0) (.lit "!"))]
+      }] }
+  match broadcastSpec.check with
+  | .error error =>
+      throw <| IO.userError s!"forged region broadcast rejected: {error.code}"
+  | .ok checked =>
+      match checked.spec.events.toList.find? (·.name == "stampAll") with
+      | none => throw <| IO.userError "forged broadcast event disappeared"
+      | some event =>
+          unless event.update.regionBroadcastTargets ==
+              [("r", [(0, .append (.field 0) (.lit "!"))])] do
+            throw <| IO.userError "forged broadcast lost its target or assignments"
+  let broadcastUnknownRegion : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "bad", update := .regionBroadcast "ghost" [(0, .lit "x")] }] }
+  expectError "LRX-TYPE-111" broadcastUnknownRegion.check
+  let broadcastEmpty : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "bad", update := .regionBroadcast "r" [] }] }
+  expectError "LRX-TYPE-111" broadcastEmpty.check
+  let broadcastDuplicateTarget : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "bad", update := .regionBroadcast "r" [(0, .lit "x"), (0, .lit "y")] }] }
+  expectError "LRX-TYPE-111" broadcastDuplicateTarget.check
+  let broadcastTargetOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "bad", update := .regionBroadcast "r" [(1, .lit "x")] }] }
+  expectError "LRX-TYPE-111" broadcastTargetOutOfBounds.check
+  let broadcastPayload : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "bad", update := .regionBroadcast "r" [(0, .payload)] }] }
+  expectError "LRX-TYPE-111" broadcastPayload.check
+  let broadcastReadOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "bad", update := .regionBroadcast "r" [(0, .field 1)] }] }
+  expectError "LRX-TYPE-111" broadcastReadOutOfBounds.check
+  let removeIfUnknownRegion : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "bad", update := .regionRemoveIf "ghost" 0 "x" }] }
+  expectError "LRX-TYPE-112" removeIfUnknownRegion.check
+  let removeIfOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with events := #[{
+        name := "bad", update := .regionRemoveIf "r" 1 "x" }] }
+  expectError "LRX-TYPE-112" removeIfOutOfBounds.check
+  let countingView : View CounterSchema := View.node .main [
+    View.node .ul [View.region "r"],
+    View.node .p [View.regionCount "r" (some (0, "done")), View.regionCount "r" none]
+  ]
+  let countingRegion : ComponentSpec CounterSchema :=
+    { goodRegion with view := countingView }
+  match countingRegion.check with
+  | .error error =>
+      throw <| IO.userError s!"forged region counts rejected: {error.code}"
+  | .ok checked =>
+      unless checked.view.regionCounts.map
+          (fun count => (count.region, count.predicate, count.path)) ==
+          [("r", some (0, "done"), [1, 0]), ("r", none, [1, 1])] do
+        throw <| IO.userError "forged region counts lost their mounted positions"
+  let countUnknownRegion : ComponentSpec CounterSchema :=
+    { goodRegion with view := View.node .main [
+        View.node .ul [View.region "r"],
+        View.node .p [View.regionCount "ghost" none]] }
+  expectError "LRX-VIEW-038" countUnknownRegion.check
+  let countPredicateOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with view := View.node .main [
+        View.node .ul [View.region "r"],
+        View.node .p [View.regionCount "r" (some (1, "x"))]] }
+  expectError "LRX-VIEW-038" countPredicateOutOfBounds.check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check

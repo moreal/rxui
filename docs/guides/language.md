@@ -381,6 +381,49 @@ component ToggleRosterMini (schema := ToggleRosterMiniSchema) where {
 }
 ```
 
+Whole-region observations and mutations are sealed too (ADR-0050). A
+`{count region}` view child renders the region's row count and
+`{count region (field == "literal")}` the count of rows whose projected
+field equals the literal — text positions mounted at `"0"` (regions mount
+empty) and recomputed by the commit sweep whenever the region was touched,
+so they track appends, per-row updates, broadcasts, and removals alike. The
+predicate is the same single-field `String` equality every sealed selection
+uses, so keep the counted field canonical (`done == "false"` counts the
+active rows). Two component event steps mutate every row at once:
+`update region (set field (expr), …)` is the region broadcast — the
+right-hand sides are sealed row expressions evaluated simultaneously against
+each row's current tuple, and the keyed reconcile re-renders every retained
+row with its identity, DOM node, and focus preserved — and
+`remove region (field == "literal")` keeps only the rows whose field differs
+from the literal, disposing exactly the matching rows. A broadcast makes the
+region's rows mutable exactly as a `row` update event does. Counts must name
+a declared region and field (`LRX-VIEW-038`, `LRX-ELAB-119`); broadcasts and
+removals validate their targets and predicates the same way
+(`LRX-TYPE-111`/`LRX-TYPE-112`, `LRX-ELAB-119`):
+
+```lean
+component CountedRosterMini (schema := CountedRosterMiniSchema) where {
+  state countedAdded : Int := 0;
+  event addItem := append roster (s!"Item {countedAdded}", "false")
+    then set countedAdded (countedAdded + 1);
+  event completeAll := update roster (set done "true");
+  event clearCompleted := remove roster (done == "true");
+  row roster toggle (checked : String) := set done checked;
+  region roster (label, done) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    <span> [{label}]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <button type="button" onClick={completeAll}> ["Complete all"],
+    <button type="button" onClick={clearCompleted}> ["Clear completed"],
+    <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
 A static view element may select its `class`, `aria-pressed`, or `disabled`
 from component state (ADR-0045):
 `class={if filter == "all" then "selected" else ""}` selects between two

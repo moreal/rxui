@@ -220,6 +220,33 @@ component ToggleRosterMini (schema := ToggleRosterMiniSchema) where {
   ];
 }
 
+/- The sealed count, broadcast, and predicate-removal snippet from guide
+section 7 (ADR-0050). -/
+abbrev CountedRosterMiniSchema : Schema := .field "countedAdded" Int .empty
+
+def countedAdded : Field CountedRosterMiniSchema Int := .here
+
+component CountedRosterMini (schema := CountedRosterMiniSchema) where {
+  state countedAdded : Int := 0;
+  event addItem := append roster (s!"Item {countedAdded}", "false")
+    then set countedAdded (countedAdded + 1);
+  event completeAll := update roster (set done "true");
+  event clearCompleted := remove roster (done == "true");
+  row roster toggle (checked : String) := set done checked;
+  region roster (label, done) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    <span> [{label}]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <button type="button" onClick={completeAll}> ["Complete all"],
+    <button type="button" onClick={clearCompleted}> ["Clear completed"],
+    <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
 /- The state-scoped attribute selection snippet from guide section 7
 (ADR-0045). -/
 abbrev FilterMiniSchema : Schema := .field "filter" String .empty
@@ -371,6 +398,22 @@ def run : IO Unit := do
       | _ => throw <| IO.userError "language-guide toggle snippet lost its cells"
   | .error error =>
       throw <| IO.userError s!"language-guide toggle component rejected: {error.render}"
+  match CountedRosterMini_check with
+  | .ok counting =>
+      unless counting.view.regionCounts.map
+          (fun count => (count.region, count.predicate)) ==
+          [("roster", some (1, "false")), ("roster", none)] do
+        throw <| IO.userError "language-guide count snippet lost its count positions"
+      unless counting.spec.events.toList.map
+          (fun event => (event.name,
+            event.update.regionBroadcastTargets, event.update.regionRemoveIfTargets)) ==
+          [("addItem", [], []),
+            ("completeAll", [("roster", [(1, .lit "true")])], []),
+            ("clearCompleted", [], [("roster", 1)])] do
+        throw <| IO.userError
+          "language-guide count snippet lost its broadcast or removal steps"
+  | .error error =>
+      throw <| IO.userError s!"language-guide count component rejected: {error.render}"
   match FilterMini_check with
   | .ok selecting =>
       unless selecting.view.attrSelects.map (·.select.name) ==

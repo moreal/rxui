@@ -20,13 +20,13 @@ if (
   manifest.sourceCount !== 1 ||
   manifest.derivedCount !== 0 ||
   manifest.textSinkCount !== 1 ||
-  manifest.eventCount !== 1 ||
+  manifest.eventCount !== 3 ||
   JSON.stringify(manifest.hostImports) !==
     JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs"]) ||
   JSON.stringify(manifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
     "keyed-regions", "typed-row-events", "row-branches", "row-reflects",
-    "row-focus",
+    "row-focus", "row-aggregates", "region-broadcasts",
   ])
 ) {
   throw new Error("generated Toggle Lab manifest is invalid");
@@ -39,16 +39,17 @@ for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
   }
 }
 for (const required of [
-  // ADR-0049 rides the existing exports: the import line matches Branch
-  // Lab's exactly — no new host export and no ABI bump for the two kinds.
+  // ADR-0049/0050 ride the existing exports: the import line matches Branch
+  // Lab's exactly — no new host export and no ABI bump for the kinds, the
+  // aggregates, or the broadcasts.
   "import { createElement, createText, setAttribute, append, listen, setText, makeDisposer, setProperty, setKey, childAt, listenDelegatedCells, focus } from \"./leanrx_dom.mjs\";",
   "import { createKeyedRegion, detach } from \"./leanrx_region.mjs\";",
   // One structural delegated listener per bound kind, in registration order,
   // each with its own static per-cell action array (ADR-0041/0046/0049).
-  "const region_off_0 = listenDelegatedCells(node_7, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
-  "const region_off_0_dblclick = listenDelegatedCells(node_7, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
-  "const region_off_0_input = listenDelegatedCells(node_7, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
-  "const region_off_0_change = listenDelegatedCells(node_7, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
+  "const region_off_0 = listenDelegatedCells(node_16, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
+  "const region_off_0_dblclick = listenDelegatedCells(node_16, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
+  "const region_off_0_input = listenDelegatedCells(node_16, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
+  "const region_off_0_change = listenDelegatedCells(node_16, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
   // The delegated checked boolean lowers to the "true"/"false" string
   // payload inside the toggle action branch (ADR-0049).
   "      const row_next_0 = checked ? \"true\" : \"false\";",
@@ -60,7 +61,20 @@ for (const required of [
   // (ADR-0047/0048): replacement arm only.
   "    detach(childAt(branch_cell_0, 0));",
   "    if (!branch_want_0) {\n      focus(childAt(branch_cell_0, 0));\n    }",
-  "makeDisposer(node_0, [off_0, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
+  "makeDisposer(node_0, [off_0, off_1, off_2, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
+  // The ADR-0050 region record carries the count refs and numeric cache in
+  // two region-local slots behind the pending slot.
+  "const regions = [[region_0, [], 0, false, [], [count_text_13, count_text_15], [0, 0]]];",
+  // The broadcast writes every row from the sealed row expression and raises
+  // the dirty flag; the predicate removal keeps the non-matching rows.
+  "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n  }\n  regions[0][3] = true;",
+  "  const kept_0 = [];",
+  "  regions[0][1] = kept_0;",
+  // The count sweep reads the touched flags before the reconcile consumes
+  // them, recomputes both count forms, and writes through setText.
+  "    const region_touched_0 = regions[0][3] || regions[0][4][\"length\"] !== 0;",
+  "      const count_next_0_1 = regions[0][1][\"length\"];",
+  "        setText(regions[0][5][0], count_next_0_0);",
 ]) {
   if (!source.includes(required)) {
     throw new Error(`generated Toggle Lab is missing ${required}`);

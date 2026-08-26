@@ -217,6 +217,92 @@ test("appending rows leaves earlier toggles in place and mounts fresh rows unche
   await expect(page.locator("#items > li").nth(0)).toHaveClass("item-row");
 });
 
+test("the sealed counts track appends and per-row toggles (ADR-0050)", async ({ page }) => {
+  await mountToggle(page);
+  // Both count forms mount at "0": regions mount empty by construction.
+  await expect(page.locator("#items-left")).toHaveText("0 left of 0");
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  await expect(page.locator("#items-left strong")).toHaveText("3");
+  await expect(page.locator("#items-left")).toHaveText("3 left of 3");
+  // A single delegated toggle drains through updateAt (pending, not dirty);
+  // the count sweep still sees the touched region and recomputes both forms.
+  await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).check();
+  await expect(page.locator("#items-left")).toHaveText("2 left of 3");
+  await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).uncheck();
+  await expect(page.locator("#items-left")).toHaveText("3 left of 3");
+  // Removing a row updates both the predicate count and the total.
+  await page.locator("#items > li").nth(0).getByRole("button", { name: "Remove item" }).click();
+  await expect(page.locator("#items-left")).toHaveText("2 left of 2");
+});
+
+test("completing all broadcasts the sealed row expression with row identity preserved (ADR-0050)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  await page.locator("#items > li").nth(0).getByRole("checkbox", { name: "Toggle item" }).check();
+  await page.evaluate(() => {
+    globalThis.firstRow = document.querySelector("#items > li");
+  });
+  const before = await regionMetrics(page);
+  await page.getByRole("button", { name: "Complete all" }).click();
+  // Every row's done field takes the broadcast "true": checkbox and class
+  // selection follow through the dirty reconcile's retained-row updates.
+  for (const row of await page.locator("#items > li").all()) {
+    await expect(row).toHaveClass("item-row done");
+    await expect(row.getByRole("checkbox", { name: "Toggle item" })).toBeChecked();
+  }
+  await expect(page.locator("#items-left")).toHaveText("0 left of 3");
+  const retained = await page.evaluate(() =>
+    globalThis.firstRow === document.querySelector("#items > li"),
+  );
+  expect(retained).toBe(true);
+  const after = await regionMetrics(page);
+  // [mounts, updates, moves, disposals]: the broadcast is exactly one
+  // retained-row update per row — never a mount, move, or disposal.
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1] + 3);
+  expect(after[2]).toBe(before[2]);
+  expect(after[3]).toBe(before[3]);
+});
+
+test("clearing completed disposes exactly the done rows (ADR-0050)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  await page.locator("#items > li").nth(0).getByRole("checkbox", { name: "Toggle item" }).check();
+  await page.locator("#items > li").nth(2).getByRole("checkbox", { name: "Toggle item" }).check();
+  await page.evaluate(() => {
+    globalThis.middleRow = document.querySelectorAll("#items > li")[1];
+  });
+  const before = await regionMetrics(page);
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  // The predicate removal keeps exactly the rows whose done field differs
+  // from the literal; the survivor keeps its DOM node.
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
+  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  const retained = await page.evaluate(() =>
+    globalThis.middleRow === document.querySelector("#items > li"),
+  );
+  expect(retained).toBe(true);
+  const after = await regionMetrics(page);
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1] + 1);
+  expect(after[2]).toBe(before[2]);
+  expect(after[3]).toBe(before[3] + 2);
+  // Clearing again is an observable no-op: nothing matches the predicate.
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+});
+
 test("dblclick outside the label cell dispatches nothing", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();
