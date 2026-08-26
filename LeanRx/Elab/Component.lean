@@ -98,31 +98,6 @@ private def scalarLiteralTerm (ty : Ident) (value : TSyntax `term) :
   | other => throwErrorAt ty
       s!"error[LRX-ELAB-105]: state literals support Int, Nat, Bool, and String, not {other}"
 
-/-- Interpret one sugared event step (`set field (expr)`, `dispatch event`, or
-`append region (expr, …)`) as its explicit `Update` constructor; any other
-shape is not a step. -/
-private def updateStepTerm? (step : TSyntax `term) :
-    CommandElabM (Option (TSyntax `term)) := do
-  match step with
-  | `($head:ident $field:ident $value:term) =>
-      if head.getId.eraseMacroScopes == `set then
-        pure (some (← `(LeanRx.Update.set $field (rx% $value))))
-      else if head.getId.eraseMacroScopes == `append then
-        let regionLit := Syntax.mkStrLit field.getId.eraseMacroScopes.toString
-        let values ← match value with
-          | `(($first:term, $rest:term,*)) => pure (#[first] ++ rest.getElems)
-          | _ => pure #[value]
-        let rowValues ← values.mapM fun fieldValue =>
-          `(LeanRx.RowValue.of (rx% $fieldValue))
-        pure (some (← `(LeanRx.Update.regionAppend $regionLit [$rowValues,*])))
-      else pure none
-  | `($head:ident $target:ident) =>
-      if head.getId.eraseMacroScopes == `dispatch then
-        let targetLit := Syntax.mkStrLit target.getId.eraseMacroScopes.toString
-        pure (some (← `(LeanRx.Update.dispatch $targetLit)))
-      else pure none
-  | _ => pure none
-
 private def eventAttrNames : List Name :=
   [`onClick, `onDblClick, `onInput, `onKeyDown, `onChange, `onCheckedChange, `onSubmit]
 
@@ -167,6 +142,57 @@ private partial def rewritePropRefs (props : List String) (stx : Syntax) : Synta
         .node info kind (args.map (rewritePropRefs props))
   | _ => stx
 
+private def renderFields (fields : List String) : String :=
+  String.intercalate ", " fields
+
+/-- Rewrite `{count region}` and `{count region (field == "literal")}`
+children of an inline view to the internal `regionCount%` child (ADR-0050).
+The `count` head with an argument is claimed by the rewrite — unnamed dynamic
+text is rejected downstream either way, so the shape cannot collide with a
+legitimate child — and the predicate field resolves against the region's
+declared field inventory here, where the inventory exists. -/
+private partial def rewriteCountRefs (regionFields : List (String × List String))
+    (stx : Syntax) : CommandElabM Syntax := do
+  let countChild? (value : TSyntax `term) :
+      CommandElabM (Option (TSyntax `leanrxJsxChild)) := do
+    let resolve (region : TSyntax `ident) : CommandElabM (List String) := do
+      let name := region.getId.eraseMacroScopes.toString
+      match regionFields.find? (·.1 == name) with
+      | some entry => pure entry.2
+      | none =>
+          throwErrorAt region
+            s!"error[LRX-ELAB-119]: count references unknown region {name}"
+    match value with
+    | `($head:ident $region:ident) =>
+        if head.getId.eraseMacroScopes == `count then
+          let _ ← resolve region
+          let regionLit := Syntax.mkStrLit region.getId.eraseMacroScopes.toString
+          pure (some (← `(leanrxJsxChild| regionCount% $regionLit:str)))
+        else pure none
+    | `($head:ident $region:ident ($field:ident == $lit:str)) =>
+        if head.getId.eraseMacroScopes == `count then
+          let fields ← resolve region
+          let fieldName := field.getId.eraseMacroScopes.toString
+          let index ← match fields.idxOf? fieldName with
+            | some index => pure index
+            | none =>
+                throwErrorAt field
+                  s!"error[LRX-ELAB-119]: unknown row field {fieldName}; declared fields are {renderFields fields}"
+          let regionLit := Syntax.mkStrLit region.getId.eraseMacroScopes.toString
+          let indexLit := Syntax.mkNumLit (toString index)
+          pure (some (← `(leanrxJsxChild| regionCount% $regionLit:str $indexLit:num $lit:str)))
+        else pure none
+    | _ => pure none
+  match stx with
+  | .node info kind args =>
+      if kind == ``LeanRxDsl.leanrxJsxChildDynamic && args.size == 3 then
+        match ← countChild? ⟨args[1]!⟩ with
+        | some child => pure child.raw
+        | none => pure (.node info kind (← args.mapM (rewriteCountRefs regionFields)))
+      else
+        pure (.node info kind (← args.mapM (rewriteCountRefs regionFields)))
+  | _ => pure stx
+
 private def rowAttrTerm (attr : Syntax) : CommandElabM (TSyntax `term) := do
   let attrStx : TSyntax `leanrxJsxAttr := ⟨attr⟩
   match attrStx with
@@ -177,9 +203,6 @@ private def rowAttrTerm (attr : Syntax) : CommandElabM (TSyntax `term) := do
       throwErrorAt attr
         "error[LRX-ELAB-114]: row templates support static attributes and row event references only"
   | _ => `(leanrx_jsx_attr% $attrStx)
-
-private def renderFields (fields : List String) : String :=
-  String.intercalate ", " fields
 
 /-- Lower one sealed row expression (ADR-0043): bare row fields, string
 literals, and `++` concatenation — nothing else enters row scope. Inside a
@@ -422,6 +445,72 @@ private def rowUpdateAssignments (fields : List String) (payload? : Option Strin
     | _ => throwErrorAt step "error[LRX-ELAB-115]: row event steps are `set field (expr)`"
   pure assignments
 
+/-- Interpret one sugared event step (`set field (expr)`, `dispatch event`,
+`append region (expr, …)`, `update region (set field (expr), …)`, or
+`remove region (field == "literal")`) as its explicit `Update` constructor;
+any other shape is not a step. The `update` and `remove` heads are the
+ADR-0050 region broadcast and predicate removal: their inner assignments and
+predicates are sealed row expressions elaborated against the target region's
+declared field inventory. -/
+private def updateStepTerm? (regionFields : List (String × List String))
+    (step : TSyntax `term) : CommandElabM (Option (TSyntax `term)) := do
+  match step with
+  | `($head:ident $field:ident $value:term) =>
+      if head.getId.eraseMacroScopes == `set then
+        pure (some (← `(LeanRx.Update.set $field (rx% $value))))
+      else if head.getId.eraseMacroScopes == `append then
+        let regionLit := Syntax.mkStrLit field.getId.eraseMacroScopes.toString
+        let values ← match value with
+          | `(($first:term, $rest:term,*)) => pure (#[first] ++ rest.getElems)
+          | _ => pure #[value]
+        let rowValues ← values.mapM fun fieldValue =>
+          `(LeanRx.RowValue.of (rx% $fieldValue))
+        pure (some (← `(LeanRx.Update.regionAppend $regionLit [$rowValues,*])))
+      else if head.getId.eraseMacroScopes == `update then
+        let region := field.getId.eraseMacroScopes.toString
+        let fields ← match regionFields.find? (·.1 == region) with
+          | some entry => pure entry.2
+          | none =>
+              throwErrorAt field
+                s!"error[LRX-ELAB-119]: broadcast step references unknown region {region}"
+        let steps ← match value with
+          | `(($first:term, $rest:term,*)) => pure (#[first] ++ rest.getElems)
+          | `(($inner:term)) => pure #[inner]
+          | _ =>
+              throwErrorAt value
+                "error[LRX-ELAB-119]: a region broadcast is written `update region (set field (expr), …)`"
+        let assignments ← rowUpdateAssignments fields none steps
+        let regionLit := Syntax.mkStrLit region
+        pure (some (← `(LeanRx.Update.regionBroadcast $regionLit [$assignments,*])))
+      else if head.getId.eraseMacroScopes == `remove then
+        let region := field.getId.eraseMacroScopes.toString
+        let fields ← match regionFields.find? (·.1 == region) with
+          | some entry => pure entry.2
+          | none =>
+              throwErrorAt field
+                s!"error[LRX-ELAB-119]: removal step references unknown region {region}"
+        match value with
+        | `(($predField:ident == $lit:str)) =>
+            let fieldName := predField.getId.eraseMacroScopes.toString
+            let index ← match fields.idxOf? fieldName with
+              | some index => pure index
+              | none =>
+                  throwErrorAt predField
+                    s!"error[LRX-ELAB-119]: unknown row field {fieldName}; declared fields are {renderFields fields}"
+            let indexLit := Syntax.mkNumLit (toString index)
+            let regionLit := Syntax.mkStrLit region
+            pure (some (← `(LeanRx.Update.regionRemoveIf $regionLit $indexLit $lit)))
+        | _ =>
+            throwErrorAt value
+              "error[LRX-ELAB-119]: a region removal is written `remove region (field == \"literal\")`"
+      else pure none
+  | `($head:ident $target:ident) =>
+      if head.getId.eraseMacroScopes == `dispatch then
+        let targetLit := Syntax.mkStrLit target.getId.eraseMacroScopes.toString
+        pure (some (← `(LeanRx.Update.dispatch $targetLit)))
+      else pure none
+  | _ => pure none
+
 /-- Elaborate one `row region event := set field (expr) then …;` item to its
 region name, event name, and sealed `RowEventSpec` (ADR-0043). -/
 private def elabRowEventItem (regionFields : List (String × List String))
@@ -645,7 +734,7 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
                 let mut stepTerms : Array (TSyntax `term) := #[]
                 let mut passthrough? : Option (TSyntax `term) := none
                 for step in steps do
-                  match ← updateStepTerm? step with
+                  match ← updateStepTerm? regionFields step with
                   | some update => stepTerms := stepTerms.push update
                   | none =>
                       if steps.size == 1 then
@@ -686,8 +775,9 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
                   let tagLit := Syntax.mkStrLit shortName
                   childTerms := childTerms.push
                     (← `(LeanRx.ChildComponent.of $tagLit $(← sourceSpanTerm tag)))
-            let rewritten : TSyntax `term :=
-              ⟨rewriteEventRefs declaredEvents (rewritePropRefs declaredProps value.raw)⟩
+            let counted ← rewriteCountRefs regionFields
+              (rewritePropRefs declaredProps value.raw)
+            let rewritten : TSyntax `term := ⟨rewriteEventRefs declaredEvents counted⟩
             viewTerm? := some (← `(LeanRx.View.withSpan $rewritten $itemSpan))
           else
             throwErrorAt item "error[LRX-ELAB-003]: malformed component item"

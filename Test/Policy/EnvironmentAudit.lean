@@ -57,6 +57,8 @@ elab "#leanrx_environment_audit" : command => do
     `LeanRx.ViewAttr.staticAttrs._unsafe_rec,
     `LeanRxDsl._aux_LeanRx_Elab_Component___elabRules_LeanRxDsl_leanrxComponent_1.unsafe_7,
     `LeanRx.Update.regionAppendTargets._unsafe_rec,
+    `LeanRx.Update.regionBroadcastTargets._unsafe_rec,
+    `LeanRx.Update.regionRemoveIfTargets._unsafe_rec,
     `LeanRx.RowChildren.toList._unsafe_rec,
     `LeanRx.RowExpr.hasPayload._unsafe_rec,
     `LeanRx.RowChildren.ofList._unsafe_rec,
@@ -440,6 +442,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.MountNode.region.injEq, #[``propext]),
     (`LeanRx.MountedPropText.mk.injEq, #[``propext]),
     (`LeanRx.MountedRegion.mk.injEq, #[``propext]),
+    (`LeanRx.MountedRegionCount.mk.injEq, #[``propext]),
     (`LeanRx.PropSpec.mk.injEq, #[``propext]),
     (`LeanRx.RegionSpec.mk.injEq, #[``propext]),
     (`LeanRx.RowChildren.cons.injEq, #[``propext]),
@@ -452,8 +455,11 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.RowReflectTarget.checkedIf.injEq, #[``propext]),
     (`LeanRx.RowValue.mk.injEq, #[``propext]),
     (`LeanRx.Update.regionAppend.injEq, #[``propext]),
+    (`LeanRx.Update.regionBroadcast.injEq, #[``propext]),
+    (`LeanRx.Update.regionRemoveIf.injEq, #[``propext]),
     (`LeanRx.View.propText.injEq, #[``propext]),
     (`LeanRx.View.region.injEq, #[``propext]),
+    (`LeanRx.View.regionCount.injEq, #[``propext]),
     (`LeanRx.ViewSplit.mk.injEq, #[``propext])
   ]
   let declarations := (env.constants.toList.filter fun (name, _) =>

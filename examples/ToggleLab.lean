@@ -26,7 +26,20 @@ the toggle state survives the retained-row update sweep, appended rows mount
 with their `done` state, and the delegated `change` is itself an equal-value
 no-op on the checkbox it originated from. The row root's class selection
 follows `done`, pinning that the toggle drains one retained-row `updateAt`
-with row identity preserved. -/
+with row identity preserved.
+
+The lab also dogfoods the ADR-0050 aggregates and broadcasts. The items-left
+line carries both sealed count forms — `{count items (done == "false")}` is
+the predicate count and `{count items}` the row total — recomputed by the
+commit sweep whenever the region was touched and written through the
+existing `setText` export. `completeAll` is a region broadcast
+(`update items (set done "true")`): every row's `done` takes the sealed row
+expression and the dirty reconcile re-renders every retained row — checkbox
+and class selection follow with row identity preserved. `clearCompleted` is
+the predicate removal (`remove items (done == "true")`): the reconcile
+disposes exactly the done rows and the survivors keep their DOM nodes. All
+three ride the existing region record and `update(items)` path — no host
+change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -42,6 +55,8 @@ component ToggleLab (schema := ToggleSchema) where {
   state added : Int := 0;
   event addItem := append items (s!"Item {added}", s!"Item {added}", "false", "view")
     then set added (added + 1);
+  event completeAll := update items (set done "true");
+  event clearCompleted := remove items (done == "true");
   row items toggle (checked : String) := set done checked;
   row items edit := set mode "edit";
   row items retype (value : String) := set draft value;
@@ -66,7 +81,12 @@ component ToggleLab (schema := ToggleSchema) where {
   view := jsx% <main class="toggle-lab"> [
     <h1> ["Toggle Lab"],
     <button type="button" onClick={addItem}> ["Add item"],
+    <button type="button" onClick={completeAll}> ["Complete all"],
+    <button type="button" onClick={clearCompleted}> ["Clear completed"],
     <p id="toggle-text"> [{"itemText": rx% s!"Items added: {added}"}],
+    <p id="items-left"> [
+      <strong> [{count items (done == "false")}], " left of ", {count items}
+    ],
     <ul id="items" ariaLabel="Items"> [<region items/>]
   ];
 }

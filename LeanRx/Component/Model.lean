@@ -66,11 +66,19 @@ def RowValue.of {Γ : Schema} {d : DepSet Γ} (value : RxExpr Γ d String) : Row
 
 /-- Pure transaction-local update program. M4 validates writes target sources;
 `regionAppend` pushes one row (fresh region-owned key, evaluated field values)
-onto a declared keyed region (ADR-0041). -/
+onto a declared keyed region (ADR-0041); `regionBroadcast` writes sealed row
+expressions into every row of a declared region simultaneously, and
+`regionRemoveIf` removes every row whose projected field equals the literal —
+both re-render through the keyed reconcile with retained-row identity
+preserved (ADR-0050). -/
 inductive Update (Γ : Schema) where
   | set (field : Field Γ α) (value : RxExpr Γ deps α) (span : SourceSpan := .generated)
   | dispatch (eventName : String) (span : SourceSpan := .generated)
   | regionAppend (region : String) (values : List (RowValue Γ))
+      (span : SourceSpan := .generated)
+  | regionBroadcast (region : String) (assignments : List (Nat × RowExpr))
+      (span : SourceSpan := .generated)
+  | regionRemoveIf (region : String) (field : Nat) (equals : String)
       (span : SourceSpan := .generated)
   | sequence (first second : Update Γ)
 
@@ -78,25 +86,42 @@ namespace Update
 
 def directWriteTargets : Update Γ → List Nat
   | .set field _ _ => [field.index]
-  | .dispatch .. | .regionAppend .. => []
+  | .dispatch .. | .regionAppend .. | .regionBroadcast .. | .regionRemoveIf .. => []
   | .sequence first second => first.directWriteTargets ++ second.directWriteTargets
 
 def directReadDependencies : Update Γ → List Nat
   | .set _ value _ => value.dependencies.ids
   | .dispatch .. => []
   | .regionAppend _ values _ => values.flatMap (·.deps.ids)
+  /- Broadcast right-hand sides and removal predicates are sealed row
+  expressions: they read row fields only, never component state (ADR-0050). -/
+  | .regionBroadcast .. | .regionRemoveIf .. => []
   | .sequence first second => first.directReadDependencies ++ second.directReadDependencies
 
 def dispatchTargets : Update Γ → List String
-  | .set .. | .regionAppend .. => []
+  | .set .. | .regionAppend .. | .regionBroadcast .. | .regionRemoveIf .. => []
   | .dispatch eventName _ => [eventName]
   | .sequence first second => first.dispatchTargets ++ second.dispatchTargets
 
 /-- Region append targets with their field arity, for region-table checks. -/
 def regionAppendTargets : Update Γ → List (String × Nat)
-  | .set .. | .dispatch .. => []
+  | .set .. | .dispatch .. | .regionBroadcast .. | .regionRemoveIf .. => []
   | .regionAppend region values _ => [(region, values.length)]
   | .sequence first second => first.regionAppendTargets ++ second.regionAppendTargets
+
+/-- Region broadcast targets with their assignments, for region-table checks
+and the mutable-rows decision (ADR-0050). -/
+def regionBroadcastTargets : Update Γ → List (String × List (Nat × RowExpr))
+  | .set .. | .dispatch .. | .regionAppend .. | .regionRemoveIf .. => []
+  | .regionBroadcast region assignments _ => [(region, assignments)]
+  | .sequence first second => first.regionBroadcastTargets ++ second.regionBroadcastTargets
+
+/-- Region removal targets with their predicate field, for region-table
+checks (ADR-0050). -/
+def regionRemoveIfTargets : Update Γ → List (String × Nat)
+  | .set .. | .dispatch .. | .regionAppend .. | .regionBroadcast .. => []
+  | .regionRemoveIf region field _ _ => [(region, field)]
+  | .sequence first second => first.regionRemoveIfTargets ++ second.regionRemoveIfTargets
 
 end Update
 
@@ -396,6 +421,76 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
               path := #[event.name, target]
               spans := #[event.span, region.span]
             }
+  /- Region broadcasts and removals (ADR-0050): the target region must be
+  declared; broadcast assignments are nonempty simultaneous writes over
+  distinct in-bounds targets, reading only in-bounds row fields and never a
+  payload (no row event is dispatching); removal predicates project one
+  in-bounds row field. -/
+  for event in spec.events do
+    for (target, assignments) in event.update.regionBroadcastTargets do
+      match spec.regions.toList.find? (·.name == target) with
+      | none =>
+          throw {
+            code := "LRX-TYPE-111"
+            message := s!"event {event.name} broadcasts to unknown region {target}"
+            path := #[event.name, target]
+            spans := #[event.span]
+          }
+      | some region =>
+          if assignments.isEmpty then
+            throw {
+              code := "LRX-TYPE-111"
+              message := s!"event {event.name} broadcasts no field to region {target}"
+              path := #[event.name, target]
+              spans := #[event.span]
+            }
+          if duplicate? (assignments.map (toString ·.1)) then
+            throw {
+              code := "LRX-TYPE-111"
+              message := s!"event {event.name} broadcasts one field of region {target} twice"
+              path := #[event.name, target]
+              spans := #[event.span]
+            }
+          for (fieldIndex, value) in assignments do
+            unless fieldIndex < region.fields.size do
+              throw {
+                code := "LRX-TYPE-111"
+                message := s!"event {event.name} broadcasts field {fieldIndex} outside region {target}'s {region.fields.size} field(s)"
+                path := #[event.name, target]
+                spans := #[event.span, region.span]
+              }
+            if value.hasPayload then
+              throw {
+                code := "LRX-TYPE-111"
+                message := s!"event {event.name} broadcasts a payload reference to region {target}; broadcasts dispatch no row event"
+                path := #[event.name, target]
+                spans := #[event.span]
+              }
+            for field in value.fieldRefs do
+              unless field < region.fields.size do
+                throw {
+                  code := "LRX-TYPE-111"
+                  message := s!"event {event.name} broadcasts a read of field {field} outside region {target}'s {region.fields.size} field(s)"
+                  path := #[event.name, target]
+                  spans := #[event.span, region.span]
+                }
+    for (target, fieldIndex) in event.update.regionRemoveIfTargets do
+      match spec.regions.toList.find? (·.name == target) with
+      | none =>
+          throw {
+            code := "LRX-TYPE-112"
+            message := s!"event {event.name} removes rows from unknown region {target}"
+            path := #[event.name, target]
+            spans := #[event.span]
+          }
+      | some region =>
+          unless fieldIndex < region.fields.size do
+            throw {
+              code := "LRX-TYPE-112"
+              message := s!"event {event.name} removes rows by field {fieldIndex} outside region {target}'s {region.fields.size} field(s)"
+              path := #[event.name, target]
+              spans := #[event.span, region.span]
+            }
   for mounted in split.events do
     if mounted.binding.kind.payload == .none then
       unless names.contains mounted.binding.eventName do
@@ -525,6 +620,7 @@ private def validateView : View Γ → Except ComponentError Unit
       else pure ()
   | .child _ _ _ => pure ()
   | .region _ _ => pure ()
+  | .regionCount _ _ _ => pure ()
   | .propText _ _ => pure ()
 
 private def validateChildren : ViewChildren Γ → Except ComponentError Unit
@@ -851,7 +947,8 @@ mutual
             spans := #[span]
           }
         regionPlacementChildren children
-    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .propText _ _ | .region _ _ => pure ()
+    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .propText _ _ | .region _ _
+    | .regionCount _ _ _ => pure ()
 
   private def regionPlacementChildren : ViewChildren Γ → Except ComponentError Unit
     | .nil => pure ()
@@ -1037,6 +1134,24 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
         message := s!"region {region.name} must be mounted exactly once, found {references.length} reference(s)"
         spans := #[region.span]
       }
+  /- Sealed row aggregates (ADR-0050): every count position names a declared
+  region, and a count predicate projects an in-bounds row field. -/
+  for count in split.regionCounts do
+    match spec.regions.toList.find? (·.name == count.region) with
+    | none =>
+        throw {
+          code := "LRX-VIEW-038"
+          message := s!"view counts unknown region {count.region}"
+          spans := #[count.span]
+        }
+    | some region =>
+        if let some (fieldIndex, _) := count.predicate then
+          unless fieldIndex < region.fields.size do
+            throw {
+              code := "LRX-VIEW-038"
+              message := s!"a count predicate projects field {fieldIndex} outside region {count.region}'s {region.fields.size} field(s)"
+              spans := #[count.span, region.span]
+            }
   unless spec.regions.isEmpty do
     if let View.region _ span := spec.view then
       throw {

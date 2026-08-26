@@ -85,6 +85,11 @@ private def compileUpdate (inputs : Array Scalar.InputSpec) (eventIndex : Nat) :
         s!"$lrx_event_{eventIndex}_write_{writeIndex}" (Lower.rxExpr value) state
       pure (writeIndex + 1, state)
   | .dispatch .., writeIndex, state => pure (writeIndex, state)
+  /- Broadcast right-hand sides and removal predicates are sealed row
+  expressions lowered inline against each row tuple (ADR-0050); they never
+  read component state, so no scalar evaluator exists for them. -/
+  | .regionBroadcast .., writeIndex, state => pure (writeIndex + 1, state)
+  | .regionRemoveIf .., writeIndex, state => pure (writeIndex + 1, state)
   | .regionAppend _ values _, writeIndex, state => do
       let mut state := state
       for (value, fieldIndex) in values.zipIdx do
@@ -192,6 +197,17 @@ private def regionHasUpdates (region : RegionSpec) : Bool :=
     | .update _ => true
     | .remove => false
 
+/-- The regions any component event broadcasts into (ADR-0050). A broadcast
+makes a region's rows mutable exactly as a `row` update event does, so the
+real update-callback body (and its imports) must be emitted for it. -/
+private def broadcastRegionNames (events : Array (EventSpec Γ)) : List String :=
+  events.toList.flatMap fun event => event.update.regionBroadcastTargets.map (·.1)
+
+/-- Whether one region's rows can mutate after mount: a declared `row` update
+event (ADR-0043) or a component-event broadcast into it (ADR-0050). -/
+private def regionRowsMutate (broadcasts : List String) (region : RegionSpec) : Bool :=
+  regionHasUpdates region || broadcasts.contains region.name
+
 /-- Lower one sealed row expression against the row item array; fields sit
 behind the key slot (ADR-0041/0043). `payload` is the delegated payload
 expression of the dispatching typed row event (ADR-0046); validation keeps
@@ -280,6 +296,59 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
         .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
           (.literal (.boolean true)),
         pushTrace tx s!"region:{regionName}:append"
+      ])
+  | .regionBroadcast regionName assignments _, writeIndex => do
+      /- The broadcast writes every row's targets from sealed row expressions
+      evaluated simultaneously against that row's old tuple, then raises the
+      dirty flag: the keyed reconcile re-renders every retained row with its
+      identity preserved (ADR-0050). -/
+      let regionIndex ← match regionSpecs.toList.findIdx? (·.name == regionName) with
+        | some index => pure index
+        | none => .error {
+            code := "LRX-BE-031"
+            message := s!"checked region disappeared: {regionName}"
+          }
+      let rowItem ← Ident.checked "row_item"
+      let mut evaluateStmts : List Stmt := []
+      let mut assignStmts : List Stmt := []
+      for ((target, rhs), index) in assignments.zipIdx do
+        let temp ← Ident.checked s!"row_next_{index}"
+        evaluateStmts := evaluateStmts ++ [.const temp (rowExprJs rowItem noPayload rhs)]
+        assignStmts := assignStmts ++
+          [.assign (.index (.ident rowItem) (uint (target + 1))) (.ident temp)]
+      pure (writeIndex + 1, [
+        .forOf rowItem (regionEntry regions regionIndex 1)
+          (.ofList (evaluateStmts ++ assignStmts)),
+        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+          (.literal (.boolean true)),
+        pushTrace tx s!"region:{regionName}:broadcast"
+      ])
+  | .regionRemoveIf regionName field equals _, writeIndex => do
+      /- The predicate removal keeps every row whose projected field does not
+      equal the literal and raises the dirty flag: the keyed reconcile
+      disposes exactly the dropped keys (ADR-0050). -/
+      let regionIndex ← match regionSpecs.toList.findIdx? (·.name == regionName) with
+        | some index => pure index
+        | none => .error {
+            code := "LRX-BE-031"
+            message := s!"checked region disappeared: {regionName}"
+          }
+      let kept ← Ident.checked s!"kept_{writeIndex}"
+      let rowEntry ← Ident.checked "row_entry"
+      pure (writeIndex + 1, [
+        .const kept (.array .nil),
+        .forOf rowEntry (regionEntry regions regionIndex 1) (.ofList [
+          .ifThen (.unary .not (.binary .eq
+              (.index (.ident rowEntry) (uint (field + 1)))
+              (.literal (.string equals)))) <| .ofList [
+            .expr <| .call (.index (.ident kept) (.literal (.string "push")))
+              (.ofList [.ident rowEntry])
+          ]
+        ]),
+        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 1)) (.ident kept),
+        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+          (.literal (.boolean true)),
+        pushTrace tx s!"region:{regionName}:removeIf"
       ])
   | .sequence first second, writeIndex => do
       let (writeIndex, first) ← updateStatements evaluators context state tx regions
@@ -512,6 +581,59 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
       ]
     ]]
   for (region, regionIndex) in checked.spec.regions.toList.zipIdx do
+    /- Sealed row aggregates (ADR-0050): whenever this region was touched
+    this transaction — structurally dirty or holding pending row updates —
+    every count over it is recomputed from the row table, compared against
+    its cache slot, and written through `setText`, riding the sink counters
+    with `count:{region}:{index}` labels. The sweep reads the flags before
+    the reconcile and drain below consume them. -/
+    let counts := checked.view.regionCounts.filter (·.region == region.name)
+    unless counts.isEmpty do
+      let touched ← Ident.checked s!"region_touched_{regionIndex}"
+      let mut countStmts : List Stmt := []
+      for (count, slot) in counts.zipIdx do
+        let next ← Ident.checked s!"count_next_{regionIndex}_{slot}"
+        let differs ← Ident.checked s!"count_changed_{regionIndex}_{slot}"
+        let label := s!"count:{region.name}:{slot}"
+        let computeStmts : List Stmt ← match count.predicate with
+          | none => pure [Stmt.const next
+              (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))]
+          | some (field, equals) => do
+              let scan ← Ident.checked s!"count_scan_{regionIndex}_{slot}"
+              let row ← Ident.checked s!"count_row_{regionIndex}_{slot}"
+              pure [
+                Stmt.const scan (.array (.ofList [uint 0])),
+                .forOf row (regionEntry regions regionIndex 1) (.ofList [
+                  .ifThen (.binary .eq (.index (.ident row) (uint (field + 1)))
+                      (.literal (.string equals))) <| .ofList [
+                    .assign (.index (.ident scan) (uint 0))
+                      (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
+                  ]
+                ]),
+                .const next (.index (.ident scan) (uint 0))
+              ]
+        countStmts := countStmts ++ [
+          incrementAt tx 5,
+          pushTrace tx s!"{label}:evaluated"
+        ] ++ computeStmts ++ [
+          .const differs <| .unary .not <|
+            .binary .eq (.index (regionEntry regions regionIndex 6) (uint slot)) (.ident next),
+          .ifThen (.ident differs) <| .ofList [
+            .assign (.index (regionEntry regions regionIndex 6) (uint slot)) (.ident next),
+            .expr <| call setText [
+              .index (regionEntry regions regionIndex 5) (uint slot), .ident next
+            ],
+            incrementAt tx 6,
+            pushTrace tx s!"dom:{label}:write"
+          ]
+        ]
+      commitBody := commitBody ++ [
+        .const touched (.binary .or (regionEntry regions regionIndex 3)
+          (.unary .not (.binary .eq
+            (.index (regionEntry regions regionIndex 4) (.literal (.string "length")))
+            (uint 0)))),
+        .ifThen (.ident touched) (.ofList countStmts)
+      ]
     /- The keyed region reconciles the whole target on commit; the dirty flag
     keeps clean regions out of the sweep entirely (ADR-0041). A structurally
     dirty reconcile re-runs every retained row, so it drops pending update
@@ -662,6 +784,15 @@ mutual
         let state := addNode { state with allocator } path name
         pure (name, appendStatement state <| .const name <|
           call runtime.createText [.index (.ident propsName) (uint field)])
+    | .countText, state => do
+        /- Sealed row aggregates mount as `"0"` (ADR-0050): regions mount
+        empty by construction, so every count starts at zero and is first
+        recomputed by the commit sweep that touches its region. -/
+        let (name, allocator) ← state.allocator.allocate
+          s!"count_text_{state.nodes.length}"
+        let state := addNode { state with allocator } path name
+        pure (name, appendStatement state <| .const name <|
+          call runtime.createText [.literal (.string "0")])
     | .child _ _, _ =>
         .error {
           code := "LRX-BE-030"
@@ -904,12 +1035,12 @@ mutual
 end
 
 /-- Whether one region's generated module transfers focus (ADR-0048): the
-update callback's replacement arm is emitted only for regions with update
-actions, so a marker in an update-less region stays inert and imports
-nothing — components without a reachable marker emit byte-identical
+update callback's replacement arm is emitted only for regions with mutable
+rows (ADR-0043/0050), so a marker in an immutable region stays inert and
+imports nothing — components without a reachable marker emit byte-identical
 modules. -/
-private def regionUsesFocus (region : RegionSpec) : Bool :=
-  regionHasUpdates region && (templateBranches region.template).any fun cell =>
+private def regionUsesFocus (broadcasts : List String) (region : RegionSpec) : Bool :=
+  regionRowsMutate broadcasts region && (templateBranches region.template).any fun cell =>
     match cell with
     | .branch _ _ whenTrue whenFalse _ =>
         (rowFocusPath? whenTrue).isSome || (rowFocusPath? whenFalse).isSome
@@ -1014,7 +1145,8 @@ private def rowTargetWrites (runtime : RuntimeNames) (item : Ident) (base : Expr
         .error { code := "LRX-BE-033", message := "row branch cells cannot nest" }
 
 /-- The retained-row update callback: a no-op while the region's rows are
-immutable (ADR-0041); when the region declares update actions, it re-renders
+immutable (ADR-0041); when the region's rows can mutate — a declared `row`
+update event (ADR-0043) or a component-event broadcast (ADR-0050) — it re-renders
 every dynamic text, class selection, and value reflection from the current
 item by structural `childAt` navigation — the navigate-and-write shape of the
 bespoke Todo row update (ADR-0043/0044) — and, for each branch cell,
@@ -1022,14 +1154,15 @@ re-evaluates the sealed predicate against the wrapper's `$lrxBranch` marker:
 a stable branch is updated in place and a changed branch is replaced with one
 `detach` plus one `append` of the freshly built subtree (ADR-0047). -/
 private def regionUpdateFunction (runtime : RuntimeNames) (region : RegionSpec)
-    (branchFns : List (Ident × Ident)) (name : Ident) : Except Error Function := do
+    (mutable : Bool) (branchFns : List (Ident × Ident)) (name : Ident) :
+    Except Error Function := do
   let row ← Ident.checked "row"
   let item ← Ident.checked "item"
   let position ← Ident.checked "position"
   let context ← Ident.checked "context"
   let mut body : List Stmt := []
   let mut remainingBranchFns := branchFns
-  if regionHasUpdates region then
+  if mutable then
     for target in rowUpdateTargets [] region.template do
       match target with
       | .branchCell path field equals whenTrue whenFalse =>
@@ -1193,6 +1326,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
     s!"region:{region.name}" writes
 
 private def manifest (moduleName : String) (checked : CheckedComponent Γ) : ComponentManifest :=
+  let broadcasts := broadcastRegionNames checked.spec.events
   let graph := checked.graph.toJson
   let hash := graph.toList.foldl
     (fun value char => (value * 16777619 + char.toNat) % 4294967296) 2166136261
@@ -1232,9 +1366,13 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
           (fun region => rowHasReflect region.template) then
         #["row-reflects"]
       else #[]) ++
-      (if checked.spec.regions.toList.any regionUsesFocus then
+      (if checked.spec.regions.toList.any (regionUsesFocus broadcasts) then
         #["row-focus"]
       else #[]) ++
+      (if checked.view.regionCounts.isEmpty then #[] else #["row-aggregates"]) ++
+      (if broadcasts.isEmpty && checked.spec.events.toList.all
+          (fun event => event.update.regionRemoveIfTargets.isEmpty) then #[]
+      else #["region-broadcasts"]) ++
       (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
@@ -1260,6 +1398,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   let disposer ← Ident.checked "disposer"
   let target ← Ident.checked "target"
   let valueCount := checked.spec.values.size
+  let broadcasts := broadcastRegionNames checked.spec.events
   let eventNames := checked.spec.events.toList.map (·.name)
   let typedNames := checked.spec.typedEvents.toList.map (·.name)
   let eventFunctions ← checked.spec.events.toList.zipIdx.mapM fun (event, index) =>
@@ -1293,7 +1432,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             ← regionBranchFunction runtime whenTrue whenTrueFn,
             ← regionBranchFunction runtime whenFalse whenFalseFn]
       pure (functions ++ [← regionRowFunction runtime region branchFns rowFn,
-        ← regionUpdateFunction runtime region branchFns updateFn,
+        ← regionUpdateFunction runtime region (regionRowsMutate broadcasts region)
+          branchFns updateFn,
         ← regionDisposeFunction disposeFn])
   let regionDispatches ← checked.spec.regions.toList.zipIdx.mapM fun (region, index) => do
     if regionEventKinds.any fun kind => (regionActions region kind).any (· ≠ "") then
@@ -1366,9 +1506,17 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             code := "LRX-BE-032"
             message := s!"checked region {region.name} was never mounted"
           }
-      pure <| Expr.array <| .ofList [
-        .ident handle, .array .nil, uint 0, .literal (.boolean false), .array .nil
-      ]
+      /- Regions with counts carry two extra region-local slots — the count
+      text refs and the numeric count cache, both in view order (ADR-0050). -/
+      let counts := checked.view.regionCounts.filter (·.region == region.name)
+      let countRefs ← counts.mapM fun count => do
+        pure (Expr.ident (← nodeAt dom.nodes count.path))
+      pure <| Expr.array <| .ofList ([
+        Expr.ident handle, .array .nil, uint 0, .literal (.boolean false), .array .nil
+      ] ++ (if counts.isEmpty then [] else [
+        Expr.array (.ofList countRefs),
+        Expr.array (.ofList (counts.map fun _ => uint 0))
+      ]))
     mountBody := mountBody ++ [
       .const regions (.array (.ofList regionRecords))
     ]
@@ -1480,14 +1628,15 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       { source := child.moduleSpecifier
         names := #[(mount, localName)] : Import }
   let usesDelegation := regionDispatches.any (·.isSome)
-  let usesRowUpdates := checked.spec.regions.toList.any regionHasUpdates
+  let usesRowUpdates := checked.spec.regions.toList.any (regionRowsMutate broadcasts)
   let usesBranches := checked.spec.regions.toList.any
     fun region => !(templateBranches region.template).isEmpty
   let usesBranchReplace := checked.spec.regions.toList.any
-    fun region => regionHasUpdates region && !(templateBranches region.template).isEmpty
+    fun region => regionRowsMutate broadcasts region &&
+      !(templateBranches region.template).isEmpty
   let usesReflects := checked.spec.regions.toList.any
     fun region => rowHasReflect region.template
-  let usesFocus := checked.spec.regions.toList.any regionUsesFocus
+  let usesFocus := checked.spec.regions.toList.any (regionUsesFocus broadcasts)
   let regionFunctionDecls :=
     regionFunctions.flatMap id ++ regionDispatches.filterMap (·.map (·.2))
   let mountParams := #[target] ++

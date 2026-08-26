@@ -87,6 +87,12 @@ scoped syntax (name := leanrxJsxChildDynamic) "{" term "}" : leanrxJsxChild
 /- Internal target of the component command's immutable-prop rewrite
 (ADR-0042); `{propName}` children become `propText% index` before lowering. -/
 scoped syntax (name := leanrxJsxPropText) "propText%" num : leanrxJsxChild
+/- Internal target of the component command's sealed row aggregate rewrite
+(ADR-0050); `{count region}` children become `regionCount% "region"` and
+`{count region (field == "literal")}` children become
+`regionCount% "region" fieldIndex "literal"` before lowering. -/
+scoped syntax (name := leanrxJsxRegionCount)
+  "regionCount%" str (num str)? : leanrxJsxChild
 scoped syntax leanrxJsxElement : leanrxJsxChild
 /- The sealed two-branch row cell (ADR-0047): valid only inside `region` row
 templates, where the component command lowers it to `RowNode.branch`. -/
@@ -462,6 +468,12 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | `(leanrxJsxChild| propText% $index:num) => do
           let span ← spanSyntax child
           `(LeanRx.View.propText $index $span)
+      | `(leanrxJsxChild| regionCount% $region:str) => do
+          let span ← spanSyntax child
+          `(LeanRx.View.regionCount $region none $span)
+      | `(leanrxJsxChild| regionCount% $region:str $index:num $lit:str) => do
+          let span ← spanSyntax child
+          `(LeanRx.View.regionCount $region (some ($index, $lit)) $span)
       | `(leanrxJsxChild| { $_:term }) =>
           Macro.throwErrorAt child
             "error[LRX-VIEW-012]: unnamed dynamic text requires the logical reference view"
