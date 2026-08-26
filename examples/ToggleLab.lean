@@ -39,24 +39,44 @@ and class selection follow with row identity preserved. `clearCompleted` is
 the predicate removal (`remove items (done == "true")`): the reconcile
 disposes exactly the done rows and the survivors keep their DOM nodes. All
 three ride the existing region record and `update(items)` path — no host
-change and no runtime ABI bump. -/
+change and no runtime ABI bump.
+
+The ADR-0051 filter view selects which rows are displayed:
+`filter items by filter := when "active" (done == "false") then
+when "completed" (done == "true")` maps the `filter` state literals to
+row-field equality predicates, and the unmatched `"all"` shows every row.
+The commit sweep applies the table after the reconcile and drain — whenever
+the region was touched or `filter` changed — by writing each row root's
+`hidden` property through the existing `setProperty` export, navigating
+`childAt(container, i)` from the container element recorded in the region
+record's filter slot. Rows never mount or dispose on a filter change, so
+row identity, focus, and the region metrics stay untouched, and the counts
+keep reading the full row table — `items-left` is filter-independent by
+construction. Still no host change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
 open LeanRx
 
-abbrev ToggleSchema : Schema := .field "added" Int .empty
+abbrev ToggleSchema : Schema := .field "added" Int <| .field "filter" String .empty
 
 def added : Field ToggleSchema Int := .here
+def filter : Field ToggleSchema String := .there .here
 
 open scoped LeanRxDsl
 
 component ToggleLab (schema := ToggleSchema) where {
   state added : Int := 0;
+  state filter : String := "all";
   event addItem := append items (s!"Item {added}", s!"Item {added}", "false", "view")
     then set added (added + 1);
   event completeAll := update items (set done "true");
   event clearCompleted := remove items (done == "true");
+  event showAll := set filter "all";
+  event showActive := set filter "active";
+  event showCompleted := set filter "completed";
+  filter items by filter := when "active" (done == "false")
+    then when "completed" (done == "true");
   row items toggle (checked : String) := set done checked;
   row items edit := set mode "edit";
   row items retype (value : String) := set draft value;
@@ -83,6 +103,9 @@ component ToggleLab (schema := ToggleSchema) where {
     <button type="button" onClick={addItem}> ["Add item"],
     <button type="button" onClick={completeAll}> ["Complete all"],
     <button type="button" onClick={clearCompleted}> ["Clear completed"],
+    <button type="button" onClick={showAll}> ["Show all"],
+    <button type="button" onClick={showActive}> ["Show active"],
+    <button type="button" onClick={showCompleted}> ["Show completed"],
     <p id="toggle-text"> [{"itemText": rx% s!"Items added: {added}"}],
     <p id="items-left"> [
       <strong> [{count items (done == "false")}], " left of ", {count items}

@@ -58,6 +58,8 @@ scoped syntax (name := leanrxItemRowEvent)
 scoped syntax (name := leanrxItemRowTypedEvent)
   atomic(ident ident ident "(" ident ":" ident ")" ":=")
     sepBy1(term, " then ") ";" : leanrxComponentItem
+scoped syntax (name := leanrxItemFilter)
+  atomic(ident ident "by" ident ":=") sepBy1(term, " then ") ";" : leanrxComponentItem
 scoped syntax (name := leanrxItemValue)
   atomic(ident ident ":=") sepBy1(term, " then ") ";" : leanrxComponentItem
 scoped syntax (name := leanrxItemView)
@@ -83,9 +85,10 @@ private def roleName (role : Ident) : String :=
 
 private def checkRole (role : Ident) : CommandElabM String := do
   let name := roleName role
-  unless ["state", "derived", "event", "view", "region", "row", "prop"].contains name do
+  unless ["state", "derived", "event", "view", "region", "row", "prop",
+      "filter"].contains name do
     throwErrorAt role
-      s!"error[LRX-ELAB-003]: unknown component item role {name}; expected state, derived, event, region, row, prop, or view"
+      s!"error[LRX-ELAB-003]: unknown component item role {name}; expected state, derived, event, region, row, prop, filter, or view"
   pure name
 
 private def scalarLiteralTerm (ty : Ident) (value : TSyntax `term) :
@@ -550,6 +553,47 @@ private def elabRowTypedEventItem (regionFields : List (String × List String))
     ← `(LeanRx.RowEventSpec.mk $nameLit (LeanRx.RowAction.update [$assignments,*])
         true $itemSpan))
 
+/-- Elaborate one `filter region by field := when "literal" (rowField ==
+"literal") then …;` item to its `RegionFilter` (ADR-0051): each arm maps one
+distinct state literal to one row-field equality predicate, and a state
+value outside the table shows every row — TodoMVC's `all` needs no arm. -/
+private def elabFilterItem (regionFields : List (String × List String))
+    (item : Syntax) (itemSpan : TSyntax `term) : CommandElabM (TSyntax `term) := do
+  let role : Ident := ⟨item[0]⟩
+  let regionName : Ident := ⟨item[1]⟩
+  let fieldName : Ident := ⟨item[3]⟩
+  let roleName ← checkRole role
+  unless roleName == "filter" do
+    throwErrorAt role
+      s!"error[LRX-ELAB-003]: `by` state selectors are valid only on filter items, not {roleName}"
+  let region := regionName.getId.eraseMacroScopes.toString
+  let fields ← match regionFields.find? (·.1 == region) with
+    | some entry => pure entry.2
+    | none =>
+        throwErrorAt regionName
+          s!"error[LRX-ELAB-120]: filter view references unknown region {region}"
+  let steps := (sepByElems item[5]).map fun step => (⟨step⟩ : TSyntax `term)
+  let mut arms : Array (TSyntax `term) := #[]
+  for step in steps do
+    match step with
+    | `($head:ident $stateLit:str ($rowField:ident == $rowLit:str)) =>
+        unless head.getId.eraseMacroScopes == `when do
+          throwErrorAt step
+            "error[LRX-ELAB-120]: a filter arm is written `when \"literal\" (field == \"literal\")`"
+        let rowFieldName := rowField.getId.eraseMacroScopes.toString
+        let index ← match fields.idxOf? rowFieldName with
+          | some index => pure index
+          | none =>
+              throwErrorAt rowField
+                s!"error[LRX-ELAB-120]: unknown row field {rowFieldName}; declared fields are {renderFields fields}"
+        let indexLit := Syntax.mkNumLit (toString index)
+        arms := arms.push (← `(($stateLit, $indexLit, $rowLit)))
+    | _ =>
+        throwErrorAt step
+          "error[LRX-ELAB-120]: a filter arm is written `when \"literal\" (field == \"literal\")`"
+  let regionLit := Syntax.mkStrLit region
+  `(LeanRx.RegionFilter.mk $regionLit $fieldName [$arms,*] $itemSpan)
+
 /-- Elaborate one `region name (fields) := jsx% …;` item to its `RegionSpec`
 (ADR-0041). Every region declares the sealed `remove` row event plus its `row`
 item update events (ADR-0043); templates opt in by binding `onClick={name}`. -/
@@ -613,7 +657,7 @@ private partial def collectComponentHeads (stx : Syntax)
   | .node _ _ args => args.foldl (init := found) fun acc arg => collectComponentHeads arg acc
   | _ => found
 
-/- The single command elaborator now dispatches eight item kinds; compiling
+/- The single command elaborator now dispatches nine item kinds; compiling
 its one large match needs more than the default heartbeat budget. -/
 set_option maxHeartbeats 800000 in
 scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" schemaTerm:term ")"
@@ -659,6 +703,7 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
       let mut childTerms : Array (TSyntax `term) := #[]
       let mut childNames : List String := []
       let mut regionTerms : Array (TSyntax `term) := #[]
+      let mut filterTerms : Array (TSyntax `term) := #[]
       let mut propTerms : Array (TSyntax `term) := #[]
       let mut viewTerm? : Option (TSyntax `term) := none
       for item in items do
@@ -712,6 +757,9 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
           else if item.raw.getKind == ``leanrxItemRowEvent ||
               item.raw.getKind == ``leanrxItemRowTypedEvent then
             pure ()
+          else if item.raw.getKind == ``leanrxItemFilter then
+            filterTerms := filterTerms.push
+              (← elabFilterItem regionFields item.raw itemSpan)
           else if item.raw.getKind == ``leanrxItemValue then
             let role : Ident := ⟨item.raw[0]⟩
             let itemName : Ident := ⟨item.raw[1]⟩
@@ -800,6 +848,7 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
         surface := #[$declarations,*]
         children := #[$childTerms,*]
         regions := #[$regionTerms,*]
+        filters := #[$filterTerms,*]
         props := #[$propTerms,*]
         span := $componentSpan }))
       elabCommand (← `(abbrev $checkName := LeanRx.ComponentSpec.check $specName))

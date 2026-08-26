@@ -110,6 +110,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.RowExpr.field.injEq, #[``propext]),
     (`LeanRx.RowExpr.append.injEq, #[``propext]),
     (`LeanRx.RowClassSelect.mk.injEq, #[``propext]),
+    (`LeanRx.RegionFilter.mk.injEq, #[``propext]),
     (`LeanRx.MountedAttrSelect.mk.injEq, #[``propext]),
     (`LeanRx.AttrSelect.pressedSelect.injEq, #[``propext]),
     (`LeanRx.AttrSelect.disabledSelect.injEq, #[``propext]),

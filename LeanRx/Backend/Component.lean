@@ -588,8 +588,19 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     with `count:{region}:{index}` labels. The sweep reads the flags before
     the reconcile and drain below consume them. -/
     let counts := checked.view.regionCounts.filter (·.region == region.name)
+    let filter? := checked.spec.filters.toList.find? (·.region == region.name)
+    let touched ← Ident.checked s!"region_touched_{regionIndex}"
+    unless counts.isEmpty && filter?.isNone do
+      /- The shared touched flag serves the count sweep (ADR-0050) and the
+      filter sweep (ADR-0051); both read it before the reconcile and drain
+      below consume the dirty flag and the pending positions. -/
+      commitBody := commitBody ++ [
+        .const touched (.binary .or (regionEntry regions regionIndex 3)
+          (.unary .not (.binary .eq
+            (.index (regionEntry regions regionIndex 4) (.literal (.string "length")))
+            (uint 0))))
+      ]
     unless counts.isEmpty do
-      let touched ← Ident.checked s!"region_touched_{regionIndex}"
       let mut countStmts : List Stmt := []
       for (count, slot) in counts.zipIdx do
         let next ← Ident.checked s!"count_next_{regionIndex}_{slot}"
@@ -627,13 +638,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             pushTrace tx s!"dom:{label}:write"
           ]
         ]
-      commitBody := commitBody ++ [
-        .const touched (.binary .or (regionEntry regions regionIndex 3)
-          (.unary .not (.binary .eq
-            (.index (regionEntry regions regionIndex 4) (.literal (.string "length")))
-            (uint 0)))),
-        .ifThen (.ident touched) (.ofList countStmts)
-      ]
+      commitBody := commitBody ++ [.ifThen (.ident touched) (.ofList countStmts)]
     /- The keyed region reconciles the whole target on commit; the dirty flag
     keeps clean regions out of the sweep entirely (ADR-0041). A structurally
     dirty reconcile re-runs every retained row, so it drops pending update
@@ -662,6 +667,43 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             pushTrace tx s!"region:{region.name}:updateAt"
           ]),
           .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 4)) (.array .nil)
+        ]]
+    /- The sealed region filter view (ADR-0051): after the reconcile and
+    drain, whenever the region was touched or the filter field changed, walk
+    the row table in order and write each row root's `hidden` property from
+    the sealed state-to-predicate table — a state value outside the table
+    shows every row. Row roots are `childAt(container, i)` because the
+    region owns its whole container and rows precede the anchor marker in
+    `items` order; the container element rides the record's filter slot. -/
+    if let some filter := filter? then
+      let filterSlot := 5 + (if counts.isEmpty then 0 else 2)
+      let scan ← Ident.checked s!"filter_scan_{regionIndex}"
+      let filterRow ← Ident.checked s!"filter_row_{regionIndex}"
+      let hiddenExpr := filter.arms.foldr
+        (fun (equals, fieldIndex, value) acc =>
+          Expr.conditional
+            (.binary .eq (stateAt state filter.field.index) (.literal (.string equals)))
+            (.unary .not (.binary .eq
+              (.index (.ident filterRow) (uint (fieldIndex + 1)))
+              (.literal (.string value))))
+            acc)
+        (Expr.literal (.boolean false))
+      commitBody := commitBody ++ [.ifThen
+        (.binary .or (.ident touched) (arrayAt changed filter.field.index)) <| .ofList [
+          incrementAt tx 8,
+          pushTrace tx s!"filter:{region.name}:evaluated",
+          .const scan (.array (.ofList [uint 0])),
+          .forOf filterRow (regionEntry regions regionIndex 1) (.ofList [
+            .expr <| call runtime.setProperty [
+              call runtime.childAt [regionEntry regions regionIndex filterSlot,
+                .index (.ident scan) (uint 0)],
+              .literal (.string "hidden"), hiddenExpr
+            ],
+            .assign (.index (.ident scan) (uint 0))
+              (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
+          ]),
+          incrementAt tx 9,
+          pushTrace tx s!"dom:filter:{region.name}:write"
         ]]
   commitBody := commitBody ++ [
     incrementAt tx 1,
@@ -1373,6 +1415,7 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       (if broadcasts.isEmpty && checked.spec.events.toList.all
           (fun event => event.update.regionRemoveIfTargets.isEmpty) then #[]
       else #["region-broadcasts"]) ++
+      (if checked.spec.filters.isEmpty then #[] else #["region-filters"]) ++
       (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
@@ -1507,16 +1550,28 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             message := s!"checked region {region.name} was never mounted"
           }
       /- Regions with counts carry two extra region-local slots — the count
-      text refs and the numeric count cache, both in view order (ADR-0050). -/
+      text refs and the numeric count cache, both in view order (ADR-0050) —
+      and filtered regions one more holding the container element, so the
+      commit sweep can navigate to row roots from the context alone
+      (ADR-0051). -/
       let counts := checked.view.regionCounts.filter (·.region == region.name)
       let countRefs ← counts.mapM fun count => do
         pure (Expr.ident (← nodeAt dom.nodes count.path))
+      let containerRef ← if checked.spec.filters.toList.any (·.region == region.name) then do
+          let reference ← match checked.view.regionRefs.find? (·.name == region.name) with
+            | some reference => pure reference
+            | none => .error {
+                code := "LRX-BE-032"
+                message := s!"checked region {region.name} was never mounted"
+              }
+          pure [Expr.ident (← nodeAt dom.nodes reference.path.dropLast)]
+        else pure []
       pure <| Expr.array <| .ofList ([
         Expr.ident handle, .array .nil, uint 0, .literal (.boolean false), .array .nil
       ] ++ (if counts.isEmpty then [] else [
         Expr.array (.ofList countRefs),
         Expr.array (.ofList (counts.map fun _ => uint 0))
-      ]))
+      ]) ++ containerRef)
     mountBody := mountBody ++ [
       .const regions (.array (.ofList regionRecords))
     ]
@@ -1637,6 +1692,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   let usesReflects := checked.spec.regions.toList.any
     fun region => rowHasReflect region.template
   let usesFocus := checked.spec.regions.toList.any (regionUsesFocus broadcasts)
+  let usesFilters := !checked.spec.filters.isEmpty
   let regionFunctionDecls :=
     regionFunctions.flatMap id ++ regionDispatches.filterMap (·.map (·.2))
   let mountParams := #[target] ++
@@ -1655,11 +1711,14 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           ] ++ (if checked.view.props.isEmpty && !checked.view.attrSelects.any
               (fun mounted => match mounted.select with
                 | .disabledSelect .. => true
-                | _ => false) && !usesBranches && !usesReflects then #[]
+                | _ => false) && !usesBranches && !usesReflects &&
+              !usesFilters then #[]
             else #[(runtime.setProperty, runtime.setProperty)]) ++
           (if checked.spec.regions.isEmpty then #[]
             else #[(runtime.setKey, runtime.setKey)]) ++
-          (if usesRowUpdates then #[(runtime.childAt, runtime.childAt)] else #[]) ++
+          (if usesRowUpdates || usesFilters then
+            #[(runtime.childAt, runtime.childAt)]
+          else #[]) ++
           (if usesDelegation then
             #[(runtime.listenDelegatedCells, runtime.listenDelegatedCells)]
           else #[]) ++

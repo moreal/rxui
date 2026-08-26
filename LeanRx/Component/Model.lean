@@ -180,6 +180,22 @@ structure PropSpec where
   span : SourceSpan := .generated
 deriving Repr, BEq
 
+/-- One sealed region filter view (ADR-0051): a correspondence from distinct
+`String` state literals of one component value to row-field equality
+predicates, selecting which of a keyed region's rows are displayed. Each arm
+is `(stateLiteral, rowField, rowLiteral)`: while the filter field equals
+`stateLiteral`, exactly the rows whose projected field equals `rowLiteral`
+stay visible; a state value outside the table carries no predicate and shows
+every row. The commit sweep records the selection as each row root's
+`hidden` property — rows never mount or dispose on a filter change, so row
+identity is untouched by construction. The typed `Field Γ String` makes a
+cross-typed selector unrepresentable. -/
+structure RegionFilter (Γ : Schema) where
+  region : String
+  field : Field Γ String
+  arms : List (String × Nat × String)
+  span : SourceSpan := .generated
+
 structure ComponentSpec (Γ : Schema) where
   name : String
   values : Array (ValueSpec Γ)
@@ -189,6 +205,7 @@ structure ComponentSpec (Γ : Schema) where
   surface : Array SurfaceDecl := #[]
   children : Array ChildComponent := #[]
   regions : Array RegionSpec := #[]
+  filters : Array (RegionFilter Γ) := #[]
   props : Array PropSpec := #[]
   span : SourceSpan := .generated
 
@@ -280,6 +297,16 @@ private def attrSelectNodes (values : Array (ValueSpec Γ))
   let nodes ← selects.zipIdx.mapM fun (mounted, index) => do
     pure <| NodeSpec.sink s!"attr:{index}:{mounted.select.name}" mounted.select.valueType
       (← refsFor values [mounted.select.fieldIndex]) mounted.select.debug mounted.select.span
+  pure nodes.toArray
+
+/- Region filter views join the planned graph as sink nodes over their state
+field, beside the ADR-0045 selection sinks (ADR-0051). -/
+private def filterNodes (values : Array (ValueSpec Γ))
+    (filters : Array (RegionFilter Γ)) : Except ComponentError (Array NodeSpec) := do
+  let nodes ← filters.toList.zipIdx.mapM fun (filter, index) => do
+    pure <| NodeSpec.sink s!"filter:{index}:{filter.region}" .string
+      (← refsFor values [filter.field.index])
+      s!"filter:{filter.region}:{filter.field.index}" filter.span
   pure nodes.toArray
 
 private def validateValues (spec : ComponentSpec Γ) : Except ComponentError Nat := do
@@ -1161,6 +1188,45 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
       }
     regionPlacementView spec.view
 
+/-- Validate the sealed region filter table (ADR-0051): every filter names a
+declared region at most once, and its arms are a nonempty table over distinct
+state literals whose predicates project in-bounds row fields. -/
+private def validateFilters (spec : ComponentSpec Γ) : Except ComponentError Unit := do
+  if duplicate? (spec.filters.toList.map (·.region)) then
+    throw {
+      code := "LRX-TYPE-113"
+      message := "a keyed region can carry at most one filter view"
+      spans := spec.filters.map (·.span)
+    }
+  for filter in spec.filters do
+    match spec.regions.toList.find? (·.name == filter.region) with
+    | none =>
+        throw {
+          code := "LRX-TYPE-113"
+          message := s!"filter view targets unknown region {filter.region}"
+          spans := #[filter.span]
+        }
+    | some region =>
+        if filter.arms.isEmpty then
+          throw {
+            code := "LRX-TYPE-113"
+            message := s!"filter view on region {filter.region} declares no arm"
+            spans := #[filter.span]
+          }
+        if duplicate? (filter.arms.map (·.1)) then
+          throw {
+            code := "LRX-TYPE-113"
+            message := s!"filter view on region {filter.region} maps one state literal twice"
+            spans := #[filter.span]
+          }
+        for (_, fieldIndex, _) in filter.arms do
+          unless fieldIndex < region.fields.size do
+            throw {
+              code := "LRX-TYPE-113"
+              message := s!"filter view projects field {fieldIndex} outside region {filter.region}'s {region.fields.size} field(s)"
+              spans := #[filter.span, region.span]
+            }
+
 /-- Validate the immutable prop table and the view's prop text positions
 (ADR-0042). -/
 private def validateProps (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
@@ -1198,27 +1264,32 @@ def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ
           | .error error => .error error
           | .ok _ => match validateRegions spec split with
             | .error error => .error error
-            | .ok _ => match validateProps spec split with
+            | .ok _ => match validateFilters spec with
               | .error error => .error error
-              | .ok _ => match valueNodes spec.values with
+              | .ok _ => match validateProps spec split with
                 | .error error => .error error
-                | .ok valueNodes => match sinkNodes spec.values split.textSinks with
+                | .ok _ => match valueNodes spec.values with
                   | .error error => .error error
-                  | .ok sinkNodes => match propNodes spec.values split.props with
+                  | .ok valueNodes => match sinkNodes spec.values split.textSinks with
                     | .error error => .error error
-                    | .ok propNodes => match attrSelectNodes spec.values split.attrSelects with
+                    | .ok sinkNodes => match propNodes spec.values split.props with
                       | .error error => .error error
-                      | .ok attrNodes =>
-                          match Graph.plan
-                              (valueNodes ++ sinkNodes ++ propNodes ++ attrNodes) with
-                          | .error error => .error {
-                              code := error.code, message := error.message,
-                              path := error.path, spans := error.spans
-                            }
-                          | .ok graph =>
-                              .ok ⟨spec, graph, sourceCount,
-                                summarizeEvents spec.events ++
-                                  summarizeTypedEvents spec.typedEvents, split⟩
+                      | .ok propNodes => match attrSelectNodes spec.values split.attrSelects with
+                        | .error error => .error error
+                        | .ok attrNodes => match filterNodes spec.values spec.filters with
+                          | .error error => .error error
+                          | .ok filterNodes =>
+                              match Graph.plan
+                                  (valueNodes ++ sinkNodes ++ propNodes ++ attrNodes ++
+                                    filterNodes) with
+                              | .error error => .error {
+                                  code := error.code, message := error.message,
+                                  path := error.path, spans := error.spans
+                                }
+                              | .ok graph =>
+                                  .ok ⟨spec, graph, sourceCount,
+                                    summarizeEvents spec.events ++
+                                      summarizeTypedEvents spec.typedEvents, split⟩
 
 def validationMessage (spec : ComponentSpec Γ) : String :=
   match spec.check with
