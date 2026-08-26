@@ -1577,3 +1577,88 @@ interpolation absent from row scope (`++` only), broadcast assignments and
 removal predicates share those sealed shapes, branch cells single-level and
 two-branch only with exact click/dblclick agreement, and child
 instrumentation still unreachable through the parent disposer.
+
+## Sealed region filter views — Toggle Lab show-all/active/completed
+
+### Scenario exercised
+
+The ADR-0051 round: the last TodoMVC filter axis — the displayed row set
+following the selected filter — closed with no host change and no ABI bump.
+`filter items by filter := when "active" (done == "false") then
+when "completed" (done == "true")` is the sealed correspondence table: one
+`String` component state field mapped to row-field equality predicates,
+with the unmatched `"all"` carrying no predicate and showing every row.
+The commit sweep applies the table after the region's reconcile and
+`updateAt` drain — whenever the region was touched (the ADR-0050
+dirty-or-pending flag, now shared between the count and filter sweeps) or
+the filter field changed — by writing each row root's `hidden` property
+through the existing `setProperty` export, navigating
+`childAt(container, i)` from the container element recorded in one new
+region-local record slot behind the count slots. Four new Toggle Lab
+browser gates pin the filter switch hiding exactly the non-matching rows
+with zero region-metrics movement and the same DOM nodes surviving
+hide/reveal round trips, a checked row leaving the active set live through
+the drain's touched flag, appended rows taking their visibility inside the
+appending commit, and broadcasts plus removals composing with an active
+filter — with `items-left` counting the full row table throughout.
+
+### What was pleasant
+
+The two rejected alternatives fell out of the existing invariants instead
+of needing prototypes: reconciling the visible subset would have broken
+the pending slot's position indexing and disposed hidden rows (the exact
+identity the retained-key machinery guarantees), so `hidden` recording over
+the full reconcile was the only shape that kept every ADR-0041..0050
+property untouched. The sweep needed no cache and no new counters — the
+ADR-0050 equal-value-broadcast rationale covers per-row `hidden` writes,
+and the selection counters (`tx[8]`/`tx[9]`) already had the right meaning.
+Reusing the count sweep's touched flag turned "when must visibility
+recompute" into one shared const per region, and the container element rode
+the region record exactly like the ADR-0050 count refs — dispatch functions
+reach DOM references through the context alone, and the slot layout of
+every existing component is untouched.
+
+### Friction
+
+The `by` keyword in the new item syntax is already a Lean token, so the
+ident-led rule needed no de-reservation — but the arm shape had to be an
+application term (`when "active" (done == "false")`) because `=>` cannot
+appear in a term-level table; the `set field (expr)` step precedent made
+that spelling consistent. The count sweep's touched const moved out of its
+`unless counts.isEmpty` block to be shared with the filter sweep, which
+required care to keep count-only regions byte-identical (same const name,
+same emission order). The environment audit wanted one new exact entry
+(`RegionFilter.mk.injEq`), and the match-chain in `ComponentSpec.check`
+gained one more validator level, re-indenting the graph-planning arms.
+
+### Bugs found
+
+No framework defect surfaced: the model gates, the elaborator and
+guide-snippet gates, three new compile-fail fixtures, the updated artifact
+gate, and all sixteen browser gates (the four ADR-0051 gates included)
+passed on their first full run.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of the
+js-framework-benchmark bundle — `main.mjs` and its manifest included — is
+byte-identical to the HEAD baseline (compared via a separate git worktree
+build; only the `.leanrx-bundle-owner` marker differs, and it embeds the
+output directory name). Components without filters emit byte-identical
+modules, Toggle Lab's import lines are byte-identical to the ADR-0050
+round's, and the filter sweep costs untouched transactions one boolean
+read; touched or filter-switching transactions pay one O(rows) hidden
+pass, and equal-value property writes are WHATWG no-ops.
+
+### Follow-up issue or commit
+
+`feat(component): select keyed row visibility by sealed filter tables
+(ADR-0051)`, `test(component): forge the filter gates and teach the
+guide`, and `docs(adr): accept the sealed region filter views (ADR-0051)`.
+Remaining gaps carried forward: filter arms are single-field `String`
+equality only (no negation, no multi-field conjunction, at most one filter
+per region, no explicit empty-predicate arm), count and selection
+predicates share those sealed shapes, `s!` interpolation absent from row
+scope (`++` only), branch cells single-level and two-branch only with
+exact click/dblclick agreement, and child instrumentation still
+unreachable through the parent disposer.
