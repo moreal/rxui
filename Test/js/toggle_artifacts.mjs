@@ -13,20 +13,21 @@ if (
   manifest.module !== "ToggleLab.mjs" ||
   typeof manifest.graphHash !== "string" ||
   manifest.graphHash.length === 0 ||
-  // ADR-0049 ships with no host change: the ABI stays at the ADR-0048 level.
+  // ADR-0049/0050/0051 ship with no host change: the ABI stays at the
+  // ADR-0048 level.
   manifest.runtimeAbi !== 16 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
-  JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int"]) ||
-  manifest.sourceCount !== 1 ||
+  JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "string"]) ||
+  manifest.sourceCount !== 2 ||
   manifest.derivedCount !== 0 ||
   manifest.textSinkCount !== 1 ||
-  manifest.eventCount !== 3 ||
+  manifest.eventCount !== 6 ||
   JSON.stringify(manifest.hostImports) !==
     JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs"]) ||
   JSON.stringify(manifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
     "keyed-regions", "typed-row-events", "row-branches", "row-reflects",
-    "row-focus", "row-aggregates", "region-broadcasts",
+    "row-focus", "row-aggregates", "region-broadcasts", "region-filters",
   ])
 ) {
   throw new Error("generated Toggle Lab manifest is invalid");
@@ -39,17 +40,17 @@ for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
   }
 }
 for (const required of [
-  // ADR-0049/0050 ride the existing exports: the import line matches Branch
-  // Lab's exactly — no new host export and no ABI bump for the kinds, the
-  // aggregates, or the broadcasts.
+  // ADR-0049/0050/0051 ride the existing exports: the import line matches
+  // Branch Lab's exactly — no new host export and no ABI bump for the kinds,
+  // the aggregates, the broadcasts, or the filter view.
   "import { createElement, createText, setAttribute, append, listen, setText, makeDisposer, setProperty, setKey, childAt, listenDelegatedCells, focus } from \"./leanrx_dom.mjs\";",
   "import { createKeyedRegion, detach } from \"./leanrx_region.mjs\";",
   // One structural delegated listener per bound kind, in registration order,
   // each with its own static per-cell action array (ADR-0041/0046/0049).
-  "const region_off_0 = listenDelegatedCells(node_16, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
-  "const region_off_0_dblclick = listenDelegatedCells(node_16, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
-  "const region_off_0_input = listenDelegatedCells(node_16, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
-  "const region_off_0_change = listenDelegatedCells(node_16, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
+  "const region_off_0 = listenDelegatedCells(node_22, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
+  "const region_off_0_dblclick = listenDelegatedCells(node_22, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
+  "const region_off_0_input = listenDelegatedCells(node_22, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
+  "const region_off_0_change = listenDelegatedCells(node_22, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
   // The delegated checked boolean lowers to the "true"/"false" string
   // payload inside the toggle action branch (ADR-0049).
   "      const row_next_0 = checked ? \"true\" : \"false\";",
@@ -61,20 +62,30 @@ for (const required of [
   // (ADR-0047/0048): replacement arm only.
   "    detach(childAt(branch_cell_0, 0));",
   "    if (!branch_want_0) {\n      focus(childAt(branch_cell_0, 0));\n    }",
-  "makeDisposer(node_0, [off_0, off_1, off_2, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
+  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
   // The ADR-0050 region record carries the count refs and numeric cache in
-  // two region-local slots behind the pending slot.
-  "const regions = [[region_0, [], 0, false, [], [count_text_13, count_text_15], [0, 0]]];",
+  // two region-local slots behind the pending slot, and the ADR-0051 filter
+  // slot holds the container element behind them.
+  "const regions = [[region_0, [], 0, false, [], [count_text_19, count_text_21], [0, 0], node_22]];",
   // The broadcast writes every row from the sealed row expression and raises
   // the dirty flag; the predicate removal keeps the non-matching rows.
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n  }\n  regions[0][3] = true;",
   "  const kept_0 = [];",
   "  regions[0][1] = kept_0;",
-  // The count sweep reads the touched flags before the reconcile consumes
-  // them, recomputes both count forms, and writes through setText.
+  // The count sweep reads the touched flag before the reconcile consumes
+  // it, recomputes both count forms, and writes through setText.
   "    const region_touched_0 = regions[0][3] || regions[0][4][\"length\"] !== 0;",
   "      const count_next_0_1 = regions[0][1][\"length\"];",
   "        setText(regions[0][5][0], count_next_0_0);",
+  // The ADR-0051 filter sweep runs after the reconcile and drain whenever
+  // the region was touched or the filter field changed, writing each row
+  // root's hidden property from the sealed state-to-predicate table by
+  // childAt navigation from the record's container slot — the unmatched
+  // "all" falls through to false.
+  "    if (region_touched_0 || changed[1]) {",
+  "        setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", state[1] === \"active\" ? filter_row_0[3] !== \"false\" : state[1] === \"completed\" ? filter_row_0[3] !== \"true\" : false);",
+  "      tx[7][\"push\"](\"filter:items:evaluated\");",
+  "      tx[7][\"push\"](\"dom:filter:items:write\");",
 ]) {
   if (!source.includes(required)) {
     throw new Error(`generated Toggle Lab is missing ${required}`);

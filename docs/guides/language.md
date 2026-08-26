@@ -424,6 +424,45 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
 }
 ```
 
+A `filter` item selects which of a keyed region's rows are *displayed*
+(ADR-0051): `filter region by field := when "literal" (rowField ==
+"literal") then …` maps distinct literals of one `String` component value to
+row-field equality predicates, and a state value outside the table — like
+TodoMVC's `"all"` — carries no predicate and shows every row. The commit
+sweep applies the table after the region's reconcile, whenever the region
+was touched or the filter field changed, by writing each row root's
+`hidden` property; rows never mount or dispose on a filter change, so row
+identity, focus, and the region metrics stay untouched, and counts keep
+reading the full row table — `items-left` is filter-independent by
+construction. Filters must name a declared region at most once with a
+nonempty table over distinct literals and declared row fields
+(`LRX-TYPE-113`, `LRX-ELAB-120`):
+
+```lean
+component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
+  state filteredAdded : Int := 0;
+  state shown : String := "all";
+  event addItem := append roster (s!"Item {filteredAdded}", "false")
+    then set filteredAdded (filteredAdded + 1);
+  event showAll := set shown "all";
+  event showActive := set shown "active";
+  filter roster by shown := when "active" (done == "false")
+    then when "completed" (done == "true");
+  row roster toggle (checked : String) := set done checked;
+  region roster (label, done) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    <span> [{label}]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <button type="button" onClick={showAll}> ["Show all"],
+    <button type="button" onClick={showActive}> ["Show active"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
 A static view element may select its `class`, `aria-pressed`, or `disabled`
 from component state (ADR-0045):
 `class={if filter == "all" then "selected" else ""}` selects between two

@@ -247,6 +247,36 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
   ];
 }
 
+/- The sealed region filter view snippet from guide section 7 (ADR-0051). -/
+abbrev FilteredRosterMiniSchema : Schema :=
+  .field "filteredAdded" Int <| .field "shown" String .empty
+
+def filteredAdded : Field FilteredRosterMiniSchema Int := .here
+def shown : Field FilteredRosterMiniSchema String := .there .here
+
+component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
+  state filteredAdded : Int := 0;
+  state shown : String := "all";
+  event addItem := append roster (s!"Item {filteredAdded}", "false")
+    then set filteredAdded (filteredAdded + 1);
+  event showAll := set shown "all";
+  event showActive := set shown "active";
+  filter roster by shown := when "active" (done == "false")
+    then when "completed" (done == "true");
+  row roster toggle (checked : String) := set done checked;
+  region roster (label, done) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    <span> [{label}]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <button type="button" onClick={showAll}> ["Show all"],
+    <button type="button" onClick={showActive}> ["Show active"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
 /- The state-scoped attribute selection snippet from guide section 7
 (ADR-0045). -/
 abbrev FilterMiniSchema : Schema := .field "filter" String .empty
@@ -414,6 +444,15 @@ def run : IO Unit := do
           "language-guide count snippet lost its broadcast or removal steps"
   | .error error =>
       throw <| IO.userError s!"language-guide count component rejected: {error.render}"
+  match FilteredRosterMini_check with
+  | .ok filtered =>
+      unless filtered.spec.filters.toList.map
+          (fun filter => (filter.region, filter.field.index, filter.arms)) ==
+          [("roster", 1, [("active", 1, "false"), ("completed", 1, "true")])] do
+        throw <| IO.userError
+          "language-guide filter snippet lost its state field or arm table"
+  | .error error =>
+      throw <| IO.userError s!"language-guide filter component rejected: {error.render}"
   match FilterMini_check with
   | .ok selecting =>
       unless selecting.view.attrSelects.map (·.select.name) ==

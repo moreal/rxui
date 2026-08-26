@@ -208,6 +208,13 @@ private def verifyToggle
       (fun count => (count.region, count.predicate)) ==
       [("items", some (2, "false")), ("items", none)] do
     throw <| IO.userError "toggle count positions lost their region or predicates"
+  /- The ADR-0051 filter view: the `by` state field and the `when` arm table
+  lower against the region field inventory — `"all"` carries no arm by
+  design, so it is absent from the table. -/
+  unless checked.spec.filters.toList.map
+      (fun filter => (filter.region, filter.field.index, filter.arms)) ==
+      [("items", 1, [("active", 2, "false"), ("completed", 2, "true")])] do
+    throw <| IO.userError "toggle filter view lost its state field or arm table"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [

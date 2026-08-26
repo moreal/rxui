@@ -591,6 +591,44 @@ def run : IO Unit := do
         View.node .ul [View.region "r"],
         View.node .p [View.regionCount "r" (some (1, "x"))]] }
   expectError "LRX-VIEW-038" countPredicateOutOfBounds.check
+  /- ADR-0051 sealed region filter views, exercised through forged
+  specifications: the good filter checks, keeps its arm table, and joins the
+  planned graph as a sink node; LRX-TYPE-113 rejects the unknown region, the
+  empty and duplicate arm tables, the out-of-bounds predicate field, and a
+  second filter on one region. -/
+  let goodFilter : ComponentSpec CounterSchema :=
+    { goodRegion with filters := #[{
+        region := "r", field := parity, arms := [("odd", 0, "x")] }] }
+  match goodFilter.check with
+  | .error error =>
+      throw <| IO.userError s!"forged region filter rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.filters.map
+          (fun filter => (filter.region, filter.field.index, filter.arms)) ==
+          #[("r", 2, [("odd", 0, "x")])] do
+        throw <| IO.userError "forged region filter lost its arm table"
+      unless (checked.graph.graph.nodes.map (·.name)).contains "filter:0:r" do
+        throw <| IO.userError "forged region filter lost its graph sink node"
+  let filterUnknownRegion : ComponentSpec CounterSchema :=
+    { goodRegion with filters := #[{
+        region := "ghost", field := parity, arms := [("odd", 0, "x")] }] }
+  expectError "LRX-TYPE-113" filterUnknownRegion.check
+  let filterNoArms : ComponentSpec CounterSchema :=
+    { goodRegion with filters := #[{ region := "r", field := parity, arms := [] }] }
+  expectError "LRX-TYPE-113" filterNoArms.check
+  let filterDuplicateLiteral : ComponentSpec CounterSchema :=
+    { goodRegion with filters := #[{
+        region := "r", field := parity, arms := [("odd", 0, "x"), ("odd", 0, "y")] }] }
+  expectError "LRX-TYPE-113" filterDuplicateLiteral.check
+  let filterFieldOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with filters := #[{
+        region := "r", field := parity, arms := [("odd", 1, "x")] }] }
+  expectError "LRX-TYPE-113" filterFieldOutOfBounds.check
+  let filterDuplicateRegion : ComponentSpec CounterSchema :=
+    { goodRegion with filters := #[
+        { region := "r", field := parity, arms := [("odd", 0, "x")] },
+        { region := "r", field := parity, arms := [("even", 0, "y")] }] }
+  expectError "LRX-TYPE-113" filterDuplicateRegion.check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check

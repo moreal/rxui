@@ -313,6 +313,120 @@ test("dblclick outside the label cell dispatches nothing", async ({ page }) => {
   await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0"]);
 });
 
+test("the filter view hides exactly the non-matching rows with identity and metrics untouched (ADR-0051)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  await page.locator("#items > li").nth(0).getByRole("checkbox", { name: "Toggle item" }).check();
+  await page.evaluate(() => {
+    globalThis.firstRow = document.querySelector("#items > li");
+  });
+  const before = await regionMetrics(page);
+  await page.getByRole("button", { name: "Show active" }).click();
+  // The filter sweep writes each row root's hidden property only: every row
+  // keeps its DOM node and the region metrics do not move at all — no
+  // mounts, updates, moves, or disposals.
+  await expect(page.locator("#items > li")).toHaveCount(3);
+  await expect(page.locator("#items > li").nth(0)).toBeHidden();
+  await expect(page.locator("#items > li").nth(1)).toBeVisible();
+  await expect(page.locator("#items > li").nth(2)).toBeVisible();
+  // items-left counts the full row table: the displayed set follows the
+  // filter while the counts stay filter-independent (ADR-0050/0051).
+  await expect(page.locator("#items-left")).toHaveText("2 left of 3");
+  expect(await regionMetrics(page)).toEqual(before);
+  const retained = await page.evaluate(() =>
+    globalThis.firstRow === document.querySelector("#items > li"),
+  );
+  expect(retained).toBe(true);
+  // Show completed flips the displayed set; Show all reveals every retained
+  // row again — the same nodes throughout.
+  await page.getByRole("button", { name: "Show completed" }).click();
+  await expect(page.locator("#items > li").nth(0)).toBeVisible();
+  await expect(page.locator("#items > li").nth(1)).toBeHidden();
+  await expect(page.locator("#items > li").nth(2)).toBeHidden();
+  await page.getByRole("button", { name: "Show all" }).click();
+  for (const row of await page.locator("#items > li").all()) {
+    await expect(row).toBeVisible();
+  }
+  expect(await regionMetrics(page)).toEqual(before);
+  const stillRetained = await page.evaluate(() =>
+    globalThis.firstRow === document.querySelector("#items > li"),
+  );
+  expect(stillRetained).toBe(true);
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("a row update that changes the predicated field re-applies the filter live (ADR-0051)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await page.getByRole("button", { name: "Show active" }).click();
+  await expect(page.locator("#items > li").nth(0)).toBeVisible();
+  await expect(page.locator("#items > li").nth(1)).toBeVisible();
+  // The delegated toggle drains through updateAt (pending, not dirty); the
+  // filter sweep still sees the touched region and hides the row that just
+  // left the active set.
+  await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).check();
+  await expect(page.locator("#items > li").nth(1)).toBeHidden();
+  await expect(page.locator("#items > li").nth(0)).toBeVisible();
+  await expect(page.locator("#items-left")).toHaveText("1 left of 2");
+  // Under the completed filter the same row is the visible one; unchecking
+  // it hides it again from the completed set.
+  await page.getByRole("button", { name: "Show completed" }).click();
+  await expect(page.locator("#items > li").nth(1)).toBeVisible();
+  await expect(page.locator("#items > li").nth(0)).toBeHidden();
+  await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).uncheck();
+  await expect(page.locator("#items > li").nth(1)).toBeHidden();
+  await expect(page.locator("#items-left")).toHaveText("2 left of 2");
+});
+
+test("appended rows take their visibility inside the appending commit (ADR-0051)", async ({ page }) => {
+  await mountToggle(page);
+  await page.getByRole("button", { name: "Show completed" }).click();
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  // The append raises the touched flag, so the fresh row mounts and is
+  // hidden by the same commit's filter sweep — it never flashes visible.
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items > li").nth(0)).toBeHidden();
+  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  // The broadcast moves every row into the completed set: the dirty
+  // reconcile and the filter sweep compose in one transaction.
+  await page.getByRole("button", { name: "Complete all" }).click();
+  await expect(page.locator("#items > li").nth(0)).toBeVisible();
+  await expect(page.locator("#items-left")).toHaveText("0 left of 1");
+});
+
+test("broadcasts and removals compose with an active filter (ADR-0051)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  await page.locator("#items > li").nth(0).getByRole("checkbox", { name: "Toggle item" }).check();
+  await page.getByRole("button", { name: "Show active" }).click();
+  await page.getByRole("button", { name: "Complete all" }).click();
+  // Every row left the active set: all hidden, none disposed.
+  await expect(page.locator("#items > li")).toHaveCount(3);
+  for (const row of await page.locator("#items > li").all()) {
+    await expect(row).toBeHidden();
+  }
+  await expect(page.locator("#items-left")).toHaveText("0 left of 3");
+  await page.getByRole("button", { name: "Show completed" }).click();
+  for (const row of await page.locator("#items > li").all()) {
+    await expect(row).toBeVisible();
+  }
+  // The predicate removal disposes the done rows for real; the filter has
+  // nothing left to hide.
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  await expect(page.locator("#items-left")).toHaveText("0 left of 0");
+});
+
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();
