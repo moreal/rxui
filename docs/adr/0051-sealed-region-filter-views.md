@@ -1,6 +1,6 @@
 # ADR-0051: Select keyed row visibility through a sealed filter table
 
-- Status: Draft
+- Status: Accepted
 - Date: 2026-08-27
 
 ## Context
@@ -94,14 +94,16 @@ through the same touched flag.
 
 ## Open questions
 
-1. Does the sweep need a per-row visibility cache? The draft says no — the
-   unconditional walk is O(rows) only on touched-or-switched transactions,
-   equal-value `hidden` writes are no-ops at the DOM layer, and a cache
-   would be positional, needing invalidation across structural reconciles
-   for no observable difference.
-2. Should an arm be able to name the empty predicate explicitly? The draft
-   says no — unmatched state values show all rows, so `all` needs no arm;
-   an explicit no-predicate arm would be a second spelling of the default.
+Both resolved by the implementing round as drafted:
+
+1. **The sweep carries no per-row visibility cache.** The unconditional
+   walk is O(rows) only on touched-or-switched transactions, equal-value
+   `hidden` writes are WHATWG no-ops at the DOM layer, and a cache would be
+   positional, needing invalidation across structural reconciles for no
+   observable difference.
+2. **No explicit empty-predicate arm.** Unmatched state values show all
+   rows, so `all` needs no arm; an explicit no-predicate arm would be a
+   second spelling of the default.
 
 ## Consequences and limitations
 
@@ -117,3 +119,25 @@ through the same touched flag.
   hidden (`display: none` is unreachable by pointer), which is the intended
   reading of "not displayed".
 
+## Confirmation
+
+Confirmed by the filter-view round as drafted: the extension ships through
+the generic backend with no host change and no ABI bump — Toggle Lab's
+emitted import lines are byte-identical to the ADR-0050 round's, and every
+file of the js-framework-benchmark bundle (`main.mjs` and manifest
+included) is byte-identical to the HEAD baseline under the performance
+freeze (compared via a separate git worktree build; only the
+`.leanrx-bundle-owner` marker differs, and it embeds the output directory
+name). Toggle Lab's browser gates show the filter switch hiding exactly
+the non-matching rows with zero region-metrics movement (no mounts,
+updates, moves, or disposals — the sweep writes `hidden` only), the same
+DOM nodes surviving hide/reveal round trips, a checked row leaving the
+active set live through the `updateAt` drain's touched flag, appended rows
+taking their visibility inside the appending commit, broadcasts and
+removals composing with an active filter, and `items-left` counting the
+full row table throughout. `LRX-TYPE-113` is pinned by five model gates
+plus one compile-fail fixture, `LRX-ELAB-120` by two compile-fail
+fixtures, and the sweep shape, the extended region record, and the
+unchanged import lines by the artifact gate. The recorded gaps stand:
+single-field `String` equality arms, at most one filter per region, and no
+explicit empty-predicate arm.

@@ -52,6 +52,7 @@
 | [0048](docs/adr/0048-row-focus-vocabulary.md) | Accepted | Focus fresh row branch inputs through an explicit marker and host export | 2026-08-25 |
 | [0049](docs/adr/0049-row-dblclick-and-checked-delegation.md) | Accepted | Extend the delegated row kinds with dblclick and checkbox toggles | 2026-08-26 |
 | [0050](docs/adr/0050-row-aggregates-and-region-broadcasts.md) | Accepted | Count, broadcast into, and filter keyed rows through the region record | 2026-08-26 |
+| [0051](docs/adr/0051-sealed-region-filter-views.md) | Accepted | Select keyed row visibility through a sealed filter table | 2026-08-27 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
