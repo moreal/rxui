@@ -69,6 +69,7 @@ lean_lib LeanRxExamples where
     `examples.Counter, `examples.CounterBuild,
     `examples.DiamondLab, `examples.DiamondLabBuild,
     `examples.BranchLab, `examples.BranchLabBuild,
+    `examples.ToggleLab, `examples.ToggleLabBuild,
     `examples.EchoLab, `examples.EchoLabBuild,
     `examples.FilterLab, `examples.FilterLabBuild,
     `examples.NestLab, `examples.NestLabBuild, `examples.DependentTabs,
@@ -116,6 +117,9 @@ lean_exe leanrx_filter_js where
 
 lean_exe leanrx_branch_js where
   root := `examples.BranchLabMain
+
+lean_exe leanrx_toggle_js where
+  root := `examples.ToggleLabMain
 
 lean_exe leanrx_tabs_js where
   root := `examples.DependentTabsMain

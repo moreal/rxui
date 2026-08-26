@@ -449,6 +449,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.RowNode.fieldText.injEq, #[``propext]),
     (`LeanRx.RowNode.text.injEq, #[``propext]),
     (`LeanRx.RowReflect.mk.injEq, #[``propext]),
+    (`LeanRx.RowReflectTarget.checkedIf.injEq, #[``propext]),
     (`LeanRx.RowValue.mk.injEq, #[``propext]),
     (`LeanRx.Update.regionAppend.injEq, #[``propext]),
     (`LeanRx.View.propText.injEq, #[``propext]),

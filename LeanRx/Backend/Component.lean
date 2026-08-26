@@ -207,6 +207,16 @@ private def rowExprJs (item : Ident) (payload : Expr) : RowExpr → Expr
 /-- The inert payload expression for payload-free row expression positions. -/
 private def noPayload : Expr := .literal (.string "")
 
+/-- Lower one sealed row property reflection to its written value
+(ADR-0047/0049): a `value` target writes the row expression string; a
+`checked` target writes the boolean equality of the row expression against
+its literal. -/
+private def rowReflectJs (item : Ident) (reflect : RowReflect) : Expr :=
+  match reflect.target with
+  | .value => rowExprJs item noPayload reflect.value
+  | .checkedIf equals =>
+      .binary .eq (rowExprJs item noPayload reflect.value) (.literal (.string equals))
+
 /-- Lower one sealed class selection to its conditional value (ADR-0044). -/
 private def rowClassJs (item : Ident) (select : RowClassSelect) : Expr :=
   .conditional
@@ -755,8 +765,10 @@ private def regionActions (region : RegionSpec) (kind : EventKind) : List String
   | .element _ _ _ cells _ _ _ _ => cells.toList.map fun cell => (rowActionOf kind cell).getD ""
   | _ => []
 
-/-- The closed delegated row event kinds, in listener registration order. -/
-private def regionEventKinds : List EventKind := [.click, .input, .keydown]
+/-- The closed delegated row event kinds (ADR-0041/0046/0049), in listener
+registration order. -/
+private def regionEventKinds : List EventKind :=
+  [.click, .dblclick, .input, .keydown, .checkedChange]
 
 /-- The template binding kind of one row event, for payload lowering: a
 payload-taking event is bound exactly once (LRX-VIEW-033), so the first
@@ -799,7 +811,8 @@ mutual
           ]
         for reflect in reflects do
           dom := rowAppend dom <| .expr <| call runtime.setProperty [
-            .ident name, .literal (.string "value"), rowExprJs item noPayload reflect.value
+            .ident name, .literal (.string reflect.target.propertyName),
+            rowReflectJs item reflect
           ]
         let finalDom ← rowChildrenStmts runtime item name children dom
         pure (name, finalDom)
@@ -949,7 +962,7 @@ stable subtree in place or replaces it. -/
 private inductive RowUpdateTarget where
   | text (path : List Nat) (value : RowExpr)
   | classSelect (path : List Nat) (select : RowClassSelect)
-  | reflect (path : List Nat) (value : RowExpr)
+  | reflect (path : List Nat) (reflect : RowReflect)
   | branchCell (path : List Nat) (field : Nat) (equals : String)
       (whenTrue whenFalse : RowNode)
 
@@ -957,7 +970,7 @@ mutual
   private def rowUpdateTargets (path : List Nat) : RowNode → List RowUpdateTarget
     | .element _ _ _ children _ classIf reflects _ =>
         classIf.map (RowUpdateTarget.classSelect path) ++
-          reflects.map (fun reflect => RowUpdateTarget.reflect path reflect.value) ++
+          reflects.map (RowUpdateTarget.reflect path) ++
           rowUpdateTargetsChildren path 0 children
     | .text _ _ => []
     | .fieldText field _ => [.text path (.field field)]
@@ -992,10 +1005,11 @@ private def rowTargetWrites (runtime : RuntimeNames) (item : Ident) (base : Expr
     | .classSelect path select =>
         pure <| .expr <| call runtime.setAttribute [
           rowNavigate runtime base path, .literal (.string "class"), rowClassJs item select]
-    | .reflect path value =>
+    | .reflect path reflect =>
         pure <| .expr <| call runtime.setProperty [
-          rowNavigate runtime base path, .literal (.string "value"),
-          rowExprJs item noPayload value]
+          rowNavigate runtime base path,
+          .literal (.string reflect.target.propertyName),
+          rowReflectJs item reflect]
     | .branchCell .. =>
         .error { code := "LRX-BE-033", message := "row branch cells cannot nest" }
 
@@ -1128,12 +1142,15 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
         `[cursor, match]`), evaluate every right-hand side against the old
         tuple, write the targets, and queue the position for the commit
         sweep's `updateAt` drain (ADR-0043). A typed row event's payload is
-        the delegated `value` or `key` argument selected by its template
-        binding kind (ADR-0046). -/
+        the delegated `value`, `key`, or `"true"`/`"false"`-lowered `checked`
+        argument selected by its template binding kind (ADR-0046/0049). -/
         let payloadExpr : Expr :=
           if event.takesPayload then
             match rowEventBindingKind? region event.name with
             | some .keydown => .ident eventKey
+            | some .checkedChange =>
+                .conditional (.ident checkedFlag)
+                  (.literal (.string "true")) (.literal (.string "false"))
             | _ => .ident value
           else noPayload
         let scan ← Ident.checked "scan"

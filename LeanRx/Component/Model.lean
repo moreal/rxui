@@ -608,9 +608,17 @@ mutual
     | .cons head tail => rowContainsTag tag head || rowContainsTagChildren tag tail
 end
 
-/- The closed delegated row event kinds (ADR-0041/0046): one structural
+/- The closed delegated row event kinds (ADR-0041/0046/0049): one structural
 delegated listener per kind on the region container. -/
-private def rowEventKinds : List EventKind := [.click, .input, .keydown]
+private def rowEventKinds : List EventKind :=
+  [.click, .dblclick, .input, .keydown, .checkedChange]
+
+/- Whether one element's static attributes carry `type="checkbox"` — the
+only elements a delegated `change` binding or a `checked` reflection may sit
+on (ADR-0049): the `checked` payload and property originate from checkbox
+inputs alone. -/
+private def isCheckboxAttrs (attrs : List StaticAttr) : Bool :=
+  attrs.any (· == .inputType .checkbox)
 
 /- Validate one sealed row template node (ADR-0041). `depth` is the distance
 from the row root: the root is 0, cells are 1, and delegated row events may
@@ -632,22 +640,32 @@ mutual
               message := s!"class selection projects field {select.field} outside region {region.name}'s {region.fields.size} field(s)"
               spans := #[select.span]
             }
-        /- Sealed row value reflections (ADR-0047): the `value` property of a
-        native input, at most once per element, over payload-free in-bounds
-        row expressions. -/
-        unless reflects.length ≤ 1 do
-          throw {
-            code := "LRX-VIEW-035"
-            message := "element reflects the value property more than once"
-            spans := #[span]
-          }
+        /- Sealed row property reflections (ADR-0047/0049): the `value`
+        property of a native input — or the `checked` property of a
+        `type="checkbox"` input — at most once per element and property
+        target, over payload-free in-bounds row expressions. -/
+        for target in [RowReflectTarget.value, .checkedIf ""] do
+          unless (reflects.filter
+              (·.target.propertyName == target.propertyName)).length ≤ 1 do
+            throw {
+              code := "LRX-VIEW-035"
+              message := s!"element reflects the {target.propertyName} property more than once"
+              spans := #[span]
+            }
         for reflect in reflects do
           unless tag == .input do
             throw {
               code := "LRX-VIEW-035"
-              message := "a row value reflection requires a native input element"
+              message := s!"a row {reflect.target.propertyName} reflection requires a native input element"
               spans := #[reflect.span]
             }
+          if let .checkedIf _ := reflect.target then
+            unless isCheckboxAttrs attrs do
+              throw {
+                code := "LRX-VIEW-037"
+                message := s!"a row checked reflection in region {region.name} requires a type=\"checkbox\" input element"
+                spans := #[reflect.span]
+              }
           if reflect.value.hasPayload then
             throw {
               code := "LRX-VIEW-033"
@@ -688,6 +706,12 @@ mutual
                   message := "row click handlers require a native button in the sealed row template"
                   spans := #[event.span]
                 }
+          | .dblclick =>
+              /- ADR-0049: dblclick is permitted on non-button row elements so
+              a label can carry the TodoMVC edit affordance; the delegated
+              dispatch is structural, so no handler or tabindex ever lands on
+              the element itself. -/
+              pure ()
           | .input | .keydown =>
               /- Typed row payload bindings (ADR-0046) delegate the host
               `value`/`key` payloads by row structure, so they require the
@@ -698,10 +722,19 @@ mutual
                   message := s!"row {event.kind.name} bindings require a native input element"
                   spans := #[event.span]
                 }
+          | .checkedChange =>
+              /- The delegated `checked` payload originates from checkbox
+              inputs alone (ADR-0049). -/
+              unless tag == .input && isCheckboxAttrs attrs do
+                throw {
+                  code := "LRX-VIEW-037"
+                  message := s!"a row change binding in region {region.name} requires a type=\"checkbox\" input element"
+                  spans := #[event.span]
+                }
           | _ =>
               throw {
                 code := "LRX-VIEW-027"
-                message := s!"row events in region {region.name} support click, input, and keydown bindings only"
+                message := s!"row events in region {region.name} support click, dblclick, input, keydown, and change bindings only"
                 spans := #[event.span]
               }
           unless depth ≥ 2 do
@@ -719,14 +752,14 @@ mutual
                 spans := #[event.span]
               }
           | some rowEvent =>
-              if event.kind == .click && rowEvent.takesPayload then
+              if event.kind.payload == .none && rowEvent.takesPayload then
                 throw {
                   code := "LRX-VIEW-033"
-                  message := s!"typed row event {rowEvent.name} takes a payload and cannot serve a click binding"
+                  message := s!"typed row event {rowEvent.name} takes a payload and cannot serve a {event.kind.name} binding"
                   path := #[region.name, rowEvent.name]
                   spans := #[event.span]
                 }
-              if event.kind != .click && !rowEvent.takesPayload then
+              if event.kind.payload != .none && !rowEvent.takesPayload then
                 throw {
                   code := "LRX-VIEW-033"
                   message := s!"row event {rowEvent.name} takes no payload and cannot serve a {event.kind.name} binding"
@@ -907,9 +940,10 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
         branch cell keeps that bound per branch and must agree across its
         branches (ADR-0047): the delegated action arrays are static, so both
         branches must bind the same action for a kind, or the unbound branch
-        must be unable to originate that kind — clicks bubble from any
-        content (exact agreement required), `input` events originate only
-        from native inputs, and `keydown` events only from the focusable
+        must be unable to originate that kind — clicks and double clicks
+        bubble from any content (exact agreement required), `input` and
+        checkbox `change` events originate only from native inputs
+        (ADR-0049), and `keydown` events only from the focusable
         input/button elements. -/
         for cell in cells.toList do
           match cell with
@@ -936,17 +970,22 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
                 | some binding, none | none, some binding =>
                     let other := if boundTrue.isSome then whenFalse else whenTrue
                     match kind with
-                    | .click =>
+                    | .click | .dblclick =>
+                        /- Clicks and double clicks bubble from any content
+                        (ADR-0047/0049): exact agreement required, never
+                        one-sided. -/
                         throw {
                           code := "LRX-VIEW-034"
-                          message := s!"a click row event bound in one branch of a row cell in region {region.name} must be bound identically in the other branch"
+                          message := s!"a {kind.name} row event bound in one branch of a row cell in region {region.name} must be bound identically in the other branch"
                           spans := #[binding.span]
                         }
-                    | .input =>
+                    | .input | .checkedChange =>
+                        /- `input` and checkbox `change` events originate only
+                        from native inputs (ADR-0046/0049). -/
                         if rowContainsTag .input other then
                           throw {
                             code := "LRX-VIEW-034"
-                            message := s!"a one-branch input binding in region {region.name} requires the other branch to contain no input element"
+                            message := s!"a one-branch {kind.name} binding in region {region.name} requires the other branch to contain no input element"
                             spans := #[binding.span]
                           }
                     | _ =>

@@ -207,11 +207,12 @@ def RowAction.name : RowAction → String
   | .update _ => "update"
 
 /-- One declared row event of a keyed region. The name is what row templates
-bind with `onClick={…}` (or, for payload-taking events, `onInput={…}`/
-`onKeyDown={…}` — ADR-0046) and what the delegated dispatcher receives as its
-action string. `takesPayload` marks a typed row event whose update
-right-hand sides may reference the delegated `String` payload; the template
-binding kind selects between the delegated `value` and `key` payloads. -/
+bind with `onClick={…}`/`onDblClick={…}` (or, for payload-taking events,
+`onInput={…}`/`onKeyDown={…}`/`onChange={…}` — ADR-0046/0049) and what the
+delegated dispatcher receives as its action string. `takesPayload` marks a
+typed row event whose update right-hand sides may reference the delegated
+`String` payload; the template binding kind selects between the delegated
+`value`, `key`, and `"true"`/`"false"`-lowered `checked` payloads. -/
 structure RowEventSpec where
   name : String
   action : RowAction
@@ -281,15 +282,32 @@ def debug (select : AttrSelect Γ) : String :=
 
 end AttrSelect
 
-/-- One sealed row-scoped value reflection (ADR-0047): the input element's
-`value` property follows the sealed row expression on mount and inside the
-retained-row update callback. The property name is compiler-owned (`value`
-only) and the write reuses the existing `setProperty` host export; because a
-row update driven by the input's own typed payload writes the string the
-input already holds, the WHATWG equal-value assignment is a caret no-op
-(ADR-0038's controlled-input finding, reused in row scope). -/
+/-- Sealed reflected row property target (ADR-0047/0049). `value` writes the
+row expression string into the input's `value` property; `checkedIf equals`
+writes the boolean equality of the row expression against the literal into a
+checkbox input's `checked` property — the ADR-0045 `disabled` precedent
+carried into row scope, so the toggle state survives the retained-row update
+sweep. -/
+inductive RowReflectTarget where
+  | value
+  | checkedIf (equals : String)
+deriving Repr, BEq, DecidableEq
+
+def RowReflectTarget.propertyName : RowReflectTarget → String
+  | .value => "value"
+  | .checkedIf _ => "checked"
+
+/-- One sealed row-scoped property reflection (ADR-0047/0049): the input
+element's `value` (or checkbox `checked`) property follows the sealed row
+expression on mount and inside the retained-row update callback. The property
+name is compiler-owned (fixed by `RowReflectTarget`) and the write reuses the
+existing `setProperty` host export; because a row update driven by the
+input's own typed payload writes the state the input already holds, the
+WHATWG equal-value assignment is a caret no-op (ADR-0038's controlled-input
+finding, reused in row scope). -/
 structure RowReflect where
   value : RowExpr
+  target : RowReflectTarget := .value
   span : SourceSpan := .generated
 deriving Repr, BEq
 
@@ -299,7 +317,7 @@ sealed row expression over it (`exprText`), never an `RxExpr`; row events
 reference the region's declared row events and lower to one delegated
 listener per event kind on the region container; `classIf` carries at most
 one sealed class selection per element and `reflects` at most one sealed
-`value` reflection per input element. A `branch` node is the sealed
+reflection per input element and property target (ADR-0047/0049). A `branch` node is the sealed
 two-branch row cell (ADR-0047): it may sit only at a cell position (direct
 child of the row root), both subtrees are fixed at elaboration, the mounted
 branch follows equality of one projected row field against one literal, and

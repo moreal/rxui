@@ -7,6 +7,7 @@ diamond_output="$workspace/diamond"
 echo_output="$workspace/echo"
 filter_output="$workspace/filter"
 branch_output="$workspace/branch"
+toggle_output="$workspace/toggle"
 nest_output="$workspace/nest"
 tabs_output="$workspace/tabs"
 temperature_output="$workspace/temperature"
@@ -23,6 +24,7 @@ lake exe leanrx_diamond_js -- "$diamond_output"
 lake exe leanrx_echo_js -- "$echo_output"
 lake exe leanrx_filter_js -- "$filter_output"
 lake exe leanrx_branch_js -- "$branch_output"
+lake exe leanrx_toggle_js -- "$toggle_output"
 lake exe leanrx_nest_js -- "$nest_output"
 lake exe leanrx_tabs_js -- "$tabs_output"
 lake exe leanrx_temperature_js -- "$temperature_output"
@@ -36,6 +38,7 @@ LEANRX_BROWSER_DIST="$output" LEANRX_DIAMOND_DIST="$diamond_output" \
   LEANRX_ECHO_DIST="$echo_output" \
   LEANRX_FILTER_DIST="$filter_output" \
   LEANRX_BRANCH_DIST="$branch_output" \
+  LEANRX_TOGGLE_DIST="$toggle_output" \
   LEANRX_NEST_DIST="$nest_output" \
   LEANRX_TABS_DIST="$tabs_output" \
   LEANRX_TEMPERATURE_DIST="$temperature_output" \

@@ -275,9 +275,12 @@ mutual
           "error[LRX-ELAB-114]: malformed row template child"
 
   /- A `class={…}` attribute lowers to the sealed class selection (ADR-0044),
-  a `value={…}` attribute to the sealed value reflection (ADR-0047), and the
-  bare `autoFocus` marker to the sealed focus marker (ADR-0048); everything
-  else stays a static attribute or row event reference. -/
+  a `value={…}` attribute to the sealed value reflection (ADR-0047), a
+  `checked={field == "literal"}` attribute to the sealed checked reflection
+  (ADR-0049), an `onChange={name}` reference to the delegated checkbox
+  `change` binding (ADR-0049), and the bare `autoFocus` marker to the sealed
+  focus marker (ADR-0048); everything else stays a static attribute or row
+  event reference. -/
   private partial def lowerRowAttrs (fields : List String) (attrs : Array Syntax) :
       CommandElabM
         (Array (TSyntax `term) × Array (TSyntax `term) × Array (TSyntax `term) × Bool) := do
@@ -293,7 +296,32 @@ mutual
       | `(leanrxJsxAttr| value = { $value:term }) => do
           let exprTerm ← rowExprTerm fields none value
           let span ← sourceSpanTerm attr
-          reflectTerms := reflectTerms.push (← `(LeanRx.RowReflect.mk $exprTerm $span))
+          reflectTerms := reflectTerms.push (← `(LeanRx.RowReflect.mk $exprTerm .value $span))
+      | `(leanrxJsxAttr| checked = { $field:ident == $lit:str }) => do
+          /- The sealed row checked reflection (ADR-0049): the checkbox
+          `checked` property follows equality of one projected row field
+          against one literal — the ADR-0045 `disabled` shape in row scope. -/
+          let index ← match fields.idxOf? (field.getId.eraseMacroScopes.toString) with
+            | some index => pure index
+            | none =>
+                throwErrorAt field
+                  s!"error[LRX-ELAB-115]: unknown row field {field.getId.eraseMacroScopes}; declared fields are {renderFields fields}"
+          let indexLit := Syntax.mkNumLit (toString index)
+          let span ← sourceSpanTerm attr
+          reflectTerms := reflectTerms.push
+            (← `(LeanRx.RowReflect.mk (LeanRx.RowExpr.field $indexLit)
+              (.checkedIf $lit) $span))
+      | `(leanrxJsxAttr| checked = { $_:term }) =>
+          throwErrorAt attr
+            "error[LRX-VIEW-037]: a row checked reflection is written checked=\{field == \"literal\"} (ADR-0049)"
+      | `(leanrxJsxAttr| onChange = $event:str) => do
+          /- Row-scope `onChange` is the delegated checkbox binding
+          (ADR-0049): the delegated `checked` boolean lowers to the
+          `"true"`/`"false"` string payload, so the binding kind is
+          `checkedChange`, not the component-scope `value`-payload
+          `change`. -/
+          attrTerms := attrTerms.push (← `(LeanRx.ViewAttr.event {
+            kind := LeanRx.EventKind.checkedChange, eventName := $event }))
       | `(leanrxJsxAttr| $name:ident) =>
           if name.getId.eraseMacroScopes == `autoFocus then do
             if autoFocus then
