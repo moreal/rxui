@@ -1402,3 +1402,89 @@ draft — no host change expected), `s!` interpolation absent from row scope
 with a single-field `String` equality predicate, branch cells single-level
 and two-branch only with exact click agreement, and child instrumentation
 still unreachable through the parent disposer.
+
+## Delegated dblclick and checkbox toggles — Toggle Lab TodoMVC rows
+
+### Scenario exercised
+
+The ADR-0049 round: the closed delegated row kinds grew from three to five
+with no host change and no ABI bump. `onDblClick={edit}` binds the
+payload-less `dblclick` kind — permitted on the non-button label, so
+double-clicking it enters the edit branch (replacement + ADR-0048 focus
+transfer) exactly as TodoMVC's observable DOM does — and `onChange={toggle}`
+on a `type="checkbox"` input binds the `checkedChange` kind, whose delegated
+`checked` boolean lowers to the `"true"`/`"false"` string payload so
+`row items toggle (checked : String) := set done checked` stays inside the
+sealed `String` update language. The round also closed both ADR-0049 open
+questions: the sealed row checked reflection (`checked={done == "true"}`,
+`RowReflectTarget.checkedIf` beside the ADR-0047 `value` target) keeps the
+toggle state alive across the retained-row update sweep and mounts appended
+rows checked, and the validator deliberately does not force a keyboard
+sibling next to a dblclick affordance — the guide advises one instead. The
+new Toggle Lab proves the pair in the browser: nine gates covering toggle →
+class selection on one retained-row update, dblclick edit entry with focus,
+the in-editor dblclick no-op, toggle state surviving an edit round-trip,
+and per-cell action isolation.
+
+### What was pleasant
+
+The extension really was "two more rows in the kind tables": the host
+dispatch had carried `target.checked === true` since ABI 15 and `EventKind`
+already named both kinds for the static view, so the emitter's work was one
+list literal (`regionEventKinds`), one `conditional` payload expression, and
+the reflect-target dispatch — the generated Toggle Lab module's import line
+is byte-identical to Branch Lab's. Parametrizing the cross-branch agreement
+messages by `kind.name` extended click's rule to dblclick and input's rule
+to checkbox change without disturbing a single pinned diagnostic: the
+pre-existing compile-fail fixtures passed unchanged. The both-branches-bind
+`edit` trick (legal because `draft` mirrors `label` outside editing and
+`edit` writes only `mode`) turned the exact-agreement constraint from an
+obstacle into the reason an in-editor dblclick cannot clobber the draft —
+the equal-value reflection makes the re-dispatch a caret-preserving no-op.
+
+### Friction
+
+`RowReflect` grew a `target` field instead of becoming a two-constructor
+inductive: the ABI-16 round's lesson (Lean patterns fill omitted
+default-valued constructor arguments with defaults, not wildcards) made the
+defaulted-field shape the safe one — every existing `{ value := … }`
+literal and `reflect.value` projection kept compiling, and only the
+environment audit needed one new `injEq` entry. The checkbox-origin rule
+needed a static-attribute lookup (`type="checkbox"`) inside the row
+validator — the first row rule that reads an element's attribute list — and
+the depth-≥-2 rule shadows payload-class diagnostics in fixtures, so the
+dblclick-on-typed-event gate had to nest its span one level deeper before
+LRX-VIEW-033 (not -027) surfaced. In row scope `onChange` means
+`checkedChange`, not the component-scope `change` (value payload): the
+divergence is deliberate (checkbox-only origin rule) but easy to trip over,
+so the elaborator carries a comment where the kinds fork.
+
+### Bugs found
+
+No framework defect surfaced: the five-kind validator gates, three new
+compile-fail fixtures, the Toggle Lab artifact gate, and all nine browser
+gates passed on their first full run. One test-authoring slip (copying
+Branch Lab's `editing` class assertions into a Lab whose class selection
+follows `done` only) was caught by rereading the generated module before
+the first browser run.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of the
+js-framework-benchmark bundle — `main.mjs` and its manifest included — is
+byte-identical to the HEAD baseline (compared via a separate git worktree
+build), so BENCHMARK.md carries forward unchanged. The unused kinds cost
+existing components nothing: listener registration iterates only kinds with
+a non-empty action array, so Branch Lab and the benchmark emit the same
+modules as before the extension.
+
+### Follow-up issue or commit
+
+`feat(component): delegate row dblclick and checkbox toggles (ADR-0049)`,
+`test(component): forge the toggle gates and teach the guide`, and
+`docs(adr): accept the delegation kinds (ADR-0049)`. Remaining gaps carried
+forward: `s!` interpolation absent from row scope (`++` only), attribute
+selection limited to one per attribute per element with a single-field
+`String` equality predicate, branch cells single-level and two-branch only
+with exact click/dblclick agreement, and child instrumentation still
+unreachable through the parent disposer.
