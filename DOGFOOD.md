@@ -1488,3 +1488,92 @@ selection limited to one per attribute per element with a single-field
 `String` equality predicate, branch cells single-level and two-branch only
 with exact click/dblclick agreement, and child instrumentation still
 unreachable through the parent disposer.
+
+## Sealed row aggregates and region broadcasts — Toggle Lab items-left
+
+### Scenario exercised
+
+The ADR-0050 round: the last whole-region TodoMVC gaps — `items-left`,
+toggle-all, and clear-completed — closed with no host change and no ABI
+bump. `{count items (done == "false")}` and `{count items}` are the two
+sealed count forms, mounted as `"0"` text nodes (regions mount empty by
+construction) and recomputed by the commit sweep whenever the region was
+touched — structurally dirty or holding pending row updates — through the
+existing `setText` export, with the count refs and numeric cache riding two
+new region-local record slots behind `pending`.
+`event completeAll := update items (set done "true")` is the region
+broadcast: every row's target takes its sealed row expression evaluated
+against that row's old tuple, and the raised dirty flag hands re-rendering
+to the keyed reconcile, which retains every surviving key with its handle,
+DOM node, and focus. `event clearCompleted := remove items (done == "true")`
+is the predicate removal: the kept-array filter plus the same dirty flag
+disposes exactly the matching keys. Twelve Toggle Lab browser gates now pin
+the counts tracking appends, per-row toggles, broadcasts, removals, and
+per-row removes; the broadcast doing exactly one retained-row update per row
+(no mounts, moves, or disposals); and the removal disposing exactly the done
+rows while the survivor keeps its DOM node.
+
+### What was pleasant
+
+The host reconcile already was the broadcast path: `update(items)` retains
+every row whose key survives — keeping its handle and node — while
+re-running the retained-row update callback on it, so the emitted broadcast
+is a field-write loop plus one flag assignment, and toggle-all's row
+identity, class selection, checkbox reflection, and focus preservation all
+came for free from machinery ADR-0041/0043/0047/0048/0049 had already
+proven. The count sweep needed no new context slots: regions with counts
+extend their own record to
+`[handle, items, nextKey, dirty, pending, countRefs, countCache]`, so the
+slot layout of every existing component is untouched and components without
+counts or broadcasts emit byte-identical modules. The dirty-or-pending
+touched flag, read before the reconcile and drain consume it, turned "when
+must a count recompute" into one boolean per region.
+
+### Friction
+
+Two Lean-side potholes: a pattern variable named `region` inside
+`namespace View` resolves to the `View.region` constructor (an
+Invalid-pattern error, fixed by renaming — the constructor-shadowing cousin
+of the ABI-16 round's pattern-default lesson), and `updateStepTerm?` had to
+move below `rowUpdateAssignments` to reuse the sealed assignment lowering,
+since forward references need mutual blocks. The JS statement AST has no
+mutable `let`, so predicate counts count through a one-cell array
+(`count_scan[0] += 1`) — the `scan` cursor precedent from the ADR-0043
+dispatch. Making broadcasts mutable-rows citizens meant refactoring
+`regionHasUpdates` call sites into an explicit `regionRowsMutate` (update
+callback body, `childAt`/`detach` imports, focus reachability) — the
+pending-slot sites deliberately stay `regionHasUpdates`, because broadcasts
+never enqueue positions. The environment audit wanted six new exact entries
+(injEq for the two `Update` constructors, `View.regionCount`, and
+`MountedRegionCount`, plus two `_unsafe_rec` collectors).
+
+### Bugs found
+
+No framework defect surfaced: the model gates, the guide-snippet gate, three
+new compile-fail fixtures, the updated artifact gate, and all twelve browser
+gates (the three ADR-0050 gates included) passed on their first full run
+after the constructor-shadowing fix above.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of the
+js-framework-benchmark bundle — `main.mjs` and its manifest included — is
+byte-identical to the HEAD baseline (compared via a separate git worktree
+build; only the `.leanrx-bundle-owner` marker differs, and it embeds the
+output directory name). Counts cost untouched transactions nothing (one
+flag read per region with counts) and touched transactions one O(rows) pass
+per predicate count; broadcasts and removals are inherently O(rows) and the
+reconcile's LIS pass moves nothing when order is preserved.
+
+### Follow-up issue or commit
+
+`feat(component): count, broadcast into, and filter keyed rows (ADR-0050)`,
+`test(component): forge the aggregate gates and teach the guide`, and
+`docs(adr): accept the row aggregates and region broadcasts (ADR-0050)`.
+Remaining gaps carried forward: count and selection predicates are
+single-field `String` equality only (no negation and no arithmetic over
+counts, so `items-left` counts the canonical `done == "false"` form), `s!`
+interpolation absent from row scope (`++` only), broadcast assignments and
+removal predicates share those sealed shapes, branch cells single-level and
+two-branch only with exact click/dblclick agreement, and child
+instrumentation still unreachable through the parent disposer.
