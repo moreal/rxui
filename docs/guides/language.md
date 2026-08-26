@@ -283,7 +283,8 @@ component EditableRosterMini (schema := EditableRosterMiniSchema) where {
 Rows never observe component state after mount: row expressions read only
 row fields plus the declaring event's payload, `remove` and declared
 `update` events are the whole action vocabulary, and each cell binds at most
-one row event per delegated kind (`click`, `input`, `keydown`).
+one row event per delegated kind (`click`, `dblclick`, `input`, `keydown`,
+and checkbox `change` — ADR-0049).
 
 A row cell may be a sealed two-branch selection (ADR-0047):
 `{if mode == "view" then <span…/> else <input…/>}` mounts one of two
@@ -297,9 +298,9 @@ does not exist in the DOM or the accessibility tree. Branch cells sit only
 directly under the row root and never nest (`LRX-VIEW-034`). Because the
 delegated action arrays are static, both branches must bind the same action
 for a kind; a one-branch binding is allowed only when the other branch
-cannot originate that kind — never for `click` (any content bubbles one),
-only input-free branches for `input`, and only input- and button-free
-branches for `keydown` (`LRX-VIEW-034`). A row `input` may also reflect a
+cannot originate that kind — never for `click` or `dblclick` (any content
+bubbles one), only input-free branches for `input` and checkbox `change`,
+and only input- and button-free branches for `keydown` (`LRX-VIEW-034`). A row `input` may also reflect a
 sealed row expression into its `value` property with `value={draft}` — at
 most once per element, inputs only (`LRX-VIEW-035`); a row update driven by
 the input's own payload writes back the string the input already holds, so
@@ -326,6 +327,50 @@ component BranchRosterMini (schema := BranchRosterMiniSchema) where {
       then <span> [{label}]
       else <input ariaLabel="Editor" value={draft} onInput={retype} autoFocus/>},
     <span> [<button type="button" ariaLabel="Edit" onClick={edit}> ["Edit"]],
+    <span> [<button type="button" ariaLabel="Commit" onClick={commit}> ["OK"]],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
+Two more delegated kinds close the TodoMVC row vocabulary (ADR-0049).
+`onDblClick={name}` binds a payload-less row event as the `dblclick` kind —
+unlike row `click` it is permitted on non-button elements, so the label
+itself can carry the edit affordance; the delegated dispatch is structural,
+so no handler or `tabindex` ever lands on the label. Because a double click
+bubbles from any content, it takes `click`'s exact cross-branch agreement
+rule: bind the same action in both branch subtrees (typically the editor
+input re-binds the same `edit` action, which is harmless when `edit` writes
+only the mode field). Keep a keyboard-reachable path to the same action in
+the template — a visible button as in `BranchRosterMini`, or a `keydown`
+binding — when the interaction must not be pointer-only; the compiler does
+not force one, matching TodoMVC's observable DOM. `onChange={name}` on a
+`type="checkbox"` input binds a payload-taking row event as the checkbox
+`change` kind (`LRX-VIEW-037` on any other element): the delegated `checked`
+boolean lowers to the strings `"true"`/`"false"`, so the sealed `String`
+update language is unchanged. Pair it with the sealed checked reflection
+`checked={done == "true"}` — checkbox inputs only, at most once per element
+— so the toggle state survives the retained-row update sweep and appended
+rows mount with their `done` state:
+
+```lean
+component ToggleRosterMini (schema := ToggleRosterMiniSchema) where {
+  state toggleAdded : Int := 0;
+  event addItem := append roster (s!"Item {toggleAdded}", "false", "view")
+    then set toggleAdded (toggleAdded + 1);
+  row roster toggle (checked : String) := set done checked;
+  row roster edit := set mode "edit";
+  row roster commit := set mode "view";
+  region roster (label, done, mode) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    {if mode == "view"
+      then <span onDblClick={edit}> [{label}]
+      else <input ariaLabel="Editor" value={label} onDblClick={edit} autoFocus/>},
     <span> [<button type="button" ariaLabel="Commit" onClick={commit}> ["OK"]],
     <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
   ];

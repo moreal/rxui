@@ -70,6 +70,9 @@ fixtures=(
   Test/fixtures/compile-fail/RowAutoFocusOnSpan.lean
   Test/fixtures/compile-fail/RowAutoFocusOutsideBranch.lean
   Test/fixtures/compile-fail/AutoFocusInTypedView.lean
+  Test/fixtures/compile-fail/RowBranchOneSidedDblClick.lean
+  Test/fixtures/compile-fail/RowChangeOnTextInput.lean
+  Test/fixtures/compile-fail/RowCheckedReflectOnTextInput.lean
 )
 fragments=(
   "Constructor for"
@@ -140,6 +143,9 @@ fragments=(
   "error[LRX-VIEW-036]"
   "error[LRX-VIEW-036]"
   "error[LRX-VIEW-036]"
+  "error[LRX-VIEW-034]"
+  "error[LRX-VIEW-037]"
+  "error[LRX-VIEW-037]"
 )
 
 for index in "${!fixtures[@]}"; do

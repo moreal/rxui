@@ -3,6 +3,7 @@ import examples.Counter
 import examples.EchoLab
 import examples.FilterLab
 import examples.NestLab
+import examples.ToggleLab
 
 namespace LeanRxTest.Elab.Component
 
@@ -134,6 +135,61 @@ private def verifyBranch
       | _ => throw <| IO.userError "branch edit subtree is not an element"
   | _ => throw <| IO.userError "the first task cell is not a sealed branch cell"
 
+private def verifyToggle
+    (checked : CheckedComponent LeanRxExamples.ToggleLab.ToggleSchema) : IO Unit := do
+  unless checked.spec.regions.toList.map (·.fields) ==
+      [#["label", "draft", "done", "mode"]] do
+    throw <| IO.userError "toggle region lost its row field inventory"
+  unless checked.spec.regions.toList.map
+      (fun region => region.events.toList.map
+        (fun event => (event.name, event.action, event.takesPayload))) ==
+      [[("remove", .remove, false),
+        ("toggle", .update [(2, .payload)], true),
+        ("edit", .update [(3, .lit "edit")], false),
+        ("retype", .update [(1, .payload)], true),
+        ("commit", .update [(0, .field 1), (3, .lit "view")], false)]] do
+    throw <| IO.userError "toggle region lost the sealed row event vocabulary"
+  let cells ← match checked.spec.regions.toList with
+    | [region] =>
+        match region.template with
+        | .element _ _ _ cells _ _ _ _ => pure cells.toList
+        | _ => throw <| IO.userError "toggle region lost its row template root"
+    | _ => throw <| IO.userError "toggle region table changed"
+  /- The checkbox cell (ADR-0049): the row-scope `onChange` reference lowered
+  to the `checkedChange` binding kind — not the component-scope `change` —
+  and `checked={done == "true"}` to the sealed checked reflection. -/
+  match cells with
+  | checkboxCell :: branchCell :: _ =>
+      match checkboxCell with
+      | .element _ _ _ (.cons (.element tag attrs events _ _ _ reflects _) _) _ _ _ _ =>
+          unless tag == .input && attrs.contains (.inputType .checkbox) &&
+              events.map (fun event => (event.kind, event.eventName)) ==
+                [(.checkedChange, "toggle")] &&
+              reflects.map (fun reflect => (reflect.value, reflect.target)) ==
+                [(.field 2, .checkedIf "true")] do
+            throw <| IO.userError "toggle checkbox cell lost its binding or checked reflection"
+      | _ => throw <| IO.userError "toggle checkbox cell changed shape"
+      /- The dblclick edit entry (ADR-0049): both branch subtrees bind the
+      same payload-less edit action — click's exact agreement rule. -/
+      match branchCell with
+      | .branch field equals whenTrue whenFalse _ =>
+          unless field == 3 && equals == "view" do
+            throw <| IO.userError "toggle branch cell lost its sealed predicate"
+          match whenTrue, whenFalse with
+          | .element viewTag _ viewEvents _ _ _ _ _,
+            .element editTag _ editEvents _ _ _ _ autoFocus =>
+              unless viewTag == .span &&
+                  viewEvents.map (fun event => (event.kind, event.eventName)) ==
+                    [(.dblclick, "edit")] do
+                throw <| IO.userError "toggle view subtree lost its dblclick binding"
+              unless editTag == .input && autoFocus &&
+                  editEvents.map (fun event => (event.kind, event.eventName)) ==
+                    [(.input, "retype"), (.dblclick, "edit")] do
+                throw <| IO.userError "toggle edit subtree lost its agreed dblclick binding"
+          | _, _ => throw <| IO.userError "toggle branch subtrees are not elements"
+      | _ => throw <| IO.userError "the second item cell is not a sealed branch cell"
+  | _ => throw <| IO.userError "toggle row template lost its cells"
+
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [
       "state:count", "derived:doubled", "derived:parity",
@@ -165,6 +221,9 @@ def run : IO Unit := do
   match LeanRxExamples.BranchLab.BranchLab_check with
   | .error error => throw <| IO.userError s!"branch component rejected: {error.code}"
   | .ok checked => verifyBranch checked
+  match LeanRxExamples.ToggleLab.ToggleLab_check with
+  | .error error => throw <| IO.userError s!"toggle component rejected: {error.code}"
+  | .ok checked => verifyToggle checked
   match LeanRxExamples.NestLab.Pulse_check with
   | .error error => throw <| IO.userError s!"child component rejected: {error.code}"
   | .ok checked =>

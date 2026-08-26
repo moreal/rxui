@@ -192,6 +192,34 @@ component BranchRosterMini (schema := BranchRosterMiniSchema) where {
   ];
 }
 
+/- The delegated dblclick and checkbox change snippet from guide section 7
+(ADR-0049). -/
+abbrev ToggleRosterMiniSchema : Schema := .field "toggleAdded" Int .empty
+
+def toggleAdded : Field ToggleRosterMiniSchema Int := .here
+
+component ToggleRosterMini (schema := ToggleRosterMiniSchema) where {
+  state toggleAdded : Int := 0;
+  event addItem := append roster (s!"Item {toggleAdded}", "false", "view")
+    then set toggleAdded (toggleAdded + 1);
+  row roster toggle (checked : String) := set done checked;
+  row roster edit := set mode "edit";
+  row roster commit := set mode "view";
+  region roster (label, done, mode) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    {if mode == "view"
+      then <span onDblClick={edit}> [{label}]
+      else <input ariaLabel="Editor" value={label} onDblClick={edit} autoFocus/>},
+    <span> [<button type="button" ariaLabel="Commit" onClick={commit}> ["OK"]],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
 /- The state-scoped attribute selection snippet from guide section 7
 (ADR-0045). -/
 abbrev FilterMiniSchema : Schema := .field "filter" String .empty
@@ -308,6 +336,41 @@ def run : IO Unit := do
       | _ => throw <| IO.userError "language-guide branch snippet lost its branch cell"
   | .error error =>
       throw <| IO.userError s!"language-guide branch component rejected: {error.render}"
+  match ToggleRosterMini_check with
+  | .ok toggling =>
+      unless toggling.spec.regions.toList.map
+          (fun region => region.events.toList.map
+            (fun event => (event.name, event.takesPayload))) ==
+          [[("remove", false), ("toggle", true), ("edit", false),
+            ("commit", false)]] do
+        throw <| IO.userError "language-guide toggle snippet lost its event table"
+      let cells? := toggling.spec.regions.toList.head?.bind fun region =>
+        match region.template with
+        | .element _ _ _ cells _ _ _ _ => some cells.toList
+        | _ => none
+      match cells? with
+      | some (checkboxCell :: branchCell :: _) =>
+          match checkboxCell with
+          | .element _ _ _ (.cons (.element _ _ events _ _ _ reflects _) _) _ _ _ _ =>
+              unless events.map (·.kind) == [.checkedChange] &&
+                  reflects.map (·.target) == [.checkedIf "true"] do
+                throw <| IO.userError
+                  "language-guide toggle snippet lost its change binding or checked reflection"
+          | _ => throw <| IO.userError "language-guide toggle snippet lost its checkbox cell"
+          match branchCell with
+          | .branch _ _ whenTrue whenFalse _ =>
+              unless [whenTrue, whenFalse].all (fun subtree =>
+                  match subtree with
+                  | .element _ _ events _ _ _ _ _ =>
+                      events.any fun event =>
+                        event.kind == .dblclick && event.eventName == "edit"
+                  | _ => false) do
+                throw <| IO.userError
+                  "language-guide toggle snippet lost its agreed dblclick bindings"
+          | _ => throw <| IO.userError "language-guide toggle snippet lost its branch cell"
+      | _ => throw <| IO.userError "language-guide toggle snippet lost its cells"
+  | .error error =>
+      throw <| IO.userError s!"language-guide toggle component rejected: {error.render}"
   match FilterMini_check with
   | .ok selecting =>
       unless selecting.view.attrSelects.map (·.select.name) ==

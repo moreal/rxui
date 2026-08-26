@@ -436,6 +436,88 @@ def run : IO Unit := do
               (autoFocus := true),
             RowNode.node .input [] (autoFocus := true)])] }] }
   expectError "LRX-VIEW-036" doubleFocusInSubtree.check
+  /- ADR-0049 delegated dblclick and checkbox change kinds, exercised through
+  forged specifications: a five-kind template with the checked reflection
+  passes; the checkbox-origin rules, the dblclick agreement rules, and the
+  payload classes are rejected. -/
+  let toggleEvent : RowEventSpec :=
+    { name := "toggle", action := .update [(1, .payload)], takesPayload := true }
+  let toggleEditEvent : RowEventSpec :=
+    { name := "edit", action := .update [(2, .lit "edit")] }
+  let toggleRegion : RegionSpec := {
+    name := "r"
+    fields := #["label", "done", "mode"]
+    template := RowNode.node .li [
+      RowNode.node .span [RowNode.node .input [] (attrs := [.inputType .checkbox])
+        (events := [{ kind := .checkedChange, eventName := "toggle" }])
+        (reflects := [{ value := .field 1, target := .checkedIf "true" }])],
+      RowNode.branch 2 "view"
+        (RowNode.node .span [RowNode.fieldText 0]
+          (events := [{ kind := .dblclick, eventName := "edit" }]))
+        (RowNode.node .span [RowNode.fieldText 0]
+          (events := [{ kind := .dblclick, eventName := "edit" }])),
+      RowNode.node .span [RowNode.node .button [RowNode.text "x"]
+        (attrs := [.buttonType .button])
+        (events := [{ kind := .click, eventName := "remove" }])]
+    ]
+    events := #[{ name := "remove", action := .remove }, toggleEvent, toggleEditEvent]
+  }
+  let toggleSpec : ComponentSpec CounterSchema :=
+    { spec with view := regionView, regions := #[toggleRegion] }
+  match toggleSpec.check with
+  | .error error =>
+      throw <| IO.userError s!"forged five-kind region rejected: {error.code}"
+  | .ok _ => pure ()
+  let changeOnTextInput : ComponentSpec CounterSchema :=
+    { toggleSpec with regions := #[{ toggleRegion with
+        template := RowNode.node .li [RowNode.node .span [RowNode.node .input []
+          (events := [{ kind := .checkedChange, eventName := "toggle" }])]]
+        events := #[{ name := "remove", action := .remove }, toggleEvent] }] }
+  expectError "LRX-VIEW-037" changeOnTextInput.check
+  let checkedReflectOnTextInput : ComponentSpec CounterSchema :=
+    { toggleSpec with regions := #[{ toggleRegion with
+        template := RowNode.node .li [RowNode.node .span [RowNode.node .input []
+          (reflects := [{ value := .field 1, target := .checkedIf "true" }])]]
+        events := #[{ name := "remove", action := .remove }] }] }
+  expectError "LRX-VIEW-037" checkedReflectOnTextInput.check
+  let doubleCheckedReflect : ComponentSpec CounterSchema :=
+    { toggleSpec with regions := #[{ toggleRegion with
+        template := RowNode.node .li [RowNode.node .span [RowNode.node .input []
+          (attrs := [.inputType .checkbox])
+          (reflects := [{ value := .field 1, target := .checkedIf "true" },
+            { value := .field 2, target := .checkedIf "edit" }])]]
+        events := #[{ name := "remove", action := .remove }] }] }
+  expectError "LRX-VIEW-035" doubleCheckedReflect.check
+  let checkedReflectOutOfBounds : ComponentSpec CounterSchema :=
+    { toggleSpec with regions := #[{ toggleRegion with
+        template := RowNode.node .li [RowNode.node .span [RowNode.node .input []
+          (attrs := [.inputType .checkbox])
+          (reflects := [{ value := .field 3, target := .checkedIf "true" }])]]
+        events := #[{ name := "remove", action := .remove }] }] }
+  expectError "LRX-VIEW-026" checkedReflectOutOfBounds.check
+  let oneSidedDblClick : ComponentSpec CounterSchema :=
+    { toggleSpec with regions := #[{ toggleRegion with
+        template := RowNode.node .li [RowNode.branch 2 "view"
+          (RowNode.node .span [RowNode.fieldText 0]
+            (events := [{ kind := .dblclick, eventName := "edit" }]))
+          (RowNode.node .span [RowNode.fieldText 0])]
+        events := #[{ name := "remove", action := .remove }, toggleEditEvent] }] }
+  expectError "LRX-VIEW-034" oneSidedDblClick.check
+  let inputInUnboundChangeBranch : ComponentSpec CounterSchema :=
+    { toggleSpec with regions := #[{ toggleRegion with
+        template := RowNode.node .li [RowNode.branch 2 "view"
+          (RowNode.node .span [RowNode.node .input [] (attrs := [.inputType .checkbox])
+            (events := [{ kind := .checkedChange, eventName := "toggle" }])])
+          (RowNode.node .span [RowNode.node .input []])]
+        events := #[{ name := "remove", action := .remove }, toggleEvent] }] }
+  expectError "LRX-VIEW-034" inputInUnboundChangeBranch.check
+  let dblClickOnTypedEvent : ComponentSpec CounterSchema :=
+    { toggleSpec with regions := #[{ toggleRegion with
+        template := RowNode.node .li [RowNode.node .span [
+          RowNode.node .span [RowNode.fieldText 0]
+            (events := [{ kind := .dblclick, eventName := "toggle" }])]]
+        events := #[{ name := "remove", action := .remove }, toggleEvent] }] }
+  expectError "LRX-VIEW-033" dblClickOnTypedEvent.check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check
