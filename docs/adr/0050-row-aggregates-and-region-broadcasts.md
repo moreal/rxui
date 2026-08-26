@@ -1,6 +1,6 @@
 # ADR-0050: Sealed row aggregates and region broadcasts
 
-- Status: Draft
+- Status: Accepted
 - Date: 2026-08-26
 
 ## Context
@@ -82,10 +82,36 @@ remains out of the vocabulary and is recorded as a gap.
 
 ## Open questions
 
-1. Should a broadcast that provably writes every row to its current value
-   (e.g. `set done done`) still dirty the region? The draft says yes —
-   per-row change detection would put a comparison loop in the event path
-   for a case the author can avoid.
-2. Should counts join the trace vocabulary with their own labels? The draft
-   reuses the sink counters (`tx[5]`/`tx[6]`) with `count:{region}:{index}`
-   labels so instrumentation gates can pin them.
+Both resolved by the implementing round as drafted:
+
+1. **An equal-value broadcast stays a dirty reconcile.** Per-row change
+   detection would put a comparison loop in the event path for a case the
+   author can avoid; the reconcile itself is the no-op detector at the DOM
+   layer — retained rows re-run the idempotent update callback and the
+   equal-value property writes are WHATWG no-ops.
+2. **Counts ride the sink counters.** The commit sweep reuses `tx[5]`/`tx[6]`
+   with `count:{region}:{index}` evaluated/write labels, guarded by one
+   region-touched flag read before the reconcile and drain consume it.
+
+## Confirmation
+
+Confirmed by the aggregate round: all three extensions ship through the
+generic backend with no host change and no ABI bump — the emitted import
+lines are byte-identical to the ADR-0049 Toggle Lab's, and every file of the
+js-framework-benchmark bundle (`main.mjs` and manifest included) is
+byte-identical to the HEAD baseline under the performance freeze (compared
+via a separate git worktree build). Toggle Lab's browser gates show
+`completeAll` checking every checkbox with the class selection following and
+row identity preserved (exactly one retained-row update per row — no mounts,
+moves, or disposals), `clearCompleted` disposing exactly the done rows while
+the survivor keeps its DOM node, and both count forms
+(`{count items (done == "false")}` and `{count items}`) tracking appends,
+per-row toggles, broadcasts, removals, and per-row removes. The region
+record grew its two count slots only for regions with counts, and components
+without counts or broadcasts emit byte-identical modules. `LRX-TYPE-111`/
+`LRX-TYPE-112`/`LRX-VIEW-038` are pinned by model gates and `LRX-ELAB-119`
+by three compile-fail fixtures. The recorded gap stands: count predicates
+are single-field `String` equality, so `items-left` counts the canonical
+`done == "false"` form rather than a negation, and arithmetic over counts
+(e.g. total minus matched) stays out of the vocabulary.
+
