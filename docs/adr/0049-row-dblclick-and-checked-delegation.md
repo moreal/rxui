@@ -1,7 +1,7 @@
 # ADR-0049: Row delegation kinds for dblclick and checkbox toggles
 
-- Status: Proposed (decision draft)
-- Date: 2026-08-25
+- Status: Accepted
+- Date: 2026-08-25 (accepted 2026-08-26)
 
 ## Context
 
@@ -21,10 +21,10 @@ side already carries both: `listenDelegatedCells` dispatches with
 names `dblclick` (payload class `none`) and `checkedChange` (payload class
 `checked`, DOM event name `change`) for the static view.
 
-## Decision (draft)
+## Decision
 
-Extend, in a future round, the closed delegated row kinds from three to
-five — `dblclick` and `checkedChange` — and reject the alternatives:
+Extend the closed delegated row kinds from three to five — `dblclick` and
+`checkedChange` — and reject the alternatives:
 
 1. **Model both through existing kinds — rejected.** An Edit button is not
    TodoMVC's contract (the label itself is the affordance and the observable
@@ -63,19 +63,41 @@ expected to need **no host change and no runtime ABI bump** — two more
 listener registrations per bound region, two more static action arrays, and
 the elaborator/validator/emitter kind tables.
 
-Open questions for the implementing round: whether a dblclick-only edit
-affordance clears the accessibility gates (TodoMVC pairs it with no
-keyboard path; the sealed template may want to require a sibling `keydown`
-or button binding), and whether the checkbox needs a row-scoped `checked`
-reflection (the ADR-0047 `value={…}` shape, `checked={done == "true"}`) so
-the toggle state survives the retained-row update sweep.
+The implementing round resolved the two open questions:
 
-## Confirmation bar
+1. **No compiler-enforced keyboard sibling for dblclick.** The validator
+   does not require a sibling `keydown` or button binding beside a
+   `dblclick` edit affordance. Structural delegation never places a
+   handler or `tabindex` on the label element, so the sealed template's
+   accessibility posture equals TodoMVC's observable DOM (which pairs the
+   dblclick with no keyboard path); the Toggle Lab axe gate passes on that
+   DOM. The language guide instead advises keeping a keyboard-reachable
+   path to the same action (a visible button, as Branch Lab retains, or a
+   `keydown` binding) when the interaction must not be pointer-only — a
+   template decision, not a kind-table rule.
+2. **The row-scoped `checked` reflection ships with the kind.** A checkbox
+   input may carry `checked={done == "true"}`, lowered to a sealed
+   `RowReflectTarget.checkedIf` beside the ADR-0047 `value` reflection
+   (checkbox inputs only and at most one per element — `LRX-VIEW-037`/
+   `LRX-VIEW-035`) and written through the existing `setProperty` export.
+   Without it the update sweep could not restore the toggle after other
+   row-field updates and appended rows could not mount checked; with it
+   the delegated `change` on the originating checkbox is an equal-value
+   no-op, mirroring the ADR-0038 controlled-input finding.
 
-This draft is confirmed (Status → Accepted) when a TodoMVC-parity round
-ships both kinds through the generic backend with browser gates showing
-dblclick edit entry and checkbox toggling on retained rows (and the
-agreement rules enforced by compile-fail fixtures) without a host change;
-it is revised instead if the accessibility bar forces a different edit
-affordance or the checkbox state proves to need a `Bool` payload class
-after all.
+## Confirmation
+
+Confirmed by the toggle round: both kinds ship through the generic backend
+with no host change and no ABI bump — the emitted import line is
+byte-identical to Branch Lab's, `listenDelegatedCells` is untouched, and
+the js-framework-benchmark bundle (module and manifest) is byte-identical
+under the performance freeze. Toggle Lab's browser gates show label
+dblclick entering the edit branch (focused via the ADR-0048 transfer, one
+retained-row update, row identity preserved) and checkbox toggling driving
+the `done` field through the `"true"`/`"false"` payload with the class
+selection following; the cross-branch agreement lets the editor re-bind the
+same `edit` action so an in-editor dblclick cannot clobber the draft.
+`LRX-VIEW-037` (checkbox-origin rules) and the extended `LRX-VIEW-033`/
+`LRX-VIEW-034` agreement rules are pinned by model gates and three
+compile-fail fixtures. The `Bool` row payload class was not needed,
+confirming the draft's rejection.
