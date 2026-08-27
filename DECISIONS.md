@@ -57,6 +57,7 @@
 | [0053](docs/adr/0053-sealed-row-field-guards.md) | Accepted | Guard row stages on sealed field equality for remove-or-commit | 2026-08-27 |
 | [0054](docs/adr/0054-sealed-row-expression-trim.md) | Accepted | Trim row expressions through one sealed unary for the commit contract | 2026-08-28 |
 | [0055](docs/adr/0055-component-scope-add-path.md) | Accepted | Close the component-scope add path with the RxExpr trim and the sealed skip-if event guard | 2026-08-28 |
+| [0056](docs/adr/0056-component-scope-key-branching.md) | Accepted | Close the Enter-to-add gap with the sealed key-branched component event | 2026-08-28 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
