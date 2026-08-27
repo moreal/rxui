@@ -367,6 +367,14 @@ private partial def rowExprTerm (fields : List String) (payload? : Option String
       throwErrorAt value
         "error[LRX-ELAB-115]: row expressions are row fields, string literals, ++, and trim"
 
+/-- Whether one identifier appears anywhere inside a term, for the ADR-0061
+bare-payload rule: a composed broadcast payload is rejected with its own
+repair instead of the unknown-row-field message. -/
+private partial def mentionsIdent (name : Lean.Name) : Syntax → Bool
+  | .ident _ _ value _ => value.eraseMacroScopes == name
+  | .node _ _ args => args.any (mentionsIdent name)
+  | _ => false
+
 /-- Lower one sealed class selection (ADR-0044):
 `class={if field == "literal" then "a" else "b"}`. -/
 private def rowClassSelectTerm (fields : List String) (attr : Syntax)
@@ -1166,6 +1174,70 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
               | _ =>
                   throwErrorAt item
                     "error[LRX-ELAB-108]: a typed event must assign its payload parameter with `set field param`"
+            /- The ADR-0061 payload broadcast body: a typed event whose single
+            step is `update region (set field rhs, …)` flows its payload into
+            the ADR-0050 region broadcast. Only the Bool checked payload may
+            broadcast, and the payload identifier stands alone on a set
+            right-hand side — beside it, the sealed payload-free row
+            expressions keep their exact ADR-0050 vocabulary. -/
+            let paramName := param.getId.eraseMacroScopes
+            let broadcastTerm? ← match rhs with
+              | `($head:ident $regionIdent:ident $body:term) =>
+                  if head.getId.eraseMacroScopes == `update then do
+                    unless ty.getId.eraseMacroScopes.toString == "Bool" do
+                      throwErrorAt ty
+                        s!"error[LRX-ELAB-126]: a payload broadcast event declares a Bool payload parameter, not {ty.getId.eraseMacroScopes} (ADR-0061)"
+                    let region := regionIdent.getId.eraseMacroScopes.toString
+                    let fields ← match regionFields.find? (·.1 == region) with
+                      | some entry => pure entry.2
+                      | none =>
+                          throwErrorAt regionIdent
+                            s!"error[LRX-ELAB-119]: broadcast step references unknown region {region}"
+                    let bodySteps ← match body with
+                      | `(($first:term, $rest:term,*)) => pure (#[first] ++ rest.getElems)
+                      | `(($inner:term)) => pure #[inner]
+                      | _ =>
+                          throwErrorAt body
+                            "error[LRX-ELAB-119]: a region broadcast is written `update region (set field (expr), …)`"
+                    let mut assignments : Array (TSyntax `term) := #[]
+                    for bodyStep in bodySteps do
+                      match bodyStep with
+                      | `($stepHead:ident $fieldIdent:ident $value:term) =>
+                          unless stepHead.getId.eraseMacroScopes == `set do
+                            throwErrorAt bodyStep
+                              "error[LRX-ELAB-115]: row event steps are `set field (expr)`"
+                          let fieldName := fieldIdent.getId.eraseMacroScopes.toString
+                          let index ← match fields.idxOf? fieldName with
+                            | some index => pure index
+                            | none =>
+                                throwErrorAt fieldIdent
+                                  s!"error[LRX-ELAB-115]: unknown row field {fieldName}; declared fields are {renderFields fields}"
+                          let indexLit := Syntax.mkNumLit (toString index)
+                          let exprTerm ←
+                            if value.raw.isIdent &&
+                                value.raw.getId.eraseMacroScopes == paramName then
+                              `(LeanRx.RowExpr.payload)
+                            else if mentionsIdent paramName value.raw then
+                              throwErrorAt value
+                                s!"error[LRX-ELAB-126]: the broadcast payload stands alone on a set right-hand side; trim, ++, and every other composition over {paramName} is rejected (ADR-0061)"
+                            else
+                              rowExprTerm fields none value
+                          assignments := assignments.push (← `(($indexLit, $exprTerm)))
+                      | _ =>
+                          throwErrorAt bodyStep
+                            "error[LRX-ELAB-115]: row event steps are `set field (expr)`"
+                    let regionLit := Syntax.mkStrLit region
+                    pure (some (← `(LeanRx.AnyTypedEvent.boolBroadcast
+                      (LeanRx.BroadcastEventSpec.mk $nameLit $paramLit $regionLit
+                        [$assignments,*] $itemSpan))))
+                  else pure none
+              | _ => pure none
+            match broadcastTerm? with
+            | some broadcastTerm =>
+                typedEvents := typedEvents.push broadcastTerm
+                declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
+                  LeanRx.SurfaceRole.event $nameLit $itemSpan))
+            | none =>
             let assigned ← match rhs with
               | `($head:ident $field:ident $payload:ident) =>
                   if head.getId.eraseMacroScopes == `set &&

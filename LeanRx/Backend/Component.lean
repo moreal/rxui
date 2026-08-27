@@ -221,11 +221,13 @@ private def eventUpdates (spec : ComponentSpec Γ) : List (Update Γ) :=
   spec.events.toList.map (·.update) ++
     spec.keyEvents.toList.flatMap fun event => event.arms.map (·.update)
 
-/-- The regions any component event broadcasts into (ADR-0050). A broadcast
-makes a region's rows mutable exactly as a `row` update event does, so the
-real update-callback body (and its imports) must be emitted for it. -/
+/-- The regions any component event broadcasts into (ADR-0050), the ADR-0061
+payload broadcasts included. A broadcast makes a region's rows mutable
+exactly as a `row` update event does, so the real update-callback body (and
+its imports) must be emitted for it. -/
 private def broadcastRegionNames (spec : ComponentSpec Γ) : List String :=
-  (eventUpdates spec).flatMap fun update => update.regionBroadcastTargets.map (·.1)
+  ((eventUpdates spec).flatMap fun update => update.regionBroadcastTargets.map (·.1)) ++
+    spec.typedEvents.toList.filterMap fun event => event.broadcast?.map (·.1)
 
 /-- Whether one region's rows can mutate after mount: a declared `row` update
 event (ADR-0043) or a component-event broadcast into it (ADR-0050). -/
@@ -311,6 +313,37 @@ private def attrSelectJs (state : Ident) (select : AttrSelect Γ) : Expr :=
   | .hiddenIfEmpty .. => .literal (.boolean true)
   | .checkedIfEmpty .. => .literal (.boolean true)
 
+/-- The broadcast write body shared by the plain ADR-0050 component event and
+the ADR-0061 payload broadcast: every row's targets evaluated simultaneously
+against that row's old tuple, then the dirty flag — the keyed reconcile
+re-renders every retained row with its identity preserved. `payload` is the
+delegated payload expression of a dispatching payload broadcast event; the
+plain arm passes the inert empty string. -/
+private def regionBroadcastStmts (regions tx : Ident) (regionSpecs : Array RegionSpec)
+    (regionName : String) (assignments : List (Nat × RowExpr)) (payload : Expr) :
+    Except Error (List Stmt) := do
+  let regionIndex ← match regionSpecs.toList.findIdx? (·.name == regionName) with
+    | some index => pure index
+    | none => .error {
+        code := "LRX-BE-031"
+        message := s!"checked region disappeared: {regionName}"
+      }
+  let rowItem ← Ident.checked "row_item"
+  let mut evaluateStmts : List Stmt := []
+  let mut assignStmts : List Stmt := []
+  for ((target, rhs), index) in assignments.zipIdx do
+    let temp ← Ident.checked s!"row_next_{index}"
+    evaluateStmts := evaluateStmts ++ [.const temp (rowExprJs rowItem payload rhs)]
+    assignStmts := assignStmts ++
+      [.assign (.index (.ident rowItem) (uint (target + 1))) (.ident temp)]
+  pure [
+    .forOf rowItem (regionEntry regions regionIndex 1)
+      (.ofList (evaluateStmts ++ assignStmts)),
+    .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+      (.literal (.boolean true)),
+    pushTrace tx s!"region:{regionName}:broadcast"
+  ]
+
 private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
     (regionSpecs : Array RegionSpec) (eventNames : List String)
     (valueCount eventIndex : Nat) :
@@ -358,27 +391,8 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
       evaluated simultaneously against that row's old tuple, then raises the
       dirty flag: the keyed reconcile re-renders every retained row with its
       identity preserved (ADR-0050). -/
-      let regionIndex ← match regionSpecs.toList.findIdx? (·.name == regionName) with
-        | some index => pure index
-        | none => .error {
-            code := "LRX-BE-031"
-            message := s!"checked region disappeared: {regionName}"
-          }
-      let rowItem ← Ident.checked "row_item"
-      let mut evaluateStmts : List Stmt := []
-      let mut assignStmts : List Stmt := []
-      for ((target, rhs), index) in assignments.zipIdx do
-        let temp ← Ident.checked s!"row_next_{index}"
-        evaluateStmts := evaluateStmts ++ [.const temp (rowExprJs rowItem noPayload rhs)]
-        assignStmts := assignStmts ++
-          [.assign (.index (.ident rowItem) (uint (target + 1))) (.ident temp)]
-      pure (writeIndex + 1, [
-        .forOf rowItem (regionEntry regions regionIndex 1)
-          (.ofList (evaluateStmts ++ assignStmts)),
-        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
-          (.literal (.boolean true)),
-        pushTrace tx s!"region:{regionName}:broadcast"
-      ])
+      pure (writeIndex + 1,
+        ← regionBroadcastStmts regions tx regionSpecs regionName assignments noPayload)
   | .regionRemoveIf regionName field equals _, writeIndex => do
       /- The predicate removal keeps every row whose projected field does not
       equal the literal and raises the dirty flag: the keyed reconcile
@@ -879,11 +893,27 @@ private def typedEventFunction (checked : CheckedComponent Γ) (evaluators : Eva
   let payload ← Ident.checked event.parameterName
   let state ← Ident.checked "state"
   let tx ← Ident.checked "tx"
-  let writes : List Stmt := [
-    .assign (.index (.ident state) (uint event.targetIndex)) (.ident payload),
-    incrementAt tx 2,
-    pushTrace tx s!"source:{event.targetName}:write"
-  ]
+  let writes : List Stmt ← match event.broadcast? with
+    | some (regionName, assignments) =>
+        /- The ADR-0061 payload broadcast: the delegated checked boolean
+        lowers to the `"true"`/`"false"` strings exactly as the ADR-0049 row
+        payload does, and the write body is the shared ADR-0050 broadcast's
+        with the payload expression in place of the inert string. -/
+        let regions ← Ident.checked "regions"
+        let payloadJs := Expr.conditional (.ident payload)
+          (.literal (.string "true")) (.literal (.string "false"))
+        regionBroadcastStmts regions tx checked.spec.regions regionName
+          assignments payloadJs
+    | none => do
+        let some targetIndex := event.targetIndex?
+          | .error { code := "LRX-BE-026", message := "checked typed event lost its target" }
+        let some targetName := event.targetName?
+          | .error { code := "LRX-BE-026", message := "checked typed event lost its target" }
+        pure [
+          .assign (.index (.ident state) (uint targetIndex)) (.ident payload),
+          incrementAt tx 2,
+          pushTrace tx s!"source:{targetName}:write"
+        ]
   transactionShell checked evaluators runtime (← typedEventName eventIndex)
     #[hostState, context, payload] event.name writes
 
@@ -1657,7 +1687,9 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
               region.template.hasTrim) ||
           (eventUpdates checked.spec).any (fun update =>
             update.regionBroadcastTargets.any
-              (fun entry => entry.2.any (·.2.hasTrim))) then
+              (fun entry => entry.2.any (·.2.hasTrim))) ||
+          checked.spec.typedEvents.toList.any (fun event =>
+            (event.broadcast?.map (fun entry => entry.2.any (·.2.hasTrim))).getD false) then
         #["row-trim"]
       else #[]) ++
       (if checked.spec.regions.toList.any
@@ -1675,6 +1707,9 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       (if broadcasts.isEmpty && (eventUpdates checked.spec).all
           (fun update => update.regionRemoveIfTargets.isEmpty) then #[]
       else #["region-broadcasts"]) ++
+      (if checked.spec.typedEvents.toList.any (·.broadcast?.isSome) then
+        #["payload-broadcasts"]
+      else #[]) ++
       (if checked.spec.filters.isEmpty then #[] else #["region-filters"]) ++
       (if checked.view.attrSelects.any (fun mounted =>
           mounted.select.hiddenRegion?.isSome) then

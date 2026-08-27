@@ -438,10 +438,11 @@ private def validateSurface (spec : ComponentSpec Γ) : Except ComponentError Un
       }
 
 /-- Payload classes one typed event declaration can satisfy: `String` events
-serve `value`/`key` bindings, `Bool` events serve `checked` bindings. -/
+serve `value`/`key` bindings, `Bool` events — the ADR-0061 payload broadcast
+included — serve `checked` bindings. -/
 private def acceptsPayload : AnyTypedEvent Γ → EventPayload → Bool
   | .string _, .value | .string _, .key => true
-  | .bool _, .checked => true
+  | .bool _, .checked | .boolBroadcast _, .checked => true
   | _, _ => false
 
 /- Whether one element's static attributes carry `type="checkbox"` — the
@@ -479,12 +480,76 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
       duplicate? (names ++ typedNames ++ keyNames) then
     throw { code := "LRX-ELAB-102", message := "component event names must be nonempty and unique" }
   for event in spec.typedEvents do
-    unless event.targetIndex < sourceCount do
-      throw {
-        code := "LRX-TYPE-107"
-        message := s!"event {event.name} writes non-source value {event.targetIndex}"
-        spans := #[event.span]
-      }
+    if let some targetIndex := event.targetIndex? then
+      unless targetIndex < sourceCount do
+        throw {
+          code := "LRX-TYPE-107"
+          message := s!"event {event.name} writes non-source value {targetIndex}"
+          spans := #[event.span]
+        }
+  /- Payload broadcast events (ADR-0061): the body is exactly one region
+  broadcast into a declared region — nonempty simultaneous writes over
+  distinct in-bounds targets, the ADR-0050 obligations — whose right-hand
+  sides are sealed payload-free row expressions or the bare payload
+  reference. The payload must be written at least once (a payload the body
+  never writes is a plain broadcast wearing a parameter), and it stands
+  alone: trim, concatenation, and every other composition over the payload
+  is rejected. -/
+  for event in spec.typedEvents do
+    if let .boolBroadcast broadcast := event then
+      match spec.regions.toList.find? (·.name == broadcast.region) with
+      | none =>
+          throw {
+            code := "LRX-TYPE-116"
+            message := s!"event {broadcast.name} broadcasts its payload to unknown region {broadcast.region}"
+            path := #[broadcast.name, broadcast.region]
+            spans := #[broadcast.span]
+          }
+      | some region =>
+          if broadcast.assignments.isEmpty then
+            throw {
+              code := "LRX-TYPE-116"
+              message := s!"event {broadcast.name} broadcasts no field to region {broadcast.region}"
+              path := #[broadcast.name, broadcast.region]
+              spans := #[broadcast.span]
+            }
+          if duplicate? (broadcast.assignments.map (toString ·.1)) then
+            throw {
+              code := "LRX-TYPE-116"
+              message := s!"event {broadcast.name} broadcasts one field of region {broadcast.region} twice"
+              path := #[broadcast.name, broadcast.region]
+              spans := #[broadcast.span]
+            }
+          for (fieldIndex, value) in broadcast.assignments do
+            unless fieldIndex < region.fields.size do
+              throw {
+                code := "LRX-TYPE-116"
+                message := s!"event {broadcast.name} broadcasts field {fieldIndex} outside region {broadcast.region}'s {region.fields.size} field(s)"
+                path := #[broadcast.name, broadcast.region]
+                spans := #[broadcast.span, region.span]
+              }
+            unless value == .payload || !value.hasPayload do
+              throw {
+                code := "LRX-TYPE-116"
+                message := s!"event {broadcast.name} composes its payload; the broadcast payload stands alone on a set right-hand side"
+                path := #[broadcast.name, broadcast.region]
+                spans := #[broadcast.span]
+              }
+            for field in value.fieldRefs do
+              unless field < region.fields.size do
+                throw {
+                  code := "LRX-TYPE-116"
+                  message := s!"event {broadcast.name} broadcasts a read of field {field} outside region {broadcast.region}'s {region.fields.size} field(s)"
+                  path := #[broadcast.name, broadcast.region]
+                  spans := #[broadcast.span, region.span]
+                }
+          unless broadcast.assignments.any (·.2 == .payload) do
+            throw {
+              code := "LRX-TYPE-116"
+              message := s!"event {broadcast.name} never writes its payload; a payload broadcast assigns the bare parameter to at least one field of region {broadcast.region}"
+              path := #[broadcast.name, broadcast.region]
+              spans := #[broadcast.span]
+            }
   /- Key-branched component events (ADR-0056): the arm table is sealed —
   nonempty, each literal drawn from the sealed Enter/Escape key set and
   appearing at most once — and each arm body then carries exactly the
@@ -742,10 +807,10 @@ private def effectiveReads (events : Array (EventSpec Γ)) : Nat → Update Γ �
 private def summarizeTypedEvents (events : Array (AnyTypedEvent Γ)) : Array EventSummary :=
   events.map fun event => {
     name := event.name
-    directWrites := [event.targetIndex]
+    directWrites := event.targetIndex?.toList
     directReads := []
     dispatchedEvents := []
-    effectiveWrites := [event.targetIndex]
+    effectiveWrites := event.targetIndex?.toList
     effectiveReads := []
   }
 

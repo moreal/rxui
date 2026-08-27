@@ -195,13 +195,29 @@ vacuous truth. The sweep is byte-for-byte the hidden selections': the
 same region-touch path, shared attr slot, boolean cache, and `setProperty`
 export with `attr:{index}:checked` labels — a filter change alone still
 re-evaluates nothing. The selection demands a static `type="checkbox"`
-input (the ADR-0049 origin rule in static scope), and its
-`onChange={completeAll}` is the payload-less toggle binding: a static
-change binding naming a plain component event, mounted through the plain
-`listen` export — the delegated checked payload is discarded, so the
-uncheck path (toggle-all off) stays unrepresentable until a payload can
-flow into a region broadcast. Once more: no host change and no runtime
-ABI bump. -/
+input (the ADR-0049 origin rule in static scope). Once more: no host
+change and no runtime ABI bump.
+
+The ADR-0061 payload broadcast closes the action half — the uncheck path
+ADR-0060 left unrepresentable: `toggleAll (checked : Bool) := update items
+(set done checked)` is a typed component event whose body is one ADR-0050
+region broadcast carrying the delegated `checked` payload as a bare `set`
+right-hand side, lowered to the `"true"`/`"false"` strings exactly as the
+ADR-0049 row payload is. The box binds it through the ADR-0038
+`onCheckedChange` surface, riding the existing `listenChecked` form-event
+export, so checking the box completes every row (each checkbox follows
+through its ADR-0049 reflection and the box re-checks through its
+ADR-0060 selection) and unchecking it un-completes every row — the
+sweep's evaluate-compare-write agrees with the browser's own uncheck, so
+the ADR-0060 cache-DOM divergence is gone. One broadcast's region touch
+updates the items-left counts, the clear-completed hidden, the list
+hidden, and the toggle-all checked together; an equal-payload broadcast is
+an evaluate-only sweep; an empty-region broadcast touches no row and
+writes nothing; and a filter change alone still re-evaluates nothing.
+The payload stands alone on its right-hand side (no trim, no
+concatenation, no comparison), the body is exactly one broadcast, and only
+the Bool checked payload may broadcast. Once more: no host change and no
+runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -230,6 +246,7 @@ component ToggleLab (schema := ToggleSchema) where {
   event showActive := set filter "active";
   event showCompleted := set filter "completed";
   event setDraft (value : String) := set draft value;
+  event toggleAll (checked : Bool) := update items (set done checked);
   event confirmAdd (pressed : String) :=
     when "Enter" (if trim draft == "" then skip
       else (append items (trim draft, trim draft, "false", "view"), set draft ""));
@@ -279,7 +296,7 @@ component ToggleLab (schema := ToggleSchema) where {
     ],
     <ul id="items" ariaLabel="Items" hidden={count items == 0}> [<region items/>],
     <input id="toggle-all" type="checkbox" ariaLabel="Toggle all"
-      checked={count items (done == "false") == 0} onChange={completeAll}/>
+      checked={count items (done == "false") == 0} onCheckedChange={toggleAll}/>
   ];
 }
 
