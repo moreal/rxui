@@ -22,6 +22,8 @@ def generateInto (directory : System.FilePath) : IO Unit := do
       IO.FS.writeFile (directory / "Toggle.graph.json") (checked.graph.toJson ++ "\n")
       IO.FS.writeFile (directory / "leanrx_dom.mjs")
         (← IO.FS.readFile "runtime/leanrx_dom.mjs")
+      IO.FS.writeFile (directory / "leanrx_form_events.mjs")
+        (← IO.FS.readFile "runtime/leanrx_form_events.mjs")
       IO.FS.writeFile (directory / "leanrx_region.mjs")
         (← IO.FS.readFile "runtime/leanrx_region.mjs")
 

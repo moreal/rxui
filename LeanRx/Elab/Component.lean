@@ -601,6 +601,66 @@ private def rowGuardedStageTerm (fields : List String)
       `(LeanRx.RowExpr.field $indexLit)
   `(LeanRx.RowStage.mk [$assignments,*] (some (LeanRx.RowGuard.mk $subjectTerm $guardLit)))
 
+/-- Lower one guarded component event (ADR-0055):
+`if draft == "" then skip else (set field (expr), …)`. The guard subject is
+one `String` state field, raw or behind the one trim unary; the compared
+literal is the empty string and nothing else; the guard hit is the sealed
+`skip` — the whole event is a no-op before the transaction begins — and the
+else-steps carry the ordinary component event steps in the arm-body
+spelling, since a guarded event stands alone. -/
+private def guardedEventTerm (regionFields : List (String × List String))
+    (nameLit itemSpan : TSyntax `term)
+    (cond thenBranch elseBranch : TSyntax `term) : CommandElabM (TSyntax `term) := do
+  let (subject, guardLit) ← match cond with
+    | `($lhs:term == $lit:str) => pure (lhs, lit)
+    | _ =>
+        throwErrorAt cond
+          "error[LRX-ELAB-123]: a skip guard is written `if draft == \"\" then skip else (set field (expr), …)` (ADR-0055)"
+  let (guardField, trimmed) ← match subject with
+    | `($field:ident) => pure (field, false)
+    | `($head:ident $arg:term) =>
+        if head.getId.eraseMacroScopes == `trim then
+          match arg with
+          | `($field:ident) => pure (field, true)
+          | `(($field:ident)) => pure (field, true)
+          | _ =>
+              throwErrorAt subject
+                "error[LRX-ELAB-123]: a skip guard subject is one String state field, optionally trimmed — `if trim draft == \"\" then skip else (…)` (ADR-0055)"
+        else
+          throwErrorAt subject
+            "error[LRX-ELAB-123]: a skip guard subject is one String state field, optionally trimmed — `if trim draft == \"\" then skip else (…)` (ADR-0055)"
+    | _ =>
+        throwErrorAt subject
+          "error[LRX-ELAB-123]: a skip guard subject is one String state field, optionally trimmed — `if trim draft == \"\" then skip else (…)` (ADR-0055)"
+  unless guardLit.getString == "" do
+    throwErrorAt guardLit
+      "error[LRX-ELAB-123]: a skip guard compares against the empty literal only — the guard is TodoMVC's add contract, not a conditional event vocabulary (ADR-0055)"
+  let isSkip := match thenBranch with
+    | `($head:ident) => head.getId.eraseMacroScopes == `skip
+    | _ => false
+  unless isSkip do
+    throwErrorAt thenBranch
+      "error[LRX-ELAB-123]: the guard hit of a guarded event is the sealed `skip` — steps go in the else-steps (ADR-0055)"
+  let stepsStx ← match elseBranch with
+    | `(($first:term, $rest:term,*)) => pure (#[first] ++ rest.getElems)
+    | `(($inner:term)) => pure #[inner]
+    | _ =>
+        throwErrorAt elseBranch
+          "error[LRX-ELAB-123]: the else-steps of a guarded event are written `(set field (expr), …)` (ADR-0055)"
+  let mut stepTerms : Array (TSyntax `term) := #[]
+  for step in stepsStx do
+    match ← updateStepTerm? regionFields step with
+    | some update => stepTerms := stepTerms.push update
+    | none =>
+        throwErrorAt step
+          "error[LRX-ELAB-123]: the else-steps of a guarded event are `set field (expr)`, `dispatch event`, or the sealed region steps (ADR-0055)"
+  let mut update := stepTerms[0]!
+  for step in stepTerms[1:] do
+    update ← `(LeanRx.Update.sequence $update $step)
+  let trimmedTerm ← if trimmed then `(Bool.true) else `(Bool.false)
+  `(LeanRx.EventSpec.mk $nameLit $update $itemSpan
+      (some (LeanRx.EventGuard.mk $guardField $trimmedTerm $itemSpan)))
+
 /-- Lower the arm table of one key-branched row event (ADR-0052): every step
 must be a `when "key" (set field (expr), …)` arm whose inner steps carry the
 ADR-0043 update shape with payload references rejected — the key literal
@@ -934,27 +994,42 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
                 declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
                   $surfaceRole $nameLit $itemSpan))
             | "event" => do
-                let mut stepTerms : Array (TSyntax `term) := #[]
-                let mut passthrough? : Option (TSyntax `term) := none
-                for step in steps do
-                  match ← updateStepTerm? regionFields step with
-                  | some update => stepTerms := stepTerms.push update
-                  | none =>
-                      if steps.size == 1 then
-                        passthrough? := some step
-                      else
-                        throwErrorAt step
-                          "error[LRX-ELAB-104]: event steps are `set field (expr)` or `dispatch event`"
-                let eventTerm ← match passthrough? with
-                  | some value => `(LeanRx.EventSpec.withSpan $value $itemSpan)
-                  | none => do
-                      let mut update := stepTerms[0]!
-                      for step in stepTerms[1:] do
-                        update ← `(LeanRx.Update.sequence $update $step)
-                      `(LeanRx.EventSpec.mk $nameLit $update $itemSpan)
-                events := events.push eventTerm
-                declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
-                  LeanRx.SurfaceRole.event $nameLit $itemSpan))
+                /- An `if … then … else …` step is the ADR-0055 skip guard;
+                it stands alone — a guarded event pairs the sealed no-op hit
+                with one else-step sequence, never further steps. -/
+                if steps.any (fun step => (rowGuardStep? step).isSome) then
+                  unless steps.size == 1 do
+                    throwErrorAt item
+                      "error[LRX-ELAB-123]: a guarded event mixes no other steps with its guard (ADR-0055)"
+                  let some (cond, thenBranch, elseBranch) := rowGuardStep? steps[0]! |
+                    throwErrorAt item
+                      "error[LRX-ELAB-123]: a guarded event lost its guard step"
+                  events := events.push (← guardedEventTerm regionFields nameLit
+                    itemSpan cond thenBranch elseBranch)
+                  declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
+                    LeanRx.SurfaceRole.event $nameLit $itemSpan))
+                else
+                  let mut stepTerms : Array (TSyntax `term) := #[]
+                  let mut passthrough? : Option (TSyntax `term) := none
+                  for step in steps do
+                    match ← updateStepTerm? regionFields step with
+                    | some update => stepTerms := stepTerms.push update
+                    | none =>
+                        if steps.size == 1 then
+                          passthrough? := some step
+                        else
+                          throwErrorAt step
+                            "error[LRX-ELAB-104]: event steps are `set field (expr)` or `dispatch event`"
+                  let eventTerm ← match passthrough? with
+                    | some value => `(LeanRx.EventSpec.withSpan $value $itemSpan)
+                    | none => do
+                        let mut update := stepTerms[0]!
+                        for step in stepTerms[1:] do
+                          update ← `(LeanRx.Update.sequence $update $step)
+                        `(LeanRx.EventSpec.mk $nameLit $update $itemSpan none)
+                  events := events.push eventTerm
+                  declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
+                    LeanRx.SurfaceRole.event $nameLit $itemSpan))
             | _ =>
                 throwErrorAt role
                   "error[LRX-ELAB-003]: view items are written `view := …` without a name"

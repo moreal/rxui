@@ -15,6 +15,7 @@ private def unary : {α β : Type} → UnaryPrim α β → ReactiveIR.Unary α �
   | _, _, .natToInt => .natToInt
   | _, _, .intToString => .intToString
   | _, _, .natToString => .natToString
+  | _, _, .stringTrim => .stringTrim
 
 private def binary : {α β γ : Type} → BinaryPrim α β γ → ReactiveIR.Binary α β γ
   | _, _, _, .intAdd => .intAdd

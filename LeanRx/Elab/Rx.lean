@@ -71,4 +71,16 @@ macro_rules
         (fun chunk => `(LeanRx.RxExpr.strLit $(Syntax.mkStrLit chunk)))
       pure staged
 
+/- The sealed trim unary (ADR-0055): `trim field` or `trim (expr)` — the one
+`String` normalization in the component expression language, mirroring the
+ADR-0054 row-expression trim. The head is matched by name so `trim` stays an
+ordinary identifier (ADR-0035); any other applied head falls through to the
+rules above and the typed leaf elaborator. -/
+macro_rules
+  | `(rx% $head:ident $value:term) =>
+      if head.getId.eraseMacroScopes == `trim then
+        `(LeanRx.RxExpr.trimOp (rx% $value))
+      else
+        Lean.Macro.throwUnsupported
+
 end LeanRxDsl

@@ -125,13 +125,34 @@ def regionRemoveIfTargets : Update Γ → List (String × Nat)
 
 end Update
 
+/-- The sealed skip-if guard of one component event (ADR-0055): when the
+subject — one `String` state field, raw or behind the one ADR-0054/0055 trim
+unary — equals the empty literal, the whole event is a no-op: no write, no
+append, no dispatch, no trace, before the transaction even begins. The empty
+literal is the entire predicate language: no other literal, subject
+expression, or hit action is representable — TodoMVC's add contract, not a
+conditional event vocabulary. The typed `Field Γ String` makes a cross-typed
+or out-of-bounds subject unrepresentable. -/
+structure EventGuard (Γ : Schema) where
+  field : Field Γ String
+  trimmed : Bool
+  span : SourceSpan := .generated
+
 structure EventSpec (Γ : Schema) where
   name : String
   update : Update Γ
   span : SourceSpan := .generated
+  guard? : Option (EventGuard Γ) := none
 
 def EventSpec.withSpan (event : EventSpec Γ) (span : SourceSpan) : EventSpec Γ :=
   { event with span }
+
+/-- The state reads of one event's skip guard (ADR-0055): the guard subject
+is a real read of its `String` source at dispatch time. -/
+def EventSpec.guardReads (event : EventSpec Γ) : List Nat :=
+  match event.guard? with
+  | some guard => [guard.field.index]
+  | none => []
 
 structure EventSummary where
   name : String
@@ -408,6 +429,17 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
           message := s!"event {event.name} reads derived value {dependency}; derived reads require a transaction barrier"
           spans := #[event.span]
         }
+    /- The sealed skip guard (ADR-0055) reads its subject before the
+    transaction begins, so the subject must be a source: a derived value is
+    not yet recomputed at dispatch time. The `Field Γ String` type already
+    seals the payload type and the bounds. -/
+    if let some guard := event.guard? then
+      unless guard.field.index < sourceCount do
+        throw {
+          code := "LRX-TYPE-114"
+          message := s!"event {event.name} guards on derived value {guard.field.index}; a skip guard reads one String state field"
+          spans := #[event.span, guard.span]
+        }
     for target in event.update.dispatchTargets do
       unless names.contains target do
         throw {
@@ -575,10 +607,11 @@ private def summarizeEvents (events : Array (EventSpec Γ)) : Array EventSummary
   events.map fun event => {
     name := event.name
     directWrites := event.update.directWriteTargets.eraseDups
-    directReads := event.update.directReadDependencies.eraseDups
+    directReads := (event.guardReads ++ event.update.directReadDependencies).eraseDups
     dispatchedEvents := event.update.dispatchTargets.eraseDups
     effectiveWrites := effectiveWrites events events.size event.update
-    effectiveReads := effectiveReads events events.size event.update
+    effectiveReads :=
+      (event.guardReads ++ effectiveReads events events.size event.update).eraseDups
   }
 
 mutual

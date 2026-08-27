@@ -143,6 +143,11 @@ def appendOp (left : RxExpr Γ leftDeps String) (right : RxExpr Γ rightDeps Str
     RxExpr Γ (DepSet.union leftDeps rightDeps) String :=
   .binary .stringAppend left right
 
+/-- The staged ASCII-whitespace trim (ADR-0055): `String`-only, the one
+sealed normalization in the component expression language. -/
+def trimOp (value : RxExpr Γ deps String) : RxExpr Γ deps String :=
+  .unary .stringTrim value
+
 /-- Staged numeric literal selected by scalar type. -/
 def numLit [RxNumLit α] (value : Nat) : RxExpr Γ (DepSet.empty Γ) α :=
   .literal (RxNumLit.lit value)

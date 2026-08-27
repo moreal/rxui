@@ -446,7 +446,7 @@ bookkeeping, the provided write statements, and the commit sweep over derived
 values, text sinks, and reflected properties. -/
 private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalState)
     (runtime : RuntimeNames) (name : Ident) (params : Array Ident) (label : String)
-    (writes : List Stmt) : Except Error Function := do
+    (writes : List Stmt) (skipIf? : Option Expr := none) : Except Error Function := do
   let setText := runtime.setText
   let context ← Ident.checked "context"
   let state ← Ident.checked "state"
@@ -481,6 +481,12 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     ]
   unless checked.spec.regions.isEmpty do
     body := body ++ [.const regions (arrayAt context (regionSlot checked))]
+  /- The sealed skip guard (ADR-0055): a guard hit returns before the
+  transaction begins — no begin bookkeeping, no event trace, no write, no
+  commit sweep. The check is emitted only for guarded component events;
+  every other dispatch function is byte-identical. -/
+  if let some condition := skipIf? then
+    body := body ++ [.ifThen condition (.ofList [.return (.literal .null)])]
   let mut beginBody : List Stmt := [pushTrace tx "transaction:begin"]
   for id in List.range valueCount do
     beginBody := beginBody ++ [
@@ -732,8 +738,19 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
   let regions ← Ident.checked "regions"
   let (_, writes) ← updateStatements evaluators context state tx regions
     checked.spec.regions eventNames checked.spec.values.size eventIndex event.update 0
+  /- The ADR-0055 skip guard subject rides the sealed trim emission the row
+  lowering uses (ADR-0054): a raw subject reads the state slot, a trimmed
+  subject wraps it in the asciiTrimPattern replace, and the equality is
+  against the empty literal by construction. -/
+  let skipIf? := event.guard?.map fun guard =>
+    let subject := stateAt state guard.field.index
+    let subject := if guard.trimmed then
+        Expr.call (.index subject (.literal (.string "replace")))
+          (.ofList [.literal .asciiTrimPattern, .literal (.string "")])
+      else subject
+    Expr.binary .eq subject (.literal (.string ""))
   transactionShell checked evaluators runtime (← eventName eventIndex)
-    #[context, ignored] event.name writes
+    #[context, ignored] event.name writes (skipIf? := skipIf?)
 
 private def typedEventName (index : Nat) : Except Error Ident :=
   Ident.checked s!"$lrx_typed_event_{index}"
@@ -1458,6 +1475,9 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       checked.spec.children.map (·.moduleSpecifier)
     features := #["scalar", "events", "transactions", "instrumentation", "trace"] ++
       (if checked.spec.typedEvents.isEmpty then #[] else #["typed-events"]) ++
+      (if checked.spec.events.toList.any (·.guard?.isSome) then
+        #["event-guards"]
+      else #[]) ++
       (if checked.view.props.isEmpty then #[] else #["controlled-props"]) ++
       (if checked.view.attrSelects.isEmpty then #[] else #["attr-selections"]) ++
       (if checked.spec.children.isEmpty then #[] else #["child-components"]) ++

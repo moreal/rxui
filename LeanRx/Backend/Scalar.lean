@@ -99,6 +99,7 @@ private inductive UnaryPlan where
   | direct (op : UnaryOp)
   | identity
   | displayString
+  | asciiTrim
 
 private def unary : {α β : Type} → ReactiveIR.Unary α β → UnaryPlan
   | _, _, .boolNot => .direct .not
@@ -106,6 +107,7 @@ private def unary : {α β : Type} → ReactiveIR.Unary α β → UnaryPlan
   | _, _, .natToInt => .identity
   | _, _, .intToString => .displayString
   | _, _, .natToString => .displayString
+  | _, _, .stringTrim => .asciiTrim
 
 private def directBinary : {α β γ : Type} → ReactiveIR.Binary α β γ → Option BinaryOp
   | _, _, _, .intAdd => some .add
@@ -144,6 +146,14 @@ def expr (inputs : Array (Ident × RuntimeTypeId)) (bindings : List HelperBindin
       | .displayString =>
           let stringName ← Ident.checked "String"
           pure (.call (.ident stringName) <| .ofList [← expr inputs bindings value])
+      | .asciiTrim =>
+          /- The sealed trim unary (ADR-0055): the ASCII-whitespace strip the
+          hand-written Todo backend and the ADR-0054 row lowering emit,
+          aligned with Lean's `String.trim` — deliberately not the
+          Unicode-aware `String.prototype.trim`. -/
+          pure (.call
+            (.index (← expr inputs bindings value) (.literal (.string "replace")))
+            (.ofList [.literal .asciiTrimPattern, .literal (.string "")]))
   | _, .binary op left right => do
       let loweredLeft ← expr inputs bindings left
       let loweredRight ← expr inputs bindings right

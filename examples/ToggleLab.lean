@@ -98,29 +98,53 @@ ASCII-whitespace replace the hand-written Todo backend has always used —
 aligned with Lean's `String.trim`, not the Unicode-aware
 `String.prototype.trim`. Escape's revert arm remains untrimmed and
 unguarded: it restores the pre-edit label verbatim. Once more: no host
-change and no runtime ABI bump. -/
+change and no runtime ABI bump.
+
+The ADR-0055 component-scope add path closes ADR-0054's first open
+question: the new-todo `draft` is component state mirrored into a
+controlled input (`value={rx% draft}` with the per-keystroke `setDraft`
+typed event — the ADR-0038 path), and `addTodo` is a guarded component
+event: `if trim draft == "" then skip else (append items (trim draft, trim
+draft, "false", "view"), set draft "")`. The sealed skip-if guard makes a
+whitespace-only draft's Add a whole-event no-op — the generated dispatch
+function returns before the transaction begins, so there is no write, no
+append, no trace, and no region touch — while a valid draft appends one row
+with the ASCII-trimmed label (the row draft mirrors it, ADR-0043) and
+resets the component draft through the same transaction. `trim` here is the
+`RxExpr` unary riding the ADR-0054 `asciiTrimPattern` emission through the
+ordinary scalar evaluators; the guard subject rides the same emission
+inline. Enter-to-add stays a recorded gap: component scope has no key
+branching (`when` arms are row vocabulary), so the contract is proven
+through the Add button click path. Still no host change and no runtime ABI
+bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
 open LeanRx
 
-abbrev ToggleSchema : Schema := .field "added" Int <| .field "filter" String .empty
+abbrev ToggleSchema : Schema :=
+  .field "added" Int <| .field "filter" String <| .field "draft" String .empty
 
 def added : Field ToggleSchema Int := .here
 def filter : Field ToggleSchema String := .there .here
+def draft : Field ToggleSchema String := .there (.there .here)
 
 open scoped LeanRxDsl
 
 component ToggleLab (schema := ToggleSchema) where {
   state added : Int := 0;
   state filter : String := "all";
+  state draft : String := "";
   event addItem := append items (s!"Item {added}", s!"Item {added}", "false", "view")
     then set added (added + 1);
+  event addTodo := if trim draft == "" then skip
+    else (append items (trim draft, trim draft, "false", "view"), set draft "");
   event completeAll := update items (set done "true");
   event clearCompleted := remove items (done == "true");
   event showAll := set filter "all";
   event showActive := set filter "active";
   event showCompleted := set filter "completed";
+  event setDraft (value : String) := set draft value;
   filter items by filter := when "active" (done == "false")
     then when "completed" (done == "true");
   row items toggle (checked : String) := set done checked;
@@ -151,6 +175,8 @@ component ToggleLab (schema := ToggleSchema) where {
     ];
   view := jsx% <main class="toggle-lab"> [
     <h1> ["Toggle Lab"],
+    <input id="new-todo" ariaLabel="New todo" value={rx% draft} onInput={setDraft}/>,
+    <button type="button" onClick={addTodo}> ["Add todo"],
     <button type="button" onClick={addItem}> ["Add item"],
     <button type="button" onClick={completeAll}> ["Complete all"],
     <button type="button" onClick={clearCompleted}> ["Clear completed"],

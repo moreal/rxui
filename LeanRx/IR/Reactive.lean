@@ -15,6 +15,7 @@ inductive Unary : Type → Type → Type where
   | natToInt : Unary Nat Int
   | intToString : Unary Int String
   | natToString : Unary Nat String
+  | stringTrim : Unary String String
 
 inductive Binary : Type → Type → Type → Type where
   | intAdd : Binary Int Int Int
@@ -69,6 +70,7 @@ def name : {α β : Type} → Unary α β → String
   | _, _, .natToInt => "nat.toInt"
   | _, _, .intToString => "int.toString"
   | _, _, .natToString => "nat.toString"
+  | _, _, .stringTrim => "string.trim"
 
 def resultTypeId : {α β : Type} → Unary α β → RuntimeTypeId
   | _, _, .boolNot => .bool
@@ -76,6 +78,7 @@ def resultTypeId : {α β : Type} → Unary α β → RuntimeTypeId
   | _, _, .natToInt => .int
   | _, _, .intToString => .string
   | _, _, .natToString => .string
+  | _, _, .stringTrim => .string
 
 end Unary
 
