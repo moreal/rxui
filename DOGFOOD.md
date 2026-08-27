@@ -1749,3 +1749,88 @@ filter arms and count predicates stay single-field `String` equality, `s!`
 interpolation absent from row scope (`++` only), branch cells single-level
 and two-branch only with exact click/dblclick agreement, and child
 instrumentation still unreachable through the parent disposer.
+
+## Sealed row field guards — Toggle Lab destroy-on-empty-commit
+
+### Scenario exercised
+
+The ADR-0053 round: TodoMVC's destroy-on-empty-commit — the gap ADR-0052's
+first open question recorded — closed with no host change and no ABI bump.
+`row items commit := if draft == "" then remove else (set label draft,
+set mode "view")` and the same `if` shape inside the Enter key arm are the
+sealed remove-if guard: one row-field equality against one string literal,
+carried on the `RowStage` shape the plain update action and every ADR-0052
+key arm now share. A guard hit removes the dispatching row through the
+exact kept-filter, dirty flag, and reconcile the ✕ button's sealed `remove`
+runs — no field write, no `updateAt` queue entry — and a miss commits the
+else-steps byte-for-byte as the unguarded stage did. Escape stays
+unguarded by choice: reverting an empty draft restores the label instead
+of destroying the row. Three new Toggle Lab browser gates pin Enter on an
+empty draft as exactly one row disposal (plus the survivor's re-render
+from the dirty reconcile — the price every removal already paid), with
+survivor DOM identity preserved and the counts following; the OK button
+agreeing through the guarded commit with a nonempty draft still taking
+the ordinary commit path; and Escape on an empty draft keeping the row.
+
+### What was pleasant
+
+The evaluation the goal asked for — dispatcher-internal guard equality
+versus a general row conditional vocabulary — resolved on the same
+invariants as the last two rounds: the ADR-0043 scan already resolves the
+dispatching row's field tuple before any write, so the guard is one
+comparison on data the dispatch function already holds, while an open
+`if`/`else` over row expressions would have opened the sealed update
+language into control flow that ADR-0049 and ADR-0052 had each already
+declined. Attaching the guard to the stage rather than minting a
+`guardedRemove` action constructor meant `update` and `keySelect` arms
+gained the vocabulary through one shape, and the emitted guard branch
+reuses the removal statements extracted from the `remove` action into one
+shared helper — proven byte-identical by every other lab's unchanged
+artifact gate and a byte-identical js-framework-benchmark bundle.
+
+### Friction
+
+Changing `RowAction.update`'s payload from a bare assignment list to
+`RowStage` touched every forged-spec literal in the model, elaborator, and
+guide gates (~25 mechanical `⟨…, none⟩` wrappings — scripted, but churn).
+The guarded surface had to be rejected in *typed* row events with its own
+repair (`LRX-ELAB-122`), mirroring the ADR-0052 lesson that a
+close-but-wrong step shape otherwise reports the generic `set` message
+pointing at the wrong fix. And the first browser gate draft pinned the
+removal as "one disposal, zero updates" — wrong: every removal re-renders
+retained survivors through the dirty reconcile, so the honest pin is
+disposals +1 *and* updates +1 for the one survivor, the metrics contract
+the ✕ button always had.
+
+### Bugs found
+
+No framework defect surfaced: the model gates (the good guarded update and
+guarded key arm plus three LRX-VIEW-040 rejections), four LRX-ELAB-122
+compile-fail fixtures, the updated artifact and elaborator gates, and all
+twenty-two Toggle Lab browser gates (the three ADR-0053 gates included)
+passed with one first-run failure — the miscalibrated metrics pin above,
+a test bug, not a framework bug.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of every other
+lab and of the js-framework-benchmark bundle — `main.mjs` and manifest
+included — is byte-identical to the HEAD baseline (full before/after
+builds into the scratchpad; only Toggle Lab's module and manifest change,
+gaining the guard branches and the `row-guards` feature). A guarded
+commit's miss path emits the identical statement sequence as before behind
+one extra comparison; a guard hit swaps the write-and-drain for the
+removal reconcile that already existed.
+
+### Follow-up issue or commit
+
+`feat(component): guard row stages on sealed field equality (ADR-0053)`,
+`test(component): forge the row-guard gates and teach the guide`, and
+`docs(adr): accept the sealed row field guards (ADR-0053)`. Remaining gaps
+carried forward: no trim normalization (a whitespace-only draft commits as
+a whitespace label — a future row-expression `trim`, not a guard shape),
+guards sealed at single-field `String` equality selecting remove-or-commit
+only, the key set sealed at Enter/Escape, filter arms and count predicates
+single-field equality, `s!` interpolation absent from row scope, branch
+cells single-level and two-branch with exact click/dblclick agreement, and
+child instrumentation still unreachable through the parent disposer.
