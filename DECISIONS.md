@@ -59,6 +59,7 @@
 | [0055](docs/adr/0055-component-scope-add-path.md) | Accepted | Close the component-scope add path with the RxExpr trim and the sealed skip-if event guard | 2026-08-28 |
 | [0056](docs/adr/0056-component-scope-key-branching.md) | Accepted | Close the Enter-to-add gap with the sealed key-branched component event | 2026-08-28 |
 | [0057](docs/adr/0057-trimmed-attribute-selection.md) | Accepted | Extend the attribute-selection subject with the sealed trim unary for the Add affordance | 2026-08-28 |
+| [0058](docs/adr/0058-empty-region-visibility.md) | Accepted | Close the hide-when-empty parity with the sealed region-subject hidden selection | 2026-08-28 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
