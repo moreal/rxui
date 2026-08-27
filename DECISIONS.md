@@ -61,6 +61,7 @@
 | [0057](docs/adr/0057-trimmed-attribute-selection.md) | Accepted | Extend the attribute-selection subject with the sealed trim unary for the Add affordance | 2026-08-28 |
 | [0058](docs/adr/0058-empty-region-visibility.md) | Accepted | Close the hide-when-empty parity with the sealed region-subject hidden selection | 2026-08-28 |
 | [0059](docs/adr/0059-predicate-count-visibility.md) | Accepted | Hide the clear-completed affordance through the sealed predicate-count hidden subject | 2026-08-28 |
+| [0060](docs/adr/0060-region-checked-reflection.md) | Accepted | Reflect the sealed region-count boolean into the toggle-all checkbox's checked property | 2026-08-28 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
