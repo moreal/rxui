@@ -1,6 +1,6 @@
 # ADR-0052: Sealed row key branching for keydown row events
 
-- Status: Draft
+- Status: Accepted
 - Date: 2026-08-27
 
 ## Context
@@ -97,14 +97,15 @@ feature.
 
 ## Open questions
 
-1. Should an arm be able to select `remove` instead of assignments —
-   TodoMVC's destroy-on-empty-commit? The draft says not yet: emptiness of
-   a field is not expressible in row scope (no guards), so an Enter-remove
-   arm would fire on every Enter; the shape belongs to whatever ADR
-   introduces row-field guards.
-2. Should the discriminant remain spellable as `payload` inside an arm's
-   right-hand sides? The draft says no: the matched literal already fixes
-   it, so admitting it would be a second spelling of a constant.
+Both resolved by the implementing round as drafted:
+
+1. **No key-branched `remove` arm.** Emptiness of a field is not
+   expressible in row scope (no guards), so an Enter-remove arm would fire
+   on every Enter; TodoMVC's destroy-on-empty-commit stays a recorded gap
+   for whatever ADR introduces row-field guards.
+2. **The discriminant is not spellable as `payload` inside an arm.** The
+   matched literal already fixes it, so admitting it would be a second
+   spelling of a constant; `LRX-VIEW-039` rejects the reference.
 
 ## Consequences and limitations
 
@@ -128,14 +129,25 @@ feature.
   non-`String` equality, and the parent-disposer gap of the region hosts
   is unchanged.
 
-## Confirmation plan
+## Confirmation
 
-Toggle Lab's editor binds `onKeyDown={keys}` beside `retype`, with browser
-gates pinning Enter committing the draft (label branch returns, one
-retained-row update, identity preserved), Escape reverting (pre-edit label
-restored, the draft's retype writes discarded, the next edit entry
-pre-filled with the restored draft), and a non-matching key moving no
-region metrics; model gates and compile-fail fixtures pin
-`LRX-VIEW-039`/`LRX-ELAB-121`; the artifact gate pins the key equality
-branches inside the dispatch function and the unchanged import line; and
-the js-framework-benchmark bundle stays byte-identical.
+Confirmed by the key-branch round as drafted: the extension ships through
+the generic backend with no host change and no runtime ABI bump — Toggle
+Lab's emitted import line is byte-identical to Branch Lab's, and every
+file of the js-framework-benchmark bundle (`main.mjs` and manifest
+included) is byte-identical to the HEAD baseline under the performance
+freeze (only the `.leanrx-bundle-owner` marker differs, and it embeds the
+output directory name). Toggle Lab's browser gates pin Enter committing
+the draft as exactly one retained-row update with row identity preserved,
+Escape restoring the pre-edit draft — the retype writes discarded, the
+next edit entry pre-filled with the restored draft through the ADR-0047
+reflection, and a commit-after-revert round-tripping it — and non-matching
+keys (`ArrowLeft`, `Shift`) moving no region metrics while the editor
+keeps its branch, value, and focus. `LRX-VIEW-039` is pinned by ten model
+gates plus one compile-fail fixture and `LRX-ELAB-121` by two compile-fail
+fixtures; the artifact gate pins the per-arm `eventKey` equalities inside
+the dispatch function, the keydown listener registration, and the
+unchanged import lines; and the emitter's scan-sequence extraction into
+the shared helper is proven byte-identical by every other lab's unchanged
+artifact gate. The rejected alternatives were not needed: no new delegated
+kind, no host-side key filter, and no payload-conditional vocabulary.
