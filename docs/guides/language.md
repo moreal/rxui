@@ -419,7 +419,8 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
   view := jsx% <main> [
     <button type="button" onClick={addItem}> ["Add"],
     <button type="button" onClick={completeAll}> ["Complete all"],
-    <button type="button" onClick={clearCompleted}> ["Clear completed"],
+    <button type="button" onClick={clearCompleted}
+      hidden={count roster (done == "true") == 0}> ["Clear completed"],
     <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
     <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>]
   ];
@@ -437,13 +438,22 @@ empty commit, or `remove region (…)`) hides it again: the commit sweep
 re-evaluates the subject on the same region-touch path the count texts
 ride and writes through the existing `setProperty` export only on a flip
 of the emptiness. The subject is the row table, not the displayed rows, so
-a `filter` hiding every row leaves the section revealed. The subject is
-sealed to one declared region's row total against the zero literal:
-predicate counts, other comparison operators, threshold literals,
-negation, composition, and general aggregate expressions are rejected
-(`LRX-ELAB-125`), an unknown region is rejected (`LRX-ELAB-119` at the
-surface, `LRX-VIEW-042` at the model), and the selection counts as its
-attribute for duplicate detection (`LRX-VIEW-001`).
+a `filter` hiding every row leaves the section revealed. The subject may
+instead be the sealed predicate count (ADR-0059):
+`hidden={count region (field == "literal") == 0}` hides the element
+exactly while no row satisfies the one row-field-to-string-literal
+equality, so TodoMVC's clear-completed button can hide while no row is
+done — revealed by the first done toggle, re-hidden when the last done
+row untoggles, clears, or is removed, and left revealed by a
+`completeAll`-style broadcast. The predicate scan rides the same
+region-touch path, attr slot, and boolean cache, so a filter change alone
+still re-evaluates nothing. Both subjects are sealed against the zero
+literal: other comparison operators, threshold literals, negation,
+composition, multiple predicates, and general aggregate expressions are
+rejected (`LRX-ELAB-125`), an unknown region or predicate field is
+rejected (`LRX-ELAB-119` at the surface, `LRX-VIEW-042` at the model),
+and the selection counts as its attribute for duplicate detection
+(`LRX-VIEW-001`).
 
 A `filter` item selects which of a keyed region's rows are *displayed*
 (ADR-0051): `filter region by field := when "literal" (rowField ==

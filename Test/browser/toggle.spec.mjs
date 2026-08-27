@@ -299,7 +299,11 @@ test("clearing completed disposes exactly the done rows (ADR-0050)", async ({ pa
   expect(after[2]).toBe(before[2]);
   expect(after[3]).toBe(before[3] + 2);
   // Clearing again is an observable no-op: nothing matches the predicate.
-  await page.getByRole("button", { name: "Clear completed" }).click();
+  // The ADR-0059 affordance hides the button while no row is done, so the
+  // click is dispatched structurally — the affordance is not the contract:
+  // the removal stays a no-op wherever it is triggered from.
+  await page.getByRole("button", { name: "Clear completed", includeHidden: true })
+    .dispatchEvent("click");
   await expect(page.locator("#items > li")).toHaveCount(1);
   await expect(page.locator("#items-left")).toHaveText("1 left of 1");
 });
@@ -843,8 +847,8 @@ test("the items wrapper mounts hidden and the first append reveals it (ADR-0058)
   await expect(wrapper).toBeVisible();
   expect(await wrapper.evaluate((element) => element.hidden)).toBe(false);
   const trace = await page.evaluate(() => globalThis.toggleDispose.instrumentation()[7]);
-  expect(trace).toContain("attr:1:hidden:evaluated");
-  expect(trace).toContain("dom:attr:1:hidden:write");
+  expect(trace).toContain("attr:2:hidden:evaluated");
+  expect(trace).toContain("dom:attr:2:hidden:write");
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });
@@ -910,15 +914,113 @@ test("a filter hiding every row leaves the wrapper visible (ADR-0058)", async ({
   // selection is not even re-evaluated by it; appending while filtered
   // keeps the wrapper revealed through the equal-value compare.
   const evaluated = (tx) =>
-    tx[7].filter((entry) => entry === "attr:1:hidden:evaluated").length;
+    tx[7].filter((entry) => entry === "attr:2:hidden:evaluated").length;
   const written = (tx) =>
-    tx[7].filter((entry) => entry === "dom:attr:1:hidden:write").length;
+    tx[7].filter((entry) => entry === "dom:attr:2:hidden:write").length;
   const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
   await add.click();
   const after = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
   expect(evaluated(after)).toBe(evaluated(before) + 1);
   expect(written(after)).toBe(written(before));
   await expect(wrapper).toBeVisible();
+});
+
+test("the clear-completed affordance mounts hidden and the first done toggle reveals it (ADR-0059)", async ({ page }) => {
+  await mountToggle(page);
+  const clear = page.locator("button", { hasText: "Clear completed" });
+  // An empty region satisfies no predicate: the button mounts with its
+  // hidden property already true — written by mount before any transaction
+  // exists, exactly like the ADR-0058 wrapper.
+  await expect(clear).toBeHidden();
+  expect(await clear.evaluate((element) => element.hidden)).toBe(true);
+  // Appending a not-done row touches the region: the predicate scan runs
+  // but counts zero done rows, so the equal-value compare swallows the
+  // write and the button stays hidden.
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(clear).toBeHidden();
+  const evaluated = (tx) =>
+    tx[7].filter((entry) => entry === "attr:1:hidden:evaluated").length;
+  const written = (tx) =>
+    tx[7].filter((entry) => entry === "dom:attr:1:hidden:write").length;
+  const appended = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(appended)).toBe(1);
+  expect(written(appended)).toBe(0);
+  // The first done toggle flips the predicate count off zero: the same
+  // commit's sweep reveals the button through setProperty.
+  await page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  await expect(clear).toBeVisible();
+  const toggled = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(toggled)).toBe(2);
+  expect(written(toggled)).toBe(1);
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("draining the done rows hides the affordance again (ADR-0059)", async ({ page }) => {
+  await mountToggle(page);
+  const clear = page.locator("button", { hasText: "Clear completed" });
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  const firstToggle = page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" });
+  // Untoggling the last done row drains the predicate count back to zero:
+  // the pending row update touches the region and the sweep re-hides the
+  // button — no structural change needed.
+  await firstToggle.check();
+  await expect(clear).toBeVisible();
+  await firstToggle.uncheck();
+  await expect(clear).toBeHidden();
+  // clearCompleted itself removes every done row, so its own commit hides
+  // the affordance that triggered it.
+  await firstToggle.check();
+  await expect(clear).toBeVisible();
+  await clear.click();
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(clear).toBeHidden();
+  // The ✕ removal of the last done row rides the same reconcile.
+  await page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  await expect(clear).toBeVisible();
+  await page.locator("#items > li").first()
+    .getByRole("button", { name: "Remove item" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  await expect(clear).toBeHidden();
+});
+
+test("a filter change never re-evaluates the affordance and completeAll keeps it revealed (ADR-0059)", async ({ page }) => {
+  await mountToggle(page);
+  const clear = page.locator("button", { hasText: "Clear completed" });
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  await expect(clear).toBeVisible();
+  // A filter change alone never touches the region, so the predicate scan
+  // does not even run — the affordance follows the row table, not the
+  // displayed rows, and stays revealed while the done row is filter-hidden.
+  const evaluated = (tx) =>
+    tx[7].filter((entry) => entry === "attr:1:hidden:evaluated").length;
+  const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await page.getByRole("button", { name: "Show active" }).click();
+  await expect(page.locator("#items > li:visible")).toHaveCount(1);
+  const filtered = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(filtered)).toBe(evaluated(before));
+  expect(await clear.evaluate((element) => element.hidden)).toBe(false);
+  await page.getByRole("button", { name: "Show all" }).click();
+  // The completeAll broadcast makes every row done: the region-touch sweep
+  // re-counts a nonzero predicate and the button stays revealed through
+  // the equal-value compare — one evaluation, no write.
+  const beforeAll = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await page.getByRole("button", { name: "Complete all" }).click();
+  const afterAll = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(afterAll)).toBe(evaluated(beforeAll) + 1);
+  const written = (tx) =>
+    tx[7].filter((entry) => entry === "dom:attr:1:hidden:write").length;
+  expect(written(afterAll)).toBe(written(beforeAll));
+  await expect(clear).toBeVisible();
 });
 
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {

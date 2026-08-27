@@ -241,7 +241,8 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
   view := jsx% <main> [
     <button type="button" onClick={addItem}> ["Add"],
     <button type="button" onClick={completeAll}> ["Complete all"],
-    <button type="button" onClick={clearCompleted}> ["Clear completed"],
+    <button type="button" onClick={clearCompleted}
+      hidden={count roster (done == "true") == 0}> ["Clear completed"],
     <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
     <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>]
   ];
@@ -526,8 +527,10 @@ def run : IO Unit := do
         throw <| IO.userError
           "language-guide count snippet lost its broadcast or removal steps"
       unless counting.view.attrSelects.map (fun mounted =>
-          (mounted.select.name, mounted.select.hiddenRegion?, mounted.path)) ==
-          [("hidden", some "roster", [4])] do
+          (mounted.select.name, mounted.select.hiddenRegion?,
+            mounted.select.hiddenPredicate?, mounted.path)) ==
+          [("hidden", some "roster", some (1, "true"), [2]),
+            ("hidden", some "roster", none, [4])] do
         throw <| IO.userError
           "language-guide count snippet lost its empty-region visibility selection"
   | .error error =>

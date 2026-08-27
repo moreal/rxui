@@ -285,18 +285,24 @@ private def verifyToggle
   evaluates, reflected as the boolean element property. The ADR-0058
   empty-region visibility rides beside it: the items list wrapper's
   `hidden` selection carries the region-count subject — no state field, no
-  compared string literal — mounted on the `<ul>` that hosts the region. -/
+  compared string literal — mounted on the `<ul>` that hosts the region.
+  The ADR-0059 predicate-count visibility sits between them: the Clear
+  completed button's `hidden` selection carries the same region subject
+  behind the sealed done-equality predicate. -/
   unless checked.view.attrSelects.map (fun mounted =>
       (mounted.select.name, mounted.select.fieldIndex?, mounted.select.equals?,
         mounted.select.trimmed, mounted.path)) ==
       [("disabled", some 2, some "", true, [2]),
+        ("hidden", none, none, false, [5]),
         ("hidden", none, none, false, [11])] do
     throw <| IO.userError "toggle Add affordance lost its trimmed disabled selection"
   unless checked.view.attrSelects.map (·.select.debug) ==
-      ["select:disabled:trim:2", "select:hidden:items"] do
+      ["select:disabled:trim:2", "select:hidden:items:2:true",
+        "select:hidden:items"] do
     throw <| IO.userError "toggle Add affordance lost its trimmed debug marker"
-  unless checked.view.attrSelects.map (·.select.hiddenRegion?) ==
-      [none, some "items"] do
+  unless checked.view.attrSelects.map (fun mounted =>
+      (mounted.select.hiddenRegion?, mounted.select.hiddenPredicate?)) ==
+      [(none, none), (some "items", some (2, "true")), (some "items", none)] do
     throw <| IO.userError "toggle list wrapper lost its empty-region visibility subject"
   /- The hidden selection is region-driven (ADR-0058): like the ADR-0050
   count texts it joins the region-touch sweep, not the planned graph — the

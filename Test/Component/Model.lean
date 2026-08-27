@@ -311,6 +311,42 @@ def run : IO Unit := do
           (selects := [.hiddenIfEmpty "r", .hiddenIfEmpty "r"])]
         regions := #[rosterRegion] }
   expectError "LRX-VIEW-001" doubleHidden.check
+  /- ADR-0059 predicate-count visibility: the sealed predicate-count subject
+  is accepted with its own debug marker and the same boolean value type,
+  graph exclusion, and region subject; an out-of-bounds predicate field is
+  rejected with the ADR-0050 count-predicate rule. -/
+  let hidingPredicate : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [View.node .button [View.text "Clear"]
+            (selects := [.hiddenIfEmpty "r" (predicate := some (0, "true"))]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  match hidingPredicate.check with
+  | .error error =>
+      throw <| IO.userError s!"forged predicate hidden reflection rejected: {error.code}"
+  | .ok checked =>
+      unless checked.view.attrSelects.map (fun mounted =>
+          (mounted.select.name, mounted.select.hiddenRegion?,
+            mounted.select.hiddenPredicate?, mounted.select.fieldIndex?,
+            mounted.path)) ==
+          [("hidden", some "r", some (0, "true"), none, [0])] do
+        throw <| IO.userError
+          "forged predicate hidden reflection lost its mounted selection"
+      unless checked.view.attrSelects.map
+          (fun mounted => (mounted.select.debug, mounted.select.valueType)) ==
+          [("select:hidden:r:0:true", .bool)] do
+        throw <| IO.userError
+          "forged predicate hidden reflection lost its debug marker"
+      unless (checked.graph.graph.nodes.map (·.name)).toList.all
+          (fun name => !name.startsWith "attr:") do
+        throw <| IO.userError
+          "forged predicate hidden reflection leaked into the planned graph"
+  let hidingPredicateOutOfBounds : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [View.node .ul [View.region "r"]
+          (selects := [.hiddenIfEmpty "r" (predicate := some (1, "true"))])]
+        regions := #[rosterRegion] }
+  expectError "LRX-VIEW-042" hidingPredicateOutOfBounds.check
   /- ADR-0046 typed row payloads, exercised through forged specifications. -/
   let renameEvent : RowEventSpec :=
     { name := "rename", action := .update ⟨[(0, .payload)], none⟩, takesPayload := true }

@@ -32,6 +32,7 @@ if (
     "typed-row-events", "row-key-branches", "row-guards", "row-trim",
     "row-branches", "row-reflects", "row-focus", "row-aggregates",
     "region-broadcasts", "region-filters", "region-visibility",
+    "predicate-visibility",
   ])
 ) {
   throw new Error("generated Toggle Lab manifest is invalid");
@@ -89,16 +90,21 @@ for (const required of [
   // empty-region visibility rides the same attr slots: the items list
   // wrapper (node_25, also the region container) mounts hidden — regions
   // mount empty by construction, so the initial cache value is the literal
-  // true — through the same setProperty export.
-  "  const attrRefs = [node_4, node_25];",
-  "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\", true];",
+  // true — through the same setProperty export. The ADR-0059 predicate
+  // hidden selection sits between them: the Clear completed button
+  // (node_10) mounts hidden through the same slots and the same literal
+  // true — an empty region satisfies no predicate.
+  "  const attrRefs = [node_4, node_10, node_25];",
+  "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\", true, true];",
   "  setProperty(attrRefs[0], \"disabled\", attrCache[0]);",
   "  setProperty(attrRefs[1], \"hidden\", attrCache[1]);",
-  // The ADR-0058 sweep re-evaluates the row-table emptiness on the
+  "  setProperty(attrRefs[2], \"hidden\", attrCache[2]);",
+  // The ADR-0058/0059 sweep re-evaluates both hidden subjects on the
   // region-touch path the count texts ride — behind the shared touched
-  // flag, before the reconcile consumes it — and writes the wrapper's
-  // hidden property only on a flip of the emptiness.
-  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const attr_next_1 = regions[0][1][\"length\"] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n    }",
+  // flag, before the reconcile consumes it — and writes each hidden
+  // property only on a flip: the button's subject is the ADR-0050
+  // predicate scan against zero, the wrapper's the row-table emptiness.
+  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const hidden_scan_0_1 = [0];\n      for (const hidden_row_0_1 of regions[0][1]) {\n        if (hidden_row_0_1[3] === \"true\") {\n          hidden_scan_0_1[0] += 1;\n        }\n      }\n      const attr_next_1 = hidden_scan_0_1[0] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:2:hidden:evaluated\");\n      const attr_next_2 = regions[0][1][\"length\"] === 0;\n      const attr_changed_2 = attrCache[2] !== attr_next_2;\n      if (attr_changed_2) {\n        attrCache[2] = attr_next_2;\n        setProperty(attrRefs[2], \"hidden\", attr_next_2);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:2:hidden:write\");\n      }\n    }",
   "    if (changed[2]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:0:disabled:evaluated\");\n      const attr_next_0 = state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      const attr_changed_0 = attrCache[0] !== attr_next_0;\n      if (attr_changed_0) {\n        attrCache[0] = attr_next_0;\n        setProperty(attrRefs[0], \"disabled\", attr_next_0);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:0:disabled:write\");\n      }\n    }",
   // The attr slots ride behind the prop slots; the region record follows
   // them (ADR-0045), so the context carries eleven slots.
