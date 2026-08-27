@@ -22,6 +22,12 @@ def run : IO Unit := do
     .unary .intToString (.literal (.int (-9007199254740993)))
   expect "Nat.toString" "9007199254740993" <| evalEmpty <|
     .unary .natToString (.literal (.nat 9007199254740993))
+  expect "String.trim" "ab c" <| evalEmpty <|
+    .unary .stringTrim (.literal (.string "  \t\r\nab c \n"))
+  expect "String.trim whitespace-only" "" <| evalEmpty <|
+    .unary .stringTrim (.literal (.string " \t\r\n"))
+  expect "String.trim is ASCII-only" " 한글 " <| evalEmpty <|
+    .unary .stringTrim (.literal (.string "  한글  "))
   expect "Int.add" (12 : Int) <| evalEmpty <|
     .binary .intAdd (.literal (.int 7)) (.literal (.int 5))
   expect "Int.sub" (2 : Int) <| evalEmpty <|

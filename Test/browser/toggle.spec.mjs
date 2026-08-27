@@ -10,6 +10,7 @@ if (!directory) throw new Error("LEANRX_TOGGLE_DIST is required");
 const files = new Set([
   "ToggleLab.mjs",
   "leanrx_dom.mjs",
+  "leanrx_form_events.mjs",
   "leanrx_region.mjs",
 ]);
 let server;
@@ -631,6 +632,58 @@ test("a committed label is stored trimmed and the draft re-mirrors it (ADR-0054)
     .getByRole("textbox", { name: "Item editor" }).fill("\ttabbed label\t");
   await page.locator("#items > li").nth(0).getByRole("button", { name: "Commit item" }).click();
   await expect(page.locator("#items > li .item-label")).toHaveText(["tabbed label"]);
+});
+
+test("Add on a whitespace-only draft is a whole-event no-op (ADR-0055)", async ({ page }) => {
+  await mountToggle(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  await draft.fill(" \t ");
+  const beforeTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  const beforeRegion = await regionMetrics(page);
+  // The skip guard evaluates the trimmed component draft before the
+  // transaction begins: the whitespace-only Add returns from the dispatch
+  // function with no begin bookkeeping, no event trace, no write, no
+  // append, and no region touch.
+  await page.getByRole("button", { name: "Add todo" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  // The draft is not written either — the guard hit is a no-op, not a
+  // reset: the controlled input keeps the whitespace text.
+  await expect(draft).toHaveValue(" \t ");
+  const afterTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  // [begins, commits, writes, …, trace, …]: the whole transaction shell was
+  // skipped — counters and the trace list are exactly the pre-click values.
+  expect(afterTx).toEqual(beforeTx);
+  expect(await regionMetrics(page)).toEqual(beforeRegion);
+});
+
+test("Add on a valid draft appends the trimmed label and resets the draft (ADR-0055)", async ({ page }) => {
+  await mountToggle(page);
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  await draft.fill("  buy milk \t");
+  const before = await regionMetrics(page);
+  // The guard miss appends one row whose label (and mirrored row draft) is
+  // the ASCII-trimmed component draft, and resets the draft through the
+  // same transaction — the ADR-0038 controlled reflection empties the
+  // input.
+  await page.getByRole("button", { name: "Add todo" }).click();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["buy milk"]);
+  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(draft).toHaveValue("");
+  const after = await regionMetrics(page);
+  // [mounts, updates, moves, disposals]: the append is one row mount, and
+  // the empty-region rebuild counts its one insertion before the anchor as
+  // a placement — never an update or a disposal.
+  expect(after[0]).toBe(before[0] + 1);
+  expect(after[1]).toBe(before[1]);
+  expect(after[2]).toBe(before[2] + 1);
+  expect(after[3]).toBe(before[3]);
+  // The appended row is a full citizen of the row vocabulary: the mirrored
+  // draft enters the editor trimmed.
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  await expect(page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" })).toHaveValue("buy milk");
 });
 
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {

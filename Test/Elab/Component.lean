@@ -228,6 +228,28 @@ private def verifyToggle
       (fun filter => (filter.region, filter.field.index, filter.arms)) ==
       [("items", 1, [("active", 2, "false"), ("completed", 2, "true")])] do
     throw <| IO.userError "toggle filter view lost its state field or arm table"
+  /- The ADR-0055 component-scope add path: the controlled new-todo draft is
+  the per-keystroke `setDraft` typed event, and `addTodo` carries the sealed
+  skip guard — subject the trimmed component draft (state slot 2), the guard
+  read in the event summary — with the miss appending one four-field row and
+  resetting the draft in the same update. -/
+  unless checked.spec.typedEvents.toList.map (·.name) == ["setDraft"] do
+    throw <| IO.userError "toggle typed event inventory changed"
+  match checked.spec.events.toList.find? (·.name == "addTodo") with
+  | none => throw <| IO.userError "toggle guarded add event disappeared"
+  | some event =>
+      unless event.guard?.map (fun guard => (guard.field.index, guard.trimmed)) ==
+          some (2, true) do
+        throw <| IO.userError "toggle add event lost its skip guard"
+      unless event.update.regionAppendTargets == [("items", 4)] do
+        throw <| IO.userError "toggle add event lost its append target"
+      unless event.update.directWriteTargets == [2] do
+        throw <| IO.userError "toggle add event lost its draft reset"
+  match checked.eventSummaries.toList.find? (·.name == "addTodo") with
+  | none => throw <| IO.userError "toggle add event summary disappeared"
+  | some summary =>
+      unless summary.directReads == [2] do
+        throw <| IO.userError "toggle add event summary lost the guard read"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [

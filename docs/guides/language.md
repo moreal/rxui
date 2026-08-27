@@ -561,6 +561,45 @@ component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
 Escape stays unguarded by choice: reverting an empty draft restores the
 label instead of destroying the row.
 
+A component event may carry a *skip-if guard* (ADR-0055): `event add := if
+trim draft == "" then skip else (append roster (trim draft), set draft
+"");` compares one `String` state field — raw or behind the `trim` unary,
+which staged `rx%` expressions now share with row scope (`trim field` or
+`trim (expr)`, ASCII whitespace stripped from both ends and emitted as the
+same `asciiTrimPattern` replace) — against the empty string literal when
+the event dispatches. A guard hit makes the whole event a no-op before the
+transaction begins: no write, no append, no dispatch, and no trace. A miss
+runs the else-steps as one ordinary transaction. The empty literal is the
+entire predicate language — no other literal, no negation, no conjunction,
+and the sealed `skip` is the only hit — TodoMVC's add contract, not a
+conditional event vocabulary. Together with a controlled input (ADR-0038)
+this closes ADR-0054's component-scope gap: "a whitespace-only Add is
+ignored; a valid draft appends the trimmed label and resets the draft". The
+guard subject must be a `String` source (`LRX-TYPE-114`), with
+`LRX-ELAB-123` pinning the surface:
+
+```lean
+component NewTodoMini (schema := NewTodoMiniSchema) where {
+  state newTodoDraft : String := "";
+  event add := if trim newTodoDraft == "" then skip
+    else (append roster (trim newTodoDraft), set newTodoDraft "");
+  event setDraft (value : String) := set newTodoDraft value;
+  region roster (label) := jsx% <li> [
+    <span> [{label}],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <input ariaLabel="New todo" value={rx% newTodoDraft} onInput={setDraft}/>,
+    <button type="button" onClick={add}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
+Enter-to-add stays a recorded gap: component scope has no key branching
+(`when` arms are row vocabulary), so the add contract binds to the button
+click path.
+
 A static view element may select its `class`, `aria-pressed`, or `disabled`
 from component state (ADR-0045):
 `class={if filter == "all" then "selected" else ""}` selects between two

@@ -51,6 +51,12 @@ def run : IO Unit := do
     (RxExpr.binary .stringAppend
       (RxExpr.unary .intToString (RxExpr.unary .intNeg (RxExpr.read count)))
       (RxExpr.read labelField))
+  expectEqual "trim" (rx% trim labelField)
+    (RxExpr.unary .stringTrim (RxExpr.read labelField))
+  expectEqual "trim composed" (rx% trim (labelField ++ "!"))
+    (RxExpr.unary .stringTrim
+      (RxExpr.binary .stringAppend (RxExpr.read labelField)
+        (RxExpr.literal (.string "!"))))
   let staged := rx% count * 2
   expectEqual "staged reuse" (rx% if staged < 10 then staged else count)
     (RxExpr.ifThenElse

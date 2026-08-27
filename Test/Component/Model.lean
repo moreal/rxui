@@ -765,6 +765,40 @@ def run : IO Unit := do
   | .ok _ => pure ()
   expectError "LRX-VIEW-040" (withKeys { keysEvent with action := .keySelect [
     ("Enter", ⟨[(0, .lit "a")], some ⟨.trim .payload, ""⟩⟩)] }).check
+  /- ADR-0055 sealed component-event skip guards, exercised through forged
+  specifications: a guarded event over a String source checks, keeps its
+  guard, and records the guard read in its summary; LRX-TYPE-114 rejects a
+  guard on a derived value — the `Field Γ String` type already makes a
+  cross-typed or out-of-bounds subject unrepresentable, and the empty
+  literal is fixed by construction. -/
+  let guardedSpec : ComponentSpec (.field "draft" String .empty) :=
+    { name := "Guarded"
+      values := #[ValueSpec.state
+        (.here : Field (.field "draft" String .empty) String) (.string "")]
+      events := #[{
+        name := "add"
+        update := .set (.here : Field (.field "draft" String .empty) String)
+          (RxExpr.literal (.string ""))
+        guard? := some { field := .here, trimmed := true }
+      }]
+      view := View.node .p [.text "guarded"] }
+  match guardedSpec.check with
+  | .error error =>
+      throw <| IO.userError s!"forged guarded event rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.events.toList.map (fun event =>
+          event.guard?.map fun guard => (guard.field.index, guard.trimmed)) ==
+          [some (0, true)] do
+        throw <| IO.userError "forged guarded event lost its guard"
+      unless checked.eventSummaries.toList.map (·.directReads) == [[0]] do
+        throw <| IO.userError "forged guarded event summary lost the guard read"
+  let guardOnDerived : ComponentSpec CounterSchema :=
+    { spec with events := #[{
+        name := "badGuard"
+        update := .set count (RxExpr.literal (.int 0))
+        guard? := some { field := parity, trimmed := false }
+      }] }
+  expectError "LRX-TYPE-114" guardOnDerived.check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check

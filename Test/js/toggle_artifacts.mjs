@@ -17,17 +17,19 @@ if (
   // ADR-0048 level.
   manifest.runtimeAbi !== 16 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
-  JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "string"]) ||
-  manifest.sourceCount !== 2 ||
+  JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "string", "string"]) ||
+  manifest.sourceCount !== 3 ||
   manifest.derivedCount !== 0 ||
   manifest.textSinkCount !== 1 ||
-  manifest.eventCount !== 6 ||
-  JSON.stringify(manifest.hostImports) !==
-    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs"]) ||
+  manifest.eventCount !== 8 ||
+  JSON.stringify(manifest.hostImports) !== JSON.stringify([
+    "./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_region.mjs",
+  ]) ||
   JSON.stringify(manifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
-    "keyed-regions", "typed-row-events", "row-key-branches", "row-guards",
-    "row-trim", "row-branches", "row-reflects", "row-focus", "row-aggregates",
+    "typed-events", "event-guards", "controlled-props", "keyed-regions",
+    "typed-row-events", "row-key-branches", "row-guards", "row-trim",
+    "row-branches", "row-reflects", "row-focus", "row-aggregates",
     "region-broadcasts", "region-filters",
   ])
 ) {
@@ -45,14 +47,30 @@ for (const required of [
   // Branch Lab's exactly — no new host export and no ABI bump for the kinds,
   // the aggregates, the broadcasts, or the filter view.
   "import { createElement, createText, setAttribute, append, listen, setText, makeDisposer, setProperty, setKey, childAt, listenDelegatedCells, focus } from \"./leanrx_dom.mjs\";",
+  "import { listenValue } from \"./leanrx_form_events.mjs\";",
   "import { createKeyedRegion, detach } from \"./leanrx_region.mjs\";",
+  // The ADR-0055 controlled new-todo input rides the ADR-0038 path: the
+  // per-keystroke typed event through the existing listenValue export.
+  "  const off_0 = listenValue(node_3, \"input\", state, context, $lrx_typed_event_0);",
+  // The ADR-0055 sealed skip guard: the guarded add dispatch returns before
+  // the transaction begins on a whitespace-only draft — no begin
+  // bookkeeping, no event trace, no write, no append, no region touch. The
+  // subject is the ASCII-trimmed component draft, riding the ADR-0054
+  // asciiTrimPattern emission inline.
+  "function $lrx_event_1(context, ignored) {",
+  "  if (state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\") {\n    return null;\n  }\n  if (tx[0] === 0) {",
+  // The guard miss appends one row with the trimmed label mirrored into the
+  // row draft, then resets the component draft — one transaction.
+  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1], state[2]), $lrx_event_1_append_0_1(state[0], state[1], state[2]), $lrx_event_1_append_0_2(state[0], state[1], state[2]), $lrx_event_1_append_0_3(state[0], state[1], state[2])]);",
+  "function $lrx_event_1_append_0_0(added, filter, draft) {\n  return draft[\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n}",
+  "function $lrx_event_1_write_1(added, filter, draft) {\n  return \"\";\n}",
   // One structural delegated listener per bound kind, in registration order,
   // each with its own static per-cell action array (ADR-0041/0046/0049).
-  "const region_off_0 = listenDelegatedCells(node_22, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
-  "const region_off_0_dblclick = listenDelegatedCells(node_22, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
-  "const region_off_0_input = listenDelegatedCells(node_22, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
-  "const region_off_0_keydown = listenDelegatedCells(node_22, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"keys\", \"\", \"\"]);",
-  "const region_off_0_change = listenDelegatedCells(node_22, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
+  "const region_off_0 = listenDelegatedCells(node_25, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
+  "const region_off_0_dblclick = listenDelegatedCells(node_25, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
+  "const region_off_0_input = listenDelegatedCells(node_25, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
+  "const region_off_0_keydown = listenDelegatedCells(node_25, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"keys\", \"\", \"\"]);",
+  "const region_off_0_change = listenDelegatedCells(node_25, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
   // The ADR-0052 key-branched selection: one eventKey equality per arm
   // inside the existing action match — a matched key runs the ADR-0043
   // scan-evaluate-assign-queue sequence, a non-matching key falls through
@@ -82,11 +100,11 @@ for (const required of [
   // (ADR-0047/0048): replacement arm only.
   "    detach(childAt(branch_cell_0, 0));",
   "    if (!branch_want_0) {\n      focus(childAt(branch_cell_0, 0));\n    }",
-  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
+  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, off_6, off_7, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
   // The ADR-0050 region record carries the count refs and numeric cache in
   // two region-local slots behind the pending slot, and the ADR-0051 filter
   // slot holds the container element behind them.
-  "const regions = [[region_0, [], 0, false, [], [count_text_19, count_text_21], [0, 0], node_22]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_24], [0, 0], node_25]];",
   // The broadcast writes every row from the sealed row expression and raises
   // the dirty flag; the predicate removal keeps the non-matching rows.
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n  }\n  regions[0][3] = true;",

@@ -88,6 +88,8 @@ fixtures=(
   Test/fixtures/compile-fail/RowGuardUnknownField.lean
   Test/fixtures/compile-fail/RowTrimGuardSubject.lean
   Test/fixtures/compile-fail/RowTrimUnknownField.lean
+  Test/fixtures/compile-fail/EventGuardLiteral.lean
+  Test/fixtures/compile-fail/EventGuardHitStep.lean
 )
 fragments=(
   "Constructor for"
@@ -176,6 +178,8 @@ fragments=(
   "error[LRX-ELAB-122]"
   "error[LRX-ELAB-122]"
   "error[LRX-ELAB-115]"
+  "error[LRX-ELAB-123]"
+  "error[LRX-ELAB-123]"
 )
 
 for index in "${!fixtures[@]}"; do

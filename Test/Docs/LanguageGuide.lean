@@ -332,6 +332,28 @@ component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
   ];
 }
 
+/- The skip-guarded component event snippet from guide section 7
+(ADR-0055). -/
+abbrev NewTodoMiniSchema : Schema := .field "newTodoDraft" String .empty
+
+def newTodoDraft : Field NewTodoMiniSchema String := .here
+
+component NewTodoMini (schema := NewTodoMiniSchema) where {
+  state newTodoDraft : String := "";
+  event add := if trim newTodoDraft == "" then skip
+    else (append roster (trim newTodoDraft), set newTodoDraft "");
+  event setDraft (value : String) := set newTodoDraft value;
+  region roster (label) := jsx% <li> [
+    <span> [{label}],
+    <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
+  ];
+  view := jsx% <main> [
+    <input ariaLabel="New todo" value={rx% newTodoDraft} onInput={setDraft}/>,
+    <button type="button" onClick={add}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
 /- The state-scoped attribute selection snippet from guide section 7
 (ADR-0045). -/
 abbrev FilterMiniSchema : Schema := .field "filter" String .empty
@@ -541,6 +563,18 @@ def run : IO Unit := do
           "language-guide guarded snippet lost its remove-if guards"
   | .error error =>
       throw <| IO.userError s!"language-guide guarded component rejected: {error.render}"
+  match NewTodoMini_check with
+  | .ok adding =>
+      unless adding.spec.events.toList.map (fun event =>
+          (event.name,
+            event.guard?.map fun guard => (guard.field.index, guard.trimmed))) ==
+          [("add", some (0, true))] do
+        throw <| IO.userError "language-guide skip-guard snippet lost its guard"
+      unless (adding.spec.events.toList.map (·.update.regionAppendTargets)) ==
+          [[("roster", 1)]] do
+        throw <| IO.userError "language-guide skip-guard snippet lost its append"
+  | .error error =>
+      throw <| IO.userError s!"language-guide skip-guard component rejected: {error.render}"
   match FilterMini_check with
   | .ok selecting =>
       unless selecting.view.attrSelects.map (·.select.name) ==

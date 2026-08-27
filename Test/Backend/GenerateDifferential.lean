@@ -131,6 +131,7 @@ private def emitModules (directory : System.FilePath) : IO Unit := do
   writeModule directory "nat_to_int.mjs" #[input "value" .nat] <| unaryExpr .natToInt
   writeModule directory "int_to_string.mjs" #[input "value" .int] <| unaryExpr .intToString
   writeModule directory "nat_to_string.mjs" #[input "value" .nat] <| unaryExpr .natToString
+  writeModule directory "string_trim.mjs" #[input "value" .string] <| unaryExpr .stringTrim
   writeModule directory "int_add.mjs" #[input "left" .int, input "right" .int] <|
     binaryExpr .intAdd
   writeModule directory "int_sub.mjs" #[input "left" .int, input "right" .int] <|
@@ -199,6 +200,15 @@ private def cases : List Case := [
     expected := .string (UnaryPrim.intToString.eval (-9007199254740993)) },
   { moduleName := "nat_to_string.mjs", args := [.bigint 9007199254740993],
     expected := .string (UnaryPrim.natToString.eval 9007199254740993) },
+  /- The ADR-0055 trim unary: the emitted asciiTrimPattern replace must agree
+  with Lean's ASCII trim on interior whitespace, whitespace-only strings, and
+  Unicode whitespace (NBSP stays — deliberately not String.prototype.trim). -/
+  { moduleName := "string_trim.mjs", args := [.string "  \t린 Rx \r\n"],
+    expected := .string (UnaryPrim.stringTrim.eval "  \t린 Rx \r\n") },
+  { moduleName := "string_trim.mjs", args := [.string " \t\r\n"],
+    expected := .string (UnaryPrim.stringTrim.eval " \t\r\n") },
+  { moduleName := "string_trim.mjs", args := [.string " \u00A0x\u00A0 "],
+    expected := .string (UnaryPrim.stringTrim.eval " \u00A0x\u00A0 ") },
   intBinary "int_add.mjs" 9007199254740993 9 (BinaryPrim.intAdd.eval 9007199254740993 9),
   intBinary "int_sub.mjs" (-7) 5 (BinaryPrim.intSub.eval (-7) 5),
   intBinary "int_mul.mjs" (-7) 5 (BinaryPrim.intMul.eval (-7) 5),
