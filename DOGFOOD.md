@@ -2361,3 +2361,104 @@ remove-or-commit; the key set stays sealed at Enter/Escape; `s!`
 interpolation absent from row scope; branch cells single-level and
 two-branch with exact click/dblclick agreement; and child instrumentation
 still unreachable through the parent disposer.
+
+## Region-checked reflection — the toggle-all display half
+
+### Scenario exercised
+
+The ADR-0060 round: TodoMVC's toggle-all display parity — the checkbox
+that is checked exactly while every row is complete — closed with no host
+change and no ABI bump. The sealed region-count boolean gained its second
+export: `checked={count items (done == "false") == 0}` on Toggle Lab's
+toggle-all checkbox reflects "no row is still active" into the box's
+`checked` property, riding the exact ADR-0058/0059 machinery — the same
+region-touch re-evaluation, the same shared attr slots, the same
+`setProperty` export, the same boolean cache, with `attr:{index}:checked`
+labels. The box mounts checked (an empty region has no row failing the
+predicate — vacuously all complete), the first not-done append unchecks
+it, the `completeAll` broadcast re-checks it, untoggling the last done
+row or appending unchecks it again, the ✕ removal of the last not-done
+row re-checks it through the ordinary reconcile, `clearCompleted`
+draining the region restores the vacuous truth as an evaluate-only sweep
+(one evaluation, no write), and a filter change alone re-evaluates
+nothing while every not-done row is filter-hidden. Two static-scope rules
+shipped under the new `LRX-VIEW-043`: the selection demands a static
+`type="checkbox"` input (the ADR-0049 origin rule in static scope), and
+the box's `onChange={completeAll}` is the payload-less toggle binding — a
+static change binding naming a plain component event, mounted through the
+plain `listen` export with the delegated checked payload discarded.
+
+### What was pleasant
+
+The whole selection was one constructor away: `checkedIfEmpty` is
+`hiddenIfEmpty` with the property name flipped, so the model, the
+rewrite, the sweep, and the mount block all extended by pattern-match
+arms over shapes that already existed — the `regionSubject?` /
+`regionPredicate?` accessors even unified the two selections' sweep
+lowering into one code path, deleting the hidden-specific names from the
+backend. The payload-less change binding cost nothing at the host: the
+plain `listen` export a click binding uses already delivers the change
+event, and the elaborator only had to stop insisting that `change`
+resolve a typed value event when the named event is plain. The
+duplicate-property guard fell out of the existing LRX-VIEW-021 check by
+appending the selection names to the prop names.
+
+### Friction encountered
+
+The uncheck gesture is a genuine trap the gate now documents: clicking
+the checked box fires `completeAll`, whose equal-value broadcast changes
+no row, so the sweep sees no flip and leaves the cache true while the
+browser keeps the user's visual uncheck — the DOM and the cache disagree
+until the next region touch. That divergence is the honest boundary of
+the display half, pinned as an evaluate-only step with the DOM reading
+false. And the artifact gate's long sweep pin had to absorb the checked
+scan inside the same `if (region_touched_0)` block — the pinned string is
+now three subjects long, which is the price of pinning the sweep as one
+literal.
+
+### Bugs found
+
+No framework defect surfaced: the forged model gates (accepted predicate
+and total checked selections with their `select:checked:r:0:x` /
+`select:checked:r` debug markers, boolean value type, and graph
+exclusion; the unknown-region and out-of-bounds LRX-VIEW-042; the
+non-checkbox rejections and the controlled-beside-selection
+LRX-VIEW-021), the three new compile-fail fixtures (threshold
+LRX-ELAB-125, unknown field LRX-ELAB-119, non-checkbox LRX-VIEW-043),
+the updated elaborator, artifact, and guide gates, and all Toggle Lab
+browser gates (the three new ADR-0060 gates included) passed.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of every other
+lab and of the js-framework-benchmark bundle — `main.mjs` and manifest
+included — is byte-identical to the HEAD baseline (full before/after
+builds into the scratchpad); only Toggle Lab's module, manifest (gaining
+`region-checked`), and graph (source spans only — the selection joins no
+graph node) change. A checked selection costs one row-table scan per
+region-touching transaction — the ADR-0050 count-text cost, and only
+there: a filter change skips it entirely — and the boolean cache keeps
+every non-flip write-free: the browser gates pin the not-done append and
+the completeAll broadcast as one evaluation and one write each, and the
+clearCompleted vacuous truth as one evaluation and zero writes.
+
+### Follow-up issue or commit
+
+`feat(component): reflect the region count into the toggle-all checkbox
+(ADR-0060)`, `test(component): forge the region-checked gates and teach
+the guide`, and `docs(adr): accept the region-checked reflection
+(ADR-0060)`. Remaining gaps carried forward: toggle-all phase 2 (a
+delegated checked payload flowing into a component-scope broadcast —
+`event toggleAll (checked : String) := update items (set done checked)` —
+the ADR-0050 broadcast only carries sealed row expressions) is the next
+round's candidate; the component-scope Escape arm is sealed but unproven
+(no new-todo revert contract exists to prove it); affordance-contract
+agreement stays ADR-0059's first open question; the ADR-0050 predicate
+removal, ADR-0051 filter arms, ADR-0044 row class selection, and
+ADR-0049 row checked reflection still compare raw fields; the guard
+literal is sealed at the empty string; row guards stay single-field
+remove-or-commit; the key set stays sealed at Enter/Escape; `s!`
+interpolation absent from row scope; branch cells single-level and
+two-branch with exact click/dblclick agreement; child instrumentation
+still unreachable through the parent disposer; and the items-left
+singular/plural text ("1 item left") stays an unexpressed candidate.
