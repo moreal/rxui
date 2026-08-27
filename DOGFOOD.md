@@ -1662,3 +1662,90 @@ predicates share those sealed shapes, `s!` interpolation absent from row
 scope (`++` only), branch cells single-level and two-branch only with
 exact click/dblclick agreement, and child instrumentation still
 unreachable through the parent disposer.
+
+## Sealed row key branching — Toggle Lab Enter-commit and Escape-revert
+
+### Scenario exercised
+
+The ADR-0052 round: the TodoMVC editor's keyboard contract — commit on
+Enter, revert on Escape, ignore everything else — closed with no host
+change and no ABI bump. `row items keys (pressed : String) :=
+when "Enter" (set label draft, set mode "view") then when "Escape"
+(set draft label, set mode "view")` is the sealed key table: the declared
+parameter is the discriminant, named in the head and compared implicitly by
+each arm — the ADR-0051 filter-table shape carried into row scope — and a
+key outside the sealed Enter/Escape set is a no-op (no row scan, no field
+write, no `updateAt`, no region trace). The equality branches run inside
+the generated region dispatch function over the `eventKey` argument
+`listenDelegatedCells` has passed since ABI 15; the keydown listener and
+its per-cell action array were already paid for by ADR-0046. Three new
+Toggle Lab browser gates pin Enter committing the draft as exactly one
+retained-row update with identity preserved, Escape restoring the pre-edit
+draft (with the next edit entry pre-filled through the value reflection and
+a commit-after-revert round-tripping the restored text), and non-matching
+keys (`ArrowLeft`, `Shift`) moving no region metrics while keeping the
+editor's branch, value, and focus.
+
+### What was pleasant
+
+The evaluation the goal asked for — dispatcher-internal key equality versus
+a new delegated kind — resolved decisively on existing invariants: minting
+`keydownEnter`/`keydownEscape` kinds would have multiplied the listener
+registrations, per-kind action arrays, and ADR-0047 cross-branch agreement
+rules by the key set (and ADR-0049 had already rejected the open kind
+table), while the dispatch function held the unread `eventKey` argument all
+along. The emitter refactor fell out cleanly: the ADR-0043
+scan-evaluate-assign-queue sequence extracted into one shared
+`rowUpdateApplyStmts` helper that the plain update action and each key arm
+now both call, and every existing lab's artifact gate proved the
+refactoring byte-identical. The `when` arm reused the ADR-0051 application
+term shape unchanged, so the grammar needed no new syntax rule — arms are
+plain terms behind the existing `then` separator.
+
+### Friction
+
+The arm parser had to live inside the *typed* row item only: a `when` arm
+in a payload-less `row` item pattern-matches the generic
+`set field (expr)` step shape closely enough that the default error
+message pointed at the wrong repair, so `LRX-ELAB-121` special-cases it
+("declares a String payload parameter"). The environment audit wanted one
+new exact entry (`RowAction.keySelect.injEq`), and the `verifyToggle`
+elaborator gate pins the whole row event vocabulary as one list literal,
+so the new event re-pinned the editor's binding list too. Choosing where
+the sealed key set lives took a moment — it sits beside `RowAction` as
+`RowAction.keyLiterals`, so validation and the ADR name one authority.
+
+### Bugs found
+
+No framework defect surfaced: the model gates (ten new LRX-VIEW-039
+rejections plus the good forged table), the elaborator and guide-snippet
+gates, three new compile-fail fixtures, the updated artifact gate, and all
+nineteen browser gates (the three ADR-0052 gates included) passed on their
+first full run.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of the
+js-framework-benchmark bundle — `main.mjs` and its manifest included — is
+byte-identical to the HEAD baseline (compared via a stash-swap build; only
+the `.leanrx-bundle-owner` marker differs, and it embeds the output
+directory name). Components without a key-branched event emit
+byte-identical modules — the shared-helper refactoring of the dispatch
+emitter is proven by every other lab's unchanged artifact gate — and
+Toggle Lab's import line is byte-identical to Branch Lab's. A matched key
+costs the same scan-and-drain as the OK button's update; a non-matching
+key costs one empty transaction, the per-keystroke price ADR-0046 already
+accepted for `retype`.
+
+### Follow-up issue or commit
+
+`feat(component): branch keydown row events on sealed key literals
+(ADR-0052)`, `test(component): forge the key-branch gates and teach the
+guide`, and `docs(adr): accept the sealed row key branching (ADR-0052)`.
+Remaining gaps carried forward: the key set is sealed at Enter/Escape,
+arms select assignment stages only (no key-branched `remove` — TodoMVC's
+destroy-on-empty-commit still needs row-field guards that do not exist),
+filter arms and count predicates stay single-field `String` equality, `s!`
+interpolation absent from row scope (`++` only), branch cells single-level
+and two-branch only with exact click/dblclick agreement, and child
+instrumentation still unreachable through the parent disposer.
