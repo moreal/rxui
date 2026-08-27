@@ -55,6 +55,7 @@
 | [0051](docs/adr/0051-sealed-region-filter-views.md) | Accepted | Select keyed row visibility through a sealed filter table | 2026-08-27 |
 | [0052](docs/adr/0052-sealed-row-key-branching.md) | Accepted | Branch keydown row events on sealed key literals | 2026-08-27 |
 | [0053](docs/adr/0053-sealed-row-field-guards.md) | Accepted | Guard row stages on sealed field equality for remove-or-commit | 2026-08-27 |
+| [0054](docs/adr/0054-sealed-row-expression-trim.md) | Accepted | Trim row expressions through one sealed unary for the commit contract | 2026-08-28 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
