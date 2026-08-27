@@ -324,14 +324,19 @@ reflects the equality as `"true"`/`"false"`, and `disabled` reflects it as
 the boolean element property (a `disabled` attribute cannot be cleared by
 assignment, so the property write reuses the existing `setProperty` host
 export). The typed `Field Γ String` makes cross-typed predicates
-unrepresentable. -/
+unrepresentable. The subject may sit behind the one sealed ADR-0054/0055
+trim unary (`trimmed`, ADR-0057): the sweep then compares the
+ASCII-trimmed field value against the literal — the exact equality the
+ADR-0055 skip guard evaluates — so an affordance can agree with a
+dispatch-layer guard by construction. General predicates, negation, and
+composed subjects stay unrepresentable. -/
 inductive AttrSelect (Γ : Schema) where
   | classSelect (field : Field Γ String) (equals whenTrue whenFalse : String)
-      (span : SourceSpan := .generated)
+      (span : SourceSpan := .generated) (trimmed : Bool := false)
   | pressedSelect (field : Field Γ String) (equals : String)
-      (span : SourceSpan := .generated)
+      (span : SourceSpan := .generated) (trimmed : Bool := false)
   | disabledSelect (field : Field Γ String) (equals : String)
-      (span : SourceSpan := .generated)
+      (span : SourceSpan := .generated) (trimmed : Bool := false)
 
 namespace AttrSelect
 
@@ -341,12 +346,17 @@ def name : AttrSelect Γ → String
   | .disabledSelect .. => "disabled"
 
 def fieldIndex : AttrSelect Γ → Nat
-  | .classSelect field _ _ _ _ | .pressedSelect field _ _
-  | .disabledSelect field _ _ => field.index
+  | .classSelect field .. | .pressedSelect field ..
+  | .disabledSelect field .. => field.index
 
 def equals : AttrSelect Γ → String
-  | .classSelect _ equals _ _ _ | .pressedSelect _ equals _
-  | .disabledSelect _ equals _ => equals
+  | .classSelect _ equals .. | .pressedSelect _ equals ..
+  | .disabledSelect _ equals .. => equals
+
+/-- Whether the subject sits behind the sealed trim unary (ADR-0057). -/
+def trimmed : AttrSelect Γ → Bool
+  | .classSelect _ _ _ _ _ trimmed | .pressedSelect _ _ _ trimmed
+  | .disabledSelect _ _ _ trimmed => trimmed
 
 /-- The written value type: `disabled` writes a boolean property; the other
 selections write attribute strings. -/
@@ -355,11 +365,11 @@ def valueType : AttrSelect Γ → RuntimeTypeId
   | .disabledSelect .. => .bool
 
 def span : AttrSelect Γ → SourceSpan
-  | .classSelect _ _ _ _ span | .pressedSelect _ _ span
-  | .disabledSelect _ _ span => span
+  | .classSelect _ _ _ _ span _ | .pressedSelect _ _ span _
+  | .disabledSelect _ _ span _ => span
 
 def debug (select : AttrSelect Γ) : String :=
-  s!"select:{select.name}:{select.fieldIndex}"
+  s!"select:{select.name}:{if select.trimmed then "trim:" else ""}{select.fieldIndex}"
 
 end AttrSelect
 

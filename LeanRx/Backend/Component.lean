@@ -271,15 +271,25 @@ private def rowClassJs (item : Ident) (select : RowClassSelect) : Expr :=
     (.literal (.string select.whenTrue))
     (.literal (.string select.whenFalse))
 
+/-- The sealed ASCII trim emission (ADR-0054/0055/0057): the whitespace strip
+the hand-written Todo backend has always used, aligned with Lean's
+`String.trim` — not the Unicode-aware `String.prototype.trim`. -/
+private def asciiTrimJs (subject : Expr) : Expr :=
+  .call (.index subject (.literal (.string "replace")))
+    (.ofList [.literal .asciiTrimPattern, .literal (.string "")])
+
 /-- Lower one sealed state-scoped attribute selection to its value expression
 (ADR-0045): `class` selects between its two static strings, `aria-pressed`
 reflects the equality as `"true"`/`"false"`, and `disabled` is the bare
-boolean equality written as an element property. -/
+boolean equality written as an element property. A trimmed subject
+(ADR-0057) rides the sealed asciiTrimPattern emission inline — the exact
+equality the ADR-0055 skip guard evaluates. -/
 private def attrSelectJs (state : Ident) (select : AttrSelect Γ) : Expr :=
-  let predicate := Expr.binary .eq (stateAt state select.fieldIndex)
-    (.literal (.string select.equals))
+  let subject := stateAt state select.fieldIndex
+  let subject := if select.trimmed then asciiTrimJs subject else subject
+  let predicate := Expr.binary .eq subject (.literal (.string select.equals))
   match select with
-  | .classSelect _ _ whenTrue whenFalse _ =>
+  | .classSelect _ _ whenTrue whenFalse _ _ =>
       .conditional predicate (.literal (.string whenTrue)) (.literal (.string whenFalse))
   | .pressedSelect .. =>
       .conditional predicate (.literal (.string "true")) (.literal (.string "false"))
@@ -757,10 +767,7 @@ subject wraps it in the asciiTrimPattern replace, and the equality is
 against the empty literal by construction. -/
 private def skipGuardExpr (state : Ident) (guard : EventGuard Γ) : Expr :=
   let subject := stateAt state guard.field.index
-  let subject := if guard.trimmed then
-      Expr.call (.index subject (.literal (.string "replace")))
-        (.ofList [.literal .asciiTrimPattern, .literal (.string "")])
-    else subject
+  let subject := if guard.trimmed then asciiTrimJs subject else subject
   Expr.binary .eq subject (.literal (.string ""))
 
 private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)

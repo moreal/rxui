@@ -332,7 +332,14 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | _ => pure ()
     /- Sealed state-scoped attribute selections (ADR-0045): `class` takes the
     two-branch equality conditional, `aria-pressed`/`disabled` take the bare
-    equality; the field is an ordinary schema `Field` reference. -/
+    equality; the field is an ordinary schema `Field` reference. The subject
+    may sit behind the one sealed trim unary (ADR-0057), matched by name so
+    `trim` stays an ordinary identifier (ADR-0035); any other applied head is
+    a rejected predicate, not a selection. -/
+    let requireTrimHead (attr : Syntax) (head : TSyntax `ident) : MacroM Unit := do
+      unless head.getId.eraseMacroScopes == `trim do
+        Macro.throwErrorAt attr
+          "error[LRX-VIEW-012]: a selection subject is one state field, raw or behind the one trim unary (ADR-0057); general predicates are not selections"
     let mut selectTerms : Array (TSyntax `term) := #[]
     for attr in attrs do
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
@@ -342,14 +349,32 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
           let span ← spanSyntax attr
           selectTerms := selectTerms.push
             (← `(LeanRx.AttrSelect.classSelect $field $lit $whenTrue $whenFalse $span))
+      | `(leanrxJsxAttr| class = {
+            if $head:ident $field:ident == $lit:str
+              then $whenTrue:str else $whenFalse:str }) => do
+          requireTrimHead attr head
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.classSelect $field $lit $whenTrue $whenFalse $span
+              (trimmed := true)))
       | `(leanrxJsxAttr| ariaPressed = { $field:ident == $lit:str }) => do
           let span ← spanSyntax attr
           selectTerms := selectTerms.push
             (← `(LeanRx.AttrSelect.pressedSelect $field $lit $span))
+      | `(leanrxJsxAttr| ariaPressed = { $head:ident $field:ident == $lit:str }) => do
+          requireTrimHead attr head
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.pressedSelect $field $lit $span (trimmed := true)))
       | `(leanrxJsxAttr| disabled = { $field:ident == $lit:str }) => do
           let span ← spanSyntax attr
           selectTerms := selectTerms.push
             (← `(LeanRx.AttrSelect.disabledSelect $field $lit $span))
+      | `(leanrxJsxAttr| disabled = { $head:ident $field:ident == $lit:str }) => do
+          requireTrimHead attr head
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.disabledSelect $field $lit $span (trimmed := true)))
       | _ => pure ()
     let plainAttrs := attrs.filter fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
@@ -357,8 +382,12 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | `(leanrxJsxAttr| value = { $_:term }) | `(leanrxJsxAttr| checked = { $_:term }) => false
       | `(leanrxJsxAttr| class = {
             if $_:ident == $_:str then $_:str else $_:str }) => false
+      | `(leanrxJsxAttr| class = {
+            if $_:ident $_:ident == $_:str then $_:str else $_:str }) => false
       | `(leanrxJsxAttr| ariaPressed = { $_:ident == $_:str }) => false
+      | `(leanrxJsxAttr| ariaPressed = { $_:ident $_:ident == $_:str }) => false
       | `(leanrxJsxAttr| disabled = { $_:ident == $_:str }) => false
+      | `(leanrxJsxAttr| disabled = { $_:ident $_:ident == $_:str }) => false
       | _ => true
     let attrTerms ← plainAttrs.mapM fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
@@ -442,16 +471,16 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
           })
       | `(leanrxJsxAttr| class = { $_:term }) =>
           Macro.throwErrorAt attr
-            "error[LRX-VIEW-012]: a state-scoped class selection is written class={if field == \"literal\" then \"a\" else \"b\"} (ADR-0045); other dynamic attribute values require the logical reference view"
+            "error[LRX-VIEW-012]: a state-scoped class selection is written class={if field == \"literal\" then \"a\" else \"b\"} or class={if trim field == \"literal\" then \"a\" else \"b\"} (ADR-0045/0057); other dynamic attribute values require the logical reference view"
       | `(leanrxJsxAttr| type = { $_:term }) =>
           Macro.throwErrorAt attr
             "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
       | `(leanrxJsxAttr| ariaPressed = { $_:term }) =>
           Macro.throwErrorAt attr
-            "error[LRX-VIEW-012]: a state-scoped aria-pressed selection is written ariaPressed={field == \"literal\"} (ADR-0045)"
+            "error[LRX-VIEW-012]: a state-scoped aria-pressed selection is written ariaPressed={field == \"literal\"} or ariaPressed={trim field == \"literal\"} (ADR-0045/0057)"
       | `(leanrxJsxAttr| disabled = { $_:term }) =>
           Macro.throwErrorAt attr
-            "error[LRX-VIEW-012]: a state-scoped disabled selection is written disabled={field == \"literal\"} (ADR-0045)"
+            "error[LRX-VIEW-012]: a state-scoped disabled selection is written disabled={field == \"literal\"} or disabled={trim field == \"literal\"} (ADR-0045/0057)"
       | `(leanrxJsxAttr| $_:ident = { $_:term }) =>
           Macro.throwErrorAt attr
             "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"

@@ -130,7 +130,22 @@ no trace), a valid draft appends the trimmed label and resets the draft,
 and any other key returns from the dispatch function without touching the
 context at all. The dispatch rides the existing `listenKey` export the
 delegated `key` payload has always used, so once more: no host change and
-no runtime ABI bump. -/
+no runtime ABI bump.
+
+The ADR-0057 trimmed attribute selection closes ADR-0055's third open
+question — the Add affordance: `disabled={trim draft == ""}` is the
+ADR-0045 sealed `disabled` selection whose subject sits behind the one
+ADR-0054/0055 trim unary, so the Add button grays exactly when the
+dispatch-layer skip guard would hit — the same ASCII-trimmed equality,
+riding the same `asciiTrimPattern` emission through the commit sweep's
+evaluate-compare-write shape and the existing `setProperty` export. The
+button mounts disabled (the draft starts empty), stays disabled across
+whitespace-only typing, enables on the first non-whitespace character, and
+re-disables when the guarded add resets the draft. The affordance is not
+the contract (ADR-0055 rejection 2 stands): the skip guard keeps both
+dispatch paths total no-ops wherever they are triggered from, and the
+disabled property is only the sweep's reflection of that same equality.
+Still no host change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -194,7 +209,7 @@ component ToggleLab (schema := ToggleSchema) where {
     <h1> ["Toggle Lab"],
     <input id="new-todo" ariaLabel="New todo" value={rx% draft} onInput={setDraft}
       onKeyDown={confirmAdd}/>,
-    <button type="button" onClick={addTodo}> ["Add todo"],
+    <button type="button" onClick={addTodo} disabled={trim draft == ""}> ["Add todo"],
     <button type="button" onClick={addItem}> ["Add item"],
     <button type="button" onClick={completeAll}> ["Complete all"],
     <button type="button" onClick={clearCompleted}> ["Clear completed"],
