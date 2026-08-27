@@ -1916,3 +1916,89 @@ the key set sealed at Enter/Escape; `s!` interpolation absent from row
 scope; branch cells single-level and two-branch with exact click/dblclick
 agreement; and child instrumentation still unreachable through the parent
 disposer.
+
+## Component-scope add path — Toggle Lab new-todo contract
+
+### Scenario exercised
+
+The ADR-0055 round: TodoMVC's new-todo add contract — the gap ADR-0054's
+first open question recorded — closed with no host change and no ABI
+bump. `RxExpr` gains its `String` trim unary (`trim field` /
+`trim (expr)` in `rx%`, ASCII both-ends, riding the same
+`asciiTrimPattern` emission as the ADR-0054 row trim through the ordinary
+scalar evaluators), and component events gain the sealed skip-if guard:
+`event addTodo := if trim draft == "" then skip else (append items (trim
+draft, trim draft, "false", "view"), set draft "")`. Toggle Lab mirrors
+the draft into a controlled new-todo input (ADR-0038, per-keystroke
+`setDraft`), and the guard hit is a whole-event no-op — the dispatch
+function returns before the transaction begins, so a whitespace-only Add
+leaves the transaction counters, the trace list, the region metrics, the
+counts, and the draft itself exactly untouched — while a valid draft
+appends one row with the trimmed label and resets the draft in the same
+transaction. Enter-to-add is recorded as a gap: component scope has no
+key branching, so the contract is proven through the Add button path.
+
+### What was pleasant
+
+Both halves reused existing machinery to the letter. The `rx%` trim is
+one constructor threaded through `UnaryPrim` → `ReactiveIR` →
+`Lower.rxExpr` → the scalar backend's `UnaryPlan`, and the emitted append
+evaluator came out as exactly the hand-written Todo backend's replace;
+the differential harness pinned Lean-vs-JS agreement (NBSP preserved on
+both sides) with three table rows. The guard slotted into
+`transactionShell` as one optional statement before the begin
+bookkeeping, so "no write, no append, no trace" is true by construction
+rather than by discipline — and unguarded components are byte-identical
+because the statement simply is not emitted.
+
+### Friction
+
+Two environment potholes, no design potholes. `EventSpec` gained an
+optional `guard?` field and the elaborator's positional
+`EventSpec.mk name update span` stopped elaborating — the optParam is not
+auto-filled for that partially-applied shape against the schema abbrev —
+so the generated term now passes `none` explicitly. And Lean's
+`String.trim` is deprecated in v4.33 (`String.trimAscii` returns a
+`Slice`), while the whole core UTF-8 machinery is classical: adding the
+one `stringTrim` case to `RxExpr.eval` pushed `Classical.choice` into the
+transitive axiom manifests of `eval_congr_on_deps` and the eval equation
+lemmas. The environment audit's exact-manifest design earned its keep —
+the change surfaced as three reviewed lines with a comment, not a silent
+drift. The surface ordering rule (plain events before typed events in the
+declaration inventory) bit the guide snippet once (`LRX-ELAB-103`).
+
+### Bugs found
+
+No framework defect surfaced: the model gates (the good guarded event
+with its summary guard-read and the LRX-TYPE-114 derived-subject
+rejection), two new compile-fail fixtures (LRX-ELAB-123 non-empty guard
+literal, LRX-ELAB-123 non-skip guard hit), the trim staging/eval/
+differential gates, the updated elaborator, artifact, and guide gates,
+and all twenty-six Toggle Lab browser gates (the two ADR-0055 gates
+included) passed.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of every other
+lab and of the js-framework-benchmark bundle — `main.mjs` and manifest
+included — is byte-identical to the HEAD baseline (full before/after
+builds into the scratchpad; only Toggle Lab's module, manifest, and graph
+change, gaining the guarded event, the controlled input, and the
+`typed-events`/`event-guards`/`controlled-props` features). The guard
+costs one comparison plus one `replace` at dispatch time, before any
+bookkeeping; a guard hit costs nothing else at all.
+
+### Follow-up issue or commit
+
+`feat(component): close the component-scope add path (ADR-0055)`,
+`test(component): forge the add-path gates and teach the guide`, and
+`docs(adr): accept the component-scope add path (ADR-0055)`.
+Remaining gaps carried forward: Enter-to-add needs a component-scope key
+selection (the ADR-0052 shape lifted out of row scope) or another form;
+the guard literal is sealed at the empty string; the ADR-0045 selections,
+ADR-0050 predicate removal, ADR-0051 filter arms, ADR-0044 class
+selection, and ADR-0049 checked reflection still compare raw fields; row
+guards stay single-field remove-or-commit; the key set stays sealed at
+Enter/Escape; `s!` interpolation absent from row scope; branch cells
+single-level and two-branch with exact click/dblclick agreement; and
+child instrumentation still unreachable through the parent disposer.
