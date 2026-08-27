@@ -828,6 +828,99 @@ test("the affordance mirrors the dispatch guard with the equal-value sweep no-op
   await expect(page.locator("#items > li")).toHaveCount(0);
 });
 
+test("the items wrapper mounts hidden and the first append reveals it (ADR-0058)", async ({ page }) => {
+  await mountToggle(page);
+  const wrapper = page.locator("#items");
+  // Regions mount empty by construction (the ADR-0050 "0" reasoning), so
+  // the wrapper mounts with its hidden property already true — written by
+  // mount before any transaction exists.
+  await expect(wrapper).toBeHidden();
+  expect(await wrapper.evaluate((element) => element.hidden)).toBe(true);
+  // The first append touches the region; the sweep re-evaluates the
+  // row-table emptiness on the count texts' region-touch path and flips
+  // the property through setProperty.
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(wrapper).toBeVisible();
+  expect(await wrapper.evaluate((element) => element.hidden)).toBe(false);
+  const trace = await page.evaluate(() => globalThis.toggleDispose.instrumentation()[7]);
+  expect(trace).toContain("attr:1:hidden:evaluated");
+  expect(trace).toContain("dom:attr:1:hidden:write");
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("removing the last row hides the wrapper again (ADR-0058)", async ({ page }) => {
+  await mountToggle(page);
+  const wrapper = page.locator("#items");
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(wrapper).toBeVisible();
+  // The ✕ removal disposes the last row; the same commit's sweep sees the
+  // empty row table and re-hides the wrapper.
+  await page.locator("#items > li").first()
+    .getByRole("button", { name: "Remove item" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  await expect(wrapper).toBeHidden();
+  // The next append reveals it again, and draining the region through
+  // completeAll + clearCompleted re-hides it — the broadcast and the
+  // predicate removal ride the same region-touch path.
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(wrapper).toBeVisible();
+  await page.getByRole("button", { name: "Complete all" }).click();
+  await expect(wrapper).toBeVisible();
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  await expect(wrapper).toBeHidden();
+  // The guarded empty commit (ADR-0053) removes through the same reconcile:
+  // the wrapper follows the row table there too.
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(wrapper).toBeVisible();
+  await page.locator("#items > li").first().locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").first()
+    .getByRole("textbox", { name: "Item editor" });
+  await editor.fill("");
+  await editor.press("Enter");
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  await expect(wrapper).toBeHidden();
+});
+
+test("a filter hiding every row leaves the wrapper visible (ADR-0058)", async ({ page }) => {
+  await mountToggle(page);
+  const wrapper = page.locator("#items");
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await expect(wrapper).toBeVisible();
+  // Every row is active, so the completed filter hides all of them — but
+  // the visibility subject is the row table's total, not the displayed
+  // rows: the wrapper stays revealed around an all-hidden list.
+  await page.getByRole("button", { name: "Show completed" }).click();
+  await expect(page.locator("#items > li:visible")).toHaveCount(0);
+  // With every row filter-hidden the wrapper has no box to be "visible"
+  // by, so observe the property and the computed display directly: the
+  // wrapper is not hidden — the all-hidden list is a filtered view of a
+  // nonempty row table, not an empty section.
+  expect(await wrapper.evaluate((element) => element.hidden)).toBe(false);
+  expect(await wrapper.evaluate(
+    (element) => getComputedStyle(element).display)).not.toBe("none");
+  await expect(page.locator("#items-left")).toHaveText("2 left of 2");
+  await page.getByRole("button", { name: "Show all" }).click();
+  await expect(page.locator("#items > li:visible")).toHaveCount(2);
+  // A filter change alone never touches the region, so the hidden
+  // selection is not even re-evaluated by it; appending while filtered
+  // keeps the wrapper revealed through the equal-value compare.
+  const evaluated = (tx) =>
+    tx[7].filter((entry) => entry === "attr:1:hidden:evaluated").length;
+  const written = (tx) =>
+    tx[7].filter((entry) => entry === "dom:attr:1:hidden:write").length;
+  const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await add.click();
+  const after = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(after)).toBe(evaluated(before) + 1);
+  expect(written(after)).toBe(written(before));
+  await expect(wrapper).toBeVisible();
+});
+
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();

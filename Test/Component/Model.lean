@@ -273,6 +273,44 @@ def run : IO Unit := do
     { spec with view := (View.node .p [.text "Bad"]
         (selects := [.pressedSelect parity "even" (trimmed := true)])) }
   expectError "LRX-VIEW-032" trimmedPressedOnParagraph.check
+  /- ADR-0058 empty-region visibility: the sealed region-subject `hidden`
+  selection is accepted on the region's wrapper with the boolean value type
+  and its own debug marker, and — like the ADR-0050 count texts — it is
+  region-driven: no planned-graph sink and no state refs. An unknown region
+  is rejected, and a second hidden selection duplicates the attribute. -/
+  let hidingWrapper : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [View.node .ul [View.region "r"]
+          (selects := [.hiddenIfEmpty "r"])]
+        regions := #[rosterRegion] }
+  match hidingWrapper.check with
+  | .error error =>
+      throw <| IO.userError s!"forged hidden reflection rejected: {error.code}"
+  | .ok checked =>
+      unless checked.view.attrSelects.map (fun mounted =>
+          (mounted.select.name, mounted.select.hiddenRegion?,
+            mounted.select.fieldIndex?, mounted.path)) ==
+          [("hidden", some "r", none, [0])] do
+        throw <| IO.userError "forged hidden reflection lost its mounted selection"
+      unless checked.view.attrSelects.map
+          (fun mounted => (mounted.select.debug, mounted.select.valueType)) ==
+          [("select:hidden:r", .bool)] do
+        throw <| IO.userError "forged hidden reflection lost its debug marker"
+      unless (checked.graph.graph.nodes.map (·.name)).toList.all
+          (fun name => !name.startsWith "attr:") do
+        throw <| IO.userError "forged hidden reflection leaked into the planned graph"
+  let hidingUnknownRegion : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [View.node .ul [View.region "r"]
+          (selects := [.hiddenIfEmpty "s"])]
+        regions := #[rosterRegion] }
+  expectError "LRX-VIEW-042" hidingUnknownRegion.check
+  let doubleHidden : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [View.node .ul [View.region "r"]
+          (selects := [.hiddenIfEmpty "r", .hiddenIfEmpty "r"])]
+        regions := #[rosterRegion] }
+  expectError "LRX-VIEW-001" doubleHidden.check
   /- ADR-0046 typed row payloads, exercised through forged specifications. -/
   let renameEvent : RowEventSpec :=
     { name := "rename", action := .update ⟨[(0, .payload)], none⟩, takesPayload := true }

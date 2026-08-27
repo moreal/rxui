@@ -44,12 +44,14 @@ private def verifyEcho (checked : CheckedComponent LeanRxExamples.EchoLab.EchoSc
 private def verifyFilter
     (checked : CheckedComponent LeanRxExamples.FilterLab.FilterSchema) : IO Unit := do
   unless checked.view.attrSelects.map (fun mounted =>
-      (mounted.select.name, mounted.select.fieldIndex, mounted.select.equals,
+      (mounted.select.name, mounted.select.fieldIndex?, mounted.select.equals?,
         mounted.path)) == [
-      ("class", 0, "all", [1, 0]), ("aria-pressed", 0, "all", [1, 0]),
-      ("class", 0, "active", [1, 1]), ("aria-pressed", 0, "active", [1, 1]),
-      ("class", 0, "completed", [1, 2]), ("aria-pressed", 0, "completed", [1, 2]),
-      ("disabled", 0, "all", [2])
+      ("class", some 0, some "all", [1, 0]), ("aria-pressed", some 0, some "all", [1, 0]),
+      ("class", some 0, some "active", [1, 1]),
+      ("aria-pressed", some 0, some "active", [1, 1]),
+      ("class", some 0, some "completed", [1, 2]),
+      ("aria-pressed", some 0, some "completed", [1, 2]),
+      ("disabled", some 0, some "all", [2])
     ] do
     throw <| IO.userError "attribute selections did not become mounted selection sinks"
   unless checked.graph.graph.nodes.map (·.name) == #["filter", "filterText",
@@ -280,14 +282,28 @@ private def verifyToggle
   /- The ADR-0057 trimmed disabled selection: the Add button's affordance is
   the ADR-0045 `disabled` selection whose subject sits behind the sealed
   trim unary — the exact trimmed-draft equality the ADR-0055 skip guard
-  evaluates, reflected as the boolean element property. -/
+  evaluates, reflected as the boolean element property. The ADR-0058
+  empty-region visibility rides beside it: the items list wrapper's
+  `hidden` selection carries the region-count subject — no state field, no
+  compared string literal — mounted on the `<ul>` that hosts the region. -/
   unless checked.view.attrSelects.map (fun mounted =>
-      (mounted.select.name, mounted.select.fieldIndex, mounted.select.equals,
+      (mounted.select.name, mounted.select.fieldIndex?, mounted.select.equals?,
         mounted.select.trimmed, mounted.path)) ==
-      [("disabled", 2, "", true, [2])] do
+      [("disabled", some 2, some "", true, [2]),
+        ("hidden", none, none, false, [11])] do
     throw <| IO.userError "toggle Add affordance lost its trimmed disabled selection"
-  unless checked.view.attrSelects.map (·.select.debug) == ["select:disabled:trim:2"] do
+  unless checked.view.attrSelects.map (·.select.debug) ==
+      ["select:disabled:trim:2", "select:hidden:items"] do
     throw <| IO.userError "toggle Add affordance lost its trimmed debug marker"
+  unless checked.view.attrSelects.map (·.select.hiddenRegion?) ==
+      [none, some "items"] do
+    throw <| IO.userError "toggle list wrapper lost its empty-region visibility subject"
+  /- The hidden selection is region-driven (ADR-0058): like the ADR-0050
+  count texts it joins the region-touch sweep, not the planned graph — the
+  graph keeps exactly the sinks it had before the wrapper's selection. -/
+  unless (checked.graph.graph.nodes.map (·.name)).toList.filter
+      (fun name => name.startsWith "attr:") == ["attr:0:disabled"] do
+    throw <| IO.userError "toggle hidden selection leaked into the planned graph"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [

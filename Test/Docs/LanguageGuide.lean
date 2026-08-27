@@ -243,7 +243,7 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
     <button type="button" onClick={completeAll}> ["Complete all"],
     <button type="button" onClick={clearCompleted}> ["Clear completed"],
     <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
-    <ul ariaLabel="Items"> [<region roster/>]
+    <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>]
   ];
 }
 
@@ -525,6 +525,11 @@ def run : IO Unit := do
             ("clearCompleted", [], [("roster", 1)])] do
         throw <| IO.userError
           "language-guide count snippet lost its broadcast or removal steps"
+      unless counting.view.attrSelects.map (fun mounted =>
+          (mounted.select.name, mounted.select.hiddenRegion?, mounted.path)) ==
+          [("hidden", some "roster", [4])] do
+        throw <| IO.userError
+          "language-guide count snippet lost its empty-region visibility selection"
   | .error error =>
       throw <| IO.userError s!"language-guide count component rejected: {error.render}"
   match FilteredRosterMini_check with
@@ -586,9 +591,9 @@ def run : IO Unit := do
           [("confirm", [("Enter", some (0, true))])] do
         throw <| IO.userError "language-guide key-branch snippet lost its arm table"
       unless adding.view.attrSelects.map (fun mounted =>
-          (mounted.select.name, mounted.select.fieldIndex,
-            mounted.select.equals, mounted.select.trimmed)) ==
-          [("disabled", 0, "", true)] do
+          (mounted.select.name, mounted.select.fieldIndex?,
+            mounted.select.equals?, mounted.select.trimmed)) ==
+          [("disabled", some 0, some "", true)] do
         throw <| IO.userError
           "language-guide trimmed affordance snippet lost its selection"
   | .error error =>

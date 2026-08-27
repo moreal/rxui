@@ -421,10 +421,29 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
     <button type="button" onClick={completeAll}> ["Complete all"],
     <button type="button" onClick={clearCompleted}> ["Clear completed"],
     <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
-    <ul ariaLabel="Items"> [<region roster/>]
+    <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>]
   ];
 }
 ```
+
+A static view element may also follow a region's structural emptiness
+(ADR-0058): `hidden={count region == 0}` reflects `region`'s *total* row
+count against the zero literal into the element's `hidden` boolean
+property, so TodoMVC's main and footer sections can hide exactly while the
+list is empty. The wrapper mounts hidden — regions mount empty by
+construction, the same reasoning that mounts count texts at `"0"` — the
+first append reveals it, and removing the last row (a ✕ removal, a guarded
+empty commit, or `remove region (…)`) hides it again: the commit sweep
+re-evaluates the subject on the same region-touch path the count texts
+ride and writes through the existing `setProperty` export only on a flip
+of the emptiness. The subject is the row table, not the displayed rows, so
+a `filter` hiding every row leaves the section revealed. The subject is
+sealed to one declared region's row total against the zero literal:
+predicate counts, other comparison operators, threshold literals,
+negation, composition, and general aggregate expressions are rejected
+(`LRX-ELAB-125`), an unknown region is rejected (`LRX-ELAB-119` at the
+surface, `LRX-VIEW-042` at the model), and the selection counts as its
+attribute for duplicate detection (`LRX-VIEW-001`).
 
 A `filter` item selects which of a keyed region's rows are *displayed*
 (ADR-0051): `filter region by field := when "literal" (rowField ==
