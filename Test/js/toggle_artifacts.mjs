@@ -13,15 +13,15 @@ if (
   manifest.module !== "ToggleLab.mjs" ||
   typeof manifest.graphHash !== "string" ||
   manifest.graphHash.length === 0 ||
-  // ADR-0049/0050/0051/0052/0055/0056 ship with no host change: the ABI
-  // stays at the ADR-0048 level.
+  // ADR-0049/0050/0051/0052/0055/0056/0061 ship with no host change: the
+  // ABI stays at the ADR-0048 level.
   manifest.runtimeAbi !== 16 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "string", "string"]) ||
   manifest.sourceCount !== 3 ||
   manifest.derivedCount !== 0 ||
   manifest.textSinkCount !== 1 ||
-  manifest.eventCount !== 9 ||
+  manifest.eventCount !== 10 ||
   JSON.stringify(manifest.hostImports) !== JSON.stringify([
     "./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_region.mjs",
   ]) ||
@@ -31,8 +31,8 @@ if (
     "attr-selections", "keyed-regions",
     "typed-row-events", "row-key-branches", "row-guards", "row-trim",
     "row-branches", "row-reflects", "row-focus", "row-aggregates",
-    "region-broadcasts", "region-filters", "region-visibility",
-    "predicate-visibility", "region-checked",
+    "region-broadcasts", "payload-broadcasts", "region-filters",
+    "region-visibility", "predicate-visibility", "region-checked",
   ])
 ) {
   throw new Error("generated Toggle Lab manifest is invalid");
@@ -45,11 +45,12 @@ for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
   }
 }
 for (const required of [
-  // ADR-0049/0050/0051 ride the existing exports: the import line matches
-  // Branch Lab's exactly — no new host export and no ABI bump for the kinds,
-  // the aggregates, the broadcasts, or the filter view.
+  // ADR-0049/0050/0051 ride the existing exports: no new host export and no
+  // ABI bump for the kinds, the aggregates, the broadcasts, or the filter
+  // view. The ADR-0061 payload broadcast adds only the existing ADR-0038
+  // listenChecked export to the form-event import line.
   "import { createElement, createText, setAttribute, append, listen, setText, makeDisposer, setProperty, setKey, childAt, listenDelegatedCells, focus } from \"./leanrx_dom.mjs\";",
-  "import { listenValue, listenKey } from \"./leanrx_form_events.mjs\";",
+  "import { listenValue, listenKey, listenChecked } from \"./leanrx_form_events.mjs\";",
   "import { createKeyedRegion, detach } from \"./leanrx_region.mjs\";",
   // The ADR-0055 controlled new-todo input rides the ADR-0038 path: the
   // per-keystroke typed event through the existing listenValue export. The
@@ -151,11 +152,18 @@ for (const required of [
   // (ADR-0047/0048): replacement arm only.
   "    detach(childAt(branch_cell_0, 0));",
   "    if (!branch_want_0) {\n      focus(childAt(branch_cell_0, 0));\n    }",
-  // The ADR-0060 payload-less toggle binding: the toggle-all box's change
-  // listener names the plain completeAll dispatch through the same listen
-  // export a click binding uses — the delegated checked payload is
-  // discarded, no form-event adapter and no new host export.
-  "  const off_9 = listen(node_26, \"change\", context, null, $lrx_event_2);",
+  // The ADR-0061 toggle-all rebinding: the box's change listener is the
+  // existing listenChecked form-event export handing the delegated checked
+  // boolean to the payload broadcast dispatch — the ADR-0060 payload-less
+  // listen mount is replaced, and still no new host export.
+  "  const off_9 = listenChecked(node_26, \"change\", state, context, $lrx_typed_event_1);",
+  // The ADR-0061 payload broadcast body: the Bool payload lowers to the
+  // "true"/"false" strings exactly as the ADR-0049 row payload does, and
+  // the write body is the shared ADR-0050 broadcast's — every row's done
+  // field from the same evaluate-then-assign loop, then the dirty flag and
+  // the same region trace.
+  "function $lrx_typed_event_1(hostState, context, checked) {",
+  "  tx[7][\"push\"](\"event:toggleAll\");\n  for (const row_item of regions[0][1]) {\n    const row_next_0 = checked ? \"true\" : \"false\";\n    row_item[3] = row_next_0;\n  }\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:items:broadcast\");",
   "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, off_6, off_7, off_8, off_9, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
   // The ADR-0050 region record carries the count refs and numeric cache in
   // two region-local slots behind the pending slot, and the ADR-0051 filter

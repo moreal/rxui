@@ -232,6 +232,7 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
     then set countedAdded (countedAdded + 1);
   event completeAll := update roster (set done "true");
   event clearCompleted := remove roster (done == "true");
+  event toggleAll (checked : Bool) := update roster (set done checked);
   row roster toggle (checked : String) := set done checked;
   region roster (label, done) := jsx% <li> [
     <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
@@ -246,7 +247,7 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
     <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
     <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>],
     <input type="checkbox" ariaLabel="Toggle all"
-      checked={count roster (done == "false") == 0} onChange={completeAll}/>
+      checked={count roster (done == "false") == 0} onCheckedChange={toggleAll}/>
   ];
 }
 
@@ -536,6 +537,13 @@ def run : IO Unit := do
             ("checked", some "roster", some (1, "false"), [5])] do
         throw <| IO.userError
           "language-guide count snippet lost its empty-region visibility selection"
+      /- The ADR-0061 payload broadcast: the toggle-all box's checked payload
+      flows into the roster broadcast as a bare set right-hand side. -/
+      unless counting.spec.typedEvents.toList.map
+          (fun event => (event.name, event.broadcast?, event.targetIndex?)) ==
+          [("toggleAll", some ("roster", [(1, .payload)]), none)] do
+        throw <| IO.userError
+          "language-guide count snippet lost its payload broadcast"
   | .error error =>
       throw <| IO.userError s!"language-guide count component rejected: {error.render}"
   match FilteredRosterMini_check with

@@ -410,6 +410,7 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
     then set countedAdded (countedAdded + 1);
   event completeAll := update roster (set done "true");
   event clearCompleted := remove roster (done == "true");
+  event toggleAll (checked : Bool) := update roster (set done checked);
   row roster toggle (checked : String) := set done checked;
   region roster (label, done) := jsx% <li> [
     <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
@@ -424,7 +425,7 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
     <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
     <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>],
     <input type="checkbox" ariaLabel="Toggle all"
-      checked={count roster (done == "false") == 0} onChange={completeAll}/>
+      checked={count roster (done == "false") == 0} onCheckedChange={toggleAll}/>
   ];
 }
 ```
@@ -472,10 +473,32 @@ alone, the ADR-0049 rule in static scope. Every other dynamic `checked`
 value keeps its meaning (the controlled reflection at component scope, the
 row reflection in row templates), and the count-headed shapes are sealed
 exactly as `hidden`'s (`LRX-ELAB-125`, `LRX-ELAB-119`). The checkbox's
-`onChange` may name a plain component event — the payload-less toggle
-binding, valid only on a checkbox (`LRX-VIEW-043`) — so `completeAll` can
-serve as the toggle-all action; the delegated checked payload is
-discarded, so the uncheck-all path stays unexpressed for now.
+`onChange` may still name a plain component event — the payload-less
+toggle binding, valid only on a checkbox (`LRX-VIEW-043`) — but the
+delegated checked payload it discards can instead drive the whole
+toggle-all contract (ADR-0061, next paragraph).
+
+A typed component event may flow its payload into a region broadcast
+(ADR-0061): `event toggleAll (checked : Bool) := update region (set field
+checked)` is the payload broadcast — the ADR-0050 `update … (set …)` body
+whose right-hand side is the bare payload parameter, bound with
+`onCheckedChange={toggleAll}` on a checkbox exactly like any ADR-0038
+`Bool` event and mounted through the existing `listenChecked` export. The
+delegated checked boolean lowers to the `"true"`/`"false"` strings —
+the ADR-0049 row-payload downgrade at component scope — so checking
+TodoMVC's toggle-all box completes every row and unchecking it un-completes
+every row: one transaction, one region touch, the retained rows re-rendered
+with identity preserved, and the same commit sweep updating the counts and
+every region-count selection together. The vocabulary is sealed tightly:
+only the `Bool` checked payload may broadcast (`LRX-ELAB-126` on a `String`
+parameter), the payload stands alone on a `set` right-hand side — `trim`,
+`++`, comparisons, and every other composition over it are rejected
+(`LRX-ELAB-126`) — the other right-hand sides stay sealed payload-free row
+expressions, the body is exactly one broadcast (no `then`, no append, no
+state write), and the payload appears nowhere else in the component update
+language. The model validates the broadcast against the declared region
+exactly as ADR-0050's (`LRX-TYPE-116`): a payload broadcast that never
+writes its payload is rejected too.
 
 A `filter` item selects which of a keyed region's rows are *displayed*
 (ADR-0051): `filter region by field := when "literal" (rowField ==

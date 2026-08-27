@@ -774,6 +774,79 @@ def run : IO Unit := do
     { goodRegion with events := #[{
         name := "bad", update := .regionBroadcast "r" [(0, .field 1)] }] }
   expectError "LRX-TYPE-111" broadcastReadOutOfBounds.check
+  /- ADR-0061 payload broadcast events, exercised through forged
+  specifications: the Bool checked payload of one typed component event
+  flows into a region broadcast as a bare set right-hand side — no state
+  target, no state write in its summary, and the checked-change binding
+  resolves it through the ADR-0038 payload table. -/
+  let payloadBroadcast : AnyTypedEvent CounterSchema := .boolBroadcast {
+    name := "toggleAll", parameterName := "checked"
+    region := "r", assignments := [(0, .payload)] }
+  let payloadBroadcastSpec : ComponentSpec CounterSchema :=
+    { goodRegion with
+        view := View.node .main [
+          View.node .input [] (attrs := [.inputType .checkbox])
+            (events := [{ kind := .checkedChange, eventName := "toggleAll" }]),
+          View.node .ul [View.region "r"]]
+        typedEvents := #[payloadBroadcast] }
+  match payloadBroadcastSpec.check with
+  | .error error =>
+      throw <| IO.userError s!"forged payload broadcast rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.typedEvents.toList.map (fun event =>
+          (event.name, event.broadcast?, event.targetIndex?,
+            event.payloadType.debug)) ==
+          [("toggleAll", some ("r", [(0, .payload)]), none, "bool")] do
+        throw <| IO.userError "forged payload broadcast lost its body"
+      match checked.eventSummaries.toList.find? (·.name == "toggleAll") with
+      | none => throw <| IO.userError "forged payload broadcast summary disappeared"
+      | some summary =>
+          unless summary.directWrites.isEmpty && summary.effectiveWrites.isEmpty do
+            throw <| IO.userError "forged payload broadcast summary gained state writes"
+  let payloadBroadcastOnValue : ComponentSpec CounterSchema :=
+    { payloadBroadcastSpec with
+        view := View.node .main [
+          View.node .input []
+            (events := [{ kind := .input, eventName := "toggleAll" }]),
+          View.node .ul [View.region "r"]] }
+  expectError "LRX-VIEW-018" payloadBroadcastOnValue.check
+  let payloadBroadcastUnknownRegion : ComponentSpec CounterSchema :=
+    { goodRegion with typedEvents := #[.boolBroadcast {
+        name := "bad", parameterName := "checked"
+        region := "ghost", assignments := [(0, .payload)] }] }
+  expectError "LRX-TYPE-116" payloadBroadcastUnknownRegion.check
+  let payloadBroadcastEmpty : ComponentSpec CounterSchema :=
+    { goodRegion with typedEvents := #[.boolBroadcast {
+        name := "bad", parameterName := "checked"
+        region := "r", assignments := [] }] }
+  expectError "LRX-TYPE-116" payloadBroadcastEmpty.check
+  let payloadBroadcastDuplicate : ComponentSpec CounterSchema :=
+    { goodRegion with typedEvents := #[.boolBroadcast {
+        name := "bad", parameterName := "checked"
+        region := "r", assignments := [(0, .payload), (0, .lit "x")] }] }
+  expectError "LRX-TYPE-116" payloadBroadcastDuplicate.check
+  let payloadBroadcastTargetOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with typedEvents := #[.boolBroadcast {
+        name := "bad", parameterName := "checked"
+        region := "r", assignments := [(1, .payload)] }] }
+  expectError "LRX-TYPE-116" payloadBroadcastTargetOutOfBounds.check
+  let payloadBroadcastComposed : ComponentSpec CounterSchema :=
+    { goodRegion with typedEvents := #[.boolBroadcast {
+        name := "bad", parameterName := "checked"
+        region := "r", assignments := [(0, .trim .payload)] }] }
+  expectError "LRX-TYPE-116" payloadBroadcastComposed.check
+  let payloadBroadcastNeverWrites : ComponentSpec CounterSchema :=
+    { goodRegion with typedEvents := #[.boolBroadcast {
+        name := "bad", parameterName := "checked"
+        region := "r", assignments := [(0, .lit "x")] }] }
+  expectError "LRX-TYPE-116" payloadBroadcastNeverWrites.check
+  let payloadBroadcastReadOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with
+        regions := #[{ rosterRegion with fields := #["label", "done"] }]
+        typedEvents := #[.boolBroadcast {
+          name := "bad", parameterName := "checked"
+          region := "r", assignments := [(0, .payload), (1, .field 5)] }] }
+  expectError "LRX-TYPE-116" payloadBroadcastReadOutOfBounds.check
   let removeIfUnknownRegion : ComponentSpec CounterSchema :=
     { goodRegion with events := #[{
         name := "bad", update := .regionRemoveIf "ghost" 0 "x" }] }

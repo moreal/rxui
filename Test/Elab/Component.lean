@@ -235,8 +235,21 @@ private def verifyToggle
   skip guard — subject the trimmed component draft (state slot 2), the guard
   read in the event summary — with the miss appending one four-field row and
   resetting the draft in the same update. -/
-  unless checked.spec.typedEvents.toList.map (·.name) == ["setDraft"] do
+  unless checked.spec.typedEvents.toList.map (·.name) == ["setDraft", "toggleAll"] do
     throw <| IO.userError "toggle typed event inventory changed"
+  /- The ADR-0061 payload broadcast: `toggleAll` is the Bool typed event
+  whose body is one items broadcast writing the bare checked payload into
+  the `done` field — no state target, no state write in its summary. -/
+  unless checked.spec.typedEvents.toList.map
+      (fun event => (event.broadcast?, event.targetIndex?)) ==
+      [(none, some 2), (some ("items", [(2, .payload)]), none)] do
+    throw <| IO.userError "toggle payload broadcast lost its body or grew a state target"
+  match checked.eventSummaries.toList.find? (·.name == "toggleAll") with
+  | none => throw <| IO.userError "toggle payload broadcast summary disappeared"
+  | some summary =>
+      unless summary.directWrites.isEmpty && summary.directReads.isEmpty &&
+          summary.effectiveWrites.isEmpty do
+        throw <| IO.userError "toggle payload broadcast summary gained state access"
   match checked.spec.events.toList.find? (·.name == "addTodo") with
   | none => throw <| IO.userError "toggle guarded add event disappeared"
   | some event =>
@@ -311,12 +324,14 @@ private def verifyToggle
         (some "items", none, some "items", none),
         (some "items", some (2, "false"), none, some "items")] do
     throw <| IO.userError "toggle list wrapper lost its empty-region visibility subject"
-  /- The ADR-0060 payload-less toggle binding: the checkbox's change binding
-  names the plain `completeAll` event beside the typed and key bindings. -/
+  /- The ADR-0061 toggle-all rebinding: the checkbox's change binding is the
+  ADR-0038 `onCheckedChange` surface naming the payload broadcast — the
+  delegated checked boolean flows into the broadcast instead of being
+  discarded by the ADR-0060 payload-less binding it replaces. -/
   unless checked.view.events.any (fun mounted =>
-      mounted.binding.kind == .change &&
-        mounted.binding.eventName == "completeAll" && mounted.path == [12]) do
-    throw <| IO.userError "toggle-all checkbox lost its payload-less change binding"
+      mounted.binding.kind == .checkedChange &&
+        mounted.binding.eventName == "toggleAll" && mounted.path == [12]) do
+    throw <| IO.userError "toggle-all checkbox lost its payload broadcast binding"
   /- The hidden and checked selections are region-driven (ADR-0058/0060):
   like the ADR-0050 count texts they join the region-touch sweep, not the
   planned graph — the graph keeps exactly the sinks it had before. -/
