@@ -108,6 +108,22 @@ private def compileEvents (inputs : Array Scalar.InputSpec) :
       let (_, state) ← compileUpdate inputs index event.update 0 state
       compileEvents inputs rest (index + 1) state
 
+/-- Compile the arm bodies of the key-branched events (ADR-0056). Each arm is
+one ordinary update body, so it takes the next pseudo event index after the
+plain events — the arm functions look their evaluators up under the same
+`event:{index}:…` keys. -/
+private def compileKeyEvents (inputs : Array Scalar.InputSpec) :
+    List (KeyEventSpec Γ) → Nat → EvalState → Except Error EvalState
+  | [], _, state => pure state
+  | event :: rest, index, state => do
+      let mut state := state
+      let mut index := index
+      for arm in event.arms do
+        let (_, next) ← compileUpdate inputs index arm.update 0 state
+        state := next
+        index := index + 1
+      compileKeyEvents inputs rest index state
+
 private def uint (value : Nat) : Expr := .literal (.number (UInt32.ofNat value))
 
 private def stateAt (state : Ident) (index : Nat) : Expr :=
@@ -198,11 +214,18 @@ private def regionHasUpdates (region : RegionSpec) : Bool :=
     | .update _ | .keySelect _ => true
     | .remove => false
 
+/-- Every component-event update body: the plain events and the arms of the
+key-branched events (ADR-0056), which carry exactly the same step
+vocabulary. -/
+private def eventUpdates (spec : ComponentSpec Γ) : List (Update Γ) :=
+  spec.events.toList.map (·.update) ++
+    spec.keyEvents.toList.flatMap fun event => event.arms.map (·.update)
+
 /-- The regions any component event broadcasts into (ADR-0050). A broadcast
 makes a region's rows mutable exactly as a `row` update event does, so the
 real update-callback body (and its imports) must be emitted for it. -/
-private def broadcastRegionNames (events : Array (EventSpec Γ)) : List String :=
-  events.toList.flatMap fun event => event.update.regionBroadcastTargets.map (·.1)
+private def broadcastRegionNames (spec : ComponentSpec Γ) : List String :=
+  (eventUpdates spec).flatMap fun update => update.regionBroadcastTargets.map (·.1)
 
 /-- Whether one region's rows can mutate after mount: a declared `row` update
 event (ADR-0043) or a component-event broadcast into it (ADR-0050). -/
@@ -728,6 +751,18 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
   ]
   pure { name, params, body := body.toArray }
 
+/-- The ADR-0055 skip guard subject rides the sealed trim emission the row
+lowering uses (ADR-0054): a raw subject reads the state slot, a trimmed
+subject wraps it in the asciiTrimPattern replace, and the equality is
+against the empty literal by construction. -/
+private def skipGuardExpr (state : Ident) (guard : EventGuard Γ) : Expr :=
+  let subject := stateAt state guard.field.index
+  let subject := if guard.trimmed then
+      Expr.call (.index subject (.literal (.string "replace")))
+        (.ofList [.literal .asciiTrimPattern, .literal (.string "")])
+    else subject
+  Expr.binary .eq subject (.literal (.string ""))
+
 private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
     (runtime : RuntimeNames) (eventNames : List String) (event : EventSpec Γ) (eventIndex : Nat) :
     Except Error Function := do
@@ -738,19 +773,8 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
   let regions ← Ident.checked "regions"
   let (_, writes) ← updateStatements evaluators context state tx regions
     checked.spec.regions eventNames checked.spec.values.size eventIndex event.update 0
-  /- The ADR-0055 skip guard subject rides the sealed trim emission the row
-  lowering uses (ADR-0054): a raw subject reads the state slot, a trimmed
-  subject wraps it in the asciiTrimPattern replace, and the equality is
-  against the empty literal by construction. -/
-  let skipIf? := event.guard?.map fun guard =>
-    let subject := stateAt state guard.field.index
-    let subject := if guard.trimmed then
-        Expr.call (.index subject (.literal (.string "replace")))
-          (.ofList [.literal .asciiTrimPattern, .literal (.string "")])
-      else subject
-    Expr.binary .eq subject (.literal (.string ""))
   transactionShell checked evaluators runtime (← eventName eventIndex)
-    #[context, ignored] event.name writes (skipIf? := skipIf?)
+    #[context, ignored] event.name writes (skipIf? := event.guard?.map (skipGuardExpr state))
 
 private def typedEventName (index : Nat) : Except Error Ident :=
   Ident.checked s!"$lrx_typed_event_{index}"
@@ -781,6 +805,55 @@ private def typedEventFunction (checked : CheckedComponent Γ) (evaluators : Eva
   ]
   transactionShell checked evaluators runtime (← typedEventName eventIndex)
     #[hostState, context, payload] event.name writes
+
+private def keyEventName (index : Nat) : Except Error Ident :=
+  Ident.checked s!"$lrx_key_event_{index}"
+
+private def keyArmName (eventIndex armIndex : Nat) : Except Error Ident :=
+  Ident.checked s!"$lrx_key_event_{eventIndex}_arm_{armIndex}"
+
+/-- The generated functions of one key-branched component event (ADR-0056):
+one transaction function per arm — the ordinary guarded event shell over the
+arm's steps, tracing `event:{name}:{key}` — and the dispatch function
+`listenKey` calls, which compares the delegated key payload against each
+sealed literal and hands the matched arm the context. A key outside the
+table (and a matched arm's guard hit) returns before any transaction
+exists: no begin bookkeeping, no event trace, no write, no region touch.
+`bodyIndex` is the pseudo event index of the first arm — the evaluator
+namespace `compileKeyEvents` compiled the arm bodies under. -/
+private def keyEventFunctions (checked : CheckedComponent Γ) (evaluators : EvalState)
+    (runtime : RuntimeNames) (eventNames : List String) (event : KeyEventSpec Γ)
+    (eventIndex bodyIndex : Nat) : Except Error (List Function) := do
+  unless !shellLocals.contains event.parameterName do
+    throw {
+      code := "LRX-BE-028"
+      message := s!"typed event parameter {event.parameterName} shadows a generated local"
+    }
+  let hostState ← Ident.checked "hostState"
+  let context ← Ident.checked "context"
+  let payload ← Ident.checked event.parameterName
+  let state ← Ident.checked "state"
+  let tx ← Ident.checked "tx"
+  let regions ← Ident.checked "regions"
+  let mut functions : List Function := []
+  let mut dispatchBody : List Stmt := []
+  for (arm, armIndex) in event.arms.zipIdx do
+    let (_, writes) ← updateStatements evaluators context state tx regions
+      checked.spec.regions eventNames checked.spec.values.size
+      (bodyIndex + armIndex) arm.update 0
+    let armFn ← keyArmName eventIndex armIndex
+    functions := functions ++ [← transactionShell checked evaluators runtime armFn
+      #[context, ← Ident.checked "ignored"] s!"{event.name}:{arm.key}" writes
+      (skipIf? := arm.guard?.map (skipGuardExpr state))]
+    dispatchBody := dispatchBody ++ [
+      .ifThen (.binary .eq (.ident payload) (.literal (.string arm.key)))
+        (.ofList [.return (call armFn [.ident context, .literal .null])])
+    ]
+  dispatchBody := dispatchBody ++ [.return (.literal .null)]
+  pure (functions ++ [{
+    name := ← keyEventName eventIndex
+    params := #[hostState, context, payload]
+    body := dispatchBody.toArray }])
 
 private structure DomBinding where
   path : List Nat
@@ -1451,7 +1524,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
     s!"region:{region.name}" writes
 
 private def manifest (moduleName : String) (checked : CheckedComponent Γ) : ComponentManifest :=
-  let broadcasts := broadcastRegionNames checked.spec.events
+  let broadcasts := broadcastRegionNames checked.spec
   let graph := checked.graph.toJson
   let hash := graph.toList.foldl
     (fun value char => (value * 16777619 + char.toNat) % 4294967296) 2166136261
@@ -1465,7 +1538,8 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
     sourceCount := checked.sourceCount
     derivedCount := checked.spec.values.size - checked.sourceCount
     textSinkCount := checked.view.textSinks.length
-    eventCount := checked.spec.events.size + checked.spec.typedEvents.size
+    eventCount := checked.spec.events.size + checked.spec.typedEvents.size +
+      checked.spec.keyEvents.size
     hostImports :=
       (if checked.view.events.any (fun mounted =>
           mounted.binding.kind.payload != .none || mounted.binding.kind == .submit) then
@@ -1475,9 +1549,12 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       checked.spec.children.map (·.moduleSpecifier)
     features := #["scalar", "events", "transactions", "instrumentation", "trace"] ++
       (if checked.spec.typedEvents.isEmpty then #[] else #["typed-events"]) ++
-      (if checked.spec.events.toList.any (·.guard?.isSome) then
+      (if checked.spec.events.toList.any (·.guard?.isSome) ||
+          checked.spec.keyEvents.toList.any (fun event =>
+            event.arms.any (·.guard?.isSome)) then
         #["event-guards"]
       else #[]) ++
+      (if checked.spec.keyEvents.isEmpty then #[] else #["event-key-branches"]) ++
       (if checked.view.props.isEmpty then #[] else #["controlled-props"]) ++
       (if checked.view.attrSelects.isEmpty then #[] else #["attr-selections"]) ++
       (if checked.spec.children.isEmpty then #[] else #["child-components"]) ++
@@ -1497,8 +1574,8 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       (if checked.spec.regions.toList.any (fun region =>
             region.events.toList.any (·.action.hasTrim) ||
               region.template.hasTrim) ||
-          checked.spec.events.toList.any (fun event =>
-            event.update.regionBroadcastTargets.any
+          (eventUpdates checked.spec).any (fun update =>
+            update.regionBroadcastTargets.any
               (fun entry => entry.2.any (·.2.hasTrim))) then
         #["row-trim"]
       else #[]) ++
@@ -1514,8 +1591,8 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
         #["row-focus"]
       else #[]) ++
       (if checked.view.regionCounts.isEmpty then #[] else #["row-aggregates"]) ++
-      (if broadcasts.isEmpty && checked.spec.events.toList.all
-          (fun event => event.update.regionRemoveIfTargets.isEmpty) then #[]
+      (if broadcasts.isEmpty && (eventUpdates checked.spec).all
+          (fun update => update.regionRemoveIfTargets.isEmpty) then #[]
       else #["region-broadcasts"]) ++
       (if checked.spec.filters.isEmpty then #[] else #["region-filters"]) ++
       (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
@@ -1524,7 +1601,9 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
 def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Emitted := do
   let runtime ← runtimeNames
   let inputs := inputSpecs checked.spec.values
-  let evaluators ← compileEvents inputs checked.spec.events.toList 0 <|
+  let evaluators ← compileKeyEvents inputs checked.spec.keyEvents.toList
+      checked.spec.events.size <|
+    ← compileEvents inputs checked.spec.events.toList 0 <|
     ← compileProps inputs checked.view.props 0 <|
     ← compileSinks inputs checked.view.textSinks 0 <|
     ← compileValues inputs checked.spec.values.toList {}
@@ -1543,13 +1622,20 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   let disposer ← Ident.checked "disposer"
   let target ← Ident.checked "target"
   let valueCount := checked.spec.values.size
-  let broadcasts := broadcastRegionNames checked.spec.events
+  let broadcasts := broadcastRegionNames checked.spec
   let eventNames := checked.spec.events.toList.map (·.name)
   let typedNames := checked.spec.typedEvents.toList.map (·.name)
   let eventFunctions ← checked.spec.events.toList.zipIdx.mapM fun (event, index) =>
     eventFunction checked evaluators runtime eventNames event index
   let typedEventFunctions ← checked.spec.typedEvents.toList.zipIdx.mapM fun (event, index) =>
     typedEventFunction checked evaluators runtime event index
+  let keyEventNames := checked.spec.keyEvents.toList.map (·.name)
+  let mut keyFunctions : List Function := []
+  let mut keyBodyIndex := checked.spec.events.size
+  for (event, index) in checked.spec.keyEvents.toList.zipIdx do
+    keyFunctions := keyFunctions ++
+      (← keyEventFunctions checked evaluators runtime eventNames event index keyBodyIndex)
+    keyBodyIndex := keyBodyIndex + event.arms.length
   let derivedInitial ← derivedOrder checked |>.mapM fun id => do
     pure (.assign (.index (.ident state) (uint id)) <|
       evaluatorCall (← evaluator evaluators s!"value:{id}") state valueCount)
@@ -1718,10 +1804,15 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             .literal .null, .ident handler
           ]]
     | .value | .key | .checked =>
-        let eventIndex ← match typedNames.idxOf? mounted.binding.eventName with
-          | some value => pure value
-          | none => .error { code := "LRX-BE-026", message := "checked event binding disappeared" }
-        let handler ← typedEventName eventIndex
+        /- A keydown binding may name a key-branched event (ADR-0056); the
+        dispatch function receives the same `listenKey` arguments a typed
+        event's does. -/
+        let handler ← match typedNames.idxOf? mounted.binding.eventName with
+          | some value => typedEventName value
+          | none =>
+              match keyEventNames.idxOf? mounted.binding.eventName with
+              | some value => keyEventName value
+              | none => .error { code := "LRX-BE-026", message := "checked event binding disappeared" }
         let listener := match mounted.binding.kind.payload with
           | .key => runtime.listenKey
           | .checked => runtime.listenChecked
@@ -1834,7 +1925,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             else #[]) }
       ]) ++ childImports.toArray
       declarations := (evaluators.declarations ++ eventFunctions.map Decl.function ++
-        typedEventFunctions.map Decl.function ++ regionFunctionDecls.map Decl.function ++ [
+        typedEventFunctions.map Decl.function ++ keyFunctions.map Decl.function ++
+        regionFunctionDecls.map Decl.function ++ [
         Decl.function { name := mount, params := mountParams, body := mountBody.toArray }
       ]).toArray
       exports := #[{ localName := mount, exportName := mount }] }

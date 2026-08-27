@@ -113,10 +113,24 @@ with the ASCII-trimmed label (the row draft mirrors it, ADR-0043) and
 resets the component draft through the same transaction. `trim` here is the
 `RxExpr` unary riding the ADR-0054 `asciiTrimPattern` emission through the
 ordinary scalar evaluators; the guard subject rides the same emission
-inline. Enter-to-add stays a recorded gap: component scope has no key
-branching (`when` arms are row vocabulary), so the contract is proven
-through the Add button click path. Still no host change and no runtime ABI
-bump. -/
+inline. Still no host change and no runtime ABI bump.
+
+The ADR-0056 key-branched component event closes ADR-0055's Enter-to-add
+gap: `confirmAdd (pressed : String) := when "Enter" (if trim draft == ""
+then skip else (append items (…), set draft ""))` is the ADR-0052 sealed
+key selection lifted to component scope, bound as `onKeyDown={confirmAdd}`
+on the same new-todo input beside the per-keystroke `setDraft`. The
+declared parameter is the discriminant, named in the head, compared
+implicitly by each arm, and not spellable inside an arm body; key literals
+come from the sealed Enter/Escape set; and each arm body is an ordinary
+component step sequence optionally behind the ADR-0055 skip guard — so
+Enter runs exactly the Add button's guarded add contract: a whitespace-only
+draft's Enter returns before any transaction exists (no write, no append,
+no trace), a valid draft appends the trimmed label and resets the draft,
+and any other key returns from the dispatch function without touching the
+context at all. The dispatch rides the existing `listenKey` export the
+delegated `key` payload has always used, so once more: no host change and
+no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -145,6 +159,9 @@ component ToggleLab (schema := ToggleSchema) where {
   event showActive := set filter "active";
   event showCompleted := set filter "completed";
   event setDraft (value : String) := set draft value;
+  event confirmAdd (pressed : String) :=
+    when "Enter" (if trim draft == "" then skip
+      else (append items (trim draft, trim draft, "false", "view"), set draft ""));
   filter items by filter := when "active" (done == "false")
     then when "completed" (done == "true");
   row items toggle (checked : String) := set done checked;
@@ -175,7 +192,8 @@ component ToggleLab (schema := ToggleSchema) where {
     ];
   view := jsx% <main class="toggle-lab"> [
     <h1> ["Toggle Lab"],
-    <input id="new-todo" ariaLabel="New todo" value={rx% draft} onInput={setDraft}/>,
+    <input id="new-todo" ariaLabel="New todo" value={rx% draft} onInput={setDraft}
+      onKeyDown={confirmAdd}/>,
     <button type="button" onClick={addTodo}> ["Add todo"],
     <button type="button" onClick={addItem}> ["Add item"],
     <button type="button" onClick={completeAll}> ["Complete all"],

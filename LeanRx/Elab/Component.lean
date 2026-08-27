@@ -46,7 +46,7 @@ private def sourceSpanTerm (stx : Syntax) : CommandElabM (TSyntax `term) := do
 
 declare_syntax_cat leanrxComponentItem
 scoped syntax (name := leanrxItemTypedEvent)
-  atomic(ident ident "(" ident ":" ident ")" ":=") term ";" : leanrxComponentItem
+  atomic(ident ident "(" ident ":" ident ")" ":=") sepBy1(term, " then ") ";" : leanrxComponentItem
 scoped syntax (name := leanrxItemTypedState)
   atomic(ident ident ":" ident ":=") term ";" : leanrxComponentItem
 scoped syntax (name := leanrxItemProp)
@@ -608,9 +608,10 @@ literal is the empty string and nothing else; the guard hit is the sealed
 `skip` — the whole event is a no-op before the transaction begins — and the
 else-steps carry the ordinary component event steps in the arm-body
 spelling, since a guarded event stands alone. -/
-private def guardedEventTerm (regionFields : List (String × List String))
-    (nameLit itemSpan : TSyntax `term)
-    (cond thenBranch elseBranch : TSyntax `term) : CommandElabM (TSyntax `term) := do
+private def guardedStepsTerm (regionFields : List (String × List String))
+    (itemSpan : TSyntax `term)
+    (cond thenBranch elseBranch : TSyntax `term) :
+    CommandElabM (TSyntax `term × TSyntax `term) := do
   let (subject, guardLit) ← match cond with
     | `($lhs:term == $lit:str) => pure (lhs, lit)
     | _ =>
@@ -658,8 +659,84 @@ private def guardedEventTerm (regionFields : List (String × List String))
   for step in stepTerms[1:] do
     update ← `(LeanRx.Update.sequence $update $step)
   let trimmedTerm ← if trimmed then `(Bool.true) else `(Bool.false)
-  `(LeanRx.EventSpec.mk $nameLit $update $itemSpan
-      (some (LeanRx.EventGuard.mk $guardField $trimmedTerm $itemSpan)))
+  pure (← `(LeanRx.EventGuard.mk $guardField $trimmedTerm $itemSpan), update)
+
+private def guardedEventTerm (regionFields : List (String × List String))
+    (nameLit itemSpan : TSyntax `term)
+    (cond thenBranch elseBranch : TSyntax `term) : CommandElabM (TSyntax `term) := do
+  let (guard, update) ← guardedStepsTerm regionFields itemSpan cond thenBranch elseBranch
+  `(LeanRx.EventSpec.mk $nameLit $update $itemSpan (some $guard))
+
+/-- Whether a syntax tree references `name` as an identifier. The sealed
+discriminant of a key-branched component event is not spellable inside an
+arm (ADR-0056, mirroring the ADR-0052 row rejection): the matched literal
+already fixes it, and the component update language has no payload
+vocabulary to receive it. -/
+private partial def referencesName (name : Lean.Name) : Syntax → Bool
+  | .ident _ _ value _ => value.eraseMacroScopes == name
+  | .node _ _ args => args.any (referencesName name)
+  | _ => false
+
+/-- Fold ordinary component event steps into one `Update` term — the
+arm-body/else-steps spelling shared by the ADR-0055 guard miss and the
+ADR-0056 key arms. -/
+private def componentStepsUpdate (regionFields : List (String × List String))
+    (repair : String) (steps : Array (TSyntax `term)) :
+    CommandElabM (TSyntax `term) := do
+  let mut stepTerms : Array (TSyntax `term) := #[]
+  for step in steps do
+    match ← updateStepTerm? regionFields step with
+    | some update => stepTerms := stepTerms.push update
+    | none => throwErrorAt step repair
+  let mut update := stepTerms[0]!
+  for step in stepTerms[1:] do
+    update ← `(LeanRx.Update.sequence $update $step)
+  pure update
+
+/-- Lower one arm body of a key-branched component event (ADR-0056): a tuple
+of ordinary component event steps, or one ADR-0055 skip-guarded sequence —
+`when "Enter" (if trim draft == "" then skip else (…))`. -/
+private def componentKeyArm (regionFields : List (String × List String))
+    (itemSpan : TSyntax `term) (keyLit : TSyntax `str) (body : TSyntax `term) :
+    CommandElabM (TSyntax `term) := do
+  let stepsRepair :=
+    "error[LRX-ELAB-124]: a key arm's steps are `set field (expr)`, `dispatch event`, or the sealed region steps (ADR-0056)"
+  match body with
+  | `(($first:term, $rest:term,*)) =>
+      let update ← componentStepsUpdate regionFields stepsRepair
+        (#[first] ++ rest.getElems)
+      `(LeanRx.KeyEventArm.mk $keyLit $update $itemSpan none)
+  | `(($inner:term)) =>
+      match rowGuardStep? inner with
+      | some (cond, thenBranch, elseBranch) =>
+          let (guard, update) ← guardedStepsTerm regionFields itemSpan
+            cond thenBranch elseBranch
+          `(LeanRx.KeyEventArm.mk $keyLit $update $itemSpan (some $guard))
+      | none =>
+          let update ← componentStepsUpdate regionFields stepsRepair #[inner]
+          `(LeanRx.KeyEventArm.mk $keyLit $update $itemSpan none)
+  | _ =>
+      throwErrorAt body
+        "error[LRX-ELAB-124]: a key arm is written `when \"Enter\" (set field (expr), …)` (ADR-0056)"
+
+/-- Lower the arm table of one key-branched component event (ADR-0056):
+every step must be a `when "key" (…)` arm, and the declared discriminant is
+not spellable inside an arm body. -/
+private def componentKeyArms (regionFields : List (String × List String))
+    (paramName : Lean.Name) (itemSpan : TSyntax `term)
+    (steps : Array (TSyntax `term)) : CommandElabM (Array (TSyntax `term)) := do
+  let mut arms : Array (TSyntax `term) := #[]
+  for step in steps do
+    match rowKeyArm? step with
+    | some (keyLit, body) =>
+        if referencesName paramName body.raw then
+          throwErrorAt body
+            "error[LRX-ELAB-124]: a key-branched event references the payload in an arm; the key literal already fixes it (ADR-0056)"
+        arms := arms.push (← componentKeyArm regionFields itemSpan keyLit body)
+    | none =>
+        throwErrorAt step
+          "error[LRX-ELAB-124]: a key-branched event mixes no other steps with its `when` arms (ADR-0056)"
+  pure arms
 
 /-- Lower the arm table of one key-branched row event (ADR-0052): every step
 must be a `when "key" (set field (expr), …)` arm whose inner steps carry the
@@ -883,22 +960,21 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
       let mut declaredEvents : List String := []
       let mut declaredProps : List String := []
       for item in items do
-        match item with
-        | `(leanrxComponentItem| $role:ident $itemName:ident
-              ($_:ident : $_:ident) := $_:term;) =>
-            if roleName role == "event" then
-              declaredEvents := declaredEvents ++ [itemName.getId.eraseMacroScopes.toString]
-        | _ =>
-            if item.raw.getKind == ``leanrxItemProp then
-              let role : Ident := ⟨item.raw[0]⟩
-              if roleName role == "prop" then
-                let itemName : Ident := ⟨item.raw[1]⟩
-                declaredProps := declaredProps ++ [itemName.getId.eraseMacroScopes.toString]
-            else if item.raw.getKind == ``leanrxItemValue then
-              let role : Ident := ⟨item.raw[0]⟩
-              if roleName role == "event" then
-                let itemName : Ident := ⟨item.raw[1]⟩
-                declaredEvents := declaredEvents ++ [itemName.getId.eraseMacroScopes.toString]
+        if item.raw.getKind == ``leanrxItemTypedEvent then
+          let role : Ident := ⟨item.raw[0]⟩
+          if roleName role == "event" then
+            let itemName : Ident := ⟨item.raw[1]⟩
+            declaredEvents := declaredEvents ++ [itemName.getId.eraseMacroScopes.toString]
+        else if item.raw.getKind == ``leanrxItemProp then
+          let role : Ident := ⟨item.raw[0]⟩
+          if roleName role == "prop" then
+            let itemName : Ident := ⟨item.raw[1]⟩
+            declaredProps := declaredProps ++ [itemName.getId.eraseMacroScopes.toString]
+        else if item.raw.getKind == ``leanrxItemValue then
+          let role : Ident := ⟨item.raw[0]⟩
+          if roleName role == "event" then
+            let itemName : Ident := ⟨item.raw[1]⟩
+            declaredEvents := declaredEvents ++ [itemName.getId.eraseMacroScopes.toString]
       /- Row-event pre-pass (ADR-0043): `row` items elaborate against the
       region field inventory and join their region's sealed event table, so
       item order between `row` and `region` items never matters. -/
@@ -914,6 +990,7 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
       let mut values : Array (TSyntax `term) := #[]
       let mut events : Array (TSyntax `term) := #[]
       let mut typedEvents : Array (TSyntax `term) := #[]
+      let mut keyEventTerms : Array (TSyntax `term) := #[]
       let mut declarations : Array (TSyntax `term) := #[]
       let mut childTerms : Array (TSyntax `term) := #[]
       let mut childNames : List String := []
@@ -924,14 +1001,50 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
       for item in items do
         let itemSpan ← sourceSpanTerm item
         match item with
-        | `(leanrxComponentItem| $role:ident $itemName:ident
-              ($param:ident : $ty:ident) := $rhs:term;) =>
+        | `(leanrxComponentItem| $role:ident $itemName:ident : $ty:ident := $value:term;) =>
+            let roleName ← checkRole role
+            unless roleName == "state" do
+              throwErrorAt role
+                s!"error[LRX-ELAB-003]: literal type annotations are valid only on state items, not {roleName}"
+            let literal ← scalarLiteralTerm ty value
+            values := values.push (← `(LeanRx.ValueSpec.withSpan
+              (LeanRx.ValueSpec.state $itemName $literal) $itemSpan))
+            let nameLit := Syntax.mkStrLit itemName.getId.eraseMacroScopes.toString
+            declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
+              LeanRx.SurfaceRole.state $nameLit $itemSpan))
+        | _ =>
+          if item.raw.getKind == ``leanrxItemTypedEvent then
+            let role : Ident := ⟨item.raw[0]⟩
+            let itemName : Ident := ⟨item.raw[1]⟩
+            let param : Ident := ⟨item.raw[3]⟩
+            let ty : Ident := ⟨item.raw[5]⟩
             let roleName ← checkRole role
             unless roleName == "event" do
               throwErrorAt role
                 s!"error[LRX-ELAB-003]: payload parameters are valid only on event items, not {roleName}"
+            let steps := (sepByElems item.raw[8]).map fun step => (⟨step⟩ : TSyntax `term)
             let nameLit := Syntax.mkStrLit itemName.getId.eraseMacroScopes.toString
             let paramLit := Syntax.mkStrLit param.getId.eraseMacroScopes.toString
+            /- A payload-taking event whose steps are `when "key" (…)` arms is
+            the ADR-0056 key-branched component event: the ADR-0052 selection
+            lifted to component scope, each arm body an ordinary component
+            step sequence optionally behind the ADR-0055 skip guard. -/
+            if steps.any fun step => (rowKeyArm? step).isSome then
+              unless ty.getId.eraseMacroScopes.toString == "String" do
+                throwErrorAt ty
+                  s!"error[LRX-ELAB-124]: a key-branched event declares a String payload parameter, not {ty.getId.eraseMacroScopes} (ADR-0056)"
+              let arms ← componentKeyArms regionFields
+                param.getId.eraseMacroScopes itemSpan steps
+              keyEventTerms := keyEventTerms.push (← `(LeanRx.KeyEventSpec.mk
+                $nameLit $paramLit [$arms,*] $itemSpan))
+              declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
+                LeanRx.SurfaceRole.event $nameLit $itemSpan))
+            else
+            let rhs ← match steps with
+              | #[single] => pure single
+              | _ =>
+                  throwErrorAt item
+                    "error[LRX-ELAB-108]: a typed event must assign its payload parameter with `set field param`"
             let assigned ← match rhs with
               | `($head:ident $field:ident $payload:ident) =>
                   if head.getId.eraseMacroScopes == `set &&
@@ -952,19 +1065,7 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
               $nameLit $paramLit $assigned $itemSpan : LeanRx.TypedEventSpec _ $ty)))
             declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
               LeanRx.SurfaceRole.event $nameLit $itemSpan))
-        | `(leanrxComponentItem| $role:ident $itemName:ident : $ty:ident := $value:term;) =>
-            let roleName ← checkRole role
-            unless roleName == "state" do
-              throwErrorAt role
-                s!"error[LRX-ELAB-003]: literal type annotations are valid only on state items, not {roleName}"
-            let literal ← scalarLiteralTerm ty value
-            values := values.push (← `(LeanRx.ValueSpec.withSpan
-              (LeanRx.ValueSpec.state $itemName $literal) $itemSpan))
-            let nameLit := Syntax.mkStrLit itemName.getId.eraseMacroScopes.toString
-            declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
-              LeanRx.SurfaceRole.state $nameLit $itemSpan))
-        | _ =>
-          if item.raw.getKind == ``leanrxItemProp then
+          else if item.raw.getKind == ``leanrxItemProp then
             propTerms := propTerms.push (← elabPropItem item.raw itemSpan)
           else if item.raw.getKind == ``leanrxItemRegion then
             regionTerms := regionTerms.push
@@ -1074,6 +1175,7 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
         values := #[$values,*]
         events := #[$events,*]
         typedEvents := #[$typedEvents,*]
+        keyEvents := #[$keyEventTerms,*]
         view := $viewTerm
         surface := #[$declarations,*]
         children := #[$childTerms,*]

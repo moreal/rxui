@@ -154,6 +154,35 @@ def EventSpec.guardReads (event : EventSpec Γ) : List Nat :=
   | some guard => [guard.field.index]
   | none => []
 
+/-- One arm of a key-branched component event (ADR-0056): one sealed key
+literal selecting an ordinary component step sequence, optionally behind the
+ADR-0055 skip guard. The discriminant is consumed by the selection — the
+component update language has no payload reference, so an arm body cannot
+observe the key beyond the literal that matched it. -/
+structure KeyEventArm (Γ : Schema) where
+  key : String
+  update : Update Γ
+  span : SourceSpan := .generated
+  guard? : Option (EventGuard Γ) := none
+
+/-- The state reads of one arm's skip guard (ADR-0055/0056). -/
+def KeyEventArm.guardReads (arm : KeyEventArm Γ) : List Nat :=
+  match arm.guard? with
+  | some guard => [guard.field.index]
+  | none => []
+
+/-- One key-branched component event (ADR-0056): the ADR-0052 sealed key
+selection lifted to component scope. The declared `String` parameter is the
+discriminant, named in the head and compared implicitly by each arm; key
+literals come from the sealed Enter/Escape set; a key outside the table is a
+whole-event no-op — the generated dispatch function returns before any
+transaction exists. -/
+structure KeyEventSpec (Γ : Schema) where
+  name : String
+  parameterName : String
+  arms : List (KeyEventArm Γ)
+  span : SourceSpan := .generated
+
 structure EventSummary where
   name : String
   directWrites : List Nat
@@ -222,6 +251,7 @@ structure ComponentSpec (Γ : Schema) where
   values : Array (ValueSpec Γ)
   events : Array (EventSpec Γ)
   typedEvents : Array (AnyTypedEvent Γ) := #[]
+  keyEvents : Array (KeyEventSpec Γ) := #[]
   view : View Γ
   surface : Array SurfaceDecl := #[]
   children : Array ChildComponent := #[]
@@ -372,6 +402,10 @@ private def actualSurface (spec : ComponentSpec Γ) : Array SurfaceDecl :=
     role := .event
     name := event.name
     span := event.span
+  }) ++ spec.keyEvents.map (fun event => {
+    role := .event
+    name := event.name
+    span := event.span
   })
 
 private def validateSurface (spec : ComponentSpec Γ) : Except ComponentError Unit := do
@@ -405,7 +439,9 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
     (split : ViewSplit Γ) : Except ComponentError Unit := do
   let names := spec.events.toList.map (·.name)
   let typedNames := spec.typedEvents.toList.map (·.name)
-  if (names ++ typedNames).any String.isEmpty || duplicate? (names ++ typedNames) then
+  let keyNames := spec.keyEvents.toList.map (·.name)
+  if (names ++ typedNames ++ keyNames).any String.isEmpty ||
+      duplicate? (names ++ typedNames ++ keyNames) then
     throw { code := "LRX-ELAB-102", message := "component event names must be nonempty and unique" }
   for event in spec.typedEvents do
     unless event.targetIndex < sourceCount do
@@ -414,39 +450,70 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
         message := s!"event {event.name} writes non-source value {event.targetIndex}"
         spans := #[event.span]
       }
-  for event in spec.events do
-    for target in event.update.directWriteTargets do
+  /- Key-branched component events (ADR-0056): the arm table is sealed —
+  nonempty, each literal drawn from the sealed Enter/Escape key set and
+  appearing at most once — and each arm body then carries exactly the
+  obligations of an ordinary component event, skip guard included, through
+  the shared body loop below. -/
+  for event in spec.keyEvents do
+    if event.arms.isEmpty then
+      throw {
+        code := "LRX-TYPE-115"
+        message := s!"key-branched event {event.name} declares no arms"
+        spans := #[event.span]
+      }
+    for arm in event.arms do
+      unless RowAction.keyLiterals.contains arm.key do
+        throw {
+          code := "LRX-TYPE-115"
+          message := s!"key-branched event {event.name} selects on key {arm.key} outside the sealed Enter/Escape set"
+          path := #[event.name, arm.key]
+          spans := #[arm.span]
+        }
+    if duplicate? (event.arms.map (·.key)) then
+      throw {
+        code := "LRX-TYPE-115"
+        message := s!"key-branched event {event.name} selects one key twice"
+        spans := #[event.span]
+      }
+  let bodies : List (String × Update Γ × Option (EventGuard Γ) × SourceSpan) :=
+    spec.events.toList.map (fun event =>
+      (event.name, event.update, event.guard?, event.span)) ++
+    spec.keyEvents.toList.flatMap (fun event => event.arms.map fun arm =>
+      (event.name, arm.update, arm.guard?, arm.span))
+  for (eventName, update, guard?, span) in bodies do
+    for target in update.directWriteTargets do
       unless target < sourceCount do
         throw {
           code := "LRX-TYPE-107"
-          message := s!"event {event.name} writes non-source value {target}"
-          spans := #[event.span]
+          message := s!"event {eventName} writes non-source value {target}"
+          spans := #[span]
         }
-    for dependency in event.update.directReadDependencies do
+    for dependency in update.directReadDependencies do
       unless dependency < sourceCount do
         throw {
           code := "LRX-TYPE-108"
-          message := s!"event {event.name} reads derived value {dependency}; derived reads require a transaction barrier"
-          spans := #[event.span]
+          message := s!"event {eventName} reads derived value {dependency}; derived reads require a transaction barrier"
+          spans := #[span]
         }
     /- The sealed skip guard (ADR-0055) reads its subject before the
     transaction begins, so the subject must be a source: a derived value is
     not yet recomputed at dispatch time. The `Field Γ String` type already
     seals the payload type and the bounds. -/
-    if let some guard := event.guard? then
+    if let some guard := guard? then
       unless guard.field.index < sourceCount do
         throw {
           code := "LRX-TYPE-114"
-          message := s!"event {event.name} guards on derived value {guard.field.index}; a skip guard reads one String state field"
-          spans := #[event.span, guard.span]
+          message := s!"event {eventName} guards on derived value {guard.field.index}; a skip guard reads one String state field"
+          spans := #[span, guard.span]
         }
-    for target in event.update.dispatchTargets do
+    for target in update.dispatchTargets do
       unless names.contains target do
         throw {
           code := "LRX-ELAB-106"
-          message := s!"event {event.name} dispatches unknown event {target}"
-          path := #[event.name, target]
-          spans := #[event.span]
+          message := s!"event {eventName} dispatches unknown event {target}"
+          path := #[eventName, target]
+          spans := #[span]
         }
   unless spec.events.isEmpty do
     let dispatchNodes := spec.events.map fun event =>
@@ -462,93 +529,93 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
           path := error.path
           spans := error.spans
         }
-  for event in spec.events do
-    for (target, arity) in event.update.regionAppendTargets do
+  for (eventName, update, _, span) in bodies do
+    for (target, arity) in update.regionAppendTargets do
       match spec.regions.toList.find? (·.name == target) with
       | none =>
           throw {
             code := "LRX-TYPE-109"
-            message := s!"event {event.name} appends to unknown region {target}"
-            path := #[event.name, target]
-            spans := #[event.span]
+            message := s!"event {eventName} appends to unknown region {target}"
+            path := #[eventName, target]
+            spans := #[span]
           }
       | some region =>
           unless arity == region.fields.size do
             throw {
               code := "LRX-TYPE-110"
-              message := s!"event {event.name} appends {arity} field(s) to region {target}, which declares {region.fields.size}"
-              path := #[event.name, target]
-              spans := #[event.span, region.span]
+              message := s!"event {eventName} appends {arity} field(s) to region {target}, which declares {region.fields.size}"
+              path := #[eventName, target]
+              spans := #[span, region.span]
             }
   /- Region broadcasts and removals (ADR-0050): the target region must be
   declared; broadcast assignments are nonempty simultaneous writes over
   distinct in-bounds targets, reading only in-bounds row fields and never a
   payload (no row event is dispatching); removal predicates project one
   in-bounds row field. -/
-  for event in spec.events do
-    for (target, assignments) in event.update.regionBroadcastTargets do
+  for (eventName, update, _, span) in bodies do
+    for (target, assignments) in update.regionBroadcastTargets do
       match spec.regions.toList.find? (·.name == target) with
       | none =>
           throw {
             code := "LRX-TYPE-111"
-            message := s!"event {event.name} broadcasts to unknown region {target}"
-            path := #[event.name, target]
-            spans := #[event.span]
+            message := s!"event {eventName} broadcasts to unknown region {target}"
+            path := #[eventName, target]
+            spans := #[span]
           }
       | some region =>
           if assignments.isEmpty then
             throw {
               code := "LRX-TYPE-111"
-              message := s!"event {event.name} broadcasts no field to region {target}"
-              path := #[event.name, target]
-              spans := #[event.span]
+              message := s!"event {eventName} broadcasts no field to region {target}"
+              path := #[eventName, target]
+              spans := #[span]
             }
           if duplicate? (assignments.map (toString ·.1)) then
             throw {
               code := "LRX-TYPE-111"
-              message := s!"event {event.name} broadcasts one field of region {target} twice"
-              path := #[event.name, target]
-              spans := #[event.span]
+              message := s!"event {eventName} broadcasts one field of region {target} twice"
+              path := #[eventName, target]
+              spans := #[span]
             }
           for (fieldIndex, value) in assignments do
             unless fieldIndex < region.fields.size do
               throw {
                 code := "LRX-TYPE-111"
-                message := s!"event {event.name} broadcasts field {fieldIndex} outside region {target}'s {region.fields.size} field(s)"
-                path := #[event.name, target]
-                spans := #[event.span, region.span]
+                message := s!"event {eventName} broadcasts field {fieldIndex} outside region {target}'s {region.fields.size} field(s)"
+                path := #[eventName, target]
+                spans := #[span, region.span]
               }
             if value.hasPayload then
               throw {
                 code := "LRX-TYPE-111"
-                message := s!"event {event.name} broadcasts a payload reference to region {target}; broadcasts dispatch no row event"
-                path := #[event.name, target]
-                spans := #[event.span]
+                message := s!"event {eventName} broadcasts a payload reference to region {target}; broadcasts dispatch no row event"
+                path := #[eventName, target]
+                spans := #[span]
               }
             for field in value.fieldRefs do
               unless field < region.fields.size do
                 throw {
                   code := "LRX-TYPE-111"
-                  message := s!"event {event.name} broadcasts a read of field {field} outside region {target}'s {region.fields.size} field(s)"
-                  path := #[event.name, target]
-                  spans := #[event.span, region.span]
+                  message := s!"event {eventName} broadcasts a read of field {field} outside region {target}'s {region.fields.size} field(s)"
+                  path := #[eventName, target]
+                  spans := #[span, region.span]
                 }
-    for (target, fieldIndex) in event.update.regionRemoveIfTargets do
+    for (target, fieldIndex) in update.regionRemoveIfTargets do
       match spec.regions.toList.find? (·.name == target) with
       | none =>
           throw {
             code := "LRX-TYPE-112"
-            message := s!"event {event.name} removes rows from unknown region {target}"
-            path := #[event.name, target]
-            spans := #[event.span]
+            message := s!"event {eventName} removes rows from unknown region {target}"
+            path := #[eventName, target]
+            spans := #[span]
           }
       | some region =>
           unless fieldIndex < region.fields.size do
             throw {
               code := "LRX-TYPE-112"
-              message := s!"event {event.name} removes rows by field {fieldIndex} outside region {target}'s {region.fields.size} field(s)"
-              path := #[event.name, target]
-              spans := #[event.span, region.span]
+              message := s!"event {eventName} removes rows by field {fieldIndex} outside region {target}'s {region.fields.size} field(s)"
+              path := #[eventName, target]
+              spans := #[span, region.span]
             }
   for mounted in split.events do
     if mounted.binding.kind.payload == .none then
@@ -561,11 +628,23 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
     else
       match spec.typedEvents.toList.find? (·.name == mounted.binding.eventName) with
       | none =>
-          throw {
-            code := "LRX-VIEW-017"
-            message := s!"view references unknown typed event {mounted.binding.eventName}"
-            spans := #[mounted.binding.span]
-          }
+          /- A key-branched component event (ADR-0056) compares the delegated
+          `key` payload, so only a keydown binding can serve it — a key
+          equality over a `value` or `checked` payload is meaningless. -/
+          match spec.keyEvents.toList.find? (·.name == mounted.binding.eventName) with
+          | none =>
+              throw {
+                code := "LRX-VIEW-017"
+                message := s!"view references unknown typed event {mounted.binding.eventName}"
+                spans := #[mounted.binding.span]
+              }
+          | some event =>
+              unless mounted.binding.kind == .keydown do
+                throw {
+                  code := "LRX-VIEW-041"
+                  message := s!"key-branched event {event.name} selects on the key payload and cannot serve a {mounted.binding.kind.name} binding"
+                  spans := #[mounted.binding.span, event.span]
+                }
       | some event =>
           unless acceptsPayload event mounted.binding.kind.payload do
             throw {
@@ -573,6 +652,17 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
               message := s!"typed event {event.name} takes a {event.payloadType.debug} payload and cannot serve a {mounted.binding.kind.name} binding"
               spans := #[mounted.binding.span, event.span]
             }
+  /- A key-branched event must be bound exactly once, mirroring the ADR-0052
+  row rule: the selection is dispatch logic of one input's keydown stream,
+  and an unbound table would be dead vocabulary. -/
+  for event in spec.keyEvents do
+    let bindings := split.events.filter (·.binding.eventName == event.name)
+    unless bindings.length == 1 do
+      throw {
+        code := "LRX-VIEW-041"
+        message := s!"key-branched event {event.name} must be bound exactly once through onKeyDown; the view binds it {bindings.length} time(s)"
+        spans := #[event.span] ++ (bindings.map (·.binding.span)).toArray
+      }
 
 private def eventByName? (events : Array (EventSpec Γ)) (name : String) : Option (EventSpec Γ) :=
   events.toList.find? (·.name == name)
@@ -612,6 +702,23 @@ private def summarizeEvents (events : Array (EventSpec Γ)) : Array EventSummary
     effectiveWrites := effectiveWrites events events.size event.update
     effectiveReads :=
       (event.guardReads ++ effectiveReads events events.size event.update).eraseDups
+  }
+
+/-- Summaries of key-branched events (ADR-0056): the union over the arm
+table, guard reads included; nested dispatch resolves through the plain
+event table exactly as an ordinary event's does. -/
+private def summarizeKeyEvents (events : Array (EventSpec Γ))
+    (keyEvents : Array (KeyEventSpec Γ)) : Array EventSummary :=
+  keyEvents.map fun event => {
+    name := event.name
+    directWrites := (event.arms.flatMap (·.update.directWriteTargets)).eraseDups
+    directReads := (event.arms.flatMap fun arm =>
+      arm.guardReads ++ arm.update.directReadDependencies).eraseDups
+    dispatchedEvents := (event.arms.flatMap (·.update.dispatchTargets)).eraseDups
+    effectiveWrites := (event.arms.flatMap fun arm =>
+      effectiveWrites events events.size arm.update).eraseDups
+    effectiveReads := (event.arms.flatMap fun arm =>
+      arm.guardReads ++ effectiveReads events events.size arm.update).eraseDups
   }
 
 mutual
@@ -1434,7 +1541,8 @@ def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ
                               | .ok graph =>
                                   .ok ⟨spec, graph, sourceCount,
                                     summarizeEvents spec.events ++
-                                      summarizeTypedEvents spec.typedEvents, split⟩
+                                      summarizeTypedEvents spec.typedEvents ++
+                                      summarizeKeyEvents spec.events spec.keyEvents, split⟩
 
 def validationMessage (spec : ComponentSpec Γ) : String :=
   match spec.check with
