@@ -343,7 +343,14 @@ selection hides the element exactly while no row satisfies it — TodoMVC's
 clear-completed affordance, hidden while no row is done. The predicate
 count rides the same region-touch re-evaluation, attr slot, and boolean
 cache; other comparison operators, threshold literals, negation, and
-composed or general aggregate expressions stay unrepresentable. -/
+composed or general aggregate expressions stay unrepresentable.
+`checkedIfEmpty` exports the same region-count boolean subject into the
+`checked` property of a static `type="checkbox"` input (ADR-0060) —
+TodoMVC's toggle-all display parity, checked exactly while no row fails
+the predicate (vacuously true on the empty region, so the box mounts
+checked as the literal `true`). It rides the hidden selection's
+region-touch re-evaluation, shared attr slot, `setProperty` export, and
+boolean cache unchanged; only the written property differs. -/
 inductive AttrSelect (Γ : Schema) where
   | classSelect (field : Field Γ String) (equals whenTrue whenFalse : String)
       (span : SourceSpan := .generated) (trimmed : Bool := false)
@@ -353,6 +360,8 @@ inductive AttrSelect (Γ : Schema) where
       (span : SourceSpan := .generated) (trimmed : Bool := false)
   | hiddenIfEmpty (region : String) (span : SourceSpan := .generated)
       (predicate : Option (Nat × String) := none)
+  | checkedIfEmpty (region : String) (span : SourceSpan := .generated)
+      (predicate : Option (Nat × String) := none)
 
 namespace AttrSelect
 
@@ -361,56 +370,89 @@ def name : AttrSelect Γ → String
   | .pressedSelect .. => "aria-pressed"
   | .disabledSelect .. => "disabled"
   | .hiddenIfEmpty .. => "hidden"
+  | .checkedIfEmpty .. => "checked"
 
 /-- The state field a field-subject selection reads; the region-count
-subject of a `hiddenIfEmpty` selection reads no state field (ADR-0058). -/
+subjects of the `hiddenIfEmpty` and `checkedIfEmpty` selections read no
+state field (ADR-0058/0060). -/
 def fieldIndex? : AttrSelect Γ → Option Nat
   | .classSelect field .. | .pressedSelect field ..
   | .disabledSelect field .. => some field.index
-  | .hiddenIfEmpty .. => none
+  | .hiddenIfEmpty .. | .checkedIfEmpty .. => none
 
 /-- The compared string literal of a field-subject selection; the
-`hiddenIfEmpty` subject compares its region's row count — total or
-predicate — against the zero literal instead (ADR-0058/0059), and its
-predicate literal is `hiddenPredicate?`'s. -/
+`hiddenIfEmpty` and `checkedIfEmpty` subjects compare their region's row
+count — total or predicate — against the zero literal instead
+(ADR-0058/0059/0060), and their predicate literal is `regionPredicate?`'s. -/
 def equals? : AttrSelect Γ → Option String
   | .classSelect _ equals .. | .pressedSelect _ equals ..
   | .disabledSelect _ equals .. => some equals
-  | .hiddenIfEmpty .. => none
+  | .hiddenIfEmpty .. | .checkedIfEmpty .. => none
 
 /-- The declared region whose row-table emptiness a `hiddenIfEmpty`
 selection reflects (ADR-0058). -/
 def hiddenRegion? : AttrSelect Γ → Option String
-  | .classSelect .. | .pressedSelect .. | .disabledSelect .. => none
+  | .classSelect .. | .pressedSelect .. | .disabledSelect ..
+  | .checkedIfEmpty .. => none
   | .hiddenIfEmpty region _ _ => some region
 
 /-- The sealed ADR-0050 predicate a predicate-count `hiddenIfEmpty` subject
 counts — one projected row field against one string literal (ADR-0059); a
 total-count subject carries none. -/
 def hiddenPredicate? : AttrSelect Γ → Option (Nat × String)
-  | .classSelect .. | .pressedSelect .. | .disabledSelect .. => none
+  | .classSelect .. | .pressedSelect .. | .disabledSelect ..
+  | .checkedIfEmpty .. => none
   | .hiddenIfEmpty _ _ predicate => predicate
+
+/-- The declared region whose row-count boolean a `checkedIfEmpty`
+selection exports as the `checked` property (ADR-0060). -/
+def checkedRegion? : AttrSelect Γ → Option String
+  | .classSelect .. | .pressedSelect .. | .disabledSelect ..
+  | .hiddenIfEmpty .. => none
+  | .checkedIfEmpty region _ _ => some region
+
+/-- The sealed ADR-0050 predicate a predicate-count `checkedIfEmpty`
+subject counts (ADR-0060); a total-count subject carries none. -/
+def checkedPredicate? : AttrSelect Γ → Option (Nat × String)
+  | .classSelect .. | .pressedSelect .. | .disabledSelect ..
+  | .hiddenIfEmpty .. => none
+  | .checkedIfEmpty _ _ predicate => predicate
+
+/-- The declared region of either region-count subject — hidden (ADR-0058)
+or checked (ADR-0060); both ride the same region-touch sweep. -/
+def regionSubject? : AttrSelect Γ → Option String
+  | .classSelect .. | .pressedSelect .. | .disabledSelect .. => none
+  | .hiddenIfEmpty region _ _ | .checkedIfEmpty region _ _ => some region
+
+/-- The sealed predicate of either region-count subject (ADR-0059/0060). -/
+def regionPredicate? : AttrSelect Γ → Option (Nat × String)
+  | .classSelect .. | .pressedSelect .. | .disabledSelect .. => none
+  | .hiddenIfEmpty _ _ predicate | .checkedIfEmpty _ _ predicate => predicate
 
 /-- Whether the subject sits behind the sealed trim unary (ADR-0057). -/
 def trimmed : AttrSelect Γ → Bool
   | .classSelect _ _ _ _ _ trimmed | .pressedSelect _ _ _ trimmed
   | .disabledSelect _ _ _ trimmed => trimmed
-  | .hiddenIfEmpty .. => false
+  | .hiddenIfEmpty .. | .checkedIfEmpty .. => false
 
-/-- The written value type: `disabled` and `hidden` write boolean element
-properties; the other selections write attribute strings. -/
+/-- The written value type: `disabled`, `hidden`, and `checked` write
+boolean element properties; the other selections write attribute strings. -/
 def valueType : AttrSelect Γ → RuntimeTypeId
   | .classSelect .. | .pressedSelect .. => .string
-  | .disabledSelect .. | .hiddenIfEmpty .. => .bool
+  | .disabledSelect .. | .hiddenIfEmpty .. | .checkedIfEmpty .. => .bool
 
 def span : AttrSelect Γ → SourceSpan
   | .classSelect _ _ _ _ span _ | .pressedSelect _ _ span _
-  | .disabledSelect _ _ span _ | .hiddenIfEmpty _ span _ => span
+  | .disabledSelect _ _ span _ | .hiddenIfEmpty _ span _
+  | .checkedIfEmpty _ span _ => span
 
 def debug : AttrSelect Γ → String
   | .hiddenIfEmpty region _ none => s!"select:hidden:{region}"
   | .hiddenIfEmpty region _ (some (field, equals)) =>
       s!"select:hidden:{region}:{field}:{equals}"
+  | .checkedIfEmpty region _ none => s!"select:checked:{region}"
+  | .checkedIfEmpty region _ (some (field, equals)) =>
+      s!"select:checked:{region}:{field}:{equals}"
   | select =>
       s!"select:{select.name}:{if select.trimmed then "trim:" else ""}{select.fieldIndex?.getD 0}"
 

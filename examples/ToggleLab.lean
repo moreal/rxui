@@ -179,6 +179,28 @@ alone still re-evaluates nothing (the region is untouched), and the
 The `hidden` selection is valid on any static element, the button
 included (only `aria-pressed` and `disabled` demand a native button, and
 a button satisfies even that). Once more: no host change and no runtime
+ABI bump.
+
+The ADR-0060 toggle-all checked reflection closes the display half of
+TodoMVC's toggle-all parity: `checked={count items (done == "false") == 0}`
+on the static toggle-all checkbox is the sealed checked selection whose
+subject is the same region-count boolean the hidden selections read —
+here the ADR-0050 predicate count of not-done rows against the zero
+literal — exported into the `checked` property instead of `hidden`. The
+box mounts checked (an empty region has no row failing the predicate —
+vacuously all complete), the first not-done append unchecks it, the
+`completeAll` broadcast checks it, untoggling a done row or appending
+unchecks it again, and `clearCompleted` draining the region restores the
+vacuous truth. The sweep is byte-for-byte the hidden selections': the
+same region-touch path, shared attr slot, boolean cache, and `setProperty`
+export with `attr:{index}:checked` labels — a filter change alone still
+re-evaluates nothing. The selection demands a static `type="checkbox"`
+input (the ADR-0049 origin rule in static scope), and its
+`onChange={completeAll}` is the payload-less toggle binding: a static
+change binding naming a plain component event, mounted through the plain
+`listen` export — the delegated checked payload is discarded, so the
+uncheck path (toggle-all off) stays unrepresentable until a payload can
+flow into a region broadcast. Once more: no host change and no runtime
 ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
@@ -255,7 +277,9 @@ component ToggleLab (schema := ToggleSchema) where {
     <p id="items-left"> [
       <strong> [{count items (done == "false")}], " left of ", {count items}
     ],
-    <ul id="items" ariaLabel="Items" hidden={count items == 0}> [<region items/>]
+    <ul id="items" ariaLabel="Items" hidden={count items == 0}> [<region items/>],
+    <input id="toggle-all" type="checkbox" ariaLabel="Toggle all"
+      checked={count items (done == "false") == 0} onChange={completeAll}/>
   ];
 }
 

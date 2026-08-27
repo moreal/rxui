@@ -288,7 +288,10 @@ reads no state: its value here is the mount-time constant `true`, because
 keyed regions mount empty by construction (ADR-0050/0058) — an empty row
 table has zero total rows and zero predicate-satisfying rows alike
 (ADR-0059); the commit sweep re-evaluates it from the region's row table
-on the region-touch path, never through this state-driven lowering. -/
+on the region-touch path, never through this state-driven lowering. A
+`checkedIfEmpty` selection mounts the same constant `true` for the same
+reason read the other way (ADR-0060): an empty region has no row failing
+the predicate, so the toggle-all box mounts vacuously checked. -/
 private def attrSelectJs (state : Ident) (select : AttrSelect Γ) : Expr :=
   match select with
   | .classSelect field equals whenTrue whenFalse _ trimmed =>
@@ -306,6 +309,7 @@ private def attrSelectJs (state : Ident) (select : AttrSelect Γ) : Expr :=
       let subject := if trimmed then asciiTrimJs subject else subject
       .binary .eq subject (.literal (.string equals))
   | .hiddenIfEmpty .. => .literal (.boolean true)
+  | .checkedIfEmpty .. => .literal (.boolean true)
 
 private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
     (regionSpecs : Array RegionSpec) (eventNames : List String)
@@ -457,13 +461,14 @@ private def runtimeNames : Except Error RuntimeNames := do
     focus := ← Ident.checked "focus"
   }
 
-/-- The write statement of one attribute selection: `disabled` and `hidden`
-write their boolean element properties (`setAttribute` cannot clear either
-by assignment); the other selections write their attribute string. -/
+/-- The write statement of one attribute selection: `disabled`, `hidden`,
+and `checked` write their boolean element properties (`setAttribute` cannot
+clear any of them by assignment); the other selections write their
+attribute string. -/
 private def attrSelectWrite (runtime : RuntimeNames) (node : Expr)
     (select : AttrSelect Γ) (value : Expr) : Stmt :=
   match select with
-  | .disabledSelect .. | .hiddenIfEmpty .. =>
+  | .disabledSelect .. | .hiddenIfEmpty .. | .checkedIfEmpty .. =>
       .expr <| call runtime.setProperty [node, .literal (.string select.name), value]
   | _ =>
       .expr <| call runtime.setAttribute [node, .literal (.string select.name), value]
@@ -651,7 +656,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     let counts := checked.view.regionCounts.filter (·.region == region.name)
     let filter? := checked.spec.filters.toList.find? (·.region == region.name)
     let hiddens := checked.view.attrSelects.zipIdx.filter
-      fun (mounted, _) => mounted.select.hiddenRegion? == some region.name
+      fun (mounted, _) => mounted.select.regionSubject? == some region.name
     let touched ← Ident.checked s!"region_touched_{regionIndex}"
     unless counts.isEmpty && filter?.isNone && hiddens.isEmpty do
       /- The shared touched flag serves the count sweep (ADR-0050), the
@@ -703,29 +708,32 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           ]
         ]
       commitBody := commitBody ++ [.ifThen (.ident touched) (.ofList countStmts)]
-    /- Sealed empty-region visibility (ADR-0058/0059): whenever this region
-    was touched this transaction, every `hiddenIfEmpty` selection over it
-    re-evaluates its row count against the zero literal — the total for the
-    ADR-0058 emptiness subject, or the ADR-0050 predicate scan for the
-    ADR-0059 predicate-count subject — compares it against the shared attr
-    cache slot, and writes the `hidden` boolean property through the
-    existing `setProperty` export, riding the tx[8]/tx[9] counters with the
-    shared `attr:{index}:hidden` labels. The subject is the row table, not
-    the displayed rows, so an ADR-0051 filter hiding every row leaves the
-    section visible either way. -/
+    /- Sealed region-count subjects (ADR-0058/0059/0060): whenever this
+    region was touched this transaction, every `hiddenIfEmpty` and
+    `checkedIfEmpty` selection over it re-evaluates its row count against
+    the zero literal — the total for the ADR-0058 emptiness subject, or the
+    ADR-0050 predicate scan for the ADR-0059/0060 predicate-count
+    subjects — compares it against the shared attr cache slot, and writes
+    its boolean property (`hidden` or `checked`) through the existing
+    `setProperty` export, riding the tx[8]/tx[9] counters with the shared
+    `attr:{index}:{name}` labels. The subject is the row table, not the
+    displayed rows, so an ADR-0051 filter hiding every row leaves the
+    section visible — and the toggle-all box unmoved — either way. -/
     unless hiddens.isEmpty do
       let mut hiddenStmts : List Stmt := []
       for (mounted, attrIndex) in hiddens do
         let next ← attrNextName attrIndex
         let differs ← attrChangedName attrIndex
         let label := attrLabel attrIndex mounted
-        let computeStmts : List Stmt ← match mounted.select.hiddenPredicate? with
+        let computeStmts : List Stmt ← match mounted.select.regionPredicate? with
           | none => pure [Stmt.const next (.binary .eq
               (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))
               (uint 0))]
           | some (field, equals) => do
-              let scan ← Ident.checked s!"hidden_scan_{regionIndex}_{attrIndex}"
-              let row ← Ident.checked s!"hidden_row_{regionIndex}_{attrIndex}"
+              let scan ← Ident.checked
+                s!"{mounted.select.name}_scan_{regionIndex}_{attrIndex}"
+              let row ← Ident.checked
+                s!"{mounted.select.name}_row_{regionIndex}_{attrIndex}"
               pure [
                 Stmt.const scan (.array (.ofList [uint 0])),
                 .forOf row (regionEntry regions regionIndex 1) (.ofList [
@@ -1676,6 +1684,10 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
           mounted.select.hiddenPredicate?.isSome) then
         #["predicate-visibility"]
       else #[]) ++
+      (if checked.view.attrSelects.any (fun mounted =>
+          mounted.select.checkedRegion?.isSome) then
+        #["region-checked"]
+      else #[]) ++
       (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
@@ -1867,7 +1879,13 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
   for (mounted, index) in checked.view.events.zipIdx do
     let off ← Ident.checked s!"off_{index}"
     let node ← nodeAt dom.nodes mounted.path
-    match mounted.binding.kind.payload with
+    /- The ADR-0060 payload-less toggle binding: a static change binding
+    naming a plain event discards the checked payload and mounts through
+    the same plain `listen` export a click binding uses — no form-event
+    adapter and no new host export. -/
+    let plainChange := mounted.binding.kind == .change &&
+      (eventNames.idxOf? mounted.binding.eventName).isSome
+    match (if plainChange then EventPayload.none else mounted.binding.kind.payload) with
     | .none =>
         let eventIndex ← match eventNames.idxOf? mounted.binding.eventName with
           | some value => pure value
@@ -1939,8 +1957,12 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     .return (.ident disposer)
   ]
   let mount ← Ident.checked "mount"
+  /- An ADR-0060 payload-less change binding mounts through the plain
+  `listen` export, so it never demands the value adapter. -/
   let usesValueListener := checked.view.events.any
-    fun mounted => mounted.binding.kind.payload == .value
+    fun mounted => mounted.binding.kind.payload == .value &&
+      !(mounted.binding.kind == .change &&
+        eventNames.contains mounted.binding.eventName)
   let usesKeyListener := checked.view.events.any
     fun mounted => mounted.binding.kind.payload == .key
   let usesCheckedListener := checked.view.events.any
@@ -1984,7 +2006,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             (runtime.makeDisposer, runtime.makeDisposer)
           ] ++ (if checked.view.props.isEmpty && !checked.view.attrSelects.any
               (fun mounted => match mounted.select with
-                | .disabledSelect .. | .hiddenIfEmpty .. => true
+                | .disabledSelect .. | .hiddenIfEmpty .. | .checkedIfEmpty .. => true
                 | _ => false) && !usesBranches && !usesReflects &&
               !usesFilters then #[]
             else #[(runtime.setProperty, runtime.setProperty)]) ++

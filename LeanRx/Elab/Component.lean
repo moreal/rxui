@@ -150,8 +150,10 @@ private def renderFields (fields : List String) : String :=
 
 /-- Rewrite `{count region}` and `{count region (field == "literal")}`
 children of an inline view to the internal `regionCount%` child (ADR-0050),
-and `hidden={count region == 0}` attributes to the internal
-`regionHidden% "region"` attribute (ADR-0058). The `count` head with an
+`hidden={count region == 0}` attributes to the internal
+`regionHidden% "region"` attribute (ADR-0058), and
+`checked={count region == 0}` attributes to the internal
+`regionChecked% "region"` attribute (ADR-0060). The `count` head with an
 argument is claimed by the rewrite — unnamed dynamic text is rejected
 downstream either way, so the shape cannot collide with a legitimate child —
 and region names resolve against the declared inventory here, where the
@@ -159,7 +161,11 @@ inventory exists. A `hidden` attribute with any other dynamic value is the
 sealed surface's rejection: the visibility subject is one declared region's
 total row count against the zero literal — predicate counts, other
 comparison operators, threshold literals, negation, composition, and
-general aggregate expressions are not visibility subjects. -/
+general aggregate expressions are not visibility subjects. A `checked`
+attribute claims only count-headed values — the same two sealed shapes
+against the same zero literal — because every other dynamic `checked`
+value keeps its meaning: the ADR-0038 controlled reflection at component
+scope and the ADR-0049 row checked reflection in row templates. -/
 private partial def rewriteCountRefs (regionFields : List (String × List String))
     (stx : Syntax) : CommandElabM Syntax := do
   let resolve (region : TSyntax `ident) : CommandElabM (List String) := do
@@ -239,6 +245,60 @@ private partial def rewriteCountRefs (regionFields : List (String × List String
     | _ =>
         throwErrorAt value
           "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0} or hidden=\{count region (field == \"literal\") == 0}: one declared region's total or predicate row count against the zero literal (ADR-0058/0059)"
+  /- The sealed toggle-all checked attribute (ADR-0060): exactly
+  `checked={count region == 0}` or
+  `checked={count region (field == "literal") == 0}` over a declared region
+  rewrites; a count-headed value in any other shape reports the sealed
+  surface, and every non-count value falls through untouched — it keeps the
+  ADR-0038 controlled reflection meaning at component scope and the
+  ADR-0049 row checked reflection in row templates. -/
+  let checkedAttr? (info : SourceInfo) (value : TSyntax `term) :
+      CommandElabM (Option Syntax) := do
+    let accept (region : TSyntax `ident)
+        (predicate? : Option (TSyntax `ident × TSyntax `str)) :
+        CommandElabM Syntax := do
+      let fields ← resolve region
+      let ref := region.raw.getHeadInfo
+      let head := #[Syntax.atom ref "regionChecked%",
+        Syntax.mkStrLit region.getId.eraseMacroScopes.toString (info := ref)]
+      let tail ← match predicate? with
+        | none => pure #[mkNullNode]
+        | some (field, lit) => do
+            let fieldName := field.getId.eraseMacroScopes.toString
+            let index ← match fields.idxOf? fieldName with
+              | some index => pure index
+              | none =>
+                  throwErrorAt field
+                    s!"error[LRX-ELAB-119]: unknown row field {fieldName}; declared fields are {renderFields fields}"
+            pure #[mkNullNode
+              #[Syntax.mkNumLit (toString index) (info := ref), lit.raw]]
+      pure (.node info ``LeanRxDsl.leanrxJsxAttrRegionChecked (head ++ tail))
+    let requireZero (lit : TSyntax `num) : CommandElabM Unit := do
+      unless lit.getNat == 0 do
+        throwErrorAt lit
+          "error[LRX-ELAB-125]: a checked reflection compares its row count against the zero literal only (ADR-0060)"
+    match value with
+    | `($head:ident $region:ident == $lit:num) =>
+        if head.getId.eraseMacroScopes == `count then do
+          requireZero lit
+          pure (some (← accept region none))
+        else pure none
+    | `($head:ident $region:ident ($field:ident == $strLit:str) == $lit:num) =>
+        if head.getId.eraseMacroScopes == `count then do
+          requireZero lit
+          pure (some (← accept region (some (field, strLit))))
+        else pure none
+    | `($head:ident $_region:ident) =>
+        if head.getId.eraseMacroScopes == `count then
+          throwErrorAt value
+            "error[LRX-ELAB-125]: a checked reflection is written checked=\{count region == 0} or checked=\{count region (field == \"literal\") == 0}: one declared region's total or predicate row count against the zero literal (ADR-0060)"
+        else pure none
+    | `($head:ident $_region:ident ($_:ident == $_:str)) =>
+        if head.getId.eraseMacroScopes == `count then
+          throwErrorAt value
+            "error[LRX-ELAB-125]: a checked reflection is written checked=\{count region == 0} or checked=\{count region (field == \"literal\") == 0}: one declared region's total or predicate row count against the zero literal (ADR-0060)"
+        else pure none
+    | _ => pure none
   match stx with
   | .node info kind args =>
       if kind == ``LeanRxDsl.leanrxJsxChildDynamic && args.size == 3 then
@@ -248,6 +308,11 @@ private partial def rewriteCountRefs (regionFields : List (String × List String
       else if kind == ``LeanRxDsl.leanrxJsxAttrDynamic && args.size == 5 &&
           args[0]!.isIdent && args[0]!.getId.eraseMacroScopes == `hidden then
         hiddenAttr info ⟨args[3]!⟩
+      else if kind == ``LeanRxDsl.leanrxJsxAttrDynamic && args.size == 5 &&
+          args[0]!.isIdent && args[0]!.getId.eraseMacroScopes == `checked then
+        match ← checkedAttr? info ⟨args[3]!⟩ with
+        | some attr => pure attr
+        | none => pure (.node info kind (← args.mapM (rewriteCountRefs regionFields)))
       else
         pure (.node info kind (← args.mapM (rewriteCountRefs regionFields)))
   | _ => pure stx

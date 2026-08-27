@@ -84,6 +84,14 @@ attributes become `regionHidden% "region" fieldIndex "literal"` before
 lowering. -/
 scoped syntax (name := leanrxJsxAttrRegionHidden)
   "regionHidden%" str (num str)? : leanrxJsxAttr
+/- Internal target of the component command's sealed toggle-all checked
+rewrite (ADR-0060); `checked={count region == 0}` attributes become
+`regionChecked% "region"` and `checked={count region (field == "literal") == 0}`
+attributes become `regionChecked% "region" fieldIndex "literal"` before
+lowering. Every other dynamic `checked` value keeps its ADR-0038 controlled
+reflection meaning. -/
+scoped syntax (name := leanrxJsxAttrRegionChecked)
+  "regionChecked%" str (num str)? : leanrxJsxAttr
 
 declare_syntax_cat leanrxJsxChild
 declare_syntax_cat leanrxJsxElement
@@ -397,6 +405,20 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
           selectTerms := selectTerms.push
             (← `(LeanRx.AttrSelect.hiddenIfEmpty $region $span
               (predicate := some ($field, $lit))))
+      | `(leanrxJsxAttr| regionChecked% $region:str) => do
+          /- The sealed toggle-all checked selection (ADR-0060), produced only
+          by the component command's rewrite over the same count surface. -/
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.checkedIfEmpty $region $span))
+      | `(leanrxJsxAttr| regionChecked% $region:str $field:num $lit:str) => do
+          /- The predicate-count checked selection (ADR-0060): the rewrite
+          already resolved the region name, the projected field's index, and
+          the zero literal. -/
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.checkedIfEmpty $region $span
+              (predicate := some ($field, $lit))))
       | _ => pure ()
     let plainAttrs := attrs.filter fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
@@ -412,6 +434,8 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | `(leanrxJsxAttr| disabled = { $_:ident $_:ident == $_:str }) => false
       | `(leanrxJsxAttr| regionHidden% $_:str) => false
       | `(leanrxJsxAttr| regionHidden% $_:str $_:num $_:str) => false
+      | `(leanrxJsxAttr| regionChecked% $_:str) => false
+      | `(leanrxJsxAttr| regionChecked% $_:str $_:num $_:str) => false
       | _ => true
     let attrTerms ← plainAttrs.mapM fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩

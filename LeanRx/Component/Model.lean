@@ -345,10 +345,11 @@ private def propNodes (values : Array (ValueSpec Γ))
 
 private def attrSelectNodes (values : Array (ValueSpec Γ))
     (selects : List (MountedAttrSelect Γ)) : Except ComponentError (Array NodeSpec) := do
-  /- A `hiddenIfEmpty` selection reads no state field: like the ADR-0050
-  count texts it is region-driven, so it joins the region-touch sweep
-  instead of the planned graph (ADR-0058). The field selections keep their
-  global selection indices, matching the emitted `attr:{index}` labels. -/
+  /- A `hiddenIfEmpty` or `checkedIfEmpty` selection reads no state field:
+  like the ADR-0050 count texts it is region-driven, so it joins the
+  region-touch sweep instead of the planned graph (ADR-0058/0060). The
+  field selections keep their global selection indices, matching the
+  emitted `attr:{index}` labels. -/
   let nodes ← selects.zipIdx.filterMapM fun (mounted, index) => do
     match mounted.select.fieldIndex? with
     | none => pure none
@@ -442,6 +443,32 @@ private def acceptsPayload : AnyTypedEvent Γ → EventPayload → Bool
   | .string _, .value | .string _, .key => true
   | .bool _, .checked => true
   | _, _ => false
+
+/- Whether one element's static attributes carry `type="checkbox"` — the
+only elements a delegated `change` binding or a `checked` reflection may sit
+on (ADR-0049): the `checked` payload and property originate from checkbox
+inputs alone. The ADR-0060 static-scope rules read the same predicate: the
+toggle-all checked selection and the payload-less change binding both
+demand a `type="checkbox"` input. -/
+private def isCheckboxAttrs (attrs : List StaticAttr) : Bool :=
+  attrs.any (· == .inputType .checkbox)
+
+/- The element mounted at one child-index path of the view, for rules that
+need the bound element's tag and static attributes (ADR-0060). -/
+mutual
+private def viewElementAt? : View Γ → List Nat →
+    Option (HtmlTag × List StaticAttr)
+  | .element tag attrs _ _ _ _ _, [] => some (tag, attrs)
+  | .element _ _ _ children _ _ _, index :: rest =>
+      viewChildElementAt? children index rest
+  | _, _ => none
+
+private def viewChildElementAt? : ViewChildren Γ → Nat → List Nat →
+    Option (HtmlTag × List StaticAttr)
+  | .nil, _, _ => none
+  | .cons head _, 0, rest => viewElementAt? head rest
+  | .cons _ tail, index + 1, rest => viewChildElementAt? tail index rest
+end
 
 private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
     (split : ViewSplit Γ) : Except ComponentError Unit := do
@@ -633,6 +660,27 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
           message := s!"view references unknown event {mounted.binding.eventName}"
           spans := #[mounted.binding.span]
         }
+    else if mounted.binding.kind == .change &&
+        names.contains mounted.binding.eventName then
+      /- The payload-less toggle binding (ADR-0060): a static `change`
+      binding may name a plain component event — the toggle-all checkbox
+      fires it whole, discarding the checked payload — but only from a
+      `type="checkbox"` input, the ADR-0049 origin rule in static scope.
+      Every other change binding still resolves a typed value event. -/
+      match viewElementAt? spec.view mounted.path with
+      | some (.input, attrs) =>
+          unless isCheckboxAttrs attrs do
+            throw {
+              code := "LRX-VIEW-043"
+              message := s!"a change binding to plain event {mounted.binding.eventName} requires a type=\"checkbox\" input element"
+              spans := #[mounted.binding.span]
+            }
+      | _ =>
+          throw {
+            code := "LRX-VIEW-043"
+            message := s!"a change binding to plain event {mounted.binding.eventName} requires a type=\"checkbox\" input element"
+            spans := #[mounted.binding.span]
+          }
     else
       match spec.typedEvents.toList.find? (·.name == mounted.binding.eventName) with
       | none =>
@@ -747,6 +795,15 @@ private def validateView : View Γ → Except ComponentError Unit
                 message := s!"a {select.name} selection requires a native button element"
                 spans := #[select.span]
               }
+        | .checkedIfEmpty .. =>
+            /- The ADR-0049 checkbox rule in static scope (ADR-0060): the
+            `checked` property originates from checkbox inputs alone. -/
+            unless tag == .input && isCheckboxAttrs attrs do
+              throw {
+                code := "LRX-VIEW-043"
+                message := "a checked reflection over a region count requires a type=\"checkbox\" input element"
+                spans := #[select.span]
+              }
       if duplicate? (events.map fun event => event.kind.name) then
         throw { code := "LRX-VIEW-002", message := "element has duplicate event bindings", spans := #[span] }
       if events.any (fun event => event.kind == .click || event.kind == .dblclick) &&
@@ -774,7 +831,10 @@ private def validateView : View Γ → Except ComponentError Unit
           message := "reflected properties require a native input element"
           spans := #[span]
         }
-      if duplicate? (props.map PropBinding.name) then
+      /- A `checked` selection counts as a reflected property here (ADR-0060):
+      a controlled `checked` binding beside the toggle-all selection would
+      race two writers over one element property. -/
+      if duplicate? (props.map PropBinding.name ++ selects.map AttrSelect.name) then
         throw {
           code := "LRX-VIEW-021"
           message := "element reflects duplicate properties"
@@ -883,13 +943,6 @@ end
 delegated listener per kind on the region container. -/
 private def rowEventKinds : List EventKind :=
   [.click, .dblclick, .input, .keydown, .checkedChange]
-
-/- Whether one element's static attributes carry `type="checkbox"` — the
-only elements a delegated `change` binding or a `checked` reflection may sit
-on (ADR-0049): the `checked` payload and property originate from checkbox
-inputs alone. -/
-private def isCheckboxAttrs (attrs : List StaticAttr) : Bool :=
-  attrs.any (· == .inputType .checkbox)
 
 /- Validate one sealed row template node (ADR-0041). `depth` is the distance
 from the row root: the root is 0, cells are 1, and delegated row events may
@@ -1439,25 +1492,26 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               message := s!"a count predicate projects field {fieldIndex} outside region {count.region}'s {region.fields.size} field(s)"
               spans := #[count.span, region.span]
             }
-  /- Sealed empty-region visibility (ADR-0058/0059): every `hiddenIfEmpty`
-  selection names a declared region — the row-table subject exists exactly
-  when the region does — and a predicate-count subject projects an
-  in-bounds row field, the ADR-0050 count-predicate rule. -/
+  /- Sealed region-count subjects (ADR-0058/0059/0060): every `hiddenIfEmpty`
+  and `checkedIfEmpty` selection names a declared region — the row-table
+  subject exists exactly when the region does — and a predicate-count
+  subject projects an in-bounds row field, the ADR-0050 count-predicate
+  rule. -/
   for mounted in split.attrSelects do
-    if let some regionName := mounted.select.hiddenRegion? then
+    if let some regionName := mounted.select.regionSubject? then
       match spec.regions.toList.find? (·.name == regionName) with
       | none =>
           throw {
             code := "LRX-VIEW-042"
-            message := s!"a hidden reflection references unknown region {regionName}"
+            message := s!"a {mounted.select.name} reflection references unknown region {regionName}"
             spans := #[mounted.select.span]
           }
       | some region =>
-          if let some (fieldIndex, _) := mounted.select.hiddenPredicate? then
+          if let some (fieldIndex, _) := mounted.select.regionPredicate? then
             unless fieldIndex < region.fields.size do
               throw {
                 code := "LRX-VIEW-042"
-                message := s!"a hidden reflection's predicate projects field {fieldIndex} outside region {regionName}'s {region.fields.size} field(s)"
+                message := s!"a {mounted.select.name} reflection's predicate projects field {fieldIndex} outside region {regionName}'s {region.fields.size} field(s)"
                 spans := #[mounted.select.span, region.span]
               }
   unless spec.regions.isEmpty do
