@@ -13,21 +13,22 @@ if (
   manifest.module !== "ToggleLab.mjs" ||
   typeof manifest.graphHash !== "string" ||
   manifest.graphHash.length === 0 ||
-  // ADR-0049/0050/0051/0052 ship with no host change: the ABI stays at the
-  // ADR-0048 level.
+  // ADR-0049/0050/0051/0052/0055/0056 ship with no host change: the ABI
+  // stays at the ADR-0048 level.
   manifest.runtimeAbi !== 16 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "string", "string"]) ||
   manifest.sourceCount !== 3 ||
   manifest.derivedCount !== 0 ||
   manifest.textSinkCount !== 1 ||
-  manifest.eventCount !== 8 ||
+  manifest.eventCount !== 9 ||
   JSON.stringify(manifest.hostImports) !== JSON.stringify([
     "./leanrx_dom.mjs", "./leanrx_form_events.mjs", "./leanrx_region.mjs",
   ]) ||
   JSON.stringify(manifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
-    "typed-events", "event-guards", "controlled-props", "keyed-regions",
+    "typed-events", "event-guards", "event-key-branches", "controlled-props",
+    "keyed-regions",
     "typed-row-events", "row-key-branches", "row-guards", "row-trim",
     "row-branches", "row-reflects", "row-focus", "row-aggregates",
     "region-broadcasts", "region-filters",
@@ -47,11 +48,27 @@ for (const required of [
   // Branch Lab's exactly — no new host export and no ABI bump for the kinds,
   // the aggregates, the broadcasts, or the filter view.
   "import { createElement, createText, setAttribute, append, listen, setText, makeDisposer, setProperty, setKey, childAt, listenDelegatedCells, focus } from \"./leanrx_dom.mjs\";",
-  "import { listenValue } from \"./leanrx_form_events.mjs\";",
+  "import { listenValue, listenKey } from \"./leanrx_form_events.mjs\";",
   "import { createKeyedRegion, detach } from \"./leanrx_region.mjs\";",
   // The ADR-0055 controlled new-todo input rides the ADR-0038 path: the
-  // per-keystroke typed event through the existing listenValue export.
+  // per-keystroke typed event through the existing listenValue export. The
+  // ADR-0056 key-branched confirmAdd binds beside it through the existing
+  // listenKey export — same input, same host, no ABI bump.
   "  const off_0 = listenValue(node_3, \"input\", state, context, $lrx_typed_event_0);",
+  "  const off_1 = listenKey(node_3, \"keydown\", state, context, $lrx_key_event_0);",
+  // The ADR-0056 dispatch function: one sealed key equality per arm over the
+  // delegated key payload — a non-matching key returns before the context is
+  // even destructured, and the matched Enter arm is the ADR-0055 guarded
+  // transaction function tracing its own event:confirmAdd:Enter label.
+  "function $lrx_key_event_0(hostState, context, pressed) {\n  if (pressed === \"Enter\") {\n    return $lrx_key_event_0_arm_0(context, null);\n  }\n  return null;\n}",
+  "function $lrx_key_event_0_arm_0(context, ignored) {",
+  "  tx[7][\"push\"](\"event:confirmAdd:Enter\");",
+  // The Enter arm's guard miss appends through its own evaluator namespace
+  // behind the plain events (pseudo event index 7), with the same trimmed
+  // append and draft reset the Add button's $lrx_event_1 runs.
+  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_7_append_0_0(state[0], state[1], state[2]), $lrx_event_7_append_0_1(state[0], state[1], state[2]), $lrx_event_7_append_0_2(state[0], state[1], state[2]), $lrx_event_7_append_0_3(state[0], state[1], state[2])]);",
+  "function $lrx_event_7_append_0_0(added, filter, draft) {\n  return draft[\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n}",
+  "function $lrx_event_7_write_1(added, filter, draft) {\n  return \"\";\n}",
   // The ADR-0055 sealed skip guard: the guarded add dispatch returns before
   // the transaction begins on a whitespace-only draft — no begin
   // bookkeeping, no event trace, no write, no append, no region touch. The
@@ -100,7 +117,7 @@ for (const required of [
   // (ADR-0047/0048): replacement arm only.
   "    detach(childAt(branch_cell_0, 0));",
   "    if (!branch_want_0) {\n      focus(childAt(branch_cell_0, 0));\n    }",
-  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, off_6, off_7, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
+  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, off_6, off_7, off_8, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
   // The ADR-0050 region record carries the count refs and numeric cache in
   // two region-local slots behind the pending slot, and the ADR-0051 filter
   // slot holds the container element behind them.

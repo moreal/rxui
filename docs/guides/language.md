@@ -584,21 +584,35 @@ component NewTodoMini (schema := NewTodoMiniSchema) where {
   event add := if trim newTodoDraft == "" then skip
     else (append roster (trim newTodoDraft), set newTodoDraft "");
   event setDraft (value : String) := set newTodoDraft value;
+  event confirm (pressed : String) :=
+    when "Enter" (if trim newTodoDraft == "" then skip
+      else (append roster (trim newTodoDraft), set newTodoDraft ""));
   region roster (label) := jsx% <li> [
     <span> [{label}],
     <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
   ];
   view := jsx% <main> [
-    <input ariaLabel="New todo" value={rx% newTodoDraft} onInput={setDraft}/>,
+    <input ariaLabel="New todo" value={rx% newTodoDraft} onInput={setDraft}
+      onKeyDown={confirm}/>,
     <button type="button" onClick={add}> ["Add"],
     <ul ariaLabel="Items"> [<region roster/>]
   ];
 }
 ```
 
-Enter-to-add stays a recorded gap: component scope has no key branching
-(`when` arms are row vocabulary), so the add contract binds to the button
-click path.
+A payload-taking component event whose steps are `when "key" (…)` arms is a
+*key-branched event* (ADR-0056): the ADR-0052 sealed key selection lifted to
+component scope. The declared `String` parameter is the discriminant, named
+in the head, compared implicitly by each arm, and not spellable inside an
+arm body — the matched literal already fixes it. Key literals come from the
+sealed `Enter`/`Escape` set, each at most once, and every arm body is an
+ordinary component step sequence, optionally behind the skip-if guard — so
+`confirm` above makes Enter run exactly the Add button's guarded add. The
+event binds through `onKeyDown` exactly once on a native input and rides
+the same `listenKey` host adapter typed key payloads always used; a key
+outside the arm table is a whole-event no-op before any transaction exists.
+`LRX-TYPE-115` seals the arm table, `LRX-VIEW-041` the binding, and
+`LRX-ELAB-124` the surface.
 
 A static view element may select its `class`, `aria-pressed`, or `disabled`
 from component state (ADR-0045):

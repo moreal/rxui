@@ -333,7 +333,7 @@ component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
 }
 
 /- The skip-guarded component event snippet from guide section 7
-(ADR-0055). -/
+(ADR-0055), with the ADR-0056 key-branched Enter confirmation. -/
 abbrev NewTodoMiniSchema : Schema := .field "newTodoDraft" String .empty
 
 def newTodoDraft : Field NewTodoMiniSchema String := .here
@@ -343,12 +343,16 @@ component NewTodoMini (schema := NewTodoMiniSchema) where {
   event add := if trim newTodoDraft == "" then skip
     else (append roster (trim newTodoDraft), set newTodoDraft "");
   event setDraft (value : String) := set newTodoDraft value;
+  event confirm (pressed : String) :=
+    when "Enter" (if trim newTodoDraft == "" then skip
+      else (append roster (trim newTodoDraft), set newTodoDraft ""));
   region roster (label) := jsx% <li> [
     <span> [{label}],
     <span> [<button type="button" ariaLabel="Remove" onClick={remove}> ["✕"]]
   ];
   view := jsx% <main> [
-    <input ariaLabel="New todo" value={rx% newTodoDraft} onInput={setDraft}/>,
+    <input ariaLabel="New todo" value={rx% newTodoDraft} onInput={setDraft}
+      onKeyDown={confirm}/>,
     <button type="button" onClick={add}> ["Add"],
     <ul ariaLabel="Items"> [<region roster/>]
   ];
@@ -573,6 +577,12 @@ def run : IO Unit := do
       unless (adding.spec.events.toList.map (·.update.regionAppendTargets)) ==
           [[("roster", 1)]] do
         throw <| IO.userError "language-guide skip-guard snippet lost its append"
+      unless adding.spec.keyEvents.toList.map (fun event =>
+          (event.name, event.arms.map fun arm =>
+            (arm.key, arm.guard?.map fun guard =>
+              (guard.field.index, guard.trimmed)))) ==
+          [("confirm", [("Enter", some (0, true))])] do
+        throw <| IO.userError "language-guide key-branch snippet lost its arm table"
   | .error error =>
       throw <| IO.userError s!"language-guide skip-guard component rejected: {error.render}"
   match FilterMini_check with

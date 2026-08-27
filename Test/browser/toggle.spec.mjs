@@ -686,6 +686,72 @@ test("Add on a valid draft appends the trimmed label and resets the draft (ADR-0
     .getByRole("textbox", { name: "Item editor" })).toHaveValue("buy milk");
 });
 
+test("Enter on a whitespace-only draft is a whole-event no-op (ADR-0056)", async ({ page }) => {
+  await mountToggle(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  await draft.fill(" \t ");
+  const beforeTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  const beforeRegion = await regionMetrics(page);
+  // The Enter arm carries the same ADR-0055 skip guard the Add button's
+  // dispatch evaluates: the matched arm returns before its transaction
+  // begins — no begin bookkeeping, no event trace, no write, no append, no
+  // region touch — exactly the button path's guard hit.
+  await draft.press("Enter");
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(draft).toHaveValue(" \t ");
+  const afterTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(afterTx).toEqual(beforeTx);
+  expect(await regionMetrics(page)).toEqual(beforeRegion);
+});
+
+test("Enter on a valid draft runs the Add button's guarded add (ADR-0056)", async ({ page }) => {
+  await mountToggle(page);
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  await draft.fill("  buy milk \t");
+  const before = await regionMetrics(page);
+  // The Enter arm's guard miss is the Add button's transaction observable
+  // for observable: one row mount with the ASCII-trimmed label, the mirrored
+  // row draft, and the component draft reset through the controlled
+  // reflection — traced under the arm's own event:confirmAdd:Enter label.
+  await draft.press("Enter");
+  await expect(page.locator("#items > li .item-label")).toHaveText(["buy milk"]);
+  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(draft).toHaveValue("");
+  const after = await regionMetrics(page);
+  expect(after[0]).toBe(before[0] + 1);
+  expect(after[1]).toBe(before[1]);
+  expect(after[2]).toBe(before[2] + 1);
+  expect(after[3]).toBe(before[3]);
+  const trace = await page.evaluate(() => globalThis.toggleDispose.instrumentation()[7]);
+  expect(trace).toContain("event:confirmAdd:Enter");
+  expect(trace).toContain("region:items:append");
+  // The appended row enters the full row vocabulary: its editor opens on
+  // the trimmed mirrored draft.
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  await expect(page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" })).toHaveValue("buy milk");
+});
+
+test("a key outside the sealed arm table moves nothing (ADR-0056)", async ({ page }) => {
+  await mountToggle(page);
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  await draft.fill("buy milk");
+  const beforeTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  const beforeRegion = await regionMetrics(page);
+  // A non-matching key returns from the ADR-0056 dispatch function before
+  // the context is even destructured: no transaction shell at all — cheaper
+  // than the row-scope non-match, which begins and commits empty.
+  await draft.press("ArrowLeft");
+  await draft.press("Shift");
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  await expect(draft).toHaveValue("buy milk");
+  const afterTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(afterTx).toEqual(beforeTx);
+  expect(await regionMetrics(page)).toEqual(beforeRegion);
+});
+
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();

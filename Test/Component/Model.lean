@@ -799,6 +799,62 @@ def run : IO Unit := do
         guard? := some { field := parity, trimmed := false }
       }] }
   expectError "LRX-TYPE-114" guardOnDerived.check
+  /- ADR-0056 sealed key-branched component events, exercised through forged
+  specifications: a keydown-bound Enter arm behind the ADR-0055 guard checks,
+  keeps its arm table, and records the guard read in its summary union;
+  LRX-TYPE-115 rejects a key outside the sealed Enter/Escape set, a
+  duplicated key, and an empty arm table; LRX-VIEW-041 rejects a non-keydown
+  binding and an unbound (or multiply bound) key event. -/
+  let keyedArm : KeyEventArm (.field "draft" String .empty) := {
+    key := "Enter"
+    update := .set (.here : Field (.field "draft" String .empty) String)
+      (RxExpr.literal (.string ""))
+    guard? := some { field := .here, trimmed := true }
+  }
+  let keyedSpec : ComponentSpec (.field "draft" String .empty) :=
+    { name := "Keyed"
+      values := #[ValueSpec.state
+        (.here : Field (.field "draft" String .empty) String) (.string "")]
+      events := #[]
+      keyEvents := #[{
+        name := "confirm"
+        parameterName := "pressed"
+        arms := [keyedArm]
+      }]
+      view := View.node .main [View.node .input []
+        (events := [{ kind := .keydown, eventName := "confirm" }])] }
+  match keyedSpec.check with
+  | .error error =>
+      throw <| IO.userError s!"forged key-branched event rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.keyEvents.toList.map (fun event =>
+          (event.name, event.parameterName, event.arms.map fun arm =>
+            (arm.key, arm.guard?.map fun guard =>
+              (guard.field.index, guard.trimmed)))) ==
+          [("confirm", "pressed", [("Enter", some (0, true))])] do
+        throw <| IO.userError "forged key-branched event lost its arm table"
+      unless checked.eventSummaries.toList.map (fun s => (s.name, s.directReads)) ==
+          [("confirm", [0])] do
+        throw <| IO.userError "forged key-branched event summary lost the guard read"
+  expectError "LRX-TYPE-115" ({ keyedSpec with keyEvents := #[{
+    name := "confirm"
+    parameterName := "pressed"
+    arms := [{ keyedArm with key := "Tab" }]
+  }] }).check
+  expectError "LRX-TYPE-115" ({ keyedSpec with keyEvents := #[{
+    name := "confirm"
+    parameterName := "pressed"
+    arms := [keyedArm, keyedArm]
+  }] }).check
+  expectError "LRX-TYPE-115" ({ keyedSpec with keyEvents := #[{
+    name := "confirm"
+    parameterName := "pressed"
+    arms := []
+  }] }).check
+  expectError "LRX-VIEW-041" ({ keyedSpec with view := View.node .main [
+    View.node .input [] (events := [{ kind := .input, eventName := "confirm" }])] }).check
+  expectError "LRX-VIEW-041" ({ keyedSpec with
+    view := View.node .p [.text "unbound"] }).check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check

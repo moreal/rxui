@@ -250,6 +250,33 @@ private def verifyToggle
   | some summary =>
       unless summary.directReads == [2] do
         throw <| IO.userError "toggle add event summary lost the guard read"
+  /- The ADR-0056 key-branched component event: `confirmAdd` selects on the
+  declared `pressed` discriminant with one sealed Enter arm carrying exactly
+  the Add button's guarded add — trimmed guard on state slot 2, four-field
+  append, draft reset — and its summary unions the arm bodies, guard read
+  included. -/
+  unless checked.spec.keyEvents.toList.map (fun event =>
+      (event.name, event.parameterName, event.arms.map (·.key))) ==
+      [("confirmAdd", "pressed", ["Enter"])] do
+    throw <| IO.userError "toggle key-branched event inventory changed"
+  match checked.spec.keyEvents.toList.find? (·.name == "confirmAdd") with
+  | none => throw <| IO.userError "toggle key-branched event disappeared"
+  | some event =>
+      match event.arms with
+      | [arm] =>
+          unless arm.guard?.map (fun guard => (guard.field.index, guard.trimmed)) ==
+              some (2, true) do
+            throw <| IO.userError "toggle Enter arm lost its skip guard"
+          unless arm.update.regionAppendTargets == [("items", 4)] do
+            throw <| IO.userError "toggle Enter arm lost its append target"
+          unless arm.update.directWriteTargets == [2] do
+            throw <| IO.userError "toggle Enter arm lost its draft reset"
+      | _ => throw <| IO.userError "toggle Enter arm table changed"
+  match checked.eventSummaries.toList.find? (·.name == "confirmAdd") with
+  | none => throw <| IO.userError "toggle key-branched summary disappeared"
+  | some summary =>
+      unless summary.directReads == [2] && summary.directWrites == [2] do
+        throw <| IO.userError "toggle key-branched summary lost the guard read"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [
