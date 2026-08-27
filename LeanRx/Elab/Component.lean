@@ -192,39 +192,53 @@ private partial def rewriteCountRefs (regionFields : List (String × List String
           pure (some (← `(leanrxJsxChild| regionCount% $regionLit:str $indexLit:num $lit:str)))
         else pure none
     | _ => pure none
-  /- The sealed empty-region visibility attribute (ADR-0058): exactly
-  `hidden={count region == 0}` over a declared region rewrites; every other
-  dynamic `hidden` value reports the sealed surface. -/
+  /- The sealed empty-region visibility attribute (ADR-0058/0059): exactly
+  `hidden={count region == 0}` or
+  `hidden={count region (field == "literal") == 0}` over a declared region
+  rewrites; every other dynamic `hidden` value reports the sealed surface. -/
   let hiddenAttr (info : SourceInfo) (value : TSyntax `term) :
       CommandElabM Syntax := do
-    let accept (region : TSyntax `ident) : CommandElabM Syntax := do
-      let _ ← resolve region
+    let accept (region : TSyntax `ident)
+        (predicate? : Option (TSyntax `ident × TSyntax `str)) :
+        CommandElabM Syntax := do
+      let fields ← resolve region
       let ref := region.raw.getHeadInfo
-      pure (.node info ``LeanRxDsl.leanrxJsxAttrRegionHidden
-        #[.atom ref "regionHidden%",
-          Syntax.mkStrLit region.getId.eraseMacroScopes.toString (info := ref)])
+      let head := #[Syntax.atom ref "regionHidden%",
+        Syntax.mkStrLit region.getId.eraseMacroScopes.toString (info := ref)]
+      let tail ← match predicate? with
+        | none => pure #[mkNullNode]
+        | some (field, lit) => do
+            let fieldName := field.getId.eraseMacroScopes.toString
+            let index ← match fields.idxOf? fieldName with
+              | some index => pure index
+              | none =>
+                  throwErrorAt field
+                    s!"error[LRX-ELAB-119]: unknown row field {fieldName}; declared fields are {renderFields fields}"
+            pure #[mkNullNode
+              #[Syntax.mkNumLit (toString index) (info := ref), lit.raw]]
+      pure (.node info ``LeanRxDsl.leanrxJsxAttrRegionHidden (head ++ tail))
+    let requireZero (lit : TSyntax `num) : CommandElabM Unit := do
+      unless lit.getNat == 0 do
+        throwErrorAt lit
+          "error[LRX-ELAB-125]: a hidden reflection compares its row count against the zero literal only (ADR-0058/0059)"
     match value with
     | `($head:ident $region:ident == $lit:num) =>
-        if head.getId.eraseMacroScopes == `count then
-          if lit.getNat == 0 then
-            accept region
-          else
-            throwErrorAt lit
-              "error[LRX-ELAB-125]: a hidden reflection compares the row total against the zero literal only (ADR-0058)"
+        if head.getId.eraseMacroScopes == `count then do
+          requireZero lit
+          accept region none
         else
           throwErrorAt value
-            "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0}: one declared region's total row count against the zero literal (ADR-0058)"
-    | `($head:ident $region:ident ($_:ident == $_:str) == $_:num) =>
-        if head.getId.eraseMacroScopes == `count then
-          let _ ← resolve region
-          throwErrorAt value
-            "error[LRX-ELAB-125]: a hidden reflection's subject is one region's total row count; predicate counts are not visibility subjects (ADR-0058)"
+            "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0} or hidden=\{count region (field == \"literal\") == 0} (ADR-0058/0059)"
+    | `($head:ident $region:ident ($field:ident == $strLit:str) == $lit:num) =>
+        if head.getId.eraseMacroScopes == `count then do
+          requireZero lit
+          accept region (some (field, strLit))
         else
           throwErrorAt value
-            "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0}: one declared region's total row count against the zero literal (ADR-0058)"
+            "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0} or hidden=\{count region (field == \"literal\") == 0} (ADR-0058/0059)"
     | _ =>
         throwErrorAt value
-          "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0}: one declared region's total row count against the zero literal (ADR-0058)"
+          "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0} or hidden=\{count region (field == \"literal\") == 0}: one declared region's total or predicate row count against the zero literal (ADR-0058/0059)"
   match stx with
   | .node info kind args =>
       if kind == ``LeanRxDsl.leanrxJsxChildDynamic && args.size == 3 then

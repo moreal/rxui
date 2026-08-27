@@ -161,7 +161,25 @@ against the shared attr cache slot, and writes through the existing
 tx[8]/tx[9] counters. Because the subject is the row table and not the
 displayed rows, an ADR-0051 filter hiding every row leaves the wrapper
 visible — visibility is structural emptiness, not filtered emptiness.
-Once more: no host change and no runtime ABI bump. -/
+Once more: no host change and no runtime ABI bump.
+
+The ADR-0059 predicate-count visibility closes ADR-0058's first open
+question — the clear-completed affordance:
+`hidden={count items (done == "true") == 0}` on the Clear completed button
+is the sealed hidden selection whose subject is the ADR-0050 predicate
+count — the number of rows whose `done` field equals `"true"` — against
+the same zero literal. The button mounts hidden (an empty region satisfies
+no predicate), the first done toggle reveals it, and draining the done
+rows — untoggling the last one, `clearCompleted` itself, or removing the
+row — hides it again: the commit sweep runs the ADR-0050 predicate scan on
+the same region-touch path, compares against the same shared attr cache
+slot, and writes through the same `setProperty` export. A filter change
+alone still re-evaluates nothing (the region is untouched), and the
+`completeAll` broadcast leaves the button revealed — every row is done.
+The `hidden` selection is valid on any static element, the button
+included (only `aria-pressed` and `disabled` demand a native button, and
+a button satisfies even that). Once more: no host change and no runtime
+ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -228,7 +246,8 @@ component ToggleLab (schema := ToggleSchema) where {
     <button type="button" onClick={addTodo} disabled={trim draft == ""}> ["Add todo"],
     <button type="button" onClick={addItem}> ["Add item"],
     <button type="button" onClick={completeAll}> ["Complete all"],
-    <button type="button" onClick={clearCompleted}> ["Clear completed"],
+    <button type="button" onClick={clearCompleted}
+      hidden={count items (done == "true") == 0}> ["Clear completed"],
     <button type="button" onClick={showAll}> ["Show all"],
     <button type="button" onClick={showActive}> ["Show active"],
     <button type="button" onClick={showCompleted}> ["Show completed"],

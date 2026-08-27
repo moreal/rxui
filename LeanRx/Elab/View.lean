@@ -78,9 +78,12 @@ scoped syntax (name := leanrxJsxAttrDynamic) ident "=" "{" term "}" : leanrxJsxA
 templates' `autoFocus` marker inhabits it today (ADR-0048). -/
 scoped syntax (name := leanrxJsxAttrMarker) ident : leanrxJsxAttr
 /- Internal target of the component command's sealed empty-region visibility
-rewrite (ADR-0058); `hidden={count region == 0}` attributes become
-`regionHidden% "region"` before lowering. -/
-scoped syntax (name := leanrxJsxAttrRegionHidden) "regionHidden%" str : leanrxJsxAttr
+rewrite (ADR-0058/0059); `hidden={count region == 0}` attributes become
+`regionHidden% "region"` and `hidden={count region (field == "literal") == 0}`
+attributes become `regionHidden% "region" fieldIndex "literal"` before
+lowering. -/
+scoped syntax (name := leanrxJsxAttrRegionHidden)
+  "regionHidden%" str (num str)? : leanrxJsxAttr
 
 declare_syntax_cat leanrxJsxChild
 declare_syntax_cat leanrxJsxElement
@@ -386,6 +389,14 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
           let span ← spanSyntax attr
           selectTerms := selectTerms.push
             (← `(LeanRx.AttrSelect.hiddenIfEmpty $region $span))
+      | `(leanrxJsxAttr| regionHidden% $region:str $field:num $lit:str) => do
+          /- The sealed predicate-count visibility selection (ADR-0059): the
+          rewrite already resolved the region name, the projected field's
+          index, and the zero literal. -/
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.hiddenIfEmpty $region $span
+              (predicate := some ($field, $lit))))
       | _ => pure ()
     let plainAttrs := attrs.filter fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
@@ -400,6 +411,7 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | `(leanrxJsxAttr| disabled = { $_:ident == $_:str }) => false
       | `(leanrxJsxAttr| disabled = { $_:ident $_:ident == $_:str }) => false
       | `(leanrxJsxAttr| regionHidden% $_:str) => false
+      | `(leanrxJsxAttr| regionHidden% $_:str $_:num $_:str) => false
       | _ => true
     let attrTerms ← plainAttrs.mapM fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩

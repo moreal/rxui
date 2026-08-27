@@ -285,9 +285,10 @@ boolean equality written as an element property. A trimmed subject
 (ADR-0057) rides the sealed asciiTrimPattern emission inline — the exact
 equality the ADR-0055 skip guard evaluates. A `hiddenIfEmpty` selection
 reads no state: its value here is the mount-time constant `true`, because
-keyed regions mount empty by construction (ADR-0050/0058); the commit
-sweep re-evaluates it from the region's row table on the region-touch
-path, never through this state-driven lowering. -/
+keyed regions mount empty by construction (ADR-0050/0058) — an empty row
+table has zero total rows and zero predicate-satisfying rows alike
+(ADR-0059); the commit sweep re-evaluates it from the region's row table
+on the region-touch path, never through this state-driven lowering. -/
 private def attrSelectJs (state : Ident) (select : AttrSelect Γ) : Expr :=
   match select with
   | .classSelect field equals whenTrue whenFalse _ trimmed =>
@@ -702,27 +703,44 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           ]
         ]
       commitBody := commitBody ++ [.ifThen (.ident touched) (.ofList countStmts)]
-    /- Sealed empty-region visibility (ADR-0058): whenever this region was
-    touched this transaction, every `hiddenIfEmpty` selection over it
-    re-evaluates the row-table emptiness — the total row count against the
-    zero literal, the same subject shape the ADR-0050 count texts read —
-    compares it against the shared attr cache slot, and writes the `hidden`
-    boolean property through the existing `setProperty` export, riding the
-    tx[8]/tx[9] counters with the shared `attr:{index}:hidden` labels. The
-    subject is the row table, not the displayed rows, so an ADR-0051 filter
-    hiding every row leaves the section visible. -/
+    /- Sealed empty-region visibility (ADR-0058/0059): whenever this region
+    was touched this transaction, every `hiddenIfEmpty` selection over it
+    re-evaluates its row count against the zero literal — the total for the
+    ADR-0058 emptiness subject, or the ADR-0050 predicate scan for the
+    ADR-0059 predicate-count subject — compares it against the shared attr
+    cache slot, and writes the `hidden` boolean property through the
+    existing `setProperty` export, riding the tx[8]/tx[9] counters with the
+    shared `attr:{index}:hidden` labels. The subject is the row table, not
+    the displayed rows, so an ADR-0051 filter hiding every row leaves the
+    section visible either way. -/
     unless hiddens.isEmpty do
       let mut hiddenStmts : List Stmt := []
       for (mounted, attrIndex) in hiddens do
         let next ← attrNextName attrIndex
         let differs ← attrChangedName attrIndex
         let label := attrLabel attrIndex mounted
+        let computeStmts : List Stmt ← match mounted.select.hiddenPredicate? with
+          | none => pure [Stmt.const next (.binary .eq
+              (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))
+              (uint 0))]
+          | some (field, equals) => do
+              let scan ← Ident.checked s!"hidden_scan_{regionIndex}_{attrIndex}"
+              let row ← Ident.checked s!"hidden_row_{regionIndex}_{attrIndex}"
+              pure [
+                Stmt.const scan (.array (.ofList [uint 0])),
+                .forOf row (regionEntry regions regionIndex 1) (.ofList [
+                  .ifThen (.binary .eq (.index (.ident row) (uint (field + 1)))
+                      (.literal (.string equals))) <| .ofList [
+                    .assign (.index (.ident scan) (uint 0))
+                      (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
+                  ]
+                ]),
+                .const next (.binary .eq (.index (.ident scan) (uint 0)) (uint 0))
+              ]
         hiddenStmts := hiddenStmts ++ [
           incrementAt tx 8,
-          pushTrace tx s!"{label}:evaluated",
-          .const next (.binary .eq
-            (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))
-            (uint 0)),
+          pushTrace tx s!"{label}:evaluated"
+        ] ++ computeStmts ++ [
           .const differs <| .unary .not <|
             .binary .eq (arrayAt attrCache attrIndex) (.ident next),
           .ifThen (.ident differs) <| .ofList [
@@ -1653,6 +1671,10 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       (if checked.view.attrSelects.any (fun mounted =>
           mounted.select.hiddenRegion?.isSome) then
         #["region-visibility"]
+      else #[]) ++
+      (if checked.view.attrSelects.any (fun mounted =>
+          mounted.select.hiddenPredicate?.isSome) then
+        #["predicate-visibility"]
       else #[]) ++
       (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
 

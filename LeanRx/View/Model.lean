@@ -332,13 +332,18 @@ dispatch-layer guard by construction. General predicates, negation, and
 composed subjects stay unrepresentable. `hiddenIfEmpty` is the one sealed
 region-subject selection (ADR-0058): the element's `hidden` boolean
 property reflects emptiness of one declared keyed region's row table —
-the total row count against the zero literal, nothing else — so a TodoMVC
-section can hide exactly while its list is structurally empty. It reads no
-state field: the commit sweep re-evaluates it on the ADR-0050 region-touch
-path beside the count texts, and because the subject is the row table, an
-ADR-0051 filter hiding every row leaves the section visible. Predicate
-count subjects, other comparison operators, threshold literals, negation,
-and composed or general aggregate expressions stay unrepresentable. -/
+the total row count against the zero literal — so a TodoMVC section can
+hide exactly while its list is structurally empty. It reads no state
+field: the commit sweep re-evaluates it on the ADR-0050 region-touch path
+beside the count texts, and because the subject is the row table, an
+ADR-0051 filter hiding every row leaves the section visible. The subject
+may instead be the ADR-0050 predicate count (ADR-0059): `predicate`
+carries the one sealed row-field-to-string-literal equality, and the
+selection hides the element exactly while no row satisfies it — TodoMVC's
+clear-completed affordance, hidden while no row is done. The predicate
+count rides the same region-touch re-evaluation, attr slot, and boolean
+cache; other comparison operators, threshold literals, negation, and
+composed or general aggregate expressions stay unrepresentable. -/
 inductive AttrSelect (Γ : Schema) where
   | classSelect (field : Field Γ String) (equals whenTrue whenFalse : String)
       (span : SourceSpan := .generated) (trimmed : Bool := false)
@@ -347,6 +352,7 @@ inductive AttrSelect (Γ : Schema) where
   | disabledSelect (field : Field Γ String) (equals : String)
       (span : SourceSpan := .generated) (trimmed : Bool := false)
   | hiddenIfEmpty (region : String) (span : SourceSpan := .generated)
+      (predicate : Option (Nat × String) := none)
 
 namespace AttrSelect
 
@@ -364,8 +370,9 @@ def fieldIndex? : AttrSelect Γ → Option Nat
   | .hiddenIfEmpty .. => none
 
 /-- The compared string literal of a field-subject selection; the
-`hiddenIfEmpty` subject compares its region's row total against the zero
-literal instead (ADR-0058). -/
+`hiddenIfEmpty` subject compares its region's row count — total or
+predicate — against the zero literal instead (ADR-0058/0059), and its
+predicate literal is `hiddenPredicate?`'s. -/
 def equals? : AttrSelect Γ → Option String
   | .classSelect _ equals .. | .pressedSelect _ equals ..
   | .disabledSelect _ equals .. => some equals
@@ -375,7 +382,14 @@ def equals? : AttrSelect Γ → Option String
 selection reflects (ADR-0058). -/
 def hiddenRegion? : AttrSelect Γ → Option String
   | .classSelect .. | .pressedSelect .. | .disabledSelect .. => none
-  | .hiddenIfEmpty region _ => some region
+  | .hiddenIfEmpty region _ _ => some region
+
+/-- The sealed ADR-0050 predicate a predicate-count `hiddenIfEmpty` subject
+counts — one projected row field against one string literal (ADR-0059); a
+total-count subject carries none. -/
+def hiddenPredicate? : AttrSelect Γ → Option (Nat × String)
+  | .classSelect .. | .pressedSelect .. | .disabledSelect .. => none
+  | .hiddenIfEmpty _ _ predicate => predicate
 
 /-- Whether the subject sits behind the sealed trim unary (ADR-0057). -/
 def trimmed : AttrSelect Γ → Bool
@@ -391,10 +405,12 @@ def valueType : AttrSelect Γ → RuntimeTypeId
 
 def span : AttrSelect Γ → SourceSpan
   | .classSelect _ _ _ _ span _ | .pressedSelect _ _ span _
-  | .disabledSelect _ _ span _ | .hiddenIfEmpty _ span => span
+  | .disabledSelect _ _ span _ | .hiddenIfEmpty _ span _ => span
 
 def debug : AttrSelect Γ → String
-  | .hiddenIfEmpty region _ => s!"select:hidden:{region}"
+  | .hiddenIfEmpty region _ none => s!"select:hidden:{region}"
+  | .hiddenIfEmpty region _ (some (field, equals)) =>
+      s!"select:hidden:{region}:{field}:{equals}"
   | select =>
       s!"select:{select.name}:{if select.trimmed then "trim:" else ""}{select.fieldIndex?.getD 0}"
 

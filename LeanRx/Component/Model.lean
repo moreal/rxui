@@ -1439,17 +1439,27 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               message := s!"a count predicate projects field {fieldIndex} outside region {count.region}'s {region.fields.size} field(s)"
               spans := #[count.span, region.span]
             }
-  /- Sealed empty-region visibility (ADR-0058): every `hiddenIfEmpty`
+  /- Sealed empty-region visibility (ADR-0058/0059): every `hiddenIfEmpty`
   selection names a declared region — the row-table subject exists exactly
-  when the region does. -/
+  when the region does — and a predicate-count subject projects an
+  in-bounds row field, the ADR-0050 count-predicate rule. -/
   for mounted in split.attrSelects do
     if let some regionName := mounted.select.hiddenRegion? then
-      unless names.contains regionName do
-        throw {
-          code := "LRX-VIEW-042"
-          message := s!"a hidden reflection references unknown region {regionName}"
-          spans := #[mounted.select.span]
-        }
+      match spec.regions.toList.find? (·.name == regionName) with
+      | none =>
+          throw {
+            code := "LRX-VIEW-042"
+            message := s!"a hidden reflection references unknown region {regionName}"
+            spans := #[mounted.select.span]
+          }
+      | some region =>
+          if let some (fieldIndex, _) := mounted.select.hiddenPredicate? then
+            unless fieldIndex < region.fields.size do
+              throw {
+                code := "LRX-VIEW-042"
+                message := s!"a hidden reflection's predicate projects field {fieldIndex} outside region {regionName}'s {region.fields.size} field(s)"
+                spans := #[mounted.select.span, region.span]
+              }
   unless spec.regions.isEmpty do
     if let View.region _ span := spec.view then
       throw {
