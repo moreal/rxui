@@ -2262,3 +2262,102 @@ remove-or-commit; the key set stays sealed at Enter/Escape; `s!`
 interpolation absent from row scope; branch cells single-level and
 two-branch with exact click/dblclick agreement; and child instrumentation
 still unreachable through the parent disposer.
+
+## Predicate-count visibility — the clear-completed affordance
+
+### Scenario exercised
+
+The ADR-0059 round: TodoMVC's clear-completed visibility parity — the
+button that exists only while some row is completed — closed with no host
+change and no ABI bump, resolving ADR-0058's first open question. The
+sealed hidden selection gained the one predicate-count subject:
+`hidden={count items (done == "true") == 0}` on Toggle Lab's Clear
+completed button reflects "no row satisfies the ADR-0050 predicate" into
+the button's `hidden` boolean property, riding the exact ADR-0058
+machinery — the same region-touch re-evaluation, the same shared attr
+slots, the same `setProperty` export, the same boolean cache. The button
+mounts hidden (an empty region satisfies no predicate — the same literal
+`true` the total subject mounts with), a not-done append is an
+evaluate-only sweep (the scan counts zero, the compare swallows the
+write), the first done toggle reveals it, untoggling the last done row,
+`clearCompleted` itself, or the ✕ removal of the last done row re-hides
+it, a filter change alone re-evaluates nothing while the button stays
+revealed over its filter-hidden done row, and the `completeAll` broadcast
+leaves it revealed through the equal-value compare. The rejections
+sharpened alongside: the zero literal is sealed for both subjects, and
+the predicate field resolves against the declared row fields at the
+surface (`LRX-ELAB-119`) and bounds-checks at the model (`LRX-VIEW-042`).
+
+### What was pleasant
+
+The subject was already in the vocabulary twice over: `hiddenIfEmpty`
+took the exact optional `(Nat × String)` predicate `RegionCount` has
+carried since ADR-0050, the surface rewrite took the exact
+`regionCount% "region" fieldIndex "literal"` optional-argument shape, and
+the backend sweep took the count sweep's scan loop with `=== 0` appended.
+Every layer had a precedent to copy, so the diff is mostly the ADR-0058
+code paths growing an `Option` — and the mount-time reasoning ("an empty
+region satisfies no predicate") needed no new code at all, because the
+constant-`true` lowering was already subject-agnostic. The attr-slot
+sharing meant the new selection slotted between the existing two with
+nothing but index shifts in the gates.
+
+### Friction
+
+The attr index shifts were the bulk of the test churn: the wrapper's
+selection moved from `attr:1` to `attr:2` because the button precedes the
+`<ul>` in document order, so every ADR-0058 trace label in the browser
+and artifact gates needed relabeling — mechanical, but a reminder that
+trace labels indexed by document order are load-bearing test surface. The
+sharper edge was self-inflicted by the parity itself: an existing
+ADR-0050 gate clicked Clear completed while nothing matched (pinning the
+no-op removal), and with the affordance in place that button is now
+hidden — Playwright rightly refuses to click it. The gate now dispatches
+the click structurally with `includeHidden: true`, which is also the
+honest statement of the ADR-0057 stance: the affordance is not the
+contract, and the removal stays a no-op wherever it is triggered from.
+And one fixture flipped meaning: HiddenPredicateCount pinned "predicate
+counts are rejected" and would now compile, so it became
+HiddenPredicateThreshold (the zero-literal seal on the predicate form)
+plus HiddenPredicateUnknownField (the surface field resolution).
+
+### Bugs found
+
+No framework defect surfaced: the forged model gates (accepted predicate
+selection with its `select:hidden:r:0:true` debug marker, boolean value
+type, and graph exclusion; the out-of-bounds predicate field
+LRX-VIEW-042), the two replacement compile-fail fixtures, the updated
+elaborator, artifact, and guide gates, and all thirty-seven Toggle Lab
+browser gates (the three new ADR-0059 gates included) passed.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of every other
+lab and of the js-framework-benchmark bundle — `main.mjs` and manifest
+included — is byte-identical to the HEAD baseline (full before/after
+builds into the scratchpad); only Toggle Lab's module, manifest (gaining
+`predicate-visibility`), and graph (source spans only — the selection
+joins no graph node) change. A predicate hidden selection costs one
+row-table scan per region-touching transaction — the ADR-0050 count-text
+cost, and only there: a filter change skips it entirely — and the boolean
+cache keeps every non-flip write-free: the browser gates pin the not-done
+append and the completeAll broadcast as one evaluation and zero writes
+each.
+
+### Follow-up issue or commit
+
+`feat(component): hide the clear-completed affordance on the predicate
+count (ADR-0059)`, `test(component): forge the predicate-visibility gates
+and teach the guide`, and `docs(adr): accept the predicate-count
+visibility (ADR-0059)`. Remaining gaps carried forward: the
+component-scope Escape arm is sealed but unproven (no new-todo revert
+contract exists to prove it); affordance-contract agreement (the hidden
+button and the no-op removal read the same predicate but nothing ties
+them) is recorded as ADR-0059's first open question; the ADR-0050
+predicate removal, ADR-0051 filter arms, ADR-0044 row class selection,
+and ADR-0049 checked reflection still compare raw fields; the guard
+literal is sealed at the empty string; row guards stay single-field
+remove-or-commit; the key set stays sealed at Enter/Escape; `s!`
+interpolation absent from row scope; branch cells single-level and
+two-branch with exact click/dblclick agreement; and child instrumentation
+still unreachable through the parent disposer.
