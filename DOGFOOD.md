@@ -2171,3 +2171,94 @@ remove-or-commit; the key set stays sealed at Enter/Escape; `s!`
 interpolation absent from row scope; branch cells single-level and
 two-branch with exact click/dblclick agreement; and child instrumentation
 still unreachable through the parent disposer.
+
+## Empty-region visibility — hide-when-empty
+
+### Scenario exercised
+
+The ADR-0058 round: TodoMVC's hide-when-empty parity — the main/footer
+sections that appear with the first todo and disappear with the last —
+closed with no host change and no ABI bump. The attribute-selection
+vocabulary gained the one sealed region-subject form:
+`hidden={count items == 0}` on Toggle Lab's items list wrapper (the
+region's own `<ul>` container) reflects emptiness of the region's row
+table into the wrapper's `hidden` boolean property. The wrapper mounts
+hidden — regions mount empty by construction, the ADR-0050 `"0"`
+reasoning, so the mount-time cache value is the literal `true` — the
+first append reveals it, and the ✕ removal, the ADR-0053 guarded empty
+commit, and `completeAll` + `clearCompleted` each re-hide it through the
+same region-touch sweep the count texts ride. The ADR-0051 filter gate
+pins the sharp edge: with every row filter-hidden the wrapper stays
+revealed, because the subject is the row table's total, never the
+displayed rows — and a filter change alone does not even re-evaluate the
+selection, since it never touches the region.
+
+### What was pleasant
+
+The ADR-0050 count-text architecture paid for itself: the hidden
+selection is exactly "a count text that writes a boolean property", so
+the whole sweep — the shared `region_touched` flag, the
+evaluate-compare-write shape, the cache slot — already existed, and the
+new code is one loop beside the counts. Riding the ADR-0045 attr slots
+(refs and cache in the existing context positions) meant no region-record
+layout change and no context change: Toggle Lab's context stays eleven
+slots and the region record stays eight. The component command's count
+rewrite generalized cleanly from children to attributes; the sealed
+rejections (predicate subject, threshold literal, general expressions)
+fall out of one match with three arms.
+
+### Friction
+
+`AttrSelect.fieldIndex` and `equals` were total accessors that every
+selection could answer; the region-subject selection can't, and Lean's
+totality made the dishonest options (a junk `0` field) visible enough to
+refuse. They became `fieldIndex?`/`equals?`, which rippled through three
+test tuples — mechanical, but a reminder that accessor totality is API
+design. The other stumble was Playwright's visibility model: a `<ul>`
+whose rows are all filter-hidden has an empty bounding box, so
+`toBeVisible()` reports the *revealed* wrapper as hidden; the gate
+observes the `hidden` property and the computed display directly instead.
+And `throwErrorAt` interpolates its string literal, so the diagnostic
+text `hidden={count region == 0}` needed its brace escaped — the compiler
+error ("unknown identifier `count`") pointed at a string that looked
+perfectly inert.
+
+### Bugs found
+
+No framework defect surfaced: the forged model gates (accepted wrapper
+selection with its debug marker, boolean value type, and graph exclusion;
+the LRX-VIEW-042 unknown region; the LRX-VIEW-001 duplicate), two new
+compile-fail fixtures (a predicate count subject and a nonzero threshold
+literal, both LRX-ELAB-125), the updated elaborator, artifact, and guide
+gates, and all thirty-four Toggle Lab browser gates (the three ADR-0058
+gates included) passed.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of every other
+lab and of the js-framework-benchmark bundle — `main.mjs` and manifest
+included — is byte-identical to the HEAD baseline (full before/after
+builds into the scratchpad); only Toggle Lab's module, manifest (gaining
+`region-visibility`), and graph (source spans only — the selection joins
+no graph node) change. A hidden selection costs one `length` read and one
+equality per region-touching transaction, and only there — a filter
+change skips it entirely — and the boolean cache keeps every non-flip
+write-free: the browser gate pins one `attr:1:hidden:evaluated` and zero
+writes for appending a second row.
+
+### Follow-up issue or commit
+
+`feat(component): close the hide-when-empty parity with the region-subject
+hidden selection (ADR-0058)`, `test(component): forge the visibility gates
+and teach the guide`, and `docs(adr): accept the empty-region visibility
+(ADR-0058)`. Remaining gaps carried forward: the component-scope Escape
+arm is sealed but unproven (no new-todo revert contract exists to prove
+it); predicate-driven visibility (hiding the clear-completed affordance
+while no row is done) is recorded as ADR-0058's first open question; the
+ADR-0050 predicate removal, ADR-0051 filter arms, ADR-0044 row class
+selection, and ADR-0049 checked reflection still compare raw fields; the
+guard literal is sealed at the empty string; row guards stay single-field
+remove-or-commit; the key set stays sealed at Enter/Escape; `s!`
+interpolation absent from row scope; branch cells single-level and
+two-branch with exact click/dblclick agreement; and child instrumentation
+still unreachable through the parent disposer.
