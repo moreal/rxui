@@ -2002,3 +2002,89 @@ guards stay single-field remove-or-commit; the key set stays sealed at
 Enter/Escape; `s!` interpolation absent from row scope; branch cells
 single-level and two-branch with exact click/dblclick agreement; and
 child instrumentation still unreachable through the parent disposer.
+
+## Component-scope key branching — Toggle Lab Enter-to-add
+
+### Scenario exercised
+
+The ADR-0056 round: TodoMVC's Enter confirmation on the new-todo input —
+the gap ADR-0055's first open question recorded — closed with no host
+change and no ABI bump. The ADR-0052 sealed key selection lifts to
+component scope as the key-branched component event: `event confirmAdd
+(pressed : String) := when "Enter" (if trim draft == "" then skip else
+(append items (trim draft, trim draft, "false", "view"), set draft ""))`,
+bound `onKeyDown={confirmAdd}` beside the per-keystroke `setDraft` on the
+same controlled input. The declared parameter is the discriminant — named
+in the head, compared implicitly by each arm, unspellable inside an arm
+body — key literals come from the sealed Enter/Escape set, and each arm
+body is the ADR-0055 event-body language (ordinary steps, optionally
+behind the skip guard), so Enter *is* the Add button's guarded add by
+construction: whitespace-only Enter is a whole-event no-op, valid Enter
+appends the trimmed label and resets the draft, and a key outside the
+table returns from the dispatch function before the context is even
+destructured.
+
+### What was pleasant
+
+The lift was almost entirely reuse. The arm bodies elaborate through the
+same `updateStepTerm?`/`guardedStepsTerm` path the ADR-0055 guard miss
+uses (one refactor split `guardedEventTerm` into pieces both callers
+share); validation runs the arms through the exact per-event obligation
+loops by generalizing them over `(name, update, guard?, span)` tuples; and
+the backend emits each arm as one ordinary `transactionShell` function —
+so the guard hit's no-op, the trace discipline, and the commit sweep are
+inherited, not re-implemented. The host side cost nothing: `listenKey`
+has forwarded `event.key` to generated dispatch functions since the form
+events host split, so the dispatch function's `pressed === "Enter"` is
+the entire new runtime surface.
+
+### Friction
+
+Two environment potholes again. The typed-event syntax rule had to grow
+from one term to a `then`-separated sequence for the `when` arms, which
+silently broke the quotation-pattern matches in the elaborator's two
+passes — they were rewritten as raw syntax-kind dispatches (the row items
+already work that way). And the elaborator edit renumbered the generated
+unsafe evaluator wrapper (`unsafe_5` → `unsafe_7`), which the environment
+audit caught as an exact-name mismatch beside the two new `KeyEventSpec`
+injectivity lemmas — three reviewed lines, no silent drift. Structure
+instance literals in the forged model gates also reminded us that Lean's
+field-list indentation is column-sensitive inside `#[{ … }]`.
+
+### Bugs found
+
+No framework defect surfaced: the model gates (the forged good key event
+with its arm table and summary guard-read union, three LRX-TYPE-115
+sealed-set/duplicate/empty rejections, two LRX-VIEW-041 binding
+rejections), two new compile-fail fixtures (LRX-ELAB-124 payload
+reference in an arm, LRX-ELAB-124 mixed arm/step table), the updated
+elaborator, artifact, and guide gates, and all twenty-nine Toggle Lab
+browser gates (the three ADR-0056 gates included) passed.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of every other
+lab and of the js-framework-benchmark bundle — `main.mjs` and manifest
+included — is byte-identical to the HEAD baseline (full before/after
+builds into the scratchpad; only Toggle Lab's module, manifest, and graph
+change, gaining the key event, the `listenKey` registration, and the
+`event-key-branches` feature). A non-matching key costs one string
+comparison per arm and returns — strictly cheaper than row scope's
+non-match, which begins and commits an empty transaction through the
+shared region dispatch.
+
+### Follow-up issue or commit
+
+`feat(component): close the component-scope Enter path (ADR-0056)`,
+`test(component): forge the Enter gates and teach the guide`, and
+`docs(adr): accept component-scope key branching (ADR-0056)`.
+Remaining gaps carried forward: the component-scope Escape arm is sealed
+but unproven (no new-todo revert contract exists to prove it); the
+trimmed `disabled` affordance for the Add button stays open; the guard
+literal is sealed at the empty string; the ADR-0045 selections, ADR-0050
+predicate removal, ADR-0051 filter arms, ADR-0044 class selection, and
+ADR-0049 checked reflection still compare raw fields; row guards stay
+single-field remove-or-commit; the key set stays sealed at Enter/Escape;
+`s!` interpolation absent from row scope; branch cells single-level and
+two-branch with exact click/dblclick agreement; and child instrumentation
+still unreachable through the parent disposer.
