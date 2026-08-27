@@ -577,6 +577,62 @@ test("Escape on an empty draft keeps the row — the revert arm is unguarded (AD
     .getByRole("textbox", { name: "Item editor" })).toHaveValue("Item 0");
 });
 
+test("Enter on a whitespace-only draft removes the row through the trimmed guard (ADR-0054)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await page.evaluate(() => {
+    globalThis.secondRow = document.querySelectorAll("#items > li")[1];
+  });
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0).getByRole("textbox", { name: "Item editor" });
+  await editor.fill("   ");
+  const before = await regionMetrics(page);
+  // The guard subject is the trimmed draft: `trim "   "` is the empty
+  // string, so a whitespace-only commit destroys the row exactly as an
+  // empty one does — TodoMVC's trim contract on the guard path.
+  await editor.press("Enter");
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
+  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  const retained = await page.evaluate(() =>
+    globalThis.secondRow === document.querySelector("#items > li"),
+  );
+  expect(retained).toBe(true);
+  const after = await regionMetrics(page);
+  // [mounts, updates, moves, disposals]: the trimmed guard hit rides the
+  // same dirty reconcile as the raw guard — one disposal, one survivor
+  // update, never a mount or a move.
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1] + 1);
+  expect(after[2]).toBe(before[2]);
+  expect(after[3]).toBe(before[3] + 1);
+});
+
+test("a committed label is stored trimmed and the draft re-mirrors it (ADR-0054)", async ({ page }) => {
+  await mountToggle(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0).getByRole("textbox", { name: "Item editor" });
+  await editor.fill("  x  ");
+  // A draft with surrounding whitespace misses the trimmed guard and
+  // commits the trimmed value: `" x "`-style input stores as `"x"`.
+  await editor.press("Enter");
+  await expect(page.locator("#items > li .item-label")).toHaveText(["x"]);
+  // The commit re-mirrors the draft to the trimmed value, so the next edit
+  // entry starts from the stored label — the ADR-0047 value reflection
+  // shows no leftover whitespace.
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  await expect(page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" })).toHaveValue("x");
+  // The OK button's guarded commit agrees on the trim contract.
+  await page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" }).fill("\ttabbed label\t");
+  await page.locator("#items > li").nth(0).getByRole("button", { name: "Commit item" }).click();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["tabbed label"]);
+});
+
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();

@@ -692,7 +692,7 @@ def run : IO Unit := do
   and a guarded stage on a payload-taking row event — guards live on
   payload-less row events and key arms. -/
   let chopEvent : RowEventSpec :=
-    { name := "chop", action := .update ⟨[(0, .lit "x")], some ⟨0, ""⟩⟩ }
+    { name := "chop", action := .update ⟨[(0, .lit "x")], some ⟨.field 0, ""⟩⟩ }
   let choppingTemplate : RowNode := RowNode.node .li [
     RowNode.node .span [RowNode.fieldText 0],
     RowNode.node .span [RowNode.node .button [RowNode.text "c"]
@@ -712,13 +712,39 @@ def run : IO Unit := do
           [[("remove", .remove), ("chop", chopEvent.action)]] do
         throw <| IO.userError "forged guarded row event lost its guard"
   expectError "LRX-VIEW-040" (withChop { chopEvent with
-    action := .update ⟨[(0, .lit "x")], some ⟨1, ""⟩⟩ }).check
+    action := .update ⟨[(0, .lit "x")], some ⟨.field 1, ""⟩⟩ }).check
   expectError "LRX-VIEW-040" (withChop { chopEvent with
-    action := .update ⟨[(0, .payload)], some ⟨0, ""⟩⟩
+    action := .update ⟨[(0, .payload)], some ⟨.field 0, ""⟩⟩
     takesPayload := true }).check
+  /- ADR-0054 trimmed guards and trimmed commits: the trimmed subject and
+  trimmed assignment check and keep their expressions; LRX-VIEW-040 rejects
+  every non-subject guard expression — a literal, a trimmed literal, a
+  payload, a concatenation — and an out-of-bounds trimmed field. -/
+  let trimEvent : RowEventSpec :=
+    { name := "chop",
+      action := .update ⟨[(0, .trim (.field 0))], some ⟨.trim (.field 0), ""⟩⟩ }
+  match (withChop trimEvent).check with
+  | .error error =>
+      throw <| IO.userError s!"forged trimmed guarded row event rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.regions.toList.map (fun region =>
+          region.events.toList.map fun event => (event.name, event.action)) ==
+          [[("remove", .remove), ("chop", trimEvent.action)]] do
+        throw <| IO.userError "forged trimmed guarded row event lost its trim"
+  expectError "LRX-VIEW-040" (withChop { chopEvent with
+    action := .update ⟨[(0, .lit "x")], some ⟨.lit "x", ""⟩⟩ }).check
+  expectError "LRX-VIEW-040" (withChop { chopEvent with
+    action := .update ⟨[(0, .lit "x")], some ⟨.trim (.lit "x"), ""⟩⟩ }).check
+  expectError "LRX-VIEW-040" (withChop { chopEvent with
+    action := .update ⟨[(0, .lit "x")], some ⟨.payload, ""⟩⟩ }).check
+  expectError "LRX-VIEW-040" (withChop { chopEvent with
+    action := .update ⟨[(0, .lit "x")],
+      some ⟨.append (.field 0) (.field 0), ""⟩⟩ }).check
+  expectError "LRX-VIEW-040" (withChop { chopEvent with
+    action := .update ⟨[(0, .lit "x")], some ⟨.trim (.field 1), ""⟩⟩ }).check
   let guardedKeys : RowEventSpec :=
     { keysEvent with action := .keySelect [
-        ("Enter", ⟨[(0, .lit "committed")], some ⟨0, ""⟩⟩),
+        ("Enter", ⟨[(0, .lit "committed")], some ⟨.field 0, ""⟩⟩),
         ("Escape", ⟨[(0, .lit "reverted")], none⟩)] }
   match (withKeys guardedKeys).check with
   | .error error =>
@@ -729,7 +755,16 @@ def run : IO Unit := do
           [[.remove, guardedKeys.action]] do
         throw <| IO.userError "forged guarded key arm lost its guard"
   expectError "LRX-VIEW-040" (withKeys { keysEvent with action := .keySelect [
-    ("Enter", ⟨[(0, .lit "a")], some ⟨2, ""⟩⟩)] }).check
+    ("Enter", ⟨[(0, .lit "a")], some ⟨.field 2, ""⟩⟩)] }).check
+  /- The ADR-0054 trimmed guard subject on a key arm: the trimmed selection
+  checks, and a non-subject arm guard is rejected. -/
+  match (withKeys { keysEvent with action := .keySelect [
+      ("Enter", ⟨[(0, .trim (.field 0))], some ⟨.trim (.field 0), ""⟩⟩)] }).check with
+  | .error error =>
+      throw <| IO.userError s!"forged trimmed guarded key arm rejected: {error.code}"
+  | .ok _ => pure ()
+  expectError "LRX-VIEW-040" (withKeys { keysEvent with action := .keySelect [
+    ("Enter", ⟨[(0, .lit "a")], some ⟨.trim .payload, ""⟩⟩)] }).check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check

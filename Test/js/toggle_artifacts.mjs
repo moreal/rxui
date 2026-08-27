@@ -27,7 +27,7 @@ if (
   JSON.stringify(manifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
     "keyed-regions", "typed-row-events", "row-key-branches", "row-guards",
-    "row-branches", "row-reflects", "row-focus", "row-aggregates",
+    "row-trim", "row-branches", "row-reflects", "row-focus", "row-aggregates",
     "region-broadcasts", "region-filters",
   ])
 ) {
@@ -58,16 +58,19 @@ for (const required of [
   // scan-evaluate-assign-queue sequence, a non-matching key falls through
   // to the shared commit with no scan, no write, and no trace.
   "  if (action === \"keys\") {\n    if (eventKey === \"Enter\") {",
-  // The ADR-0053 remove-if guard on the Enter arm: the empty-draft equality
-  // is evaluated against the row the key scan resolved; the hit runs the
-  // kept-filter removal the remove action uses, the miss commits the
-  // unchanged assignment sequence.
-  "      if (scan[1] !== -1) {\n        const row_item = regions[0][1][scan[1]];\n        const row_guard = row_item[2] === \"\";\n        if (row_guard) {\n          const kept_0 = [];\n          for (const row_entry of regions[0][1]) {\n            if (row_entry[0] !== key) {\n              kept_0[\"push\"](row_entry);\n            }\n          }\n          regions[0][1] = kept_0;\n          regions[0][3] = true;\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n        if (!row_guard) {\n          const row_next_0 = row_item[2];\n          const row_next_1 = \"view\";\n          row_item[1] = row_next_0;\n          row_item[4] = row_next_1;\n          regions[0][4][\"push\"](scan[1]);\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n      }\n    }\n    if (eventKey === \"Escape\") {",
+  // The ADR-0053 remove-if guard on the Enter arm, with the ADR-0054 trim
+  // contract: the guard equality and the committed label both evaluate the
+  // ASCII-trimmed draft against the row the key scan resolved; the hit runs
+  // the kept-filter removal the remove action uses, the miss commits the
+  // trimmed assignment sequence.
+  "      if (scan[1] !== -1) {\n        const row_item = regions[0][1][scan[1]];\n        const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n        if (row_guard) {\n          const kept_0 = [];\n          for (const row_entry of regions[0][1]) {\n            if (row_entry[0] !== key) {\n              kept_0[\"push\"](row_entry);\n            }\n          }\n          regions[0][1] = kept_0;\n          regions[0][3] = true;\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n        if (!row_guard) {\n          const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_2 = \"view\";\n          row_item[1] = row_next_0;\n          row_item[2] = row_next_1;\n          row_item[4] = row_next_2;\n          regions[0][4][\"push\"](scan[1]);\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n      }\n    }\n    if (eventKey === \"Escape\") {",
   "        const row_next_0 = row_item[1];\n        const row_next_1 = \"view\";\n        row_item[2] = row_next_0;",
-  // The ADR-0053 guarded commit: the OK button's action branch carries the
-  // same guard equality and removal sequence — destroy-on-empty-commit
-  // through both commit paths, with the Escape revert arm unguarded.
-  "      const row_guard = row_item[2] === \"\";\n      if (row_guard) {\n        const kept_0 = [];\n        for (const row_entry of regions[0][1]) {\n          if (row_entry[0] !== key) {\n            kept_0[\"push\"](row_entry);\n          }\n        }\n        regions[0][1] = kept_0;\n        regions[0][3] = true;\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2];\n        const row_next_1 = \"view\";\n        row_item[1] = row_next_0;\n        row_item[4] = row_next_1;\n        regions[0][4][\"push\"](scan[1]);\n        tx[7][\"push\"](\"region:items:commit\");\n      }",
+  // The ADR-0053 guarded commit with the ADR-0054 trim contract: the OK
+  // button's action branch carries the same trimmed guard equality, trimmed
+  // label commit, and removal sequence — destroy-on-whitespace-commit
+  // through both commit paths, with the Escape revert arm unguarded and
+  // untrimmed.
+  "      const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      if (row_guard) {\n        const kept_0 = [];\n        for (const row_entry of regions[0][1]) {\n          if (row_entry[0] !== key) {\n            kept_0[\"push\"](row_entry);\n          }\n        }\n        regions[0][1] = kept_0;\n        regions[0][3] = true;\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_2 = \"view\";\n        row_item[1] = row_next_0;\n        row_item[2] = row_next_1;\n        row_item[4] = row_next_2;\n        regions[0][4][\"push\"](scan[1]);\n        tx[7][\"push\"](\"region:items:commit\");\n      }",
   // The delegated checked boolean lowers to the "true"/"false" string
   // payload inside the toggle action branch (ADR-0049).
   "      const row_next_0 = checked ? \"true\" : \"false\";",

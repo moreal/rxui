@@ -147,16 +147,19 @@ private def verifyToggle
         ("toggle", .update ⟨[(2, .payload)], none⟩, true),
         ("edit", .update ⟨[(3, .lit "edit")], none⟩, false),
         ("retype", .update ⟨[(1, .payload)], none⟩, true),
-        /- The ADR-0053 remove-if guard on both commit paths: the empty-draft
-        equality lowers to `RowGuard 1 ""` beside the unchanged commit
-        assignments — destroy-on-empty-commit through OK and Enter alike,
-        while Escape's revert arm stays unguarded. -/
-        ("commit", .update ⟨[(0, .field 1), (3, .lit "view")], some ⟨1, ""⟩⟩, false),
+        /- The ADR-0053 remove-if guard on both commit paths, with the
+        ADR-0054 trim contract: the guard subject is the trimmed draft and
+        the commit assignment stores the trimmed draft —
+        destroy-on-empty-commit (whitespace included) through OK and Enter
+        alike, while Escape's revert arm stays unguarded and untrimmed. -/
+        ("commit", .update ⟨[(0, .trim (.field 1)), (1, .trim (.field 1)),
+          (3, .lit "view")], some ⟨.trim (.field 1), ""⟩⟩, false),
         /- The ADR-0052 key-branched selection: `when` arms lower to the
         sealed key table with payload-free right-hand sides, and the event
         is payload-taking — the parameter is the discriminant. -/
         ("keys", .keySelect [
-          ("Enter", ⟨[(0, .field 1), (3, .lit "view")], some ⟨1, ""⟩⟩),
+          ("Enter", ⟨[(0, .trim (.field 1)), (1, .trim (.field 1)),
+            (3, .lit "view")], some ⟨.trim (.field 1), ""⟩⟩),
           ("Escape", ⟨[(1, .field 0), (3, .lit "view")], none⟩)], true)]] do
     throw <| IO.userError "toggle region lost the sealed row event vocabulary"
   let cells ← match checked.spec.regions.toList with

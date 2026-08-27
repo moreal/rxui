@@ -302,7 +302,7 @@ component KeyedEditorMini (schema := KeyedEditorMiniSchema) where {
   ];
 }
 
-/- The guarded row event snippet from guide section 7 (ADR-0053). -/
+/- The guarded row event snippet from guide section 7 (ADR-0053/0054). -/
 abbrev GuardedEditorMiniSchema : Schema := .field "guardedAdded" Int .empty
 
 def guardedAdded : Field GuardedEditorMiniSchema Int := .here
@@ -313,9 +313,11 @@ component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
     then set guardedAdded (guardedAdded + 1);
   row roster edit := set mode "edit";
   row roster retype (value : String) := set draft value;
-  row roster commit := if draft == "" then remove else (set label draft, set mode "view");
+  row roster commit := if trim draft == "" then remove
+    else (set label (trim draft), set mode "view");
   row roster keys (pressed : String) :=
-    when "Enter" (if draft == "" then remove else (set label draft, set mode "view"))
+    when "Enter" (if trim draft == "" then remove
+      else (set label (trim draft), set mode "view"))
     then when "Escape" (set draft label, set mode "view");
   region roster (label, draft, mode) := jsx% <li> [
     {if mode == "view"
@@ -529,9 +531,11 @@ def run : IO Unit := do
           [[("remove", .remove, false),
             ("edit", .update ⟨[(2, .lit "edit")], none⟩, false),
             ("retype", .update ⟨[(1, .payload)], none⟩, true),
-            ("commit", .update ⟨[(0, .field 1), (2, .lit "view")], some ⟨1, ""⟩⟩, false),
+            ("commit", .update ⟨[(0, .trim (.field 1)), (2, .lit "view")],
+              some ⟨.trim (.field 1), ""⟩⟩, false),
             ("keys", .keySelect [
-              ("Enter", ⟨[(0, .field 1), (2, .lit "view")], some ⟨1, ""⟩⟩),
+              ("Enter", ⟨[(0, .trim (.field 1)), (2, .lit "view")],
+                some ⟨.trim (.field 1), ""⟩⟩),
               ("Escape", ⟨[(1, .field 0), (2, .lit "view")], none⟩)], true)]] do
         throw <| IO.userError
           "language-guide guarded snippet lost its remove-if guards"

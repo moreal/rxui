@@ -222,7 +222,9 @@ A `row` item declares a sealed update action on a region's rows (ADR-0043):
 `row roster mark := set marks (marks ++ " ★");` writes new field values —
 evaluated simultaneously against the dispatching row's current fields — and
 re-renders exactly that row through the region handle's `updateAt`. Row
-expressions are sealed: bare row fields, string literals, and `++`
+expressions are sealed: bare row fields, string literals, `++`, and the
+`trim` unary (ADR-0054) — `trim field` or `trim (expr)` strips ASCII
+whitespace from both ends, aligned with Lean's `String.trim`
 (`LRX-ELAB-115` otherwise); they also serve dynamic row text, so `{label ++
 marks}` renders a concatenation that tracks row updates. A row element may
 select its class from row state (ADR-0044) with
@@ -516,13 +518,18 @@ else-steps exactly as an unguarded stage does. This is what makes TodoMVC's
 destroy-on-empty-commit expressible: guard both commit paths with
 `draft == ""` and an empty draft's Enter (or OK click) destroys the row
 while a nonempty draft commits. The guard is the whole predicate language —
-one field, one literal, `String` equality, no negation or conjunction, no
-trim normalization, and no payload or component state — and a guarded stage
-stands alone (no other steps beside it) with `remove` as its only hit. The
-guard field must be in bounds and a guarded plain event is payload-less
-(`LRX-VIEW-040`), with `LRX-ELAB-122` pinning the surface. The equality runs
-inside the generated dispatch function against the row the existing key scan
-resolved, so once more there is no host change and no ABI bump:
+one field, one literal, `String` equality, no negation or conjunction, and
+no payload or component state — and a guarded stage stands alone (no other
+steps beside it) with `remove` as its only hit. The guard subject may sit
+behind the `trim` unary (ADR-0054): `if trim draft == "" then remove else
+(set label (trim draft), …)` removes on a whitespace-only draft and stores
+the committed label trimmed — TodoMVC's trim contract, expressed by the
+expression vocabulary rather than a wider guard shape (any other guard
+subject expression is rejected). The guard field must be in bounds and a
+guarded plain event is payload-less (`LRX-VIEW-040`), with `LRX-ELAB-122`
+pinning the surface. The equality runs inside the generated dispatch
+function against the row the existing key scan resolved, so once more there
+is no host change and no ABI bump:
 
 ```lean
 component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
@@ -531,9 +538,11 @@ component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
     then set guardedAdded (guardedAdded + 1);
   row roster edit := set mode "edit";
   row roster retype (value : String) := set draft value;
-  row roster commit := if draft == "" then remove else (set label draft, set mode "view");
+  row roster commit := if trim draft == "" then remove
+    else (set label (trim draft), set mode "view");
   row roster keys (pressed : String) :=
-    when "Enter" (if draft == "" then remove else (set label draft, set mode "view"))
+    when "Enter" (if trim draft == "" then remove
+      else (set label (trim draft), set mode "view"))
     then when "Escape" (set draft label, set mode "view");
   region roster (label, draft, mode) := jsx% <li> [
     {if mode == "view"
