@@ -2462,3 +2462,108 @@ interpolation absent from row scope; branch cells single-level and
 two-branch with exact click/dblclick agreement; child instrumentation
 still unreachable through the parent disposer; and the items-left
 singular/plural text ("1 item left") stays an unexpressed candidate.
+
+## Payload broadcast — toggle-all phase 2
+
+### Scenario exercised
+
+The ADR-0061 round: TodoMVC's toggle-all action closed both ways with no
+host change and no ABI bump. The one missing sentence — a typed component
+event whose payload flows into a region broadcast — shipped as
+`event toggleAll (checked : Bool) := update items (set done checked)`:
+the payload identifier is admitted as a bare `set` right-hand side of the
+ADR-0050 broadcast, the delegated checked boolean lowering to the
+`"true"`/`"false"` strings exactly as the ADR-0049 row payload does.
+Toggle Lab's box rebound from the ADR-0060 payload-less
+`onChange={completeAll}` to `onCheckedChange={toggleAll}` — the ADR-0038
+surface through the existing `listenChecked` export — so checking the box
+completes every row and unchecking it un-completes every row: the sweep's
+evaluate-compare-write now agrees with the browser's own uncheck, and the
+pinned ADR-0060 cache-DOM divergence gate is replaced by parity gates.
+The model carries the event as the new `AnyTypedEvent.boolBroadcast`
+constructor validated under `LRX-TYPE-116` (declared region, nonempty
+distinct in-bounds assignments, bare payload written at least once);
+the surface seals under `LRX-ELAB-126` (Bool-only payload, no
+composition); and the vocabulary decisions are recorded as rejections —
+String payload direct, payload composition, payload in any non-broadcast
+position, an `onChange={toggleAll}` overload, and retiring the ADR-0060
+payload-less binding all declined.
+
+### What was pleasant
+
+The composition really was the whole feature: the broadcast emission
+factored into one shared `regionBroadcastStmts` helper whose plain caller
+passes the inert string and whose typed caller passes
+`checked ? "true" : "false"` — byte-identical output for every existing
+component, verified by full before/after builds (only Toggle Lab's three
+files change, spans included). The ADR-0038 machinery needed zero
+changes at the binding layer: `onCheckedChange` already lowered to the
+checked-change kind, `acceptsPayload` gained one constructor arm, and
+`listenChecked` already delivered exactly the boolean the broadcast
+needs. Keeping `TypedEventSpec`/`ParamUpdate` untouched (a third
+`AnyTypedEvent` constructor instead) meant the Form milestones' total
+`target` accessors never noticed the round.
+
+### Friction encountered
+
+The accessor totality was the real design fork: extending `ParamUpdate`
+with a broadcast constructor would have made `TypedEventSpec.target`
+partial and rippled into the Form milestones, so the round settled on the
+separate `boolBroadcast` spec — the right call, but it took a survey of
+every `targetIndex`/`target` consumer to see it. Validation order
+mattered for error quality: the bare-payload composition check has to run
+before the "never writes its payload" check, or `set done (trim checked)`
+reports the misleading missing-payload message. And the vacuous-truth
+caveat survives on the empty region: unchecking the empty box broadcasts
+over zero rows and the checked subject stays vacuously true, so the cache
+keeps true while the DOM keeps the gesture — pinned as the no-op gate,
+honest but still a whisper of the old divergence in the one state TodoMVC
+never shows (the real app hides the box when the list is empty; the
+hidden-when-empty candidate is noted below).
+
+### Bugs found
+
+No framework defect surfaced: the forged model gates (accepted payload
+broadcast with its empty summary and checked-change resolution, the
+LRX-VIEW-018 value-binding rejection, and the six-member LRX-TYPE-116
+family), the three new compile-fail fixtures (String payload and composed
+payload LRX-ELAB-126, unknown field LRX-ELAB-115), the updated
+elaborator, artifact, and guide gates, and all Toggle Lab browser gates
+(the rewritten both-way parity gate and the two new ADR-0061 gates
+included) passed. The only iteration was the environment audit: the new
+constructor's generated `injEq` theorems needed their two reviewed
+propext entries.
+
+### Performance observations
+
+The performance freeze held by construction: every file of every other
+lab and of the js-framework-benchmark bundle is byte-identical to the
+HEAD baseline (full before/after builds into the scratchpad); only
+Toggle Lab's module, manifest (gaining `payload-broadcasts` and one
+event), and graph (source spans only) change. A payload broadcast costs
+exactly a plain broadcast: the same per-row evaluate-then-assign loop,
+the same dirty reconcile over retained rows, the same one-scan-per-touch
+sweep — the browser gates pin the joint update as one transaction (two
+retained-row updates, one evaluation per selection, one checked write),
+the equal-payload broadcast as evaluate-only, and the empty-region
+broadcast as metric-preserving.
+
+### Follow-up issue or commit
+
+`feat(component): flow the checked payload into the region broadcast
+(ADR-0061)`, `test(component): forge the payload-broadcast gates and
+teach the guide`, and `docs(adr): accept the payload broadcast
+(ADR-0061)`. Remaining gaps carried forward: the component-scope Escape
+arm is sealed but unproven (no new-todo revert contract exists to prove
+it); affordance-contract agreement stays ADR-0059's first open question;
+the ADR-0050 predicate removal, ADR-0051 filter arms, ADR-0044 row class
+selection, and ADR-0049 row checked reflection still compare raw fields;
+the guard literal is sealed at the empty string; negated and composite
+subjects stay rejected; row guards stay single-field remove-or-commit;
+the key set stays sealed at Enter/Escape; `s!` interpolation absent from
+row scope; branch cells single-level and two-branch with exact
+click/dblclick agreement; child instrumentation still unreachable through
+the parent disposer; the items-left singular/plural text ("1 item left")
+stays an unexpressed candidate; and TodoMVC's hide-the-toggle-all-chrome
+refinement (the toggle-all box and footer riding the ADR-0058 emptiness
+subject) is expressible today but unexercised in Toggle Lab.
