@@ -594,7 +594,8 @@ component NewTodoMini (schema := NewTodoMiniSchema) where {
   view := jsx% <main> [
     <input ariaLabel="New todo" value={rx% newTodoDraft} onInput={setDraft}
       onKeyDown={confirm}/>,
-    <button type="button" onClick={add}> ["Add"],
+    <button type="button" onClick={add}
+      disabled={trim newTodoDraft == ""}> ["Add"],
     <ul ariaLabel="Items"> [<region roster/>]
   ];
 }
@@ -622,7 +623,13 @@ as `"true"`/`"false"`, and `disabled={filter == "all"}` reflects it as the
 boolean element property. The predicate is equality of one `String`
 component value (source or derived) against one string literal; the field
 reference is the ordinary schema `Field`, so a non-`String` field is a plain
-Lean type error. Selections join the commit sweep beside text sinks and
+Lean type error. The subject may sit behind the one sealed `trim` unary
+(ADR-0057) — `disabled={trim newTodoDraft == ""}` above grays the Add
+button on exactly the ASCII-trimmed equality its skip guard evaluates, so
+the affordance agrees with the dispatch-layer contract by construction
+(and only the guard *is* the contract: the event stays a no-op wherever it
+is triggered from). General predicates, negation, and composed subjects
+are not selections. Selections join the commit sweep beside text sinks and
 reflected properties with the evaluate-compare-write shape. A selection
 counts as its attribute for duplicate detection (`LRX-VIEW-001`), and
 `aria-pressed`/`disabled` selections require a native button

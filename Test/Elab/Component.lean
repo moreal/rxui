@@ -277,6 +277,17 @@ private def verifyToggle
   | some summary =>
       unless summary.directReads == [2] && summary.directWrites == [2] do
         throw <| IO.userError "toggle key-branched summary lost the guard read"
+  /- The ADR-0057 trimmed disabled selection: the Add button's affordance is
+  the ADR-0045 `disabled` selection whose subject sits behind the sealed
+  trim unary — the exact trimmed-draft equality the ADR-0055 skip guard
+  evaluates, reflected as the boolean element property. -/
+  unless checked.view.attrSelects.map (fun mounted =>
+      (mounted.select.name, mounted.select.fieldIndex, mounted.select.equals,
+        mounted.select.trimmed, mounted.path)) ==
+      [("disabled", 2, "", true, [2])] do
+    throw <| IO.userError "toggle Add affordance lost its trimmed disabled selection"
+  unless checked.view.attrSelects.map (·.select.debug) == ["select:disabled:trim:2"] do
+    throw <| IO.userError "toggle Add affordance lost its trimmed debug marker"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [

@@ -634,18 +634,24 @@ test("a committed label is stored trimmed and the draft re-mirrors it (ADR-0054)
   await expect(page.locator("#items > li .item-label")).toHaveText(["tabbed label"]);
 });
 
-test("Add on a whitespace-only draft is a whole-event no-op (ADR-0055)", async ({ page }) => {
+test("Add on a whitespace-only draft is a whole-event no-op (ADR-0055/0057)", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();
   const draft = page.getByRole("textbox", { name: "New todo" });
   await draft.fill(" \t ");
+  const addTodo = page.getByRole("button", { name: "Add todo" });
+  // The ADR-0057 affordance grays the button on exactly the guard's trimmed
+  // equality, so a real click can no longer reach the dispatch function.
+  await expect(addTodo).toBeDisabled();
   const beforeTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
   const beforeRegion = await regionMetrics(page);
-  // The skip guard evaluates the trimmed component draft before the
-  // transaction begins: the whitespace-only Add returns from the dispatch
-  // function with no begin bookkeeping, no event trace, no write, no
-  // append, and no region touch.
-  await page.getByRole("button", { name: "Add todo" }).click();
+  // The affordance is not the contract (ADR-0055 rejection 2): observe the
+  // skip guard itself by handing the disabled button a synthetic click —
+  // the listener still runs, and the dispatch function returns before the
+  // transaction begins with no begin bookkeeping, no event trace, no
+  // write, no append, and no region touch.
+  await addTodo.evaluate((button) =>
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true })));
   await expect(page.locator("#items > li")).toHaveCount(1);
   await expect(page.locator("#items-left")).toHaveText("1 left of 1");
   // The draft is not written either — the guard hit is a no-op, not a
@@ -750,6 +756,76 @@ test("a key outside the sealed arm table moves nothing (ADR-0056)", async ({ pag
   const afterTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
   expect(afterTx).toEqual(beforeTx);
   expect(await regionMetrics(page)).toEqual(beforeRegion);
+});
+
+test("the Add affordance disables exactly on a whitespace-only draft (ADR-0057)", async ({ page }) => {
+  await mountToggle(page);
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  const addTodo = page.getByRole("button", { name: "Add todo" });
+  // The button mounts disabled: the draft starts empty, and mount writes the
+  // trimmed equality into the disabled property before any transaction.
+  await expect(addTodo).toBeDisabled();
+  // Whitespace-only typing keeps the trimmed subject empty.
+  await draft.fill(" \t ");
+  await expect(addTodo).toBeDisabled();
+  // The first non-whitespace character flips the equality, and the commit
+  // sweep writes the property through setProperty.
+  await draft.fill(" \t x");
+  await expect(addTodo).toBeEnabled();
+  // Clearing the draft re-disables through the same sweep.
+  await draft.fill("");
+  await expect(addTodo).toBeDisabled();
+  // A valid add resets the draft inside the guarded transaction, and the
+  // same commit sweep re-disables the button before the click returns.
+  await draft.fill("  buy milk ");
+  await expect(addTodo).toBeEnabled();
+  await addTodo.click();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["buy milk"]);
+  await expect(draft).toHaveValue("");
+  await expect(addTodo).toBeDisabled();
+});
+
+test("the affordance mirrors the dispatch guard with the equal-value sweep no-op (ADR-0057)", async ({ page }) => {
+  await mountToggle(page);
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  const addTodo = page.getByRole("button", { name: "Add todo" });
+  // For every draft the affordance equals the guard's trimmed emptiness —
+  // the same asciiTrimPattern equality the skip guard evaluates, run by the
+  // commit sweep instead of the dispatch function.
+  // The NBSP draft pins the ASCII alignment: it survives the trim on both
+  // the affordance and the guard, so the button stays live and Enter adds.
+  for (const value of ["", " \t ", " x ", "x", " \u00a0 "]) {
+    await draft.fill(value);
+    if (value.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "") === "") {
+      await expect(addTodo).toBeDisabled();
+    } else {
+      await expect(addTodo).toBeEnabled();
+    }
+  }
+  // Appending a trailing space to a valid draft re-evaluates the selection
+  // but writes nothing: the trimmed equality is unchanged, so the compare
+  // half of evaluate-compare-write swallows the write.
+  await draft.fill("x");
+  const evaluated = (tx) =>
+    tx[7].filter((entry) => entry === "attr:0:disabled:evaluated").length;
+  const written = (tx) =>
+    tx[7].filter((entry) => entry === "dom:attr:0:disabled:write").length;
+  const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await draft.press("End");
+  await draft.press(" ");
+  const after = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(after)).toBe(evaluated(before) + 1);
+  expect(written(after)).toBe(written(before));
+  await expect(addTodo).toBeEnabled();
+  // Where the affordance disables, the Enter path still carries the
+  // contract: the guard, not the grayed button, keeps the add a no-op.
+  await draft.fill(" \t ");
+  await expect(addTodo).toBeDisabled();
+  const beforeTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await draft.press("Enter");
+  const afterTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(afterTx).toEqual(beforeTx);
+  await expect(page.locator("#items > li")).toHaveCount(0);
 });
 
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {

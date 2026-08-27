@@ -28,7 +28,7 @@ if (
   JSON.stringify(manifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
     "typed-events", "event-guards", "event-key-branches", "controlled-props",
-    "keyed-regions",
+    "attr-selections", "keyed-regions",
     "typed-row-events", "row-key-branches", "row-guards", "row-trim",
     "row-branches", "row-reflects", "row-focus", "row-aggregates",
     "region-broadcasts", "region-filters",
@@ -81,6 +81,18 @@ for (const required of [
   "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1], state[2]), $lrx_event_1_append_0_1(state[0], state[1], state[2]), $lrx_event_1_append_0_2(state[0], state[1], state[2]), $lrx_event_1_append_0_3(state[0], state[1], state[2])]);",
   "function $lrx_event_1_append_0_0(added, filter, draft) {\n  return draft[\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n}",
   "function $lrx_event_1_write_1(added, filter, draft) {\n  return \"\";\n}",
+  // The ADR-0057 trimmed disabled selection: the Add button mounts with the
+  // trimmed-draft equality reflected into its disabled property — the exact
+  // equality the ADR-0055 skip guard evaluates — and the commit sweep
+  // re-evaluates it behind the draft's changed flag with the shared
+  // evaluate-compare-write shape and the tx[8]/tx[9] counters.
+  "  const attrRefs = [node_4];",
+  "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\"];",
+  "  setProperty(attrRefs[0], \"disabled\", attrCache[0]);",
+  "    if (changed[2]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:0:disabled:evaluated\");\n      const attr_next_0 = state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      const attr_changed_0 = attrCache[0] !== attr_next_0;\n      if (attr_changed_0) {\n        attrCache[0] = attr_next_0;\n        setProperty(attrRefs[0], \"disabled\", attr_next_0);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:0:disabled:write\");\n      }\n    }",
+  // The attr slots ride behind the prop slots; the region record follows
+  // them (ADR-0045), so the context carries eleven slots.
+  "  const context = [state, refs, tx, oldSources, changed, sinkCache, propRefs, propCache, attrRefs, attrCache, regions];",
   // One structural delegated listener per bound kind, in registration order,
   // each with its own static per-cell action array (ADR-0041/0046/0049).
   "const region_off_0 = listenDelegatedCells(node_25, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",

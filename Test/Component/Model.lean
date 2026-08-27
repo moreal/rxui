@@ -243,6 +243,36 @@ def run : IO Unit := do
         (selects := [.classSelect parity "even" "a" "b",
           .classSelect parity "odd" "c" "d"])) }
   expectError "LRX-VIEW-001" doubleClassSelect.check
+  /- ADR-0057 trimmed selection subjects: the sealed trim unary in front of
+  the selection field rides every existing selection obligation — same
+  duplicate detection, same native-button rule, same graph sinks — with the
+  trimmed flag surfacing in the debug marker. -/
+  let trimmedSelectingButton : ComponentSpec CounterSchema :=
+    { spec with view := View.node .main [View.node .button [.text "Even"]
+        (attrs := [.buttonType .button])
+        (events := [{ kind := .click, eventName := "increment" }])
+        (selects := [.classSelect parity "even" "selected" "" (trimmed := true),
+          .pressedSelect parity "even" (trimmed := true),
+          .disabledSelect parity "even" (trimmed := true)])] }
+  match trimmedSelectingButton.check with
+  | .error error =>
+      throw <| IO.userError s!"forged trimmed attribute selection rejected: {error.code}"
+  | .ok checked =>
+      unless checked.view.attrSelects.map
+          (fun mounted => (mounted.select.name, mounted.select.trimmed)) ==
+          [("class", true), ("aria-pressed", true), ("disabled", true)] do
+        throw <| IO.userError "forged trimmed attribute selection lost its trim flags"
+      unless checked.view.attrSelects.map (·.select.debug) ==
+          ["select:class:trim:2", "select:aria-pressed:trim:2",
+            "select:disabled:trim:2"] do
+        throw <| IO.userError "forged trimmed attribute selection lost its debug markers"
+      unless (checked.graph.graph.nodes.map (·.name)).toList.drop 3 ==
+          ["attr:0:class", "attr:1:aria-pressed", "attr:2:disabled"] do
+        throw <| IO.userError "forged trimmed attribute selection lost its graph sinks"
+  let trimmedPressedOnParagraph : ComponentSpec CounterSchema :=
+    { spec with view := (View.node .p [.text "Bad"]
+        (selects := [.pressedSelect parity "even" (trimmed := true)])) }
+  expectError "LRX-VIEW-032" trimmedPressedOnParagraph.check
   /- ADR-0046 typed row payloads, exercised through forged specifications. -/
   let renameEvent : RowEventSpec :=
     { name := "rename", action := .update ⟨[(0, .payload)], none⟩, takesPayload := true }

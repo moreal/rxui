@@ -333,7 +333,8 @@ component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
 }
 
 /- The skip-guarded component event snippet from guide section 7
-(ADR-0055), with the ADR-0056 key-branched Enter confirmation. -/
+(ADR-0055), with the ADR-0056 key-branched Enter confirmation and the
+ADR-0057 trimmed disabled affordance. -/
 abbrev NewTodoMiniSchema : Schema := .field "newTodoDraft" String .empty
 
 def newTodoDraft : Field NewTodoMiniSchema String := .here
@@ -353,7 +354,8 @@ component NewTodoMini (schema := NewTodoMiniSchema) where {
   view := jsx% <main> [
     <input ariaLabel="New todo" value={rx% newTodoDraft} onInput={setDraft}
       onKeyDown={confirm}/>,
-    <button type="button" onClick={add}> ["Add"],
+    <button type="button" onClick={add}
+      disabled={trim newTodoDraft == ""}> ["Add"],
     <ul ariaLabel="Items"> [<region roster/>]
   ];
 }
@@ -583,6 +585,12 @@ def run : IO Unit := do
               (guard.field.index, guard.trimmed)))) ==
           [("confirm", [("Enter", some (0, true))])] do
         throw <| IO.userError "language-guide key-branch snippet lost its arm table"
+      unless adding.view.attrSelects.map (fun mounted =>
+          (mounted.select.name, mounted.select.fieldIndex,
+            mounted.select.equals, mounted.select.trimmed)) ==
+          [("disabled", 0, "", true)] do
+        throw <| IO.userError
+          "language-guide trimmed affordance snippet lost its selection"
   | .error error =>
       throw <| IO.userError s!"language-guide skip-guard component rejected: {error.render}"
   match FilterMini_check with
