@@ -97,6 +97,9 @@ fixtures=(
   Test/fixtures/compile-fail/HiddenThresholdLiteral.lean
   Test/fixtures/compile-fail/HiddenPredicateThreshold.lean
   Test/fixtures/compile-fail/HiddenPredicateUnknownField.lean
+  Test/fixtures/compile-fail/CheckedPredicateThreshold.lean
+  Test/fixtures/compile-fail/CheckedPredicateUnknownField.lean
+  Test/fixtures/compile-fail/CheckedOnNonCheckbox.lean
 )
 fragments=(
   "Constructor for"
@@ -194,6 +197,9 @@ fragments=(
   "error[LRX-ELAB-125]"
   "error[LRX-ELAB-125]"
   "error[LRX-ELAB-119]"
+  "error[LRX-ELAB-125]"
+  "error[LRX-ELAB-119]"
+  "error[LRX-VIEW-043]"
 )
 
 for index in "${!fixtures[@]}"; do

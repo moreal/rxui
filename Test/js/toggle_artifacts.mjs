@@ -32,7 +32,7 @@ if (
     "typed-row-events", "row-key-branches", "row-guards", "row-trim",
     "row-branches", "row-reflects", "row-focus", "row-aggregates",
     "region-broadcasts", "region-filters", "region-visibility",
-    "predicate-visibility",
+    "predicate-visibility", "region-checked",
   ])
 ) {
   throw new Error("generated Toggle Lab manifest is invalid");
@@ -93,18 +93,24 @@ for (const required of [
   // true — through the same setProperty export. The ADR-0059 predicate
   // hidden selection sits between them: the Clear completed button
   // (node_10) mounts hidden through the same slots and the same literal
-  // true — an empty region satisfies no predicate.
-  "  const attrRefs = [node_4, node_10, node_25];",
-  "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\", true, true];",
+  // true — an empty region satisfies no predicate. The ADR-0060 toggle-all
+  // checked selection (node_26) closes the block: the box mounts vacuously
+  // checked — the same literal true read the other way, no row fails the
+  // predicate — through the same setProperty export.
+  "  const attrRefs = [node_4, node_10, node_25, node_26];",
+  "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\", true, true, true];",
   "  setProperty(attrRefs[0], \"disabled\", attrCache[0]);",
   "  setProperty(attrRefs[1], \"hidden\", attrCache[1]);",
   "  setProperty(attrRefs[2], \"hidden\", attrCache[2]);",
-  // The ADR-0058/0059 sweep re-evaluates both hidden subjects on the
-  // region-touch path the count texts ride — behind the shared touched
-  // flag, before the reconcile consumes it — and writes each hidden
-  // property only on a flip: the button's subject is the ADR-0050
-  // predicate scan against zero, the wrapper's the row-table emptiness.
-  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const hidden_scan_0_1 = [0];\n      for (const hidden_row_0_1 of regions[0][1]) {\n        if (hidden_row_0_1[3] === \"true\") {\n          hidden_scan_0_1[0] += 1;\n        }\n      }\n      const attr_next_1 = hidden_scan_0_1[0] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:2:hidden:evaluated\");\n      const attr_next_2 = regions[0][1][\"length\"] === 0;\n      const attr_changed_2 = attrCache[2] !== attr_next_2;\n      if (attr_changed_2) {\n        attrCache[2] = attr_next_2;\n        setProperty(attrRefs[2], \"hidden\", attr_next_2);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:2:hidden:write\");\n      }\n    }",
+  "  setProperty(attrRefs[3], \"checked\", attrCache[3]);",
+  // The ADR-0058/0059/0060 sweep re-evaluates every region-count subject
+  // on the region-touch path the count texts ride — behind the shared
+  // touched flag, before the reconcile consumes it — and writes each
+  // boolean property only on a flip: the button's subject is the ADR-0050
+  // predicate scan against zero, the wrapper's the row-table emptiness,
+  // and the toggle-all box's the not-done predicate scan exported into
+  // the checked property with the same attr:{index} label shape.
+  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const hidden_scan_0_1 = [0];\n      for (const hidden_row_0_1 of regions[0][1]) {\n        if (hidden_row_0_1[3] === \"true\") {\n          hidden_scan_0_1[0] += 1;\n        }\n      }\n      const attr_next_1 = hidden_scan_0_1[0] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:2:hidden:evaluated\");\n      const attr_next_2 = regions[0][1][\"length\"] === 0;\n      const attr_changed_2 = attrCache[2] !== attr_next_2;\n      if (attr_changed_2) {\n        attrCache[2] = attr_next_2;\n        setProperty(attrRefs[2], \"hidden\", attr_next_2);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:2:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:3:checked:evaluated\");\n      const checked_scan_0_3 = [0];\n      for (const checked_row_0_3 of regions[0][1]) {\n        if (checked_row_0_3[3] === \"false\") {\n          checked_scan_0_3[0] += 1;\n        }\n      }\n      const attr_next_3 = checked_scan_0_3[0] === 0;\n      const attr_changed_3 = attrCache[3] !== attr_next_3;\n      if (attr_changed_3) {\n        attrCache[3] = attr_next_3;\n        setProperty(attrRefs[3], \"checked\", attr_next_3);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:3:checked:write\");\n      }\n    }",
   "    if (changed[2]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:0:disabled:evaluated\");\n      const attr_next_0 = state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      const attr_changed_0 = attrCache[0] !== attr_next_0;\n      if (attr_changed_0) {\n        attrCache[0] = attr_next_0;\n        setProperty(attrRefs[0], \"disabled\", attr_next_0);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:0:disabled:write\");\n      }\n    }",
   // The attr slots ride behind the prop slots; the region record follows
   // them (ADR-0045), so the context carries eleven slots.
@@ -145,7 +151,12 @@ for (const required of [
   // (ADR-0047/0048): replacement arm only.
   "    detach(childAt(branch_cell_0, 0));",
   "    if (!branch_want_0) {\n      focus(childAt(branch_cell_0, 0));\n    }",
-  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, off_6, off_7, off_8, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
+  // The ADR-0060 payload-less toggle binding: the toggle-all box's change
+  // listener names the plain completeAll dispatch through the same listen
+  // export a click binding uses — the delegated checked payload is
+  // discarded, no form-event adapter and no new host export.
+  "  const off_9 = listen(node_26, \"change\", context, null, $lrx_event_2);",
+  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, off_6, off_7, off_8, off_9, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
   // The ADR-0050 region record carries the count refs and numeric cache in
   // two region-local slots behind the pending slot, and the ADR-0051 filter
   // slot holds the container element behind them.

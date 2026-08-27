@@ -1023,6 +1023,119 @@ test("a filter change never re-evaluates the affordance and completeAll keeps it
   await expect(clear).toBeVisible();
 });
 
+test("the toggle-all box mounts checked and the first not-done append unchecks it (ADR-0060)", async ({ page }) => {
+  await mountToggle(page);
+  const box = page.getByRole("checkbox", { name: "Toggle all" });
+  // An empty region has no row failing the predicate: the box mounts with
+  // its checked property already true — the vacuous all-complete truth,
+  // written by mount before any transaction exists, exactly like the
+  // ADR-0058/0059 hidden slots beside it.
+  await expect(box).toBeChecked();
+  expect(await box.evaluate((element) => element.checked)).toBe(true);
+  const evaluated = (tx) =>
+    tx[7].filter((entry) => entry === "attr:3:checked:evaluated").length;
+  const written = (tx) =>
+    tx[7].filter((entry) => entry === "dom:attr:3:checked:write").length;
+  // The first not-done append flips the predicate count off zero: the same
+  // region-touch sweep the hidden slots ride unchecks the box through
+  // setProperty — one evaluation, one write.
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(box).not.toBeChecked();
+  const appended = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(appended)).toBe(1);
+  expect(written(appended)).toBe(1);
+  // The completeAll broadcast drains the not-done count back to zero: the
+  // box checks again through the same slot.
+  await page.getByRole("button", { name: "Complete all" }).click();
+  await expect(box).toBeChecked();
+  const completed = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(completed)).toBe(2);
+  expect(written(completed)).toBe(2);
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("untoggling and appending uncheck the box and an emptied region restores the vacuous truth (ADR-0060)", async ({ page }) => {
+  await mountToggle(page);
+  const box = page.getByRole("checkbox", { name: "Toggle all" });
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  const rowToggle = page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" });
+  await rowToggle.check();
+  await expect(box).toBeChecked();
+  // Untoggling the last done row raises the not-done count off zero: the
+  // pending row update touches the region and the sweep unchecks the box.
+  await rowToggle.uncheck();
+  await expect(box).not.toBeChecked();
+  await rowToggle.check();
+  await expect(box).toBeChecked();
+  // Appending while all rows are done unchecks it again — rows append
+  // not-done.
+  await add.click();
+  await expect(box).not.toBeChecked();
+  // Removing the last not-done row through ✕ drains the count to zero and
+  // re-checks the box through the ordinary reconcile.
+  await page.locator("#items > li").nth(1)
+    .getByRole("button", { name: "Remove item" }).click();
+  await expect(box).toBeChecked();
+  // clearCompleted emptying the region keeps the vacuous truth: the scan
+  // still counts zero not-done rows, so the equal-value compare swallows
+  // the write and the box stays checked — one evaluation, no write.
+  const evaluated = (tx) =>
+    tx[7].filter((entry) => entry === "attr:3:checked:evaluated").length;
+  const written = (tx) =>
+    tx[7].filter((entry) => entry === "dom:attr:3:checked:write").length;
+  const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  await expect(box).toBeChecked();
+  const cleared = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(cleared)).toBe(evaluated(before) + 1);
+  expect(written(cleared)).toBe(written(before));
+});
+
+test("a filter change never re-evaluates the box and its change fires completeAll (ADR-0060)", async ({ page }) => {
+  await mountToggle(page);
+  const box = page.getByRole("checkbox", { name: "Toggle all" });
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await expect(box).not.toBeChecked();
+  // A filter change alone never touches the region, so the checked scan
+  // does not even run — the box follows the row table, not the displayed
+  // rows, and stays unchecked while every not-done row is filter-hidden.
+  const evaluated = (tx) =>
+    tx[7].filter((entry) => entry === "attr:3:checked:evaluated").length;
+  const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await page.getByRole("button", { name: "Show completed" }).click();
+  await expect(page.locator("#items > li:visible")).toHaveCount(0);
+  const filtered = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(filtered)).toBe(evaluated(before));
+  expect(await box.evaluate((element) => element.checked)).toBe(false);
+  await page.getByRole("button", { name: "Show all" }).click();
+  // Checking the box fires the payload-less change binding: completeAll
+  // broadcasts done across every row, the sweep confirms the zero count,
+  // and the cache flip re-writes the property the click already set.
+  await box.check();
+  await expect(box).toBeChecked();
+  await expect(page.locator("#items > li")
+    .getByRole("checkbox", { name: "Toggle item", checked: true })).toHaveCount(2);
+  await expect(page.locator("#items-left")).toHaveText("0 left of 2");
+  // The uncheck path is unexpressed until a payload can flow into a region
+  // broadcast (ADR-0060 open question): clicking the checked box fires the
+  // same completeAll, whose equal-value broadcast leaves every row done and
+  // whose sweep sees no flip — the DOM box keeps the user's uncheck while
+  // the cache still holds true.
+  const beforeUncheck = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await box.uncheck();
+  const afterUncheck = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(evaluated(afterUncheck)).toBe(evaluated(beforeUncheck) + 1);
+  expect(await box.evaluate((element) => element.checked)).toBe(false);
+  await expect(page.locator("#items > li")
+    .getByRole("checkbox", { name: "Toggle item", checked: true })).toHaveCount(2);
+});
+
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();

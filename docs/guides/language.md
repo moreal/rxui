@@ -422,7 +422,9 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
     <button type="button" onClick={clearCompleted}
       hidden={count roster (done == "true") == 0}> ["Clear completed"],
     <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
-    <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>]
+    <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>],
+    <input type="checkbox" ariaLabel="Toggle all"
+      checked={count roster (done == "false") == 0} onChange={completeAll}/>
   ];
 }
 ```
@@ -454,6 +456,26 @@ rejected (`LRX-ELAB-125`), an unknown region or predicate field is
 rejected (`LRX-ELAB-119` at the surface, `LRX-VIEW-042` at the model),
 and the selection counts as its attribute for duplicate detection
 (`LRX-VIEW-001`).
+
+The same region-count boolean may instead be exported as the `checked`
+property of a static `type="checkbox"` input (ADR-0060):
+`checked={count region (field == "literal") == 0}` checks the box exactly
+while no row satisfies the predicate, so TodoMVC's toggle-all checkbox can
+be checked exactly while no row is still active. The box mounts checked —
+an empty region has no row failing the predicate, the vacuous truth — the
+first not-done append unchecks it, a `completeAll`-style broadcast checks
+it, and draining the region restores the vacuous truth. The reflection
+rides the hidden selection's region-touch path, attr slot, boolean cache,
+and `setProperty` export unchanged, and it demands the checkbox input
+(`LRX-VIEW-043`) — the `checked` property originates from checkbox inputs
+alone, the ADR-0049 rule in static scope. Every other dynamic `checked`
+value keeps its meaning (the controlled reflection at component scope, the
+row reflection in row templates), and the count-headed shapes are sealed
+exactly as `hidden`'s (`LRX-ELAB-125`, `LRX-ELAB-119`). The checkbox's
+`onChange` may name a plain component event — the payload-less toggle
+binding, valid only on a checkbox (`LRX-VIEW-043`) — so `completeAll` can
+serve as the toggle-all action; the delegated checked payload is
+discarded, so the uncheck-all path stays unexpressed for now.
 
 A `filter` item selects which of a keyed region's rows are *displayed*
 (ADR-0051): `filter region by field := when "literal" (rowField ==

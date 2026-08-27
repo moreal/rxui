@@ -347,6 +347,117 @@ def run : IO Unit := do
           (selects := [.hiddenIfEmpty "r" (predicate := some (1, "true"))])]
         regions := #[rosterRegion] }
   expectError "LRX-VIEW-042" hidingPredicateOutOfBounds.check
+  /- ADR-0060 toggle-all checked reflection: the sealed region-count subject
+  is accepted as the `checked` property of a static type="checkbox" input —
+  total or predicate form, each with its own debug marker, the boolean
+  value type, and the same graph exclusion — and demands the checkbox: any
+  other element is rejected. The unknown-region and out-of-bounds rules
+  ride LRX-VIEW-042, a selection beside a controlled `checked` binding
+  duplicates the reflected property, and the payload-less change binding
+  is likewise accepted only from a checkbox input. -/
+  let toggleAllBox : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [
+          View.node .input [] (attrs := [.inputType .checkbox])
+            (selects := [.checkedIfEmpty "r" (predicate := some (0, "x"))]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  match toggleAllBox.check with
+  | .error error =>
+      throw <| IO.userError s!"forged checked reflection rejected: {error.code}"
+  | .ok checked =>
+      unless checked.view.attrSelects.map (fun mounted =>
+          (mounted.select.name, mounted.select.checkedRegion?,
+            mounted.select.checkedPredicate?, mounted.select.regionSubject?,
+            mounted.select.fieldIndex?, mounted.path)) ==
+          [("checked", some "r", some (0, "x"), some "r", none, [0])] do
+        throw <| IO.userError "forged checked reflection lost its mounted selection"
+      unless checked.view.attrSelects.map
+          (fun mounted => (mounted.select.debug, mounted.select.valueType)) ==
+          [("select:checked:r:0:x", .bool)] do
+        throw <| IO.userError "forged checked reflection lost its debug marker"
+      unless (checked.graph.graph.nodes.map (·.name)).toList.all
+          (fun name => !name.startsWith "attr:") do
+        throw <| IO.userError "forged checked reflection leaked into the planned graph"
+  let totalCheckedBox : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [
+          View.node .input [] (attrs := [.inputType .checkbox])
+            (selects := [.checkedIfEmpty "r"]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  match totalCheckedBox.check with
+  | .error error =>
+      throw <| IO.userError s!"forged total checked reflection rejected: {error.code}"
+  | .ok checked =>
+      unless checked.view.attrSelects.map
+          (fun mounted => (mounted.select.debug, mounted.select.checkedPredicate?)) ==
+          [("select:checked:r", none)] do
+        throw <| IO.userError "forged total checked reflection lost its debug marker"
+  let checkedUnknownRegion : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [
+          View.node .input [] (attrs := [.inputType .checkbox])
+            (selects := [.checkedIfEmpty "s"]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  expectError "LRX-VIEW-042" checkedUnknownRegion.check
+  let checkedOutOfBounds : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [
+          View.node .input [] (attrs := [.inputType .checkbox])
+            (selects := [.checkedIfEmpty "r" (predicate := some (1, "x"))]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  expectError "LRX-VIEW-042" checkedOutOfBounds.check
+  let checkedOnButton : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [
+          View.node .button [.text "Bad"] (attrs := [.buttonType .button])
+            (selects := [.checkedIfEmpty "r"]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  expectError "LRX-VIEW-043" checkedOnButton.check
+  let checkedOnTextInput : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [
+          View.node .input [] (attrs := [.inputType .text])
+            (selects := [.checkedIfEmpty "r"]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  expectError "LRX-VIEW-043" checkedOnTextInput.check
+  let checkedBesideControlled : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [
+          View.node .input [] (attrs := [.inputType .checkbox])
+            (props := [.checked (RxExpr.literal (.bool true))])
+            (selects := [.checkedIfEmpty "r"]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  expectError "LRX-VIEW-021" checkedBesideControlled.check
+  let plainChangeOnCheckbox : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [
+          View.node .input [] (attrs := [.inputType .checkbox])
+            (events := [{ kind := .change, eventName := "increment" }]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  match plainChangeOnCheckbox.check with
+  | .error error =>
+      throw <| IO.userError s!"forged payload-less change binding rejected: {error.code}"
+  | .ok checked =>
+      unless checked.view.events.map (fun mounted =>
+          (mounted.binding.kind, mounted.binding.eventName, mounted.path)) ==
+          [(.change, "increment", [0])] do
+        throw <| IO.userError "forged payload-less change binding lost its mount"
+  let plainChangeOnTextInput : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main [
+          View.node .input [] (attrs := [.inputType .text])
+            (events := [{ kind := .change, eventName := "increment" }]),
+          View.node .ul [View.region "r"]]
+        regions := #[rosterRegion] }
+  expectError "LRX-VIEW-043" plainChangeOnTextInput.check
   /- ADR-0046 typed row payloads, exercised through forged specifications. -/
   let renameEvent : RowEventSpec :=
     { name := "rename", action := .update ⟨[(0, .payload)], none⟩, takesPayload := true }

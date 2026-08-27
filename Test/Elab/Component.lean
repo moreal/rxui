@@ -288,25 +288,38 @@ private def verifyToggle
   compared string literal — mounted on the `<ul>` that hosts the region.
   The ADR-0059 predicate-count visibility sits between them: the Clear
   completed button's `hidden` selection carries the same region subject
-  behind the sealed done-equality predicate. -/
+  behind the sealed done-equality predicate. The ADR-0060 toggle-all
+  checked selection closes the table: the static checkbox after the list
+  exports the not-done predicate count as its `checked` property. -/
   unless checked.view.attrSelects.map (fun mounted =>
       (mounted.select.name, mounted.select.fieldIndex?, mounted.select.equals?,
         mounted.select.trimmed, mounted.path)) ==
       [("disabled", some 2, some "", true, [2]),
         ("hidden", none, none, false, [5]),
-        ("hidden", none, none, false, [11])] do
+        ("hidden", none, none, false, [11]),
+        ("checked", none, none, false, [12])] do
     throw <| IO.userError "toggle Add affordance lost its trimmed disabled selection"
   unless checked.view.attrSelects.map (·.select.debug) ==
       ["select:disabled:trim:2", "select:hidden:items:2:true",
-        "select:hidden:items"] do
+        "select:hidden:items", "select:checked:items:2:false"] do
     throw <| IO.userError "toggle Add affordance lost its trimmed debug marker"
   unless checked.view.attrSelects.map (fun mounted =>
-      (mounted.select.hiddenRegion?, mounted.select.hiddenPredicate?)) ==
-      [(none, none), (some "items", some (2, "true")), (some "items", none)] do
+      (mounted.select.regionSubject?, mounted.select.regionPredicate?,
+        mounted.select.hiddenRegion?, mounted.select.checkedRegion?)) ==
+      [(none, none, none, none),
+        (some "items", some (2, "true"), some "items", none),
+        (some "items", none, some "items", none),
+        (some "items", some (2, "false"), none, some "items")] do
     throw <| IO.userError "toggle list wrapper lost its empty-region visibility subject"
-  /- The hidden selection is region-driven (ADR-0058): like the ADR-0050
-  count texts it joins the region-touch sweep, not the planned graph — the
-  graph keeps exactly the sinks it had before the wrapper's selection. -/
+  /- The ADR-0060 payload-less toggle binding: the checkbox's change binding
+  names the plain `completeAll` event beside the typed and key bindings. -/
+  unless checked.view.events.any (fun mounted =>
+      mounted.binding.kind == .change &&
+        mounted.binding.eventName == "completeAll" && mounted.path == [12]) do
+    throw <| IO.userError "toggle-all checkbox lost its payload-less change binding"
+  /- The hidden and checked selections are region-driven (ADR-0058/0060):
+  like the ADR-0050 count texts they join the region-touch sweep, not the
+  planned graph — the graph keeps exactly the sinks it had before. -/
   unless (checked.graph.graph.nodes.map (·.name)).toList.filter
       (fun name => name.startsWith "attr:") == ["attr:0:disabled"] do
     throw <| IO.userError "toggle hidden selection leaked into the planned graph"
