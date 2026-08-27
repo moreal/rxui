@@ -156,7 +156,7 @@ def run : IO Unit := do
   /- ADR-0043 row update actions and row expressions, ADR-0044 class
   selections, exercised through forged specifications. -/
   let markEvent : RowEventSpec :=
-    { name := "mark", action := .update [(0, .append (.field 0) (.lit "!"))] }
+    { name := "mark", action := .update ⟨[(0, .append (.field 0) (.lit "!"))], none⟩ }
   let updatingTemplate : RowNode := RowNode.node .li [
     RowNode.node .span [RowNode.exprText (.append (.field 0) (.lit "?"))],
     RowNode.node .span [RowNode.node .button [RowNode.text "m"]
@@ -174,22 +174,22 @@ def run : IO Unit := do
   let emptyUpdate : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
         events := #[{ name := "remove", action := .remove },
-          { name := "noop", action := .update [] }] }] }
+          { name := "noop", action := .update ⟨[], none⟩ }] }] }
   expectError "LRX-VIEW-031" emptyUpdate.check
   let duplicateUpdateTarget : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
         events := #[{ name := "remove", action := .remove },
-          { name := "twice", action := .update [(0, .lit "x"), (0, .lit "y")] }] }] }
+          { name := "twice", action := .update ⟨[(0, .lit "x"), (0, .lit "y")], none⟩ }] }] }
   expectError "LRX-VIEW-031" duplicateUpdateTarget.check
   let updateTargetOutOfBounds : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
         events := #[{ name := "remove", action := .remove },
-          { name := "far", action := .update [(1, .lit "x")] }] }] }
+          { name := "far", action := .update ⟨[(1, .lit "x")], none⟩ }] }] }
   expectError "LRX-VIEW-031" updateTargetOutOfBounds.check
   let updateReadOutOfBounds : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
         events := #[{ name := "remove", action := .remove },
-          { name := "deep", action := .update [(0, .field 1)] }] }] }
+          { name := "deep", action := .update ⟨[(0, .field 1)], none⟩ }] }] }
   expectError "LRX-VIEW-031" updateReadOutOfBounds.check
   let exprTextOutOfBounds : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
@@ -245,7 +245,7 @@ def run : IO Unit := do
   expectError "LRX-VIEW-001" doubleClassSelect.check
   /- ADR-0046 typed row payloads, exercised through forged specifications. -/
   let renameEvent : RowEventSpec :=
-    { name := "rename", action := .update [(0, .payload)], takesPayload := true }
+    { name := "rename", action := .update ⟨[(0, .payload)], none⟩, takesPayload := true }
   let typedTemplate : RowNode := RowNode.node .li [
     RowNode.node .span [RowNode.fieldText 0],
     RowNode.node .span [RowNode.node .input []
@@ -266,7 +266,7 @@ def run : IO Unit := do
   let payloadWithoutDeclaration : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
         events := #[{ name := "remove", action := .remove },
-          { name := "sneak", action := .update [(0, .payload)] }] }] }
+          { name := "sneak", action := .update ⟨[(0, .payload)], none⟩ }] }] }
   expectError "LRX-VIEW-033" payloadWithoutDeclaration.check
   let typedOnClick : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
@@ -296,9 +296,9 @@ def run : IO Unit := do
   /- ADR-0047 sealed two-branch row cells and value reflections, exercised
   through forged specifications. -/
   let editEvent : RowEventSpec :=
-    { name := "edit", action := .update [(1, .lit "edit")] }
+    { name := "edit", action := .update ⟨[(1, .lit "edit")], none⟩ }
   let retypeEvent : RowEventSpec :=
-    { name := "retype", action := .update [(0, .payload)], takesPayload := true }
+    { name := "retype", action := .update ⟨[(0, .payload)], none⟩, takesPayload := true }
   let branchCell : RowNode := RowNode.branch 1 "view"
     (RowNode.node .span [RowNode.fieldText 0])
     (RowNode.node .input [] (events := [{ kind := .input, eventName := "retype" }])
@@ -364,7 +364,7 @@ def run : IO Unit := do
             (events := [{ kind := .input, eventName := "retype" }]))] }] }
   expectError "LRX-VIEW-034" inputInUnboundBranch.check
   let stampEvent : RowEventSpec :=
-    { name := "stamp", action := .update [(0, .payload)], takesPayload := true }
+    { name := "stamp", action := .update ⟨[(0, .payload)], none⟩, takesPayload := true }
   let buttonInUnboundKeydownBranch : ComponentSpec CounterSchema :=
     { branchSpec with regions := #[{ branchRegion with
         template := RowNode.node .li [RowNode.branch 1 "view"
@@ -441,9 +441,9 @@ def run : IO Unit := do
   passes; the checkbox-origin rules, the dblclick agreement rules, and the
   payload classes are rejected. -/
   let toggleEvent : RowEventSpec :=
-    { name := "toggle", action := .update [(1, .payload)], takesPayload := true }
+    { name := "toggle", action := .update ⟨[(1, .payload)], none⟩, takesPayload := true }
   let toggleEditEvent : RowEventSpec :=
-    { name := "edit", action := .update [(2, .lit "edit")] }
+    { name := "edit", action := .update ⟨[(2, .lit "edit")], none⟩ }
   let toggleRegion : RegionSpec := {
     name := "r"
     fields := #["label", "done", "mode"]
@@ -638,7 +638,7 @@ def run : IO Unit := do
   let keysEvent : RowEventSpec :=
     { name := "keys"
       action := .keySelect [
-        ("Enter", [(0, .lit "committed")]), ("Escape", [(0, .lit "reverted")])]
+        ("Enter", ⟨[(0, .lit "committed")], none⟩), ("Escape", ⟨[(0, .lit "reverted")], none⟩)]
       takesPayload := true }
   let keysTemplate : RowNode := RowNode.node .li [
     RowNode.node .span [RowNode.fieldText 0],
@@ -665,19 +665,19 @@ def run : IO Unit := do
   expectError "LRX-VIEW-039" (withKeys { keysEvent with takesPayload := false }).check
   expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [] }).check
   expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
-    ("Enter", [(0, .lit "a")]), ("Enter", [(0, .lit "b")])] }).check
+    ("Enter", ⟨[(0, .lit "a")], none⟩), ("Enter", ⟨[(0, .lit "b")], none⟩)] }).check
   expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
-    ("Tab", [(0, .lit "a")])] }).check
+    ("Tab", ⟨[(0, .lit "a")], none⟩)] }).check
   expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
-    ("Enter", [])] }).check
+    ("Enter", ⟨[], none⟩)] }).check
   expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
-    ("Enter", [(0, .lit "a"), (0, .lit "b")])] }).check
+    ("Enter", ⟨[(0, .lit "a"), (0, .lit "b")], none⟩)] }).check
   expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
-    ("Enter", [(1, .lit "a")])] }).check
+    ("Enter", ⟨[(1, .lit "a")], none⟩)] }).check
   expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
-    ("Enter", [(0, .payload)])] }).check
+    ("Enter", ⟨[(0, .payload)], none⟩)] }).check
   expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
-    ("Enter", [(0, .field 1)])] }).check
+    ("Enter", ⟨[(0, .field 1)], none⟩)] }).check
   let keysBoundAsInput : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
         template := RowNode.node .li [
@@ -686,6 +686,50 @@ def run : IO Unit := do
             (events := [{ kind := .input, eventName := "keys" }])]]
         events := #[{ name := "remove", action := .remove }, keysEvent] }] }
   expectError "LRX-VIEW-039" keysBoundAsInput.check
+  /- ADR-0053 remove-if guards, exercised through forged specifications: the
+  good guarded update and guarded key arm check and keep their guards;
+  LRX-VIEW-040 rejects an out-of-bounds guard field on both stage positions
+  and a guarded stage on a payload-taking row event — guards live on
+  payload-less row events and key arms. -/
+  let chopEvent : RowEventSpec :=
+    { name := "chop", action := .update ⟨[(0, .lit "x")], some ⟨0, ""⟩⟩ }
+  let choppingTemplate : RowNode := RowNode.node .li [
+    RowNode.node .span [RowNode.fieldText 0],
+    RowNode.node .span [RowNode.node .button [RowNode.text "c"]
+      (attrs := [.buttonType .button])
+      (events := [{ kind := .click, eventName := "chop" }])]
+  ]
+  let withChop (event : RowEventSpec) : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := choppingTemplate
+        events := #[{ name := "remove", action := .remove }, event] }] }
+  match (withChop chopEvent).check with
+  | .error error =>
+      throw <| IO.userError s!"forged guarded row event rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.regions.toList.map (fun region =>
+          region.events.toList.map fun event => (event.name, event.action)) ==
+          [[("remove", .remove), ("chop", chopEvent.action)]] do
+        throw <| IO.userError "forged guarded row event lost its guard"
+  expectError "LRX-VIEW-040" (withChop { chopEvent with
+    action := .update ⟨[(0, .lit "x")], some ⟨1, ""⟩⟩ }).check
+  expectError "LRX-VIEW-040" (withChop { chopEvent with
+    action := .update ⟨[(0, .payload)], some ⟨0, ""⟩⟩
+    takesPayload := true }).check
+  let guardedKeys : RowEventSpec :=
+    { keysEvent with action := .keySelect [
+        ("Enter", ⟨[(0, .lit "committed")], some ⟨0, ""⟩⟩),
+        ("Escape", ⟨[(0, .lit "reverted")], none⟩)] }
+  match (withKeys guardedKeys).check with
+  | .error error =>
+      throw <| IO.userError s!"forged guarded key arm rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.regions.toList.map (fun region =>
+          region.events.toList.map (·.action)) ==
+          [[.remove, guardedKeys.action]] do
+        throw <| IO.userError "forged guarded key arm lost its guard"
+  expectError "LRX-VIEW-040" (withKeys { keysEvent with action := .keySelect [
+    ("Enter", ⟨[(0, .lit "a")], some ⟨2, ""⟩⟩)] }).check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check

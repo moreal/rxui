@@ -82,6 +82,10 @@ fixtures=(
   Test/fixtures/compile-fail/KeyBranchOutsideSealedSet.lean
   Test/fixtures/compile-fail/KeyBranchWithoutPayload.lean
   Test/fixtures/compile-fail/KeyBranchMixedSteps.lean
+  Test/fixtures/compile-fail/RowGuardMixedSteps.lean
+  Test/fixtures/compile-fail/RowGuardOnTypedEvent.lean
+  Test/fixtures/compile-fail/RowGuardKeepsRow.lean
+  Test/fixtures/compile-fail/RowGuardUnknownField.lean
 )
 fragments=(
   "Constructor for"
@@ -164,6 +168,10 @@ fragments=(
   "error[LRX-VIEW-039]"
   "error[LRX-ELAB-121]"
   "error[LRX-ELAB-121]"
+  "error[LRX-ELAB-122]"
+  "error[LRX-ELAB-122]"
+  "error[LRX-ELAB-122]"
+  "error[LRX-ELAB-122]"
 )
 
 for index in "${!fixtures[@]}"; do

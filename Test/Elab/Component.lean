@@ -76,9 +76,9 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
       (fun region => region.events.toList.map
         (fun event => (event.name, event.action, event.takesPayload))) ==
       [[("remove", .remove, false),
-        ("mark", .update [(1, .append (.field 1) (.lit " ★"))], false),
-        ("rename", .update [(0, .payload)], true),
-        ("record", .update [(2, .append (.lit "key:") .payload)], true)]] do
+        ("mark", .update ⟨[(1, .append (.field 1) (.lit " ★"))], none⟩, false),
+        ("rename", .update ⟨[(0, .payload)], none⟩, true),
+        ("record", .update ⟨[(2, .append (.lit "key:") .payload)], none⟩, true)]] do
     throw <| IO.userError "region table lost the sealed row event vocabulary"
   unless checked.spec.regions.toList.map (fun region =>
       match region.template with
@@ -105,9 +105,9 @@ private def verifyBranch
       (fun region => region.events.toList.map
         (fun event => (event.name, event.action, event.takesPayload))) ==
       [[("remove", .remove, false),
-        ("edit", .update [(2, .lit "edit"), (1, .field 0)], false),
-        ("retype", .update [(1, .payload)], true),
-        ("commit", .update [(0, .field 1), (2, .lit "view")], false)]] do
+        ("edit", .update ⟨[(2, .lit "edit"), (1, .field 0)], none⟩, false),
+        ("retype", .update ⟨[(1, .payload)], none⟩, true),
+        ("commit", .update ⟨[(0, .field 1), (2, .lit "view")], none⟩, false)]] do
     throw <| IO.userError "branch region lost the sealed row event vocabulary"
   /- The sealed two-branch cell (ADR-0047): the first cell selects on
   `mode == "view"`, the view branch is the label span, and the edit branch is
@@ -144,16 +144,20 @@ private def verifyToggle
       (fun region => region.events.toList.map
         (fun event => (event.name, event.action, event.takesPayload))) ==
       [[("remove", .remove, false),
-        ("toggle", .update [(2, .payload)], true),
-        ("edit", .update [(3, .lit "edit")], false),
-        ("retype", .update [(1, .payload)], true),
-        ("commit", .update [(0, .field 1), (3, .lit "view")], false),
+        ("toggle", .update ⟨[(2, .payload)], none⟩, true),
+        ("edit", .update ⟨[(3, .lit "edit")], none⟩, false),
+        ("retype", .update ⟨[(1, .payload)], none⟩, true),
+        /- The ADR-0053 remove-if guard on both commit paths: the empty-draft
+        equality lowers to `RowGuard 1 ""` beside the unchanged commit
+        assignments — destroy-on-empty-commit through OK and Enter alike,
+        while Escape's revert arm stays unguarded. -/
+        ("commit", .update ⟨[(0, .field 1), (3, .lit "view")], some ⟨1, ""⟩⟩, false),
         /- The ADR-0052 key-branched selection: `when` arms lower to the
         sealed key table with payload-free right-hand sides, and the event
         is payload-taking — the parameter is the discriminant. -/
         ("keys", .keySelect [
-          ("Enter", [(0, .field 1), (3, .lit "view")]),
-          ("Escape", [(1, .field 0), (3, .lit "view")])], true)]] do
+          ("Enter", ⟨[(0, .field 1), (3, .lit "view")], some ⟨1, ""⟩⟩),
+          ("Escape", ⟨[(1, .field 0), (3, .lit "view")], none⟩)], true)]] do
     throw <| IO.userError "toggle region lost the sealed row event vocabulary"
   let cells ← match checked.spec.regions.toList with
     | [region] =>

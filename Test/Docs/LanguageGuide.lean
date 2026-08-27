@@ -302,6 +302,34 @@ component KeyedEditorMini (schema := KeyedEditorMiniSchema) where {
   ];
 }
 
+/- The guarded row event snippet from guide section 7 (ADR-0053). -/
+abbrev GuardedEditorMiniSchema : Schema := .field "guardedAdded" Int .empty
+
+def guardedAdded : Field GuardedEditorMiniSchema Int := .here
+
+component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
+  state guardedAdded : Int := 0;
+  event addItem := append roster (s!"Item {guardedAdded}", s!"Item {guardedAdded}", "view")
+    then set guardedAdded (guardedAdded + 1);
+  row roster edit := set mode "edit";
+  row roster retype (value : String) := set draft value;
+  row roster commit := if draft == "" then remove else (set label draft, set mode "view");
+  row roster keys (pressed : String) :=
+    when "Enter" (if draft == "" then remove else (set label draft, set mode "view"))
+    then when "Escape" (set draft label, set mode "view");
+  region roster (label, draft, mode) := jsx% <li> [
+    {if mode == "view"
+      then <span onDblClick={edit}> [{label}]
+      else <input ariaLabel="Editor" value={draft} onInput={retype}
+        onKeyDown={keys} onDblClick={edit} autoFocus/>},
+    <span> [<button type="button" ariaLabel="OK" onClick={commit}> ["OK"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
 /- The state-scoped attribute selection snippet from guide section 7
 (ADR-0045). -/
 abbrev FilterMiniSchema : Schema := .field "filter" String .empty
@@ -484,15 +512,31 @@ def run : IO Unit := do
           region.events.toList.map fun event =>
             (event.name, event.action, event.takesPayload)) ==
           [[("remove", .remove, false),
-            ("edit", .update [(2, .lit "edit")], false),
-            ("retype", .update [(1, .payload)], true),
+            ("edit", .update ⟨[(2, .lit "edit")], none⟩, false),
+            ("retype", .update ⟨[(1, .payload)], none⟩, true),
             ("keys", .keySelect [
-              ("Enter", [(0, .field 1), (2, .lit "view")]),
-              ("Escape", [(1, .field 0), (2, .lit "view")])], true)]] do
+              ("Enter", ⟨[(0, .field 1), (2, .lit "view")], none⟩),
+              ("Escape", ⟨[(1, .field 0), (2, .lit "view")], none⟩)], true)]] do
         throw <| IO.userError
           "language-guide key-branch snippet lost its sealed arm table"
   | .error error =>
       throw <| IO.userError s!"language-guide key-branch component rejected: {error.render}"
+  match GuardedEditorMini_check with
+  | .ok guarded =>
+      unless guarded.spec.regions.toList.map (fun region =>
+          region.events.toList.map fun event =>
+            (event.name, event.action, event.takesPayload)) ==
+          [[("remove", .remove, false),
+            ("edit", .update ⟨[(2, .lit "edit")], none⟩, false),
+            ("retype", .update ⟨[(1, .payload)], none⟩, true),
+            ("commit", .update ⟨[(0, .field 1), (2, .lit "view")], some ⟨1, ""⟩⟩, false),
+            ("keys", .keySelect [
+              ("Enter", ⟨[(0, .field 1), (2, .lit "view")], some ⟨1, ""⟩⟩),
+              ("Escape", ⟨[(1, .field 0), (2, .lit "view")], none⟩)], true)]] do
+        throw <| IO.userError
+          "language-guide guarded snippet lost its remove-if guards"
+  | .error error =>
+      throw <| IO.userError s!"language-guide guarded component rejected: {error.render}"
   match FilterMini_check with
   | .ok selecting =>
       unless selecting.view.attrSelects.map (·.select.name) ==

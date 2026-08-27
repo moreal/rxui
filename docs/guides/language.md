@@ -506,6 +506,52 @@ Enter commits (`label := draft`, back to the view branch) and Escape reverts
 commit), so the next edit entry opens pre-filled with the restored draft
 through the value reflection.
 
+A row stage may carry a *remove-if guard* (ADR-0053):
+`row region event := if field == "literal" then remove else
+(set field (expr), …)` — and the same `if` shape inside a `when` key arm —
+compares one row field against one string literal when the event dispatches.
+A guard hit removes the dispatching row through the same kept-filter and
+dirty reconcile the sealed `remove` action uses; a miss commits the
+else-steps exactly as an unguarded stage does. This is what makes TodoMVC's
+destroy-on-empty-commit expressible: guard both commit paths with
+`draft == ""` and an empty draft's Enter (or OK click) destroys the row
+while a nonempty draft commits. The guard is the whole predicate language —
+one field, one literal, `String` equality, no negation or conjunction, no
+trim normalization, and no payload or component state — and a guarded stage
+stands alone (no other steps beside it) with `remove` as its only hit. The
+guard field must be in bounds and a guarded plain event is payload-less
+(`LRX-VIEW-040`), with `LRX-ELAB-122` pinning the surface. The equality runs
+inside the generated dispatch function against the row the existing key scan
+resolved, so once more there is no host change and no ABI bump:
+
+```lean
+component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
+  state guardedAdded : Int := 0;
+  event addItem := append roster (s!"Item {guardedAdded}", s!"Item {guardedAdded}", "view")
+    then set guardedAdded (guardedAdded + 1);
+  row roster edit := set mode "edit";
+  row roster retype (value : String) := set draft value;
+  row roster commit := if draft == "" then remove else (set label draft, set mode "view");
+  row roster keys (pressed : String) :=
+    when "Enter" (if draft == "" then remove else (set label draft, set mode "view"))
+    then when "Escape" (set draft label, set mode "view");
+  region roster (label, draft, mode) := jsx% <li> [
+    {if mode == "view"
+      then <span onDblClick={edit}> [{label}]
+      else <input ariaLabel="Editor" value={draft} onInput={retype}
+        onKeyDown={keys} onDblClick={edit} autoFocus/>},
+    <span> [<button type="button" ariaLabel="OK" onClick={commit}> ["OK"]]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
+Escape stays unguarded by choice: reverting an empty draft restores the
+label instead of destroying the row.
+
 A static view element may select its `class`, `aria-pressed`, or `disabled`
 from component state (ADR-0045):
 `class={if filter == "all" then "selected" else ""}` selects between two

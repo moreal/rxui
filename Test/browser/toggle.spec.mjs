@@ -503,6 +503,80 @@ test("a key outside the sealed set is a no-op (ADR-0052)", async ({ page }) => {
   await expect(page.locator("#items > li .item-label")).toHaveText(["Draft in flight"]);
 });
 
+test("Enter on an empty draft removes the row through the remove-if guard (ADR-0053)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await page.evaluate(() => {
+    globalThis.secondRow = document.querySelectorAll("#items > li")[1];
+  });
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0).getByRole("textbox", { name: "Item editor" });
+  await editor.fill("");
+  const before = await regionMetrics(page);
+  // The guard equality runs against the row the key scan resolved: the
+  // empty draft hits `draft == ""`, so the Enter arm removes the row —
+  // TodoMVC's destroy-on-empty-commit — through the same kept-filter and
+  // dirty reconcile the ✕ button uses.
+  await editor.press("Enter");
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
+  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  // The survivor keeps its DOM node — row identity preserved through the
+  // disposal of its sibling.
+  const retained = await page.evaluate(() =>
+    globalThis.secondRow === document.querySelector("#items > li"),
+  );
+  expect(retained).toBe(true);
+  const after = await regionMetrics(page);
+  // [mounts, updates, moves, disposals]: the guard hit queues no updateAt of
+  // its own — the removal rides the same dirty reconcile as the ✕ button,
+  // which disposes the dispatching row and re-renders the one retained
+  // survivor. Never a mount, never a move.
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1] + 1);
+  expect(after[2]).toBe(before[2]);
+  expect(after[3]).toBe(before[3] + 1);
+});
+
+test("OK on an empty draft removes the row through the guarded commit (ADR-0053)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0).getByRole("textbox", { name: "Item editor" });
+  await editor.fill("");
+  // The OK button's commit event carries the same remove-if guard, so both
+  // commit paths agree on destroy-on-empty-commit.
+  await page.locator("#items > li").nth(0).getByRole("button", { name: "Commit item" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
+  // A nonempty draft still takes the ordinary commit path afterwards.
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  await page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" }).fill("Kept");
+  await page.locator("#items > li").nth(0).getByRole("button", { name: "Commit item" }).click();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Kept"]);
+});
+
+test("Escape on an empty draft keeps the row — the revert arm is unguarded (ADR-0053)", async ({ page }) => {
+  await mountToggle(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0).getByRole("textbox", { name: "Item editor" });
+  await editor.fill("");
+  // Escape stays unguarded: reverting an empty draft restores the label
+  // instead of destroying the row.
+  await editor.press("Escape");
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0"]);
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  await expect(page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" })).toHaveValue("Item 0");
+});
+
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();
