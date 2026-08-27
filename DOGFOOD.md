@@ -2088,3 +2088,86 @@ single-field remove-or-commit; the key set stays sealed at Enter/Escape;
 `s!` interpolation absent from row scope; branch cells single-level and
 two-branch with exact click/dblclick agreement; and child instrumentation
 still unreachable through the parent disposer.
+
+## Trimmed attribute selection — the Add affordance
+
+### Scenario exercised
+
+The ADR-0057 round: TodoMVC's grayed Add button — the affordance ADR-0055's
+third open question recorded and ADR-0056 restated — closed with no host
+change and no ABI bump. The ADR-0045 sealed selection subject may now sit
+behind the one ADR-0054/0055 trim unary: Toggle Lab's Add button carries
+`disabled={trim draft == ""}`, so the disabled property reflects exactly
+the ASCII-trimmed equality the ADR-0055 skip guard evaluates — the button
+mounts disabled on the empty draft, stays disabled across whitespace-only
+typing, enables on the first non-whitespace character, and re-disables when
+the guarded add resets the draft through the commit sweep. The dispatch
+guard stays the contract on both add paths (ADR-0055 rejection 2
+re-affirmed): the whitespace-Add browser gate was reconstructed against the
+guard itself — a synthetic click handed to the disabled button still
+returns before any transaction — so it cannot go vacuous behind the grayed
+button.
+
+### What was pleasant
+
+The subject extension was one flag riding three existing rails. `AttrSelect`
+gained a defaulted `trimmed` field (all existing constructions compile
+unchanged); the elaborator matches the `trim` head by name exactly the way
+the guard and row-expression elaborators already do (ADR-0035 style, so
+`trim` stays an ordinary identifier); and the backend wraps the subject in
+the same `asciiTrimPattern` emission the skip guard prints — a shared
+`asciiTrimJs` helper now serves both — inside the untouched
+evaluate-compare-write sweep block. Byte-diff proof came out clean on the
+first build: only Toggle Lab's module, manifest, and graph changed, and the
+mount emission put the initial disabled write exactly where the ADR-0045
+layout said it would (attr slots behind the prop slots, regions two slots
+later).
+
+### Friction
+
+The known pattern-arity gotcha, again: adding a defaulted constructor field
+turns full-positional accessor patterns non-exhaustive (Lean fills omitted
+defaulted arguments with their defaults in pattern position, not
+wildcards), so the `AttrSelect` accessors were rewritten with `..` where a
+leading binder suffices and full arity where the span sits mid-signature.
+Playwright's actionability check made the old whitespace-Add gate
+physically unclickable — which is the affordance working, but it forced the
+gate to dispatch the synthetic click through `evaluate` to keep observing
+the guard rather than the button.
+
+### Bugs found
+
+No framework defect surfaced: the model gates (three forged trimmed
+selections accepted with their trim flags, `select:…:trim:2` debug markers,
+and graph sinks; the LRX-VIEW-032 rejection unchanged on a trimmed
+subject), two new compile-fail fixtures (a non-`trim` applied head and a
+negated predicate, both LRX-VIEW-012), the updated elaborator, artifact,
+and guide gates, and all thirty-one Toggle Lab browser gates (the two
+ADR-0057 gates and the reconstructed ADR-0055 gate included) passed.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of every other lab
+and of the js-framework-benchmark bundle — `main.mjs` and manifest included
+— is byte-identical to the HEAD baseline (full before/after builds into the
+scratchpad; only Toggle Lab's module, manifest, and graph change, gaining
+the `attr-selections` feature, the attr context slots, and the sweep
+block). A trimmed selection costs one `replace` per evaluation and only
+when its field changed; the boolean cache keeps equal-value sweeps
+write-free — the browser gate pins one `attr:0:disabled:evaluated` and zero
+writes for a trailing-space keystroke.
+
+### Follow-up issue or commit
+
+`feat(component): close the Add affordance with the trimmed selection
+subject (ADR-0057)`, `test(component): forge the affordance gates and teach
+the guide`, and `docs(adr): accept the trimmed attribute selection
+(ADR-0057)`. Remaining gaps carried forward: the component-scope Escape arm
+is sealed but unproven (no new-todo revert contract exists to prove it);
+the ADR-0050 predicate removal, ADR-0051 filter arms, ADR-0044 row class
+selection, and ADR-0049 checked reflection still compare raw fields; the
+guard literal is sealed at the empty string; row guards stay single-field
+remove-or-commit; the key set stays sealed at Enter/Escape; `s!`
+interpolation absent from row scope; branch cells single-level and
+two-branch with exact click/dblclick agreement; and child instrumentation
+still unreachable through the parent disposer.
