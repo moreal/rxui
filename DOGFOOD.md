@@ -1834,3 +1834,85 @@ only, the key set sealed at Enter/Escape, filter arms and count predicates
 single-field equality, `s!` interpolation absent from row scope, branch
 cells single-level and two-branch with exact click/dblclick agreement, and
 child instrumentation still unreachable through the parent disposer.
+
+## Sealed row expression trim — Toggle Lab whitespace commit contract
+
+### Scenario exercised
+
+The ADR-0054 round: TodoMVC's trim contract — the gap ADR-0053's first
+open question recorded — closed with no host change and no ABI bump.
+`trim` joins the sealed row expression vocabulary as its one unary
+(`trim field` / `trim (expr)`, ASCII whitespace stripped from both ends,
+aligned with Lean's `String.trim`), and the remove-if guard's subject
+generalized from a field index to a sealed row expression pinned to
+`field` or `trim field` — an expression vocabulary extension, explicitly
+not a guard extension. Toggle Lab guards both commit paths on
+`trim draft == ""` and commits `set label (trim draft), set draft (trim
+draft), set mode "view"`: a whitespace-only draft's Enter (or OK) destroys
+the row exactly as an empty one does, `"  x  "` stores as `"x"`, and the
+re-mirrored draft keeps the next edit entry starting from the stored
+label. Escape's revert arm stays unguarded and untrimmed. Two new browser
+gates pin the whitespace removal (one disposal, one survivor update,
+survivor identity preserved, counts following) and the trimmed store with
+the re-entered editor reflecting the trimmed draft.
+
+### What was pleasant
+
+The guard-subject generalization paid for itself immediately: replacing
+the guard's `field : Nat` with `value : RowExpr` let the emitted guard
+comparison ride the exact `rowExprJs` lowering the commit assignments
+use, so raw-field guards emit byte-identical comparisons (proven by the
+byte-diff) and the trimmed guard needed zero new emission logic beyond
+the one `RowExpr.trim` case — which itself reuses the `asciiTrimPattern`
+literal the hand-written Todo backend has emitted since M5. The
+ADR-0053 sealing checks localized cleanly: `RowExpr.guardSubject?` is the
+whole shape rule, shared by the plain-stage and key-arm validations.
+
+### Friction
+
+The trim contract is not one assignment: the first draft committed only
+`set label (trim draft)` and left the raw draft in the row, so the next
+edit entry reflected `"  x  "` — the lab's draft-mirrors-label invariant
+(and TodoMVC's editor-starts-from-title behavior) silently broken. The
+honest commit stage re-mirrors the draft (`set draft (trim draft)`) in
+the same simultaneous update; the elaborator, artifact, and browser pins
+all had to carry the third assignment. And the guard-subject surface
+needed its own `LRX-ELAB-122` repair for near-miss expressions
+(`trim (draft ++ "!")`), since the generic guard message would point at
+the wrong fix — the ADR-0052/0053 lesson, third time.
+
+### Bugs found
+
+No framework defect surfaced: the model gates (the good trimmed guard and
+trimmed key arm plus five non-subject/out-of-bounds LRX-VIEW-040
+rejections), two new compile-fail fixtures (LRX-ELAB-122 non-subject
+guard, LRX-ELAB-115 trim over an unknown field), the updated artifact and
+elaborator gates, and all twenty-four Toggle Lab browser gates (the two
+ADR-0054 gates included) passed; the draft-mirror miss above was caught
+while drafting the browser gate, before any commit.
+
+### Performance observations
+
+Byte-diff proof under the performance freeze: every file of every other
+lab and of the js-framework-benchmark bundle — `main.mjs` and manifest
+included — is byte-identical to the HEAD baseline (full before/after
+builds into the scratchpad; only Toggle Lab's module, manifest, and graph
+spans change, gaining the trim calls and the `row-trim` feature). A
+trimmed guard costs one `replace` on the dispatching row's field at
+dispatch time; the guard-hit removal and the miss path's write-and-drain
+shapes are unchanged.
+
+### Follow-up issue or commit
+
+`feat(component): trim row expressions through one sealed unary
+(ADR-0054)`, `test(component): forge the row-trim gates and teach the
+guide`, and `docs(adr): accept the sealed row expression trim (ADR-0054)`.
+Remaining gaps carried forward: component scope (`RxExpr`) has no trim —
+TodoMVC's top-level new-todo input cannot normalize its draft yet; the
+ADR-0050 predicate removal, ADR-0051 filter arms, ADR-0044 class
+selection, and ADR-0049 checked reflection still compare raw fields;
+guards sealed at single-field equality selecting remove-or-commit only;
+the key set sealed at Enter/Escape; `s!` interpolation absent from row
+scope; branch cells single-level and two-branch with exact click/dblclick
+agreement; and child instrumentation still unreachable through the parent
+disposer.
