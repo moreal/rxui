@@ -116,6 +116,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.AttrSelect.disabledSelect.injEq, #[``propext]),
     (`LeanRx.AttrSelect.classSelect.injEq, #[``propext]),
     (`LeanRx.RowAction.update.injEq, #[``propext]),
+    (`LeanRx.RowAction.keySelect.injEq, #[``propext]),
     (`LeanRx.Abstract.DerivedStep.mk.injEq, #[``propext]),
     (`LeanRx.Abstract.Eval.map._proof_1, #[``propext]),
     (`LeanRx.Abstract.Eval.map₂._proof_1, #[``propext]),

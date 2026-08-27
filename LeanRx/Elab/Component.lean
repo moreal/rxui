@@ -514,6 +514,37 @@ private def updateStepTerm? (regionFields : List (String × List String))
       else pure none
   | _ => pure none
 
+/-- Whether one row event step is an ADR-0052 `when "key" (…)` arm. -/
+private def rowKeyArm? (step : TSyntax `term) :
+    Option (TSyntax `str × TSyntax `term) :=
+  match step with
+  | `($head:ident $lit:str $body:term) =>
+      if head.getId.eraseMacroScopes == `when then some (lit, body) else none
+  | _ => none
+
+/-- Lower the arm table of one key-branched row event (ADR-0052): every step
+must be a `when "key" (set field (expr), …)` arm whose inner steps carry the
+ADR-0043 update shape with payload references rejected — the key literal
+already fixes the discriminant. -/
+private def rowKeySelectArms (fields : List String)
+    (steps : Array (TSyntax `term)) : CommandElabM (Array (TSyntax `term)) := do
+  let mut arms : Array (TSyntax `term) := #[]
+  for step in steps do
+    match rowKeyArm? step with
+    | some (keyLit, body) =>
+        let innerSteps ← match body with
+          | `(($first:term, $rest:term,*)) => pure (#[first] ++ rest.getElems)
+          | `(($inner:term)) => pure #[inner]
+          | _ =>
+              throwErrorAt body
+                "error[LRX-ELAB-121]: a key arm is written `when \"Enter\" (set field (expr), …)`"
+        let assignments ← rowUpdateAssignments fields none innerSteps
+        arms := arms.push (← `(($keyLit, [$assignments,*])))
+    | none =>
+        throwErrorAt step
+          "error[LRX-ELAB-121]: a key-branched row event mixes no other steps with its `when` arms"
+  pure arms
+
 /-- Elaborate one `row region event := set field (expr) then …;` item to its
 region name, event name, and sealed `RowEventSpec` (ADR-0043). -/
 private def elabRowEventItem (regionFields : List (String × List String))
@@ -522,6 +553,10 @@ private def elabRowEventItem (regionFields : List (String × List String))
   let eventName : Ident := ⟨item[2]⟩
   let (region, fields) ← rowEventContext regionFields ⟨item[0]⟩ ⟨item[1]⟩ eventName
   let steps := (sepByElems item[4]).map fun step => (⟨step⟩ : TSyntax `term)
+  for step in steps do
+    if (rowKeyArm? step).isSome then
+      throwErrorAt step
+        "error[LRX-ELAB-121]: a key-branched row event declares a String payload parameter — `row region event (pressed : String) := when \"Enter\" (…)` (ADR-0052)"
   let assignments ← rowUpdateAssignments fields none steps
   let nameLit := Syntax.mkStrLit eventName.getId.eraseMacroScopes.toString
   pure (region, eventName.getId.eraseMacroScopes.toString,
@@ -547,8 +582,18 @@ private def elabRowTypedEventItem (regionFields : List (String × List String))
     throwErrorAt param
       s!"error[LRX-ELAB-117]: payload parameter {paramName} shadows a row field of region {region}"
   let steps := (sepByElems item[9]).map fun step => (⟨step⟩ : TSyntax `term)
-  let assignments ← rowUpdateAssignments fields (some paramName) steps
   let nameLit := Syntax.mkStrLit eventName.getId.eraseMacroScopes.toString
+  /- A typed row event whose steps are `when "key" (…)` arms is the ADR-0052
+  key-branched selection: the declared parameter is the discriminant, named
+  in the head and compared implicitly by each arm — the ADR-0051 filter-table
+  shape in row scope. -/
+  if steps.any fun step => (rowKeyArm? step).isSome then
+    let arms ← rowKeySelectArms fields steps
+    pure (region, eventName.getId.eraseMacroScopes.toString,
+      ← `(LeanRx.RowEventSpec.mk $nameLit (LeanRx.RowAction.keySelect [$arms,*])
+          true $itemSpan))
+  else
+  let assignments ← rowUpdateAssignments fields (some paramName) steps
   pure (region, eventName.getId.eraseMacroScopes.toString,
     ← `(LeanRx.RowEventSpec.mk $nameLit (LeanRx.RowAction.update [$assignments,*])
         true $itemSpan))

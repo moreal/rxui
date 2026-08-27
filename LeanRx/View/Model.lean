@@ -195,16 +195,32 @@ def RowExpr.hasPayload : RowExpr → Bool
 `remove` disposes the dispatching row; `update` writes new field values —
 sealed row expressions evaluated simultaneously against the dispatching row's
 current fields — and re-renders exactly that row through the region handle's
-`updateAt`. The sealed constructor set is the whole semantics — row events
-never carry user update programs. -/
+`updateAt`. `keySelect` branches a keydown row event on its delegated `key`
+payload (ADR-0052): each arm maps one sealed key literal to an `update`-shaped
+assignment list, a non-matching key is a no-op, and the equality runs inside
+the generated dispatch function — no host change. The sealed constructor set
+is the whole semantics — row events never carry user update programs. -/
 inductive RowAction where
   | remove
   | update (assignments : List (Nat × RowExpr))
+  | keySelect (arms : List (String × List (Nat × RowExpr)))
 deriving Repr, BEq, DecidableEq
 
 def RowAction.name : RowAction → String
   | .remove => "remove"
   | .update _ => "update"
+  | .keySelect _ => "keySelect"
+
+/-- The sealed key literals a key-branched row event may compare against
+(ADR-0052): the two keys the TodoMVC editor contract branches on. Growing the
+set is a vocabulary decision, not a template freedom. -/
+def RowAction.keyLiterals : List String := ["Enter", "Escape"]
+
+/-- Whether the action is the ADR-0052 key-branched selection, for the
+keydown-only binding rule. -/
+def RowAction.isKeySelect : RowAction → Bool
+  | .keySelect _ => true
+  | .remove | .update _ => false
 
 /-- One declared row event of a keyed region. The name is what row templates
 bind with `onClick={…}`/`onDblClick={…}` (or, for payload-taking events,

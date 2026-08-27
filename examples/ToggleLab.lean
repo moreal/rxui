@@ -52,7 +52,21 @@ the region was touched or `filter` changed — by writing each row root's
 record's filter slot. Rows never mount or dispose on a filter change, so
 row identity, focus, and the region metrics stay untouched, and the counts
 keep reading the full row table — `items-left` is filter-independent by
-construction. Still no host change and no runtime ABI bump. -/
+construction. Still no host change and no runtime ABI bump.
+
+The ADR-0052 key-branched row event closes the editor's keyboard loop:
+`row items keys (pressed : String) := when "Enter" (set label draft,
+set mode "view") then when "Escape" (set draft label, set mode "view")`
+binds `onKeyDown={keys}` beside `retype` — the declared parameter is the
+discriminant, named in the head and compared implicitly by each arm, the
+ADR-0051 filter-table shape in row scope. Enter commits the draft exactly as
+the OK button does; Escape restores the draft from the pre-edit label (the
+retype writes are discarded, and the next edit entry reflects the restored
+draft through the ADR-0047 value reflection); a key outside the sealed
+Enter/Escape set is a no-op — no row scan, no `updateAt`, no region trace.
+The equality branches run inside the generated dispatch function over the
+`eventKey` argument `listenDelegatedCells` has passed since ABI 15, so once
+more: no host change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -81,6 +95,8 @@ component ToggleLab (schema := ToggleSchema) where {
   row items edit := set mode "edit";
   row items retype (value : String) := set draft value;
   row items commit := set label draft then set mode "view";
+  row items keys (pressed : String) := when "Enter" (set label draft, set mode "view")
+    then when "Escape" (set draft label, set mode "view");
   region items (label, draft, done, mode) := jsx%
     <li class={if done == "true" then "item-row done" else "item-row"}> [
       <span class="item-toggle"> [
@@ -90,7 +106,7 @@ component ToggleLab (schema := ToggleSchema) where {
       {if mode == "view"
         then <span class="item-label" onDblClick={edit}> [{label}]
         else <input ariaLabel="Item editor" value={draft} onInput={retype}
-          onDblClick={edit} autoFocus/>},
+          onKeyDown={keys} onDblClick={edit} autoFocus/>},
       <span class="item-commit"> [
         <button type="button" ariaLabel="Commit item" onClick={commit}> ["OK"]
       ],

@@ -189,12 +189,13 @@ private def regionSlot (checked : CheckedComponent Γ) : Nat :=
 private def regionEntry (regions : Ident) (regionIndex slot : Nat) : Expr :=
   .index (.index (.ident regions) (uint regionIndex)) (uint slot)
 
-/-- Whether one region declares any ADR-0043 update action, so its rows can
-mutate after mount and its record's pending slot can receive positions. -/
+/-- Whether one region declares any ADR-0043 update action — the ADR-0052
+key-branched selection included — so its rows can mutate after mount and its
+record's pending slot can receive positions. -/
 private def regionHasUpdates (region : RegionSpec) : Bool :=
   region.events.toList.any fun event =>
     match event.action with
-    | .update _ => true
+    | .update _ | .keySelect _ => true
     | .remove => false
 
 /-- The regions any component event broadcasts into (ADR-0050). A broadcast
@@ -1273,6 +1274,48 @@ private def regionDisposeFunction (name : Ident) : Except Error Function := do
   let body : Array Stmt := #[.return (.literal .null)]
   pure { name, params := #[row, key, context], body }
 
+/-- The ADR-0043 scan-evaluate-assign-queue sequence of one row update:
+resolve the dispatching row by key scan (`scan` is `[cursor, match]`),
+evaluate every right-hand side against the old tuple, write the targets, and
+queue the position for the commit sweep's `updateAt` drain. Shared by the
+plain update action and each key arm of an ADR-0052 key-branched action. -/
+private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
+    (regionName eventName : String) (payloadExpr : Expr)
+    (assignments : List (Nat × RowExpr)) : Except Error (List Stmt) := do
+  let scan ← Ident.checked "scan"
+  let rowEntry ← Ident.checked "row_entry"
+  let rowItem ← Ident.checked "row_item"
+  let negativeOne : Expr := .unary .neg (uint 1)
+  let mut evaluateStmts : List Stmt := []
+  let mut assignStmts : List Stmt := []
+  for ((target, rhs), index) in assignments.zipIdx do
+    let temp ← Ident.checked s!"row_next_{index}"
+    evaluateStmts := evaluateStmts ++
+      [.const temp (rowExprJs rowItem payloadExpr rhs)]
+    assignStmts := assignStmts ++
+      [.assign (.index (.ident rowItem) (uint (target + 1))) (.ident temp)]
+  pure [
+    .const scan (.array (.ofList [uint 0, negativeOne])),
+    .forOf rowEntry (regionEntry regions regionIndex 1) (.ofList [
+      .ifThen (.binary .eq (.index (.ident rowEntry) (uint 0)) (.ident key)) <|
+        .ofList [
+          .assign (.index (.ident scan) (uint 1)) (.index (.ident scan) (uint 0))
+        ],
+      .assign (.index (.ident scan) (uint 0))
+        (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
+    ]),
+    .ifThen (.unary .not
+        (.binary .eq (.index (.ident scan) (uint 1)) negativeOne)) <| .ofList ([
+      .const rowItem (.index (regionEntry regions regionIndex 1)
+        (.index (.ident scan) (uint 1)))
+    ] ++ evaluateStmts ++ assignStmts ++ [
+      .expr <| .call
+        (.index (regionEntry regions regionIndex 4) (.literal (.string "push")))
+        (.ofList [.index (.ident scan) (uint 1)]),
+      pushTrace tx s!"region:{regionName}:{eventName}"
+    ])
+  ]
+
 /-- The delegated dispatcher of one region: `listenDelegatedCells` resolves the
 action by row structure and calls this with the row key; each declared row
 event becomes one action branch running inside the shared transaction shell
@@ -1313,12 +1356,10 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
           ])
         ]
     | .update assignments =>
-        /- Resolve the dispatching row by key scan (`scan` is
-        `[cursor, match]`), evaluate every right-hand side against the old
-        tuple, write the targets, and queue the position for the commit
-        sweep's `updateAt` drain (ADR-0043). A typed row event's payload is
-        the delegated `value`, `key`, or `"true"`/`"false"`-lowered `checked`
-        argument selected by its template binding kind (ADR-0046/0049). -/
+        /- The ADR-0043 scan-evaluate-assign-queue sequence. A typed row
+        event's payload is the delegated `value`, `key`, or
+        `"true"`/`"false"`-lowered `checked` argument selected by its
+        template binding kind (ADR-0046/0049). -/
         let payloadExpr : Expr :=
           if event.takesPayload then
             match rowEventBindingKind? region event.name with
@@ -1328,40 +1369,28 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
                   (.literal (.string "true")) (.literal (.string "false"))
             | _ => .ident value
           else noPayload
-        let scan ← Ident.checked "scan"
-        let rowEntry ← Ident.checked "row_entry"
-        let rowItem ← Ident.checked "row_item"
-        let negativeOne : Expr := .unary .neg (uint 1)
-        let mut evaluateStmts : List Stmt := []
-        let mut assignStmts : List Stmt := []
-        for ((target, rhs), index) in assignments.zipIdx do
-          let temp ← Ident.checked s!"row_next_{index}"
-          evaluateStmts := evaluateStmts ++
-            [.const temp (rowExprJs rowItem payloadExpr rhs)]
-          assignStmts := assignStmts ++
-            [.assign (.index (.ident rowItem) (uint (target + 1))) (.ident temp)]
         writes := writes ++ [
-          .ifThen (.binary .eq (.ident action) (.literal (.string event.name))) (.ofList [
-            .const scan (.array (.ofList [uint 0, negativeOne])),
-            .forOf rowEntry (regionEntry regions regionIndex 1) (.ofList [
-              .ifThen (.binary .eq (.index (.ident rowEntry) (uint 0)) (.ident key)) <|
-                .ofList [
-                  .assign (.index (.ident scan) (uint 1)) (.index (.ident scan) (uint 0))
-                ],
-              .assign (.index (.ident scan) (uint 0))
-                (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
-            ]),
-            .ifThen (.unary .not
-                (.binary .eq (.index (.ident scan) (uint 1)) negativeOne)) <| .ofList ([
-              .const rowItem (.index (regionEntry regions regionIndex 1)
-                (.index (.ident scan) (uint 1)))
-            ] ++ evaluateStmts ++ assignStmts ++ [
-              .expr <| .call
-                (.index (regionEntry regions regionIndex 4) (.literal (.string "push")))
-                (.ofList [.index (.ident scan) (uint 1)]),
-              pushTrace tx s!"region:{region.name}:{event.name}"
-            ])
-          ])
+          .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
+            (.ofList (← rowUpdateApplyStmts regions tx key regionIndex
+              region.name event.name payloadExpr assignments))
+        ]
+    | .keySelect arms =>
+        /- The ADR-0052 key-branched selection: one `eventKey` equality per
+        arm wrapping the shared scan-evaluate-assign-queue sequence, so a
+        matched key drains exactly one retained-row `updateAt` and a
+        non-matching key never reaches the row scan — no field write, no
+        queued position, no region trace. Arm right-hand sides are
+        payload-free by validation, so the inert payload is passed. -/
+        let mut armStmts : List Stmt := []
+        for (keyLiteral, assignments) in arms do
+          armStmts := armStmts ++ [
+            .ifThen (.binary .eq (.ident eventKey) (.literal (.string keyLiteral)))
+              (.ofList (← rowUpdateApplyStmts regions tx key regionIndex
+                region.name event.name noPayload assignments))
+          ]
+        writes := writes ++ [
+          .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
+            (.ofList armStmts)
         ]
   transactionShell checked evaluators runtime name
     #[hostState, context, action, key, value, checkedFlag, eventKey]
@@ -1399,6 +1428,10 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       (if checked.spec.regions.toList.any
           (fun region => region.events.toList.any (·.takesPayload)) then
         #["typed-row-events"]
+      else #[]) ++
+      (if checked.spec.regions.toList.any
+          (fun region => region.events.toList.any (·.action.isKeySelect)) then
+        #["row-key-branches"]
       else #[]) ++
       (if checked.spec.regions.toList.any
           (fun region => !(templateBranches region.template).isEmpty) then

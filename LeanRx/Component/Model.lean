@@ -889,6 +889,16 @@ mutual
                   path := #[region.name, rowEvent.name]
                   spans := #[event.span]
                 }
+              /- A key-branched row event compares the delegated `key` payload
+              (ADR-0052), so only a keydown binding can serve it — a key
+              equality over a `value` or `checked` payload is meaningless. -/
+              if rowEvent.action.isKeySelect && event.kind != .keydown then
+                throw {
+                  code := "LRX-VIEW-039"
+                  message := s!"key-branched row event {rowEvent.name} of region {region.name} binds through onKeyDown only, not {event.kind.name}"
+                  path := #[region.name, rowEvent.name]
+                  spans := #[event.span]
+                }
         validateRowChildren region (depth + 1) inBranch children
     | .text _ _ => pure ()
     | .fieldText field span =>
@@ -1016,8 +1026,69 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
         spans := #[region.span]
       }
     /- Row update actions (ADR-0043): nonempty simultaneous assignments over
-    distinct in-bounds targets, reading only in-bounds row fields. -/
+    distinct in-bounds targets, reading only in-bounds row fields. Key-branched
+    actions (ADR-0052) carry the same obligations per arm, over a nonempty
+    table of distinct sealed key literals, with payload-free right-hand sides
+    (the selection consumes the discriminant). -/
     for event in region.events do
+      if let .keySelect arms := event.action then
+        unless event.takesPayload do
+          throw {
+            code := "LRX-VIEW-039"
+            message := s!"key-branched row event {event.name} of region {region.name} must declare a String payload parameter"
+            spans := #[event.span]
+          }
+        if arms.isEmpty then
+          throw {
+            code := "LRX-VIEW-039"
+            message := s!"key-branched row event {event.name} of region {region.name} declares no arm"
+            spans := #[event.span]
+          }
+        if duplicate? (arms.map (·.1)) then
+          throw {
+            code := "LRX-VIEW-039"
+            message := s!"key-branched row event {event.name} of region {region.name} maps one key literal twice"
+            spans := #[event.span]
+          }
+        for (keyLiteral, assignments) in arms do
+          unless RowAction.keyLiterals.contains keyLiteral do
+            throw {
+              code := "LRX-VIEW-039"
+              message := s!"key-branched row event {event.name} of region {region.name} branches on {keyLiteral} outside the sealed key set (Enter, Escape)"
+              spans := #[event.span]
+            }
+          if assignments.isEmpty then
+            throw {
+              code := "LRX-VIEW-039"
+              message := s!"key-branched row event {event.name} of region {region.name} updates no field on {keyLiteral}"
+              spans := #[event.span]
+            }
+          if duplicate? (assignments.map (toString ·.1)) then
+            throw {
+              code := "LRX-VIEW-039"
+              message := s!"key-branched row event {event.name} of region {region.name} assigns one field twice on {keyLiteral}"
+              spans := #[event.span]
+            }
+          for (target, value) in assignments do
+            unless target < region.fields.size do
+              throw {
+                code := "LRX-VIEW-039"
+                message := s!"key-branched row event {event.name} writes field {target} outside region {region.name}'s {region.fields.size} field(s)"
+                spans := #[event.span]
+              }
+            if value.hasPayload then
+              throw {
+                code := "LRX-VIEW-039"
+                message := s!"key-branched row event {event.name} of region {region.name} references the payload in an arm; the key literal already fixes it"
+                spans := #[event.span]
+              }
+            for field in value.fieldRefs do
+              unless field < region.fields.size do
+                throw {
+                  code := "LRX-VIEW-039"
+                  message := s!"key-branched row event {event.name} reads field {field} outside region {region.name}'s {region.fields.size} field(s)"
+                  spans := #[event.span]
+                }
       if let .update assignments := event.action then
         if assignments.isEmpty then
           throw {
