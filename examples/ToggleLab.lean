@@ -55,18 +55,32 @@ keep reading the full row table — `items-left` is filter-independent by
 construction. Still no host change and no runtime ABI bump.
 
 The ADR-0052 key-branched row event closes the editor's keyboard loop:
-`row items keys (pressed : String) := when "Enter" (set label draft,
-set mode "view") then when "Escape" (set draft label, set mode "view")`
-binds `onKeyDown={keys}` beside `retype` — the declared parameter is the
-discriminant, named in the head and compared implicitly by each arm, the
-ADR-0051 filter-table shape in row scope. Enter commits the draft exactly as
-the OK button does; Escape restores the draft from the pre-edit label (the
-retype writes are discarded, and the next edit entry reflects the restored
-draft through the ADR-0047 value reflection); a key outside the sealed
-Enter/Escape set is a no-op — no row scan, no `updateAt`, no region trace.
-The equality branches run inside the generated dispatch function over the
-`eventKey` argument `listenDelegatedCells` has passed since ABI 15, so once
-more: no host change and no runtime ABI bump. -/
+`row items keys (pressed : String) := when "Enter" (…) then when "Escape"
+(set draft label, set mode "view")` binds `onKeyDown={keys}` beside
+`retype` — the declared parameter is the discriminant, named in the head and
+compared implicitly by each arm, the ADR-0051 filter-table shape in row
+scope. Enter commits the draft exactly as the OK button does; Escape
+restores the draft from the pre-edit label (the retype writes are discarded,
+and the next edit entry reflects the restored draft through the ADR-0047
+value reflection); a key outside the sealed Enter/Escape set is a no-op —
+no row scan, no `updateAt`, no region trace. The equality branches run
+inside the generated dispatch function over the `eventKey` argument
+`listenDelegatedCells` has passed since ABI 15, so once more: no host change
+and no runtime ABI bump.
+
+The ADR-0053 remove-if guard completes the editor with TodoMVC's
+destroy-on-empty-commit: both commit paths — the OK button's `commit` event
+and the Enter key arm — carry `if draft == "" then remove else (set label
+draft, set mode "view")`, the sealed single-field guard whose hit removes
+the dispatching row through the same kept-filter the ✕ button's `remove`
+runs, and whose miss commits the assignments exactly as before. The guard
+equality is evaluated inside the generated dispatch function against the
+row resolved by the existing key scan, so a nonempty draft's commit is
+byte-for-byte the unguarded sequence and an empty draft's Enter (or OK)
+disposes the row through the ordinary dirty reconcile — row identity of the
+survivors preserved. Escape stays unguarded: reverting an empty draft
+restores the label instead of destroying the row. Still no host change and
+no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -94,8 +108,9 @@ component ToggleLab (schema := ToggleSchema) where {
   row items toggle (checked : String) := set done checked;
   row items edit := set mode "edit";
   row items retype (value : String) := set draft value;
-  row items commit := set label draft then set mode "view";
-  row items keys (pressed : String) := when "Enter" (set label draft, set mode "view")
+  row items commit := if draft == "" then remove else (set label draft, set mode "view");
+  row items keys (pressed : String) :=
+    when "Enter" (if draft == "" then remove else (set label draft, set mode "view"))
     then when "Escape" (set draft label, set mode "view");
   region items (label, draft, done, mode) := jsx%
     <li class={if done == "true" then "item-row done" else "item-row"}> [

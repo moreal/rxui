@@ -522,24 +522,78 @@ private def rowKeyArm? (step : TSyntax `term) :
       if head.getId.eraseMacroScopes == `when then some (lit, body) else none
   | _ => none
 
+/-- Whether one row event step is an ADR-0053 guarded stage — an
+`if … then … else …` term at step position. The pieces are validated by
+`rowGuardedStageTerm`, so a malformed guard reports its own repair instead of
+the generic step message. -/
+private def rowGuardStep? (step : TSyntax `term) :
+    Option (TSyntax `term × TSyntax `term × TSyntax `term) :=
+  match step with
+  | `(if $cond:term then $thenBranch:term else $elseBranch:term) =>
+      some (cond, thenBranch, elseBranch)
+  | _ => none
+
+/-- Lower one guarded row stage (ADR-0053):
+`if field == "literal" then remove else (set field (expr), …)`. The guard is
+one row-field equality against one string literal, the guard hit is the
+sealed `remove` and nothing else, and the else-steps carry the ADR-0043
+update shape — the arm-body spelling, since a guarded stage stands alone. -/
+private def rowGuardedStageTerm (fields : List String)
+    (cond thenBranch elseBranch : TSyntax `term) :
+    CommandElabM (TSyntax `term) := do
+  let (guardField, guardLit) ← match cond with
+    | `($field:ident == $lit:str) => pure (field, lit)
+    | _ =>
+        throwErrorAt cond
+          "error[LRX-ELAB-122]: a row guard is written `if field == \"literal\" then remove else (set field (expr), …)` (ADR-0053)"
+  let isRemove := match thenBranch with
+    | `($head:ident) => head.getId.eraseMacroScopes == `remove
+    | _ => false
+  unless isRemove do
+    throwErrorAt thenBranch
+      "error[LRX-ELAB-122]: the guard hit of a guarded row event is the sealed `remove` — assignments go in the else-steps"
+  let fieldName := guardField.getId.eraseMacroScopes.toString
+  let index ← match fields.idxOf? fieldName with
+    | some index => pure index
+    | none =>
+        throwErrorAt guardField
+          s!"error[LRX-ELAB-122]: unknown row field {fieldName}; declared fields are {renderFields fields}"
+  let steps ← match elseBranch with
+    | `(($first:term, $rest:term,*)) => pure (#[first] ++ rest.getElems)
+    | `(($inner:term)) => pure #[inner]
+    | _ =>
+        throwErrorAt elseBranch
+          "error[LRX-ELAB-122]: the else-steps of a guarded row event are written `(set field (expr), …)`"
+  let assignments ← rowUpdateAssignments fields none steps
+  let indexLit := Syntax.mkNumLit (toString index)
+  `(LeanRx.RowStage.mk [$assignments,*] (some (LeanRx.RowGuard.mk $indexLit $guardLit)))
+
 /-- Lower the arm table of one key-branched row event (ADR-0052): every step
 must be a `when "key" (set field (expr), …)` arm whose inner steps carry the
 ADR-0043 update shape with payload references rejected — the key literal
-already fixes the discriminant. -/
+already fixes the discriminant. An arm body may instead be one ADR-0053
+guarded stage, `when "Enter" (if field == "literal" then remove else (…))`. -/
 private def rowKeySelectArms (fields : List String)
     (steps : Array (TSyntax `term)) : CommandElabM (Array (TSyntax `term)) := do
   let mut arms : Array (TSyntax `term) := #[]
   for step in steps do
     match rowKeyArm? step with
     | some (keyLit, body) =>
-        let innerSteps ← match body with
-          | `(($first:term, $rest:term,*)) => pure (#[first] ++ rest.getElems)
-          | `(($inner:term)) => pure #[inner]
+        let stage ← match body with
+          | `(($first:term, $rest:term,*)) => do
+              let assignments ← rowUpdateAssignments fields none (#[first] ++ rest.getElems)
+              `(LeanRx.RowStage.mk [$assignments,*] none)
+          | `(($inner:term)) =>
+              match rowGuardStep? inner with
+              | some (cond, thenBranch, elseBranch) =>
+                  rowGuardedStageTerm fields cond thenBranch elseBranch
+              | none => do
+                  let assignments ← rowUpdateAssignments fields none #[inner]
+                  `(LeanRx.RowStage.mk [$assignments,*] none)
           | _ =>
               throwErrorAt body
                 "error[LRX-ELAB-121]: a key arm is written `when \"Enter\" (set field (expr), …)`"
-        let assignments ← rowUpdateAssignments fields none innerSteps
-        arms := arms.push (← `(($keyLit, [$assignments,*])))
+        arms := arms.push (← `(($keyLit, $stage)))
     | none =>
         throwErrorAt step
           "error[LRX-ELAB-121]: a key-branched row event mixes no other steps with its `when` arms"
@@ -557,10 +611,25 @@ private def elabRowEventItem (regionFields : List (String × List String))
     if (rowKeyArm? step).isSome then
       throwErrorAt step
         "error[LRX-ELAB-121]: a key-branched row event declares a String payload parameter — `row region event (pressed : String) := when \"Enter\" (…)` (ADR-0052)"
-  let assignments ← rowUpdateAssignments fields none steps
   let nameLit := Syntax.mkStrLit eventName.getId.eraseMacroScopes.toString
+  /- An `if … then … else …` step is the ADR-0053 guarded stage; it stands
+  alone — a guarded row event selects between remove and one commit stage,
+  never a step sequence. -/
+  if steps.any fun step => (rowGuardStep? step).isSome then
+    unless steps.size == 1 do
+      throwErrorAt item
+        "error[LRX-ELAB-122]: a guarded row event mixes no other steps with its guard (ADR-0053)"
+    let some (cond, thenBranch, elseBranch) := rowGuardStep? steps[0]! |
+      throwErrorAt item "error[LRX-ELAB-122]: a guarded row event lost its guard step"
+    let stage ← rowGuardedStageTerm fields cond thenBranch elseBranch
+    pure (region, eventName.getId.eraseMacroScopes.toString,
+      ← `(LeanRx.RowEventSpec.mk $nameLit (LeanRx.RowAction.update $stage)
+          false $itemSpan))
+  else
+  let assignments ← rowUpdateAssignments fields none steps
   pure (region, eventName.getId.eraseMacroScopes.toString,
-    ← `(LeanRx.RowEventSpec.mk $nameLit (LeanRx.RowAction.update [$assignments,*])
+    ← `(LeanRx.RowEventSpec.mk $nameLit
+        (LeanRx.RowAction.update (LeanRx.RowStage.mk [$assignments,*] none))
         false $itemSpan))
 
 /-- Elaborate one typed `row region event (param : String) := set field (expr)
@@ -593,9 +662,17 @@ private def elabRowTypedEventItem (regionFields : List (String × List String))
       ← `(LeanRx.RowEventSpec.mk $nameLit (LeanRx.RowAction.keySelect [$arms,*])
           true $itemSpan))
   else
+  /- A guarded stage in a typed row event (ADR-0053) is rejected here with
+  its own repair: guards select commit paths, and a payload-taking event
+  fires per keystroke — outside a `when` key arm the shapes never mix. -/
+  for step in steps do
+    if (rowGuardStep? step).isSome then
+      throwErrorAt step
+        "error[LRX-ELAB-122]: a guarded row event takes no payload parameter — guards live on payload-less row events and `when` key arms (ADR-0053)"
   let assignments ← rowUpdateAssignments fields (some paramName) steps
   pure (region, eventName.getId.eraseMacroScopes.toString,
-    ← `(LeanRx.RowEventSpec.mk $nameLit (LeanRx.RowAction.update [$assignments,*])
+    ← `(LeanRx.RowEventSpec.mk $nameLit
+        (LeanRx.RowAction.update (LeanRx.RowStage.mk [$assignments,*] none))
         true $itemSpan))
 
 /-- Elaborate one `filter region by field := when "literal" (rowField ==

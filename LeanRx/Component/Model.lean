@@ -1029,7 +1029,9 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
     distinct in-bounds targets, reading only in-bounds row fields. Key-branched
     actions (ADR-0052) carry the same obligations per arm, over a nonempty
     table of distinct sealed key literals, with payload-free right-hand sides
-    (the selection consumes the discriminant). -/
+    (the selection consumes the discriminant). A stage's remove-if guard
+    (ADR-0053) projects one in-bounds row field, and a guarded plain stage
+    lives on a payload-less row event only — commits, not keystrokes. -/
     for event in region.events do
       if let .keySelect arms := event.action then
         unless event.takesPayload do
@@ -1050,13 +1052,21 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
             message := s!"key-branched row event {event.name} of region {region.name} maps one key literal twice"
             spans := #[event.span]
           }
-        for (keyLiteral, assignments) in arms do
+        for (keyLiteral, stage) in arms do
+          let assignments := stage.assignments
           unless RowAction.keyLiterals.contains keyLiteral do
             throw {
               code := "LRX-VIEW-039"
               message := s!"key-branched row event {event.name} of region {region.name} branches on {keyLiteral} outside the sealed key set (Enter, Escape)"
               spans := #[event.span]
             }
+          if let some guard := stage.removeIf then
+            unless guard.field < region.fields.size do
+              throw {
+                code := "LRX-VIEW-040"
+                message := s!"key-branched row event {event.name} guards on field {guard.field} outside region {region.name}'s {region.fields.size} field(s)"
+                spans := #[event.span]
+              }
           if assignments.isEmpty then
             throw {
               code := "LRX-VIEW-039"
@@ -1089,7 +1099,21 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
                   message := s!"key-branched row event {event.name} reads field {field} outside region {region.name}'s {region.fields.size} field(s)"
                   spans := #[event.span]
                 }
-      if let .update assignments := event.action then
+      if let .update stage := event.action then
+        let assignments := stage.assignments
+        if let some guard := stage.removeIf then
+          if event.takesPayload then
+            throw {
+              code := "LRX-VIEW-040"
+              message := s!"guarded row event {event.name} of region {region.name} cannot take a payload; guards live on payload-less row events and key arms"
+              spans := #[event.span]
+            }
+          unless guard.field < region.fields.size do
+            throw {
+              code := "LRX-VIEW-040"
+              message := s!"guarded row event {event.name} guards on field {guard.field} outside region {region.name}'s {region.fields.size} field(s)"
+              spans := #[event.span]
+            }
         if assignments.isEmpty then
           throw {
             code := "LRX-VIEW-031"

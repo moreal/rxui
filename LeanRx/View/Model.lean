@@ -191,19 +191,40 @@ def RowExpr.hasPayload : RowExpr → Bool
   | .payload => true
   | .append first second => first.hasPayload || second.hasPayload
 
+/-- One sealed row-field guard (ADR-0053): equality of a single projected row
+field against one string literal — the empty string for TodoMVC's
+destroy-on-empty-commit. The guard is the whole predicate language: no
+negation, no conjunction, no payload reference, and no component state. -/
+structure RowGuard where
+  field : Nat
+  equals : String
+deriving Repr, BEq, DecidableEq
+
+/-- One sealed row update stage (ADR-0043/0053): simultaneous assignments
+evaluated against the dispatching row's current fields. `removeIf` is the
+optional ADR-0053 guard — when the guarded field equals its literal the
+dispatching row is removed instead and no assignment runs; otherwise the
+assignments commit as one retained-row update. The stage shape is shared by
+the plain update action and every ADR-0052 key arm, and the guard equality
+runs inside the generated dispatch function — no host change. -/
+structure RowStage where
+  assignments : List (Nat × RowExpr)
+  removeIf : Option RowGuard := none
+deriving Repr, BEq, DecidableEq
+
 /-- Closed row action vocabulary for keyed region rows (ADR-0041/0043).
-`remove` disposes the dispatching row; `update` writes new field values —
-sealed row expressions evaluated simultaneously against the dispatching row's
-current fields — and re-renders exactly that row through the region handle's
+`remove` disposes the dispatching row; `update` runs one sealed row stage —
+simultaneous assignments, optionally guarded by the ADR-0053 remove-if
+equality — and re-renders exactly that row through the region handle's
 `updateAt`. `keySelect` branches a keydown row event on its delegated `key`
-payload (ADR-0052): each arm maps one sealed key literal to an `update`-shaped
-assignment list, a non-matching key is a no-op, and the equality runs inside
-the generated dispatch function — no host change. The sealed constructor set
-is the whole semantics — row events never carry user update programs. -/
+payload (ADR-0052): each arm maps one sealed key literal to a row stage, a
+non-matching key is a no-op, and the equality runs inside the generated
+dispatch function — no host change. The sealed constructor set is the whole
+semantics — row events never carry user update programs. -/
 inductive RowAction where
   | remove
-  | update (assignments : List (Nat × RowExpr))
-  | keySelect (arms : List (String × List (Nat × RowExpr)))
+  | update (stage : RowStage)
+  | keySelect (arms : List (String × RowStage))
 deriving Repr, BEq, DecidableEq
 
 def RowAction.name : RowAction → String
@@ -221,6 +242,13 @@ keydown-only binding rule. -/
 def RowAction.isKeySelect : RowAction → Bool
   | .keySelect _ => true
   | .remove | .update _ => false
+
+/-- Whether any stage of the action carries the ADR-0053 remove-if guard,
+for the manifest feature stamp. -/
+def RowAction.hasGuard : RowAction → Bool
+  | .remove => false
+  | .update stage => stage.removeIf.isSome
+  | .keySelect arms => arms.any (·.2.removeIf.isSome)
 
 /-- One declared row event of a keyed region. The name is what row templates
 bind with `onClick={…}`/`onDblClick={…}` (or, for payload-taking events,
