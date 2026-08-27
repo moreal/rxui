@@ -169,12 +169,16 @@ no dependency sets, no schema — a row expression can never observe component
 state. Field references are positional projections of the row tuple and are
 bounds-checked by `ComponentSpec.check`. `payload` references the dispatching
 typed row event's `String` payload (ADR-0046) and is valid only in the
-right-hand sides of a payload-taking row event. -/
+right-hand sides of a payload-taking row event. `trim` is the sealed
+whitespace-trim unary (ADR-0054): ASCII whitespace stripped from both ends,
+the one string normalization the TodoMVC commit contract needs — not a
+general string-function vocabulary. -/
 inductive RowExpr where
   | lit (value : String)
   | field (index : Nat)
   | payload
   | append (first second : RowExpr)
+  | trim (value : RowExpr)
 deriving Repr, BEq, DecidableEq
 
 /-- Every row field index one row expression projects. -/
@@ -182,6 +186,7 @@ def RowExpr.fieldRefs : RowExpr → List Nat
   | .lit _ | .payload => []
   | .field index => [index]
   | .append first second => first.fieldRefs ++ second.fieldRefs
+  | .trim value => value.fieldRefs
 
 /-- Whether the expression references the dispatching event's payload
 (ADR-0046). Payload references are rejected outside typed row event
@@ -190,13 +195,31 @@ def RowExpr.hasPayload : RowExpr → Bool
   | .lit _ | .field _ => false
   | .payload => true
   | .append first second => first.hasPayload || second.hasPayload
+  | .trim value => value.hasPayload
+
+/-- Whether the expression uses the ADR-0054 trim unary, for the manifest
+feature stamp. -/
+def RowExpr.hasTrim : RowExpr → Bool
+  | .lit _ | .field _ | .payload => false
+  | .append first second => first.hasTrim || second.hasTrim
+  | .trim _ => true
+
+/-- The single projected field of a sealed guard subject (ADR-0053/0054): a
+guard compares one row field — raw or behind the one trim unary — against
+its literal. Any other expression shape is not a guard subject. -/
+def RowExpr.guardSubject? : RowExpr → Option Nat
+  | .field index => some index
+  | .trim (.field index) => some index
+  | _ => none
 
 /-- One sealed row-field guard (ADR-0053): equality of a single projected row
 field against one string literal — the empty string for TodoMVC's
-destroy-on-empty-commit. The guard is the whole predicate language: no
+destroy-on-empty-commit. The subject is a sealed row expression restricted by
+`ComponentSpec.check` to one field projection, optionally behind the ADR-0054
+trim unary; the guard shape itself is the whole predicate language: no
 negation, no conjunction, no payload reference, and no component state. -/
 structure RowGuard where
-  field : Nat
+  value : RowExpr
   equals : String
 deriving Repr, BEq, DecidableEq
 
@@ -249,6 +272,20 @@ def RowAction.hasGuard : RowAction → Bool
   | .remove => false
   | .update stage => stage.removeIf.isSome
   | .keySelect arms => arms.any (·.2.removeIf.isSome)
+
+/-- Whether any row expression of the stage — assignment right-hand side or
+guard subject — uses the ADR-0054 trim unary, for the manifest feature
+stamp. -/
+def RowStage.hasTrim (stage : RowStage) : Bool :=
+  stage.assignments.any (·.2.hasTrim) ||
+    (stage.removeIf.map (·.value.hasTrim)).getD false
+
+/-- Whether any stage of the action uses the ADR-0054 trim unary, for the
+manifest feature stamp. -/
+def RowAction.hasTrim : RowAction → Bool
+  | .remove => false
+  | .update stage => stage.hasTrim
+  | .keySelect arms => arms.any (·.2.hasTrim)
 
 /-- One declared row event of a keyed region. The name is what row templates
 bind with `onClick={…}`/`onDblClick={…}` (or, for payload-taking events,
@@ -411,6 +448,23 @@ def RowNode.nodeWith (tag : HtmlTag) (children : List RowNode)
   RowNode.node tag children (attrs := ViewAttr.staticAttrs attrs)
     (events := ViewAttr.events attrs) (span := span) (classIf := classIf)
     (reflects := reflects) (autoFocus := autoFocus)
+
+/- Whether any sealed row expression of the template — `exprText` content or
+a property reflection — uses the ADR-0054 trim unary, for the manifest
+feature stamp. -/
+mutual
+  def RowNode.hasTrim : RowNode → Bool
+    | .element _ _ _ children _ _ reflects _ =>
+        reflects.any (·.value.hasTrim) || RowChildren.hasTrim children
+    | .text _ _ | .fieldText _ _ => false
+    | .exprText value _ => value.hasTrim
+    | .branch _ _ whenTrue whenFalse _ =>
+        RowNode.hasTrim whenTrue || RowNode.hasTrim whenFalse
+
+  def RowChildren.hasTrim : RowChildren → Bool
+    | .nil => false
+    | .cons head tail => RowNode.hasTrim head || RowChildren.hasTrim tail
+end
 
 /-- One keyed region declaration (ADR-0040/0041). Rows are tuples of `String`
 fields behind a monotone region-owned key; the template is the sealed row view

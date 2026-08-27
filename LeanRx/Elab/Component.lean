@@ -208,9 +208,10 @@ private def rowAttrTerm (attr : Syntax) : CommandElabM (TSyntax `term) := do
   | _ => `(leanrx_jsx_attr% $attrStx)
 
 /-- Lower one sealed row expression (ADR-0043): bare row fields, string
-literals, and `++` concatenation — nothing else enters row scope. Inside a
-typed row event right-hand side (ADR-0046), `payload?` names the declared
-payload parameter, which lowers to `RowExpr.payload`. -/
+literals, `++` concatenation, and the ADR-0054 `trim` unary — nothing else
+enters row scope. Inside a typed row event right-hand side (ADR-0046),
+`payload?` names the declared payload parameter, which lowers to
+`RowExpr.payload`. -/
 private partial def rowExprTerm (fields : List String) (payload? : Option String)
     (value : TSyntax `term) : CommandElabM (TSyntax `term) := do
   match value with
@@ -231,9 +232,19 @@ private partial def rowExprTerm (fields : List String) (payload? : Option String
       | none =>
           throwErrorAt value
             s!"error[LRX-ELAB-115]: unknown row field {name.getId.eraseMacroScopes}; declared fields are {renderFields fields}"
+  | `($head:ident $arg:term) =>
+      /- The sealed trim unary (ADR-0054): `trim field` or `trim (expr)` —
+      the one string normalization in row scope, not a general function
+      vocabulary. -/
+      if head.getId.eraseMacroScopes == `trim then do
+        let innerTerm ← rowExprTerm fields payload? arg
+        `(LeanRx.RowExpr.trim $innerTerm)
+      else
+        throwErrorAt value
+          "error[LRX-ELAB-115]: row expressions are row fields, string literals, ++, and trim"
   | _ =>
       throwErrorAt value
-        "error[LRX-ELAB-115]: row expressions are row fields, string literals, and ++"
+        "error[LRX-ELAB-115]: row expressions are row fields, string literals, ++, and trim"
 
 /-- Lower one sealed class selection (ADR-0044):
 `class={if field == "literal" then "a" else "b"}`. -/
@@ -535,17 +546,35 @@ private def rowGuardStep? (step : TSyntax `term) :
 
 /-- Lower one guarded row stage (ADR-0053):
 `if field == "literal" then remove else (set field (expr), …)`. The guard is
-one row-field equality against one string literal, the guard hit is the
-sealed `remove` and nothing else, and the else-steps carry the ADR-0043
-update shape — the arm-body spelling, since a guarded stage stands alone. -/
+one row-field equality against one string literal — the subject may sit
+behind the ADR-0054 trim unary, `if trim field == "literal" then …` — the
+guard hit is the sealed `remove` and nothing else, and the else-steps carry
+the ADR-0043 update shape — the arm-body spelling, since a guarded stage
+stands alone. -/
 private def rowGuardedStageTerm (fields : List String)
     (cond thenBranch elseBranch : TSyntax `term) :
     CommandElabM (TSyntax `term) := do
-  let (guardField, guardLit) ← match cond with
-    | `($field:ident == $lit:str) => pure (field, lit)
+  let (subject, guardLit) ← match cond with
+    | `($lhs:term == $lit:str) => pure (lhs, lit)
     | _ =>
         throwErrorAt cond
           "error[LRX-ELAB-122]: a row guard is written `if field == \"literal\" then remove else (set field (expr), …)` (ADR-0053)"
+  let (guardField, trimmed) ← match subject with
+    | `($field:ident) => pure (field, false)
+    | `($head:ident $arg:term) =>
+        if head.getId.eraseMacroScopes == `trim then
+          match arg with
+          | `($field:ident) => pure (field, true)
+          | `(($field:ident)) => pure (field, true)
+          | _ =>
+              throwErrorAt subject
+                "error[LRX-ELAB-122]: a row guard subject is one row field, optionally trimmed — `if trim field == \"literal\" then remove else (…)` (ADR-0054)"
+        else
+          throwErrorAt subject
+            "error[LRX-ELAB-122]: a row guard subject is one row field, optionally trimmed — `if trim field == \"literal\" then remove else (…)` (ADR-0054)"
+    | _ =>
+        throwErrorAt subject
+          "error[LRX-ELAB-122]: a row guard subject is one row field, optionally trimmed — `if trim field == \"literal\" then remove else (…)` (ADR-0054)"
   let isRemove := match thenBranch with
     | `($head:ident) => head.getId.eraseMacroScopes == `remove
     | _ => false
@@ -566,7 +595,11 @@ private def rowGuardedStageTerm (fields : List String)
           "error[LRX-ELAB-122]: the else-steps of a guarded row event are written `(set field (expr), …)`"
   let assignments ← rowUpdateAssignments fields none steps
   let indexLit := Syntax.mkNumLit (toString index)
-  `(LeanRx.RowStage.mk [$assignments,*] (some (LeanRx.RowGuard.mk $indexLit $guardLit)))
+  let subjectTerm ← if trimmed then
+      `(LeanRx.RowExpr.trim (LeanRx.RowExpr.field $indexLit))
+    else
+      `(LeanRx.RowExpr.field $indexLit)
+  `(LeanRx.RowStage.mk [$assignments,*] (some (LeanRx.RowGuard.mk $subjectTerm $guardLit)))
 
 /-- Lower the arm table of one key-branched row event (ADR-0052): every step
 must be a `when "key" (set field (expr), …)` arm whose inner steps carry the

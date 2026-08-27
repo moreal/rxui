@@ -1030,8 +1030,9 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
     actions (ADR-0052) carry the same obligations per arm, over a nonempty
     table of distinct sealed key literals, with payload-free right-hand sides
     (the selection consumes the discriminant). A stage's remove-if guard
-    (ADR-0053) projects one in-bounds row field, and a guarded plain stage
-    lives on a payload-less row event only — commits, not keystrokes. -/
+    (ADR-0053) projects one in-bounds row field — raw or behind the one
+    ADR-0054 trim unary — and a guarded plain stage lives on a payload-less
+    row event only — commits, not keystrokes. -/
     for event in region.events do
       if let .keySelect arms := event.action then
         unless event.takesPayload do
@@ -1061,12 +1062,20 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               spans := #[event.span]
             }
           if let some guard := stage.removeIf then
-            unless guard.field < region.fields.size do
-              throw {
-                code := "LRX-VIEW-040"
-                message := s!"key-branched row event {event.name} guards on field {guard.field} outside region {region.name}'s {region.fields.size} field(s)"
-                spans := #[event.span]
-              }
+            match guard.value.guardSubject? with
+            | none =>
+                throw {
+                  code := "LRX-VIEW-040"
+                  message := s!"key-branched row event {event.name} of region {region.name} guards on a non-subject expression; a guard subject is one row field, optionally trimmed"
+                  spans := #[event.span]
+                }
+            | some field =>
+                unless field < region.fields.size do
+                  throw {
+                    code := "LRX-VIEW-040"
+                    message := s!"key-branched row event {event.name} guards on field {field} outside region {region.name}'s {region.fields.size} field(s)"
+                    spans := #[event.span]
+                  }
           if assignments.isEmpty then
             throw {
               code := "LRX-VIEW-039"
@@ -1108,12 +1117,20 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               message := s!"guarded row event {event.name} of region {region.name} cannot take a payload; guards live on payload-less row events and key arms"
               spans := #[event.span]
             }
-          unless guard.field < region.fields.size do
-            throw {
-              code := "LRX-VIEW-040"
-              message := s!"guarded row event {event.name} guards on field {guard.field} outside region {region.name}'s {region.fields.size} field(s)"
-              spans := #[event.span]
-            }
+          match guard.value.guardSubject? with
+          | none =>
+              throw {
+                code := "LRX-VIEW-040"
+                message := s!"guarded row event {event.name} of region {region.name} guards on a non-subject expression; a guard subject is one row field, optionally trimmed"
+                spans := #[event.span]
+              }
+          | some field =>
+              unless field < region.fields.size do
+                throw {
+                  code := "LRX-VIEW-040"
+                  message := s!"guarded row event {event.name} guards on field {field} outside region {region.name}'s {region.fields.size} field(s)"
+                  spans := #[event.span]
+                }
         if assignments.isEmpty then
           throw {
             code := "LRX-VIEW-031"

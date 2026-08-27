@@ -80,7 +80,25 @@ byte-for-byte the unguarded sequence and an empty draft's Enter (or OK)
 disposes the row through the ordinary dirty reconcile — row identity of the
 survivors preserved. Escape stays unguarded: reverting an empty draft
 restores the label instead of destroying the row. Still no host change and
-no runtime ABI bump. -/
+no runtime ABI bump.
+
+The ADR-0054 trim unary completes TodoMVC's trim contract on both commit
+paths: the guard compares the trimmed draft — `if trim draft == "" then
+remove else (set label (trim draft), set draft (trim draft), set mode
+"view")` — so a whitespace-only draft's Enter (or OK) removes the row
+exactly as an empty one does, and a committed label is stored trimmed
+(`" x "` commits as `"x"`). The commit re-mirrors the draft to the same
+trimmed value, keeping the draft-mirrors-label invariant intact: the next
+edit entry starts from the stored label, exactly as TodoMVC's editor does.
+`trim` is a row-expression vocabulary extension, not a guard extension: the
+guard stays one single-field equality whose subject may sit behind the one
+sealed unary, and the commit assignments evaluate the same expression
+through the same `rowExprJs` lowering. The emitted strip is the
+ASCII-whitespace replace the hand-written Todo backend has always used —
+aligned with Lean's `String.trim`, not the Unicode-aware
+`String.prototype.trim`. Escape's revert arm remains untrimmed and
+unguarded: it restores the pre-edit label verbatim. Once more: no host
+change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -108,9 +126,11 @@ component ToggleLab (schema := ToggleSchema) where {
   row items toggle (checked : String) := set done checked;
   row items edit := set mode "edit";
   row items retype (value : String) := set draft value;
-  row items commit := if draft == "" then remove else (set label draft, set mode "view");
+  row items commit := if trim draft == "" then remove
+    else (set label (trim draft), set draft (trim draft), set mode "view");
   row items keys (pressed : String) :=
-    when "Enter" (if draft == "" then remove else (set label draft, set mode "view"))
+    when "Enter" (if trim draft == "" then remove
+      else (set label (trim draft), set draft (trim draft), set mode "view"))
     then when "Escape" (set draft label, set mode "view");
   region items (label, draft, done, mode) := jsx%
     <li class={if done == "true" then "item-row done" else "item-row"}> [

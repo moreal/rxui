@@ -220,6 +220,12 @@ private def rowExprJs (item : Ident) (payload : Expr) : RowExpr → Expr
   | .payload => payload
   | .append first second =>
       .binary .add (rowExprJs item payload first) (rowExprJs item payload second)
+  | .trim value =>
+      /- The sealed trim unary (ADR-0054): the ASCII whitespace strip the
+      hand-written Todo backend already emits, aligned with Lean's
+      `String.trim` — not the Unicode-aware `String.prototype.trim`. -/
+      .call (.index (rowExprJs item payload value) (.literal (.string "replace")))
+        (.ofList [.literal .asciiTrimPattern, .literal (.string "")])
 
 /-- The inert payload expression for payload-free row expression positions. -/
 private def noPayload : Expr := .literal (.string "")
@@ -1334,8 +1340,11 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
     | some guard => do
         let rowGuard ← Ident.checked "row_guard"
         pure [
+          /- The guard subject rides the same `rowExprJs` lowering the commit
+          assignments use (ADR-0054): a raw field projects the row slot, a
+          trimmed subject wraps it in the sealed trim emission. -/
           .const rowGuard (.binary .eq
-            (.index (.ident rowItem) (uint (guard.field + 1)))
+            (rowExprJs rowItem noPayload guard.value)
             (.literal (.string guard.equals))),
           .ifThen (.ident rowGuard) (.ofList
             (← rowRemoveStmts regions tx key regionIndex regionName eventName)),
@@ -1464,6 +1473,14 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       (if checked.spec.regions.toList.any
           (fun region => region.events.toList.any (·.action.hasGuard)) then
         #["row-guards"]
+      else #[]) ++
+      (if checked.spec.regions.toList.any (fun region =>
+            region.events.toList.any (·.action.hasTrim) ||
+              region.template.hasTrim) ||
+          checked.spec.events.toList.any (fun event =>
+            event.update.regionBroadcastTargets.any
+              (fun entry => entry.2.any (·.2.hasTrim))) then
+        #["row-trim"]
       else #[]) ++
       (if checked.spec.regions.toList.any
           (fun region => !(templateBranches region.template).isEmpty) then
