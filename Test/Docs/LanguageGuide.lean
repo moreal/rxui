@@ -277,6 +277,31 @@ component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
   ];
 }
 
+/- The key-branched row event snippet from guide section 7 (ADR-0052). -/
+abbrev KeyedEditorMiniSchema : Schema := .field "keyedAdded" Int .empty
+
+def keyedAdded : Field KeyedEditorMiniSchema Int := .here
+
+component KeyedEditorMini (schema := KeyedEditorMiniSchema) where {
+  state keyedAdded : Int := 0;
+  event addItem := append roster (s!"Item {keyedAdded}", s!"Item {keyedAdded}", "view")
+    then set keyedAdded (keyedAdded + 1);
+  row roster edit := set mode "edit";
+  row roster retype (value : String) := set draft value;
+  row roster keys (pressed : String) := when "Enter" (set label draft, set mode "view")
+    then when "Escape" (set draft label, set mode "view");
+  region roster (label, draft, mode) := jsx% <li> [
+    {if mode == "view"
+      then <span onDblClick={edit}> [{label}]
+      else <input ariaLabel="Editor" value={draft} onInput={retype}
+        onKeyDown={keys} onDblClick={edit} autoFocus/>}
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
 /- The state-scoped attribute selection snippet from guide section 7
 (ADR-0045). -/
 abbrev FilterMiniSchema : Schema := .field "filter" String .empty
@@ -453,6 +478,21 @@ def run : IO Unit := do
           "language-guide filter snippet lost its state field or arm table"
   | .error error =>
       throw <| IO.userError s!"language-guide filter component rejected: {error.render}"
+  match KeyedEditorMini_check with
+  | .ok keyed =>
+      unless keyed.spec.regions.toList.map (fun region =>
+          region.events.toList.map fun event =>
+            (event.name, event.action, event.takesPayload)) ==
+          [[("remove", .remove, false),
+            ("edit", .update [(2, .lit "edit")], false),
+            ("retype", .update [(1, .payload)], true),
+            ("keys", .keySelect [
+              ("Enter", [(0, .field 1), (2, .lit "view")]),
+              ("Escape", [(1, .field 0), (2, .lit "view")])], true)]] do
+        throw <| IO.userError
+          "language-guide key-branch snippet lost its sealed arm table"
+  | .error error =>
+      throw <| IO.userError s!"language-guide key-branch component rejected: {error.render}"
   match FilterMini_check with
   | .ok selecting =>
       unless selecting.view.attrSelects.map (·.select.name) ==

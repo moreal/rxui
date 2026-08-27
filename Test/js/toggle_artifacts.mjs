@@ -13,7 +13,7 @@ if (
   manifest.module !== "ToggleLab.mjs" ||
   typeof manifest.graphHash !== "string" ||
   manifest.graphHash.length === 0 ||
-  // ADR-0049/0050/0051 ship with no host change: the ABI stays at the
+  // ADR-0049/0050/0051/0052 ship with no host change: the ABI stays at the
   // ADR-0048 level.
   manifest.runtimeAbi !== 16 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
@@ -26,8 +26,9 @@ if (
     JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs"]) ||
   JSON.stringify(manifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
-    "keyed-regions", "typed-row-events", "row-branches", "row-reflects",
-    "row-focus", "row-aggregates", "region-broadcasts", "region-filters",
+    "keyed-regions", "typed-row-events", "row-key-branches", "row-branches",
+    "row-reflects", "row-focus", "row-aggregates", "region-broadcasts",
+    "region-filters",
   ])
 ) {
   throw new Error("generated Toggle Lab manifest is invalid");
@@ -50,7 +51,15 @@ for (const required of [
   "const region_off_0 = listenDelegatedCells(node_22, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
   "const region_off_0_dblclick = listenDelegatedCells(node_22, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
   "const region_off_0_input = listenDelegatedCells(node_22, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
+  "const region_off_0_keydown = listenDelegatedCells(node_22, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"keys\", \"\", \"\"]);",
   "const region_off_0_change = listenDelegatedCells(node_22, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
+  // The ADR-0052 key-branched selection: one eventKey equality per arm
+  // inside the existing action match — a matched key runs the ADR-0043
+  // scan-evaluate-assign-queue sequence, a non-matching key falls through
+  // to the shared commit with no scan, no write, and no trace.
+  "  if (action === \"keys\") {\n    if (eventKey === \"Enter\") {",
+  "      if (scan[1] !== -1) {\n        const row_item = regions[0][1][scan[1]];\n        const row_next_0 = row_item[2];\n        const row_next_1 = \"view\";\n        row_item[1] = row_next_0;\n        row_item[4] = row_next_1;\n        regions[0][4][\"push\"](scan[1]);\n        tx[7][\"push\"](\"region:items:keys\");\n      }\n    }\n    if (eventKey === \"Escape\") {",
+  "        const row_next_0 = row_item[1];\n        const row_next_1 = \"view\";\n        row_item[2] = row_next_0;",
   // The delegated checked boolean lowers to the "true"/"false" string
   // payload inside the toggle action branch (ADR-0049).
   "      const row_next_0 = checked ? \"true\" : \"false\";",
@@ -62,7 +71,7 @@ for (const required of [
   // (ADR-0047/0048): replacement arm only.
   "    detach(childAt(branch_cell_0, 0));",
   "    if (!branch_want_0) {\n      focus(childAt(branch_cell_0, 0));\n    }",
-  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
+  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
   // The ADR-0050 region record carries the count refs and numeric cache in
   // two region-local slots behind the pending slot, and the ADR-0051 filter
   // slot holds the container element behind them.

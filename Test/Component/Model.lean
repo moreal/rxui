@@ -629,6 +629,63 @@ def run : IO Unit := do
         { region := "r", field := parity, arms := [("odd", 0, "x")] },
         { region := "r", field := parity, arms := [("even", 0, "y")] }] }
   expectError "LRX-TYPE-113" filterDuplicateRegion.check
+  /- ADR-0052 key-branched row events, exercised through forged
+  specifications: the good selection checks and keeps its arm table;
+  LRX-VIEW-039 rejects the payload-less spec, the empty and duplicate arm
+  tables, a key outside the sealed Enter/Escape set, the per-arm update
+  violations (empty, duplicate target, out-of-bounds writes and reads, a
+  payload reference in an arm), and every non-keydown binding. -/
+  let keysEvent : RowEventSpec :=
+    { name := "keys"
+      action := .keySelect [
+        ("Enter", [(0, .lit "committed")]), ("Escape", [(0, .lit "reverted")])]
+      takesPayload := true }
+  let keysTemplate : RowNode := RowNode.node .li [
+    RowNode.node .span [RowNode.fieldText 0],
+    RowNode.node .span [RowNode.node .input []
+      (events := [{ kind := .keydown, eventName := "keys" }])]
+  ]
+  let goodKeys : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := keysTemplate
+        events := #[{ name := "remove", action := .remove }, keysEvent] }] }
+  match goodKeys.check with
+  | .error error =>
+      throw <| IO.userError s!"forged key-branched region rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.regions.toList.map (fun region =>
+          region.events.toList.map fun event =>
+            (event.name, event.action, event.takesPayload)) ==
+          [[("remove", .remove, false), ("keys", keysEvent.action, true)]] do
+        throw <| IO.userError "forged key-branched region lost its arm table"
+  let withKeys (event : RowEventSpec) : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := keysTemplate
+        events := #[{ name := "remove", action := .remove }, event] }] }
+  expectError "LRX-VIEW-039" (withKeys { keysEvent with takesPayload := false }).check
+  expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [] }).check
+  expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
+    ("Enter", [(0, .lit "a")]), ("Enter", [(0, .lit "b")])] }).check
+  expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
+    ("Tab", [(0, .lit "a")])] }).check
+  expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
+    ("Enter", [])] }).check
+  expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
+    ("Enter", [(0, .lit "a"), (0, .lit "b")])] }).check
+  expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
+    ("Enter", [(1, .lit "a")])] }).check
+  expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
+    ("Enter", [(0, .payload)])] }).check
+  expectError "LRX-VIEW-039" (withKeys { keysEvent with action := .keySelect [
+    ("Enter", [(0, .field 1)])] }).check
+  let keysBoundAsInput : ComponentSpec CounterSchema :=
+    { goodRegion with regions := #[{ rosterRegion with
+        template := RowNode.node .li [
+          RowNode.node .span [RowNode.fieldText 0],
+          RowNode.node .span [RowNode.node .input []
+            (events := [{ kind := .input, eventName := "keys" }])]]
+        events := #[{ name := "remove", action := .remove }, keysEvent] }] }
+  expectError "LRX-VIEW-039" keysBoundAsInput.check
   let danglingPropText : ComponentSpec CounterSchema :=
     { spec with view := View.node .p [View.propText 0] }
   expectError "LRX-VIEW-030" danglingPropText.check

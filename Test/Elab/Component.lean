@@ -147,7 +147,13 @@ private def verifyToggle
         ("toggle", .update [(2, .payload)], true),
         ("edit", .update [(3, .lit "edit")], false),
         ("retype", .update [(1, .payload)], true),
-        ("commit", .update [(0, .field 1), (3, .lit "view")], false)]] do
+        ("commit", .update [(0, .field 1), (3, .lit "view")], false),
+        /- The ADR-0052 key-branched selection: `when` arms lower to the
+        sealed key table with payload-free right-hand sides, and the event
+        is payload-taking — the parameter is the discriminant. -/
+        ("keys", .keySelect [
+          ("Enter", [(0, .field 1), (3, .lit "view")]),
+          ("Escape", [(1, .field 0), (3, .lit "view")])], true)]] do
     throw <| IO.userError "toggle region lost the sealed row event vocabulary"
   let cells ← match checked.spec.regions.toList with
     | [region] =>
@@ -184,7 +190,7 @@ private def verifyToggle
                 throw <| IO.userError "toggle view subtree lost its dblclick binding"
               unless editTag == .input && autoFocus &&
                   editEvents.map (fun event => (event.kind, event.eventName)) ==
-                    [(.input, "retype"), (.dblclick, "edit")] do
+                    [(.input, "retype"), (.keydown, "keys"), (.dblclick, "edit")] do
                 throw <| IO.userError "toggle edit subtree lost its agreed dblclick binding"
           | _, _ => throw <| IO.userError "toggle branch subtrees are not elements"
       | _ => throw <| IO.userError "the second item cell is not a sealed branch cell"

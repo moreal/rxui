@@ -427,6 +427,82 @@ test("broadcasts and removals compose with an active filter (ADR-0051)", async (
   await expect(page.locator("#items-left")).toHaveText("0 left of 0");
 });
 
+test("Enter commits the draft through the key-branched row event (ADR-0052)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await page.evaluate(() => {
+    globalThis.firstRow = document.querySelector("#items > li");
+  });
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0).getByRole("textbox", { name: "Item editor" });
+  await editor.fill("Committed by Enter");
+  const before = await regionMetrics(page);
+  // The keydown dispatch matches the "Enter" arm: label takes the draft and
+  // the mode flips to view in one retained-row update — exactly what the OK
+  // button does, now keyboard-first.
+  await editor.press("Enter");
+  await expect(page.locator("#items > li .item-label")).toHaveText([
+    "Committed by Enter", "Item 1",
+  ]);
+  await expect(page.locator("#items > li").nth(0).getByRole("textbox")).toHaveCount(0);
+  const retained = await page.evaluate(() =>
+    globalThis.firstRow === document.querySelector("#items > li"),
+  );
+  expect(retained).toBe(true);
+  const after = await regionMetrics(page);
+  // [mounts, updates, moves, disposals]: the commit is exactly one
+  // retained-row update — never a row mount, move, or disposal.
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1] + 1);
+  expect(after[2]).toBe(before[2]);
+  expect(after[3]).toBe(before[3]);
+});
+
+test("Escape reverts the draft to the pre-edit label (ADR-0052)", async ({ page }) => {
+  await mountToggle(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0).getByRole("textbox", { name: "Item editor" });
+  await editor.fill("Discarded draft");
+  // The "Escape" arm writes draft := label — the pre-edit value, since
+  // label changes only on commit — and leaves the edit branch: the retype
+  // writes are discarded and the label shows the original text.
+  await editor.press("Escape");
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0"]);
+  await expect(page.locator("#items > li").nth(0).getByRole("textbox")).toHaveCount(0);
+  // The next edit entry reflects the restored draft through the ADR-0047
+  // value reflection — the discarded text is gone for good.
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  await expect(page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" })).toHaveValue("Item 0");
+  // Committing after the revert round-trips the restored draft.
+  await page.locator("#items > li").nth(0).getByRole("button", { name: "Commit item" }).click();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0"]);
+});
+
+test("a key outside the sealed set is a no-op (ADR-0052)", async ({ page }) => {
+  await mountToggle(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0).getByRole("textbox", { name: "Item editor" });
+  await editor.fill("Draft in flight");
+  const before = await regionMetrics(page);
+  // A non-matching key dispatches (the keydown listener is structural) but
+  // matches no arm: no row scan, no field write, no updateAt — the editor
+  // keeps its branch, value, caret ownership, and focus, and the region
+  // metrics do not move at all.
+  await editor.press("ArrowLeft");
+  await editor.press("Shift");
+  await expect(editor).toHaveValue("Draft in flight");
+  await expect(editor).toBeFocused();
+  expect(await regionMetrics(page)).toEqual(before);
+  // The sealed set still works afterwards: Enter commits the same draft.
+  await editor.press("Enter");
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Draft in flight"]);
+});
+
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();

@@ -463,6 +463,49 @@ component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
 }
 ```
 
+A keydown row event may *branch* on its key payload (ADR-0052):
+`row region event (pressed : String) := when "Enter" (set field (expr), …)
+then when "Escape" (…)` lowers to a sealed key table — the declared
+parameter is the discriminant, named in the head and compared implicitly by
+each arm, the filter-table shape in row scope. A matched arm performs its
+simultaneous assignments as one retained-row update; a key outside the table
+is a no-op (no row scan, no update, no trace), which is what makes an
+Enter-only commit expressible. Key literals come from the sealed
+`Enter`/`Escape` set, each at most once; arm right-hand sides are
+payload-free (the key literal already fixes the payload); and the event
+binds through `onKeyDown` exactly once on a native input — all
+`LRX-VIEW-039`, with `LRX-ELAB-121` pinning the surface (a `when` arm needs
+the declared parameter and mixes with no other steps). The equality runs
+inside the generated dispatch function over the delegated `key` argument, so
+there is no host change and no ABI bump:
+
+```lean
+component KeyedEditorMini (schema := KeyedEditorMiniSchema) where {
+  state keyedAdded : Int := 0;
+  event addItem := append roster (s!"Item {keyedAdded}", s!"Item {keyedAdded}", "view")
+    then set keyedAdded (keyedAdded + 1);
+  row roster edit := set mode "edit";
+  row roster retype (value : String) := set draft value;
+  row roster keys (pressed : String) := when "Enter" (set label draft, set mode "view")
+    then when "Escape" (set draft label, set mode "view");
+  region roster (label, draft, mode) := jsx% <li> [
+    {if mode == "view"
+      then <span onDblClick={edit}> [{label}]
+      else <input ariaLabel="Editor" value={draft} onInput={retype}
+        onKeyDown={keys} onDblClick={edit} autoFocus/>}
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
+Enter commits (`label := draft`, back to the view branch) and Escape reverts
+(`draft := label` restores the pre-edit text, since `label` changes only on
+commit), so the next edit entry opens pre-filled with the restored draft
+through the value reflection.
+
 A static view element may select its `class`, `aria-pressed`, or `disabled`
 from component state (ADR-0045):
 `class={if filter == "all" then "selected" else ""}` selects between two
