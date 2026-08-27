@@ -329,7 +329,16 @@ trim unary (`trimmed`, ADR-0057): the sweep then compares the
 ASCII-trimmed field value against the literal — the exact equality the
 ADR-0055 skip guard evaluates — so an affordance can agree with a
 dispatch-layer guard by construction. General predicates, negation, and
-composed subjects stay unrepresentable. -/
+composed subjects stay unrepresentable. `hiddenIfEmpty` is the one sealed
+region-subject selection (ADR-0058): the element's `hidden` boolean
+property reflects emptiness of one declared keyed region's row table —
+the total row count against the zero literal, nothing else — so a TodoMVC
+section can hide exactly while its list is structurally empty. It reads no
+state field: the commit sweep re-evaluates it on the ADR-0050 region-touch
+path beside the count texts, and because the subject is the row table, an
+ADR-0051 filter hiding every row leaves the section visible. Predicate
+count subjects, other comparison operators, threshold literals, negation,
+and composed or general aggregate expressions stay unrepresentable. -/
 inductive AttrSelect (Γ : Schema) where
   | classSelect (field : Field Γ String) (equals whenTrue whenFalse : String)
       (span : SourceSpan := .generated) (trimmed : Bool := false)
@@ -337,6 +346,7 @@ inductive AttrSelect (Γ : Schema) where
       (span : SourceSpan := .generated) (trimmed : Bool := false)
   | disabledSelect (field : Field Γ String) (equals : String)
       (span : SourceSpan := .generated) (trimmed : Bool := false)
+  | hiddenIfEmpty (region : String) (span : SourceSpan := .generated)
 
 namespace AttrSelect
 
@@ -344,32 +354,49 @@ def name : AttrSelect Γ → String
   | .classSelect .. => "class"
   | .pressedSelect .. => "aria-pressed"
   | .disabledSelect .. => "disabled"
+  | .hiddenIfEmpty .. => "hidden"
 
-def fieldIndex : AttrSelect Γ → Nat
+/-- The state field a field-subject selection reads; the region-count
+subject of a `hiddenIfEmpty` selection reads no state field (ADR-0058). -/
+def fieldIndex? : AttrSelect Γ → Option Nat
   | .classSelect field .. | .pressedSelect field ..
-  | .disabledSelect field .. => field.index
+  | .disabledSelect field .. => some field.index
+  | .hiddenIfEmpty .. => none
 
-def equals : AttrSelect Γ → String
+/-- The compared string literal of a field-subject selection; the
+`hiddenIfEmpty` subject compares its region's row total against the zero
+literal instead (ADR-0058). -/
+def equals? : AttrSelect Γ → Option String
   | .classSelect _ equals .. | .pressedSelect _ equals ..
-  | .disabledSelect _ equals .. => equals
+  | .disabledSelect _ equals .. => some equals
+  | .hiddenIfEmpty .. => none
+
+/-- The declared region whose row-table emptiness a `hiddenIfEmpty`
+selection reflects (ADR-0058). -/
+def hiddenRegion? : AttrSelect Γ → Option String
+  | .classSelect .. | .pressedSelect .. | .disabledSelect .. => none
+  | .hiddenIfEmpty region _ => some region
 
 /-- Whether the subject sits behind the sealed trim unary (ADR-0057). -/
 def trimmed : AttrSelect Γ → Bool
   | .classSelect _ _ _ _ _ trimmed | .pressedSelect _ _ _ trimmed
   | .disabledSelect _ _ _ trimmed => trimmed
+  | .hiddenIfEmpty .. => false
 
-/-- The written value type: `disabled` writes a boolean property; the other
-selections write attribute strings. -/
+/-- The written value type: `disabled` and `hidden` write boolean element
+properties; the other selections write attribute strings. -/
 def valueType : AttrSelect Γ → RuntimeTypeId
   | .classSelect .. | .pressedSelect .. => .string
-  | .disabledSelect .. => .bool
+  | .disabledSelect .. | .hiddenIfEmpty .. => .bool
 
 def span : AttrSelect Γ → SourceSpan
   | .classSelect _ _ _ _ span _ | .pressedSelect _ _ span _
-  | .disabledSelect _ _ span _ => span
+  | .disabledSelect _ _ span _ | .hiddenIfEmpty _ span => span
 
-def debug (select : AttrSelect Γ) : String :=
-  s!"select:{select.name}:{if select.trimmed then "trim:" else ""}{select.fieldIndex}"
+def debug : AttrSelect Γ → String
+  | .hiddenIfEmpty region _ => s!"select:hidden:{region}"
+  | select =>
+      s!"select:{select.name}:{if select.trimmed then "trim:" else ""}{select.fieldIndex?.getD 0}"
 
 end AttrSelect
 

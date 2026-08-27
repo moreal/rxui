@@ -149,22 +149,28 @@ private def renderFields (fields : List String) : String :=
   String.intercalate ", " fields
 
 /-- Rewrite `{count region}` and `{count region (field == "literal")}`
-children of an inline view to the internal `regionCount%` child (ADR-0050).
-The `count` head with an argument is claimed by the rewrite — unnamed dynamic
-text is rejected downstream either way, so the shape cannot collide with a
-legitimate child — and the predicate field resolves against the region's
-declared field inventory here, where the inventory exists. -/
+children of an inline view to the internal `regionCount%` child (ADR-0050),
+and `hidden={count region == 0}` attributes to the internal
+`regionHidden% "region"` attribute (ADR-0058). The `count` head with an
+argument is claimed by the rewrite — unnamed dynamic text is rejected
+downstream either way, so the shape cannot collide with a legitimate child —
+and region names resolve against the declared inventory here, where the
+inventory exists. A `hidden` attribute with any other dynamic value is the
+sealed surface's rejection: the visibility subject is one declared region's
+total row count against the zero literal — predicate counts, other
+comparison operators, threshold literals, negation, composition, and
+general aggregate expressions are not visibility subjects. -/
 private partial def rewriteCountRefs (regionFields : List (String × List String))
     (stx : Syntax) : CommandElabM Syntax := do
+  let resolve (region : TSyntax `ident) : CommandElabM (List String) := do
+    let name := region.getId.eraseMacroScopes.toString
+    match regionFields.find? (·.1 == name) with
+    | some entry => pure entry.2
+    | none =>
+        throwErrorAt region
+          s!"error[LRX-ELAB-119]: count references unknown region {name}"
   let countChild? (value : TSyntax `term) :
       CommandElabM (Option (TSyntax `leanrxJsxChild)) := do
-    let resolve (region : TSyntax `ident) : CommandElabM (List String) := do
-      let name := region.getId.eraseMacroScopes.toString
-      match regionFields.find? (·.1 == name) with
-      | some entry => pure entry.2
-      | none =>
-          throwErrorAt region
-            s!"error[LRX-ELAB-119]: count references unknown region {name}"
     match value with
     | `($head:ident $region:ident) =>
         if head.getId.eraseMacroScopes == `count then
@@ -186,12 +192,48 @@ private partial def rewriteCountRefs (regionFields : List (String × List String
           pure (some (← `(leanrxJsxChild| regionCount% $regionLit:str $indexLit:num $lit:str)))
         else pure none
     | _ => pure none
+  /- The sealed empty-region visibility attribute (ADR-0058): exactly
+  `hidden={count region == 0}` over a declared region rewrites; every other
+  dynamic `hidden` value reports the sealed surface. -/
+  let hiddenAttr (info : SourceInfo) (value : TSyntax `term) :
+      CommandElabM Syntax := do
+    let accept (region : TSyntax `ident) : CommandElabM Syntax := do
+      let _ ← resolve region
+      let ref := region.raw.getHeadInfo
+      pure (.node info ``LeanRxDsl.leanrxJsxAttrRegionHidden
+        #[.atom ref "regionHidden%",
+          Syntax.mkStrLit region.getId.eraseMacroScopes.toString (info := ref)])
+    match value with
+    | `($head:ident $region:ident == $lit:num) =>
+        if head.getId.eraseMacroScopes == `count then
+          if lit.getNat == 0 then
+            accept region
+          else
+            throwErrorAt lit
+              "error[LRX-ELAB-125]: a hidden reflection compares the row total against the zero literal only (ADR-0058)"
+        else
+          throwErrorAt value
+            "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0}: one declared region's total row count against the zero literal (ADR-0058)"
+    | `($head:ident $region:ident ($_:ident == $_:str) == $_:num) =>
+        if head.getId.eraseMacroScopes == `count then
+          let _ ← resolve region
+          throwErrorAt value
+            "error[LRX-ELAB-125]: a hidden reflection's subject is one region's total row count; predicate counts are not visibility subjects (ADR-0058)"
+        else
+          throwErrorAt value
+            "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0}: one declared region's total row count against the zero literal (ADR-0058)"
+    | _ =>
+        throwErrorAt value
+          "error[LRX-ELAB-125]: a hidden reflection is written hidden=\{count region == 0}: one declared region's total row count against the zero literal (ADR-0058)"
   match stx with
   | .node info kind args =>
       if kind == ``LeanRxDsl.leanrxJsxChildDynamic && args.size == 3 then
         match ← countChild? ⟨args[1]!⟩ with
         | some child => pure child.raw
         | none => pure (.node info kind (← args.mapM (rewriteCountRefs regionFields)))
+      else if kind == ``LeanRxDsl.leanrxJsxAttrDynamic && args.size == 5 &&
+          args[0]!.isIdent && args[0]!.getId.eraseMacroScopes == `hidden then
+        hiddenAttr info ⟨args[3]!⟩
       else
         pure (.node info kind (← args.mapM (rewriteCountRefs regionFields)))
   | _ => pure stx

@@ -345,9 +345,17 @@ private def propNodes (values : Array (ValueSpec Γ))
 
 private def attrSelectNodes (values : Array (ValueSpec Γ))
     (selects : List (MountedAttrSelect Γ)) : Except ComponentError (Array NodeSpec) := do
-  let nodes ← selects.zipIdx.mapM fun (mounted, index) => do
-    pure <| NodeSpec.sink s!"attr:{index}:{mounted.select.name}" mounted.select.valueType
-      (← refsFor values [mounted.select.fieldIndex]) mounted.select.debug mounted.select.span
+  /- A `hiddenIfEmpty` selection reads no state field: like the ADR-0050
+  count texts it is region-driven, so it joins the region-touch sweep
+  instead of the planned graph (ADR-0058). The field selections keep their
+  global selection indices, matching the emitted `attr:{index}` labels. -/
+  let nodes ← selects.zipIdx.filterMapM fun (mounted, index) => do
+    match mounted.select.fieldIndex? with
+    | none => pure none
+    | some fieldIndex =>
+        pure <| some <| NodeSpec.sink s!"attr:{index}:{mounted.select.name}"
+          mounted.select.valueType (← refsFor values [fieldIndex])
+          mounted.select.debug mounted.select.span
   pure nodes.toArray
 
 /- Region filter views join the planned graph as sink nodes over their state
@@ -731,7 +739,7 @@ private def validateView : View Γ → Except ComponentError Unit
         throw { code := "LRX-VIEW-001", message := "element has duplicate static attributes", spans := #[span] }
       for select in selects do
         match select with
-        | .classSelect .. => pure ()
+        | .classSelect .. | .hiddenIfEmpty .. => pure ()
         | .pressedSelect .. | .disabledSelect .. =>
             unless tag == .button do
               throw {
@@ -1431,6 +1439,17 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               message := s!"a count predicate projects field {fieldIndex} outside region {count.region}'s {region.fields.size} field(s)"
               spans := #[count.span, region.span]
             }
+  /- Sealed empty-region visibility (ADR-0058): every `hiddenIfEmpty`
+  selection names a declared region — the row-table subject exists exactly
+  when the region does. -/
+  for mounted in split.attrSelects do
+    if let some regionName := mounted.select.hiddenRegion? then
+      unless names.contains regionName do
+        throw {
+          code := "LRX-VIEW-042"
+          message := s!"a hidden reflection references unknown region {regionName}"
+          spans := #[mounted.select.span]
+        }
   unless spec.regions.isEmpty do
     if let View.region _ span := spec.view then
       throw {

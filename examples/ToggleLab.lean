@@ -145,7 +145,23 @@ re-disables when the guarded add resets the draft. The affordance is not
 the contract (ADR-0055 rejection 2 stands): the skip guard keeps both
 dispatch paths total no-ops wherever they are triggered from, and the
 disabled property is only the sweep's reflection of that same equality.
-Still no host change and no runtime ABI bump. -/
+Still no host change and no runtime ABI bump.
+
+The ADR-0058 empty-region visibility closes TodoMVC's hide-when-empty
+parity: `hidden={count items == 0}` on the items list wrapper is the sealed
+region-subject attribute selection — the wrapper's `hidden` boolean
+property reflects emptiness of the region's row table, the total row count
+against the zero literal and nothing else. The wrapper mounts hidden
+(regions mount empty by construction, the ADR-0050 `"0"` reasoning), the
+first append reveals it, and removing the last row — ✕, an empty commit,
+or clearCompleted — hides it again: the commit sweep re-evaluates the
+subject on the same region-touch path the count texts ride, compares it
+against the shared attr cache slot, and writes through the existing
+`setProperty` export with the shared `attr:{index}:hidden` labels and
+tx[8]/tx[9] counters. Because the subject is the row table and not the
+displayed rows, an ADR-0051 filter hiding every row leaves the wrapper
+visible — visibility is structural emptiness, not filtered emptiness.
+Once more: no host change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -220,7 +236,7 @@ component ToggleLab (schema := ToggleSchema) where {
     <p id="items-left"> [
       <strong> [{count items (done == "false")}], " left of ", {count items}
     ],
-    <ul id="items" ariaLabel="Items"> [<region items/>]
+    <ul id="items" ariaLabel="Items" hidden={count items == 0}> [<region items/>]
   ];
 }
 

@@ -283,17 +283,28 @@ private def asciiTrimJs (subject : Expr) : Expr :=
 reflects the equality as `"true"`/`"false"`, and `disabled` is the bare
 boolean equality written as an element property. A trimmed subject
 (ADR-0057) rides the sealed asciiTrimPattern emission inline — the exact
-equality the ADR-0055 skip guard evaluates. -/
+equality the ADR-0055 skip guard evaluates. A `hiddenIfEmpty` selection
+reads no state: its value here is the mount-time constant `true`, because
+keyed regions mount empty by construction (ADR-0050/0058); the commit
+sweep re-evaluates it from the region's row table on the region-touch
+path, never through this state-driven lowering. -/
 private def attrSelectJs (state : Ident) (select : AttrSelect Γ) : Expr :=
-  let subject := stateAt state select.fieldIndex
-  let subject := if select.trimmed then asciiTrimJs subject else subject
-  let predicate := Expr.binary .eq subject (.literal (.string select.equals))
   match select with
-  | .classSelect _ _ whenTrue whenFalse _ _ =>
-      .conditional predicate (.literal (.string whenTrue)) (.literal (.string whenFalse))
-  | .pressedSelect .. =>
-      .conditional predicate (.literal (.string "true")) (.literal (.string "false"))
-  | .disabledSelect .. => predicate
+  | .classSelect field equals whenTrue whenFalse _ trimmed =>
+      let subject := stateAt state field.index
+      let subject := if trimmed then asciiTrimJs subject else subject
+      .conditional (.binary .eq subject (.literal (.string equals)))
+        (.literal (.string whenTrue)) (.literal (.string whenFalse))
+  | .pressedSelect field equals _ trimmed =>
+      let subject := stateAt state field.index
+      let subject := if trimmed then asciiTrimJs subject else subject
+      .conditional (.binary .eq subject (.literal (.string equals)))
+        (.literal (.string "true")) (.literal (.string "false"))
+  | .disabledSelect field equals _ trimmed =>
+      let subject := stateAt state field.index
+      let subject := if trimmed then asciiTrimJs subject else subject
+      .binary .eq subject (.literal (.string equals))
+  | .hiddenIfEmpty .. => .literal (.boolean true)
 
 private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
     (regionSpecs : Array RegionSpec) (eventNames : List String)
@@ -445,14 +456,14 @@ private def runtimeNames : Except Error RuntimeNames := do
     focus := ← Ident.checked "focus"
   }
 
-/-- The write statement of one attribute selection: `disabled` writes the
-boolean element property (`setAttribute` cannot clear `disabled`); the other
-selections write their attribute string. -/
+/-- The write statement of one attribute selection: `disabled` and `hidden`
+write their boolean element properties (`setAttribute` cannot clear either
+by assignment); the other selections write their attribute string. -/
 private def attrSelectWrite (runtime : RuntimeNames) (node : Expr)
     (select : AttrSelect Γ) (value : Expr) : Stmt :=
   match select with
-  | .disabledSelect .. =>
-      .expr <| call runtime.setProperty [node, .literal (.string "disabled"), value]
+  | .disabledSelect .. | .hiddenIfEmpty .. =>
+      .expr <| call runtime.setProperty [node, .literal (.string select.name), value]
   | _ =>
       .expr <| call runtime.setAttribute [node, .literal (.string select.name), value]
 
@@ -607,12 +618,15 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     ]]
   /- State-scoped attribute selections join the commit sweep beside the
   reflected properties with the same evaluate-compare-write shape and the
-  same tx[8]/tx[9] counters (ADR-0045). -/
+  same tx[8]/tx[9] counters (ADR-0045). The region-subject `hiddenIfEmpty`
+  selections read no state field: they re-evaluate on the region-touch path
+  below (ADR-0058), so the state-driven sweep skips them. -/
   for (mounted, attrIndex) in checked.view.attrSelects.zipIdx do
+    let some fieldIndex := mounted.select.fieldIndex? | continue
     let next ← attrNextName attrIndex
     let differs ← attrChangedName attrIndex
     let label := attrLabel attrIndex mounted
-    commitBody := commitBody ++ [.ifThen (anyChanged changed [mounted.select.fieldIndex]) <|
+    commitBody := commitBody ++ [.ifThen (anyChanged changed [fieldIndex]) <|
       .ofList [
       incrementAt tx 8,
       pushTrace tx s!"{label}:evaluated",
@@ -635,10 +649,13 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     the reconcile and drain below consume them. -/
     let counts := checked.view.regionCounts.filter (·.region == region.name)
     let filter? := checked.spec.filters.toList.find? (·.region == region.name)
+    let hiddens := checked.view.attrSelects.zipIdx.filter
+      fun (mounted, _) => mounted.select.hiddenRegion? == some region.name
     let touched ← Ident.checked s!"region_touched_{regionIndex}"
-    unless counts.isEmpty && filter?.isNone do
-      /- The shared touched flag serves the count sweep (ADR-0050) and the
-      filter sweep (ADR-0051); both read it before the reconcile and drain
+    unless counts.isEmpty && filter?.isNone && hiddens.isEmpty do
+      /- The shared touched flag serves the count sweep (ADR-0050), the
+      filter sweep (ADR-0051), and the empty-region visibility sweep
+      (ADR-0058); all read it before the reconcile and drain
       below consume the dirty flag and the pending positions. -/
       commitBody := commitBody ++ [
         .const touched (.binary .or (regionEntry regions regionIndex 3)
@@ -685,6 +702,37 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           ]
         ]
       commitBody := commitBody ++ [.ifThen (.ident touched) (.ofList countStmts)]
+    /- Sealed empty-region visibility (ADR-0058): whenever this region was
+    touched this transaction, every `hiddenIfEmpty` selection over it
+    re-evaluates the row-table emptiness — the total row count against the
+    zero literal, the same subject shape the ADR-0050 count texts read —
+    compares it against the shared attr cache slot, and writes the `hidden`
+    boolean property through the existing `setProperty` export, riding the
+    tx[8]/tx[9] counters with the shared `attr:{index}:hidden` labels. The
+    subject is the row table, not the displayed rows, so an ADR-0051 filter
+    hiding every row leaves the section visible. -/
+    unless hiddens.isEmpty do
+      let mut hiddenStmts : List Stmt := []
+      for (mounted, attrIndex) in hiddens do
+        let next ← attrNextName attrIndex
+        let differs ← attrChangedName attrIndex
+        let label := attrLabel attrIndex mounted
+        hiddenStmts := hiddenStmts ++ [
+          incrementAt tx 8,
+          pushTrace tx s!"{label}:evaluated",
+          .const next (.binary .eq
+            (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))
+            (uint 0)),
+          .const differs <| .unary .not <|
+            .binary .eq (arrayAt attrCache attrIndex) (.ident next),
+          .ifThen (.ident differs) <| .ofList [
+            .assign (.index (.ident attrCache) (uint attrIndex)) (.ident next),
+            attrSelectWrite runtime (arrayAt attrRefs attrIndex) mounted.select (.ident next),
+            incrementAt tx 9,
+            pushTrace tx s!"dom:{label}:write"
+          ]
+        ]
+      commitBody := commitBody ++ [.ifThen (.ident touched) (.ofList hiddenStmts)]
     /- The keyed region reconciles the whole target on commit; the dirty flag
     keeps clean regions out of the sweep entirely (ADR-0041). A structurally
     dirty reconcile re-runs every retained row, so it drops pending update
@@ -1602,6 +1650,10 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
           (fun update => update.regionRemoveIfTargets.isEmpty) then #[]
       else #["region-broadcasts"]) ++
       (if checked.spec.filters.isEmpty then #[] else #["region-filters"]) ++
+      (if checked.view.attrSelects.any (fun mounted =>
+          mounted.select.hiddenRegion?.isSome) then
+        #["region-visibility"]
+      else #[]) ++
       (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
@@ -1910,7 +1962,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             (runtime.makeDisposer, runtime.makeDisposer)
           ] ++ (if checked.view.props.isEmpty && !checked.view.attrSelects.any
               (fun mounted => match mounted.select with
-                | .disabledSelect .. => true
+                | .disabledSelect .. | .hiddenIfEmpty .. => true
                 | _ => false) && !usesBranches && !usesReflects &&
               !usesFilters then #[]
             else #[(runtime.setProperty, runtime.setProperty)]) ++

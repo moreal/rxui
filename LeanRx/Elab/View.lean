@@ -77,6 +77,10 @@ scoped syntax (name := leanrxJsxAttrDynamic) ident "=" "{" term "}" : leanrxJsxA
 /- A bare identifier attribute is the sealed marker shape; only the row
 templates' `autoFocus` marker inhabits it today (ADR-0048). -/
 scoped syntax (name := leanrxJsxAttrMarker) ident : leanrxJsxAttr
+/- Internal target of the component command's sealed empty-region visibility
+rewrite (ADR-0058); `hidden={count region == 0}` attributes become
+`regionHidden% "region"` before lowering. -/
+scoped syntax (name := leanrxJsxAttrRegionHidden) "regionHidden%" str : leanrxJsxAttr
 
 declare_syntax_cat leanrxJsxChild
 declare_syntax_cat leanrxJsxElement
@@ -375,6 +379,13 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
           let span ← spanSyntax attr
           selectTerms := selectTerms.push
             (← `(LeanRx.AttrSelect.disabledSelect $field $lit $span (trimmed := true)))
+      | `(leanrxJsxAttr| regionHidden% $region:str) => do
+          /- The sealed empty-region visibility selection (ADR-0058), produced
+          only by the component command's rewrite, which already resolved the
+          region name and the zero literal. -/
+          let span ← spanSyntax attr
+          selectTerms := selectTerms.push
+            (← `(LeanRx.AttrSelect.hiddenIfEmpty $region $span))
       | _ => pure ()
     let plainAttrs := attrs.filter fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
@@ -388,6 +399,7 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | `(leanrxJsxAttr| ariaPressed = { $_:ident $_:ident == $_:str }) => false
       | `(leanrxJsxAttr| disabled = { $_:ident == $_:str }) => false
       | `(leanrxJsxAttr| disabled = { $_:ident $_:ident == $_:str }) => false
+      | `(leanrxJsxAttr| regionHidden% $_:str) => false
       | _ => true
     let attrTerms ← plainAttrs.mapM fun attr =>
       let attrSyntax : TSyntax `leanrxJsxAttr := ⟨attr⟩
@@ -481,6 +493,9 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | `(leanrxJsxAttr| disabled = { $_:term }) =>
           Macro.throwErrorAt attr
             "error[LRX-VIEW-012]: a state-scoped disabled selection is written disabled={field == \"literal\"} or disabled={trim field == \"literal\"} (ADR-0045/0057)"
+      | `(leanrxJsxAttr| hidden = { $_:term }) =>
+          Macro.throwErrorAt attr
+            "error[LRX-VIEW-012]: a hidden reflection is written hidden={count region == 0} on a component view element (ADR-0058)"
       | `(leanrxJsxAttr| $_:ident = { $_:term }) =>
           Macro.throwErrorAt attr
             "error[LRX-VIEW-012]: dynamic attribute values require the logical reference view"
