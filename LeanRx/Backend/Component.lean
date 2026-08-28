@@ -706,16 +706,27 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
                 ]),
                 .const next (.index (.ident scan) (uint 0))
               ]
+        /- A label count selects one of its two static strings from the
+        recomputed count against the one literal (ADR-0062); the cache slot
+        and the `setText` write then carry the selected string instead of
+        the number, riding the same sink counters and labels. -/
+        let (value, selectStmts) ← match count.label with
+          | none => pure (Expr.ident next, ([] : List Stmt))
+          | some (one, other) => do
+              let selected ← Ident.checked s!"count_label_{regionIndex}_{slot}"
+              pure (Expr.ident selected, [Stmt.const selected <|
+                .conditional (.binary .eq (.ident next) (uint 1))
+                  (.literal (.string one)) (.literal (.string other))])
         countStmts := countStmts ++ [
           incrementAt tx 5,
           pushTrace tx s!"{label}:evaluated"
-        ] ++ computeStmts ++ [
+        ] ++ computeStmts ++ selectStmts ++ [
           .const differs <| .unary .not <|
-            .binary .eq (.index (regionEntry regions regionIndex 6) (uint slot)) (.ident next),
+            .binary .eq (.index (regionEntry regions regionIndex 6) (uint slot)) value,
           .ifThen (.ident differs) <| .ofList [
-            .assign (.index (regionEntry regions regionIndex 6) (uint slot)) (.ident next),
+            .assign (.index (regionEntry regions regionIndex 6) (uint slot)) value,
             .expr <| call setText [
-              .index (regionEntry regions regionIndex 5) (uint slot), .ident next
+              .index (regionEntry regions regionIndex 5) (uint slot), value
             ],
             incrementAt tx 6,
             pushTrace tx s!"dom:{label}:write"
@@ -1034,15 +1045,20 @@ mutual
         let state := addNode { state with allocator } path name
         pure (name, appendStatement state <| .const name <|
           call runtime.createText [.index (.ident propsName) (uint field)])
-    | .countText, state => do
+    | .countText label, state => do
         /- Sealed row aggregates mount as `"0"` (ADR-0050): regions mount
         empty by construction, so every count starts at zero and is first
-        recomputed by the commit sweep that touches its region. -/
+        recomputed by the commit sweep that touches its region. A label
+        count mounts as its `else` string for the same reason — the zero
+        count differs from the one literal (ADR-0062). -/
         let (name, allocator) ← state.allocator.allocate
           s!"count_text_{state.nodes.length}"
         let state := addNode { state with allocator } path name
+        let mounted := match label with
+          | none => "0"
+          | some (_, other) => other
         pure (name, appendStatement state <| .const name <|
-          call runtime.createText [.literal (.string "0")])
+          call runtime.createText [.literal (.string mounted)])
     | .child _ _, _ =>
         .error {
           code := "LRX-BE-030"
@@ -1704,6 +1720,8 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
         #["row-focus"]
       else #[]) ++
       (if checked.view.regionCounts.isEmpty then #[] else #["row-aggregates"]) ++
+      (if checked.view.regionCounts.any (·.label.isSome) then #["count-labels"]
+      else #[]) ++
       (if broadcasts.isEmpty && (eventUpdates checked.spec).all
           (fun update => update.regionRemoveIfTargets.isEmpty) then #[]
       else #["region-broadcasts"]) ++
@@ -1886,7 +1904,12 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
         Expr.ident handle, .array .nil, uint 0, .literal (.boolean false), .array .nil
       ] ++ (if counts.isEmpty then [] else [
         Expr.array (.ofList countRefs),
-        Expr.array (.ofList (counts.map fun _ => uint 0))
+        /- Label counts cache the mounted `else` string instead of the
+        numeric zero, so the first sweep's compare starts from the mounted
+        DOM text either way (ADR-0062). -/
+        Expr.array (.ofList (counts.map fun count => match count.label with
+          | none => uint 0
+          | some (_, other) => .literal (.string other)))
       ]) ++ containerRef)
     mountBody := mountBody ++ [
       .const regions (.array (.ofList regionRecords))

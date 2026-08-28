@@ -920,7 +920,7 @@ private def validateView : View Γ → Except ComponentError Unit
       else pure ()
   | .child _ _ _ => pure ()
   | .region _ _ => pure ()
-  | .regionCount _ _ _ => pure ()
+  | .regionCount _ _ _ _ => pure ()
   | .propText _ _ => pure ()
 
 private def validateChildren : ViewChildren Γ → Except ComponentError Unit
@@ -1251,7 +1251,7 @@ mutual
           }
         regionPlacementChildren children
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .propText _ _ | .region _ _
-    | .regionCount _ _ _ => pure ()
+    | .regionCount _ _ _ _ => pure ()
 
   private def regionPlacementChildren : ViewChildren Γ → Except ComponentError Unit
     | .nil => pure ()

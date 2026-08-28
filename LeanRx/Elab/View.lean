@@ -108,6 +108,14 @@ scoped syntax (name := leanrxJsxPropText) "propText%" num : leanrxJsxChild
 `regionCount% "region" fieldIndex "literal"` before lowering. -/
 scoped syntax (name := leanrxJsxRegionCount)
   "regionCount%" str (num str)? : leanrxJsxChild
+/- Internal target of the component command's sealed count-label rewrite
+(ADR-0062); `{if count region == 1 then "one" else "other"}` children become
+`regionCountLabel% "region" "one" "other"` and
+`{if count region (field == "literal") == 1 then "one" else "other"}`
+children become `regionCountLabel% "region" fieldIndex "literal" "one"
+"other"` before lowering. -/
+scoped syntax (name := leanrxJsxRegionCountLabel)
+  "regionCountLabel%" str (num str)? str str : leanrxJsxChild
 scoped syntax leanrxJsxElement : leanrxJsxChild
 /- The sealed two-branch row cell (ADR-0047): valid only inside `region` row
 templates, where the component command lowers it to `RowNode.branch`. -/
@@ -554,6 +562,14 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       | `(leanrxJsxChild| regionCount% $region:str $index:num $lit:str) => do
           let span ← spanSyntax child
           `(LeanRx.View.regionCount $region (some ($index, $lit)) $span)
+      | `(leanrxJsxChild| regionCountLabel% $region:str $one:str $other:str) => do
+          let span ← spanSyntax child
+          `(LeanRx.View.regionCount $region none $span (some ($one, $other)))
+      | `(leanrxJsxChild| regionCountLabel% $region:str $index:num $lit:str
+            $one:str $other:str) => do
+          let span ← spanSyntax child
+          `(LeanRx.View.regionCount $region (some ($index, $lit)) $span
+            (some ($one, $other)))
       | `(leanrxJsxChild| { $_:term }) =>
           Macro.throwErrorAt child
             "error[LRX-VIEW-012]: unnamed dynamic text requires the logical reference view"

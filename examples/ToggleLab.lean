@@ -217,7 +217,25 @@ writes nothing; and a filter change alone still re-evaluates nothing.
 The payload stands alone on its right-hand side (no trim, no
 concatenation, no comparison), the body is exactly one broadcast, and only
 the Bool checked payload may broadcast. Once more: no host change and no
-runtime ABI bump. -/
+runtime ABI bump.
+
+The ADR-0062 count label closes TodoMVC's items-left grammar: `{if count
+items (done == "false") == 1 then " item left" else " items left"}` is the
+sealed count-driven text selection — the ADR-0050 count subject, total or
+predicate, compared against the one literal, selecting between two static
+strings at a text position. The label joins the count inventory as one more
+slot: it mounts as the `else` string (an empty region counts zero, and zero
+differs from one), the commit sweep recomputes it on the same region-touch
+path with the same per-slot scan the count texts run (no scan sharing —
+ADR-0050 already re-scans per position), and the selected string rides the
+same cache compare and the existing `setText` export, so the first append
+flips the line to "1 item left" in one evaluation and one write, the second
+flips it back to plural, and every broadcast, toggle, ✕ removal, and
+clearCompleted updates the number and the label in the same commit. An
+equal-selection commit is evaluate-only, and a filter change alone still
+recomputes nothing. The comparison literal is sealed at one, the branches
+are static string literals, and every other conditional text stays
+rejected. Once more: no host change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -292,7 +310,9 @@ component ToggleLab (schema := ToggleSchema) where {
     <button type="button" onClick={showCompleted}> ["Show completed"],
     <p id="toggle-text"> [{"itemText": rx% s!"Items added: {added}"}],
     <p id="items-left"> [
-      <strong> [{count items (done == "false")}], " left of ", {count items}
+      <strong> [{count items (done == "false")}],
+      {if count items (done == "false") == 1 then " item left" else " items left"},
+      " of ", {count items}
     ],
     <ul id="items" ariaLabel="Items" hidden={count items == 0}> [<region items/>],
     <input id="toggle-all" type="checkbox" ariaLabel="Toggle all"

@@ -577,7 +577,9 @@ name (ADR-0039), optionally passing immutable props as name/value pairs in the
 child's declaration order (ADR-0042). A `region` position mounts a declared
 keyed region (ADR-0041), `regionCount` renders one sealed row aggregate — the
 row count of a declared region, or the count of rows whose projected field
-equals one string literal (ADR-0050) — `propText` renders one of this
+equals one string literal (ADR-0050); with a `label` it instead renders one of
+two static strings selected by comparing that count against the one literal,
+the sealed count-label selection (ADR-0062) — `propText` renders one of this
 component's own immutable props as static mount-time text, and `selects`
 carries the element's sealed state-scoped attribute selections (ADR-0045). -/
 mutual
@@ -593,6 +595,7 @@ mutual
     | region (name : String) (span : SourceSpan := .generated)
     | regionCount (region : String) (predicate : Option (Nat × String) := none)
         (span : SourceSpan := .generated)
+        (label : Option (String × String) := none)
     | propText (field : Nat) (span : SourceSpan := .generated)
 
   inductive ViewChildren (Γ : Schema) where
@@ -621,8 +624,9 @@ def withSpan (view : View Γ) (span : SourceSpan) : View Γ :=
   | .child name existing props =>
       .child name (if existing.file.isEmpty then span else existing) props
   | .region name existing => .region name (if existing.file.isEmpty then span else existing)
-  | .regionCount regionName predicate existing =>
+  | .regionCount regionName predicate existing label =>
       .regionCount regionName predicate (if existing.file.isEmpty then span else existing)
+        label
   | .propText field existing =>
       .propText field (if existing.file.isEmpty then span else existing)
 
@@ -646,8 +650,10 @@ end View
 child position names the statically nested component mounted there together
 with the prop values it receives; a region position names the keyed region
 mounted there; a count text position holds one sealed row aggregate, mounted
-as `"0"` because regions mount empty by construction (ADR-0050); a prop text
-position renders one own immutable prop. -/
+as `"0"` because regions mount empty by construction (ADR-0050) — a label
+count instead mounts as its `else` string, the zero count differing from the
+one literal (ADR-0062); a prop text position renders one own immutable
+prop. -/
 mutual
   inductive MountNode where
     | element (tag : HtmlTag) (attrs : List StaticAttr) (children : MountChildren)
@@ -655,7 +661,7 @@ mutual
     | dynamicText
     | child (name : String) (propValues : List String := [])
     | region (name : String)
-    | countText
+    | countText (label : Option (String × String) := none)
     | propText (field : Nat)
 
   inductive MountChildren where
@@ -697,11 +703,14 @@ structure MountedRegion where
 deriving Repr, BEq
 
 /-- One mounted sealed row aggregate (ADR-0050): the count of a region's rows,
-optionally restricted to rows whose projected field equals the literal. -/
+optionally restricted to rows whose projected field equals the literal. With a
+`label` the position renders one of the two static strings — the first when
+the count equals one, the second otherwise (ADR-0062). -/
 structure MountedRegionCount where
   path : List Nat
   region : String
   predicate : Option (Nat × String) := none
+  label : Option (String × String) := none
   span : SourceSpan
 deriving Repr, BEq
 
@@ -729,7 +738,7 @@ mutual
     | .scalarText _ _ _ => .dynamicText
     | .child name _ props => .child name (props.map (·.2))
     | .region name _ => .region name
-    | .regionCount _ _ _ => .countText
+    | .regionCount _ _ _ label => .countText label
     | .propText field _ => .propText field
 
   private def ViewChildren.mountChildren : ViewChildren Γ → MountChildren
@@ -740,7 +749,8 @@ end
 mutual
   private def View.textSinksAt (path : List Nat) : View Γ → List (TextSink Γ)
     | .element _ _ _ children _ _ _ => children.textSinksAt path 0
-    | .text _ _ | .child _ _ _ | .region _ _ | .regionCount _ _ _ | .propText _ _ => []
+    | .text _ _ | .child _ _ _ | .region _ _ | .regionCount _ _ _ _
+    | .propText _ _ => []
     | .scalarText name value span =>
         [{ deps := value.dependencies, name, path, value, span }]
 
@@ -756,7 +766,7 @@ mutual
     | .element _ _ bindings children _ _ _ =>
         bindings.map (fun binding => { path, binding }) ++ children.eventsAt path 0
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _
-    | .regionCount _ _ _ | .propText _ _ => []
+    | .regionCount _ _ _ _ | .propText _ _ => []
 
   private def ViewChildren.eventsAt (path : List Nat) (index : Nat) :
       ViewChildren Γ → List MountedEvent
@@ -770,7 +780,7 @@ mutual
     | .element _ _ _ children _ props _ =>
         props.map (fun binding => { path, binding }) ++ children.propsAt path 0
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _
-    | .regionCount _ _ _ | .propText _ _ => []
+    | .regionCount _ _ _ _ | .propText _ _ => []
 
   private def ViewChildren.propsAt (path : List Nat) (index : Nat) :
       ViewChildren Γ → List (MountedProp Γ)
@@ -784,7 +794,7 @@ mutual
     | .element _ _ _ children _ _ selects =>
         selects.map (fun select => { path, select }) ++ children.selectsAt path 0
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _
-    | .regionCount _ _ _ | .propText _ _ => []
+    | .regionCount _ _ _ _ | .propText _ _ => []
 
   private def ViewChildren.selectsAt (path : List Nat) (index : Nat) :
       ViewChildren Γ → List (MountedAttrSelect Γ)
@@ -796,7 +806,7 @@ end
 mutual
   private def View.childRefsAt (path : List Nat) : View Γ → List MountedChild
     | .element _ _ _ children _ _ _ => children.childRefsAt path 0
-    | .text _ _ | .scalarText _ _ _ | .region _ _ | .regionCount _ _ _
+    | .text _ _ | .scalarText _ _ _ | .region _ _ | .regionCount _ _ _ _
     | .propText _ _ => []
     | .child name span props => [{ path, name, span, props }]
 
@@ -810,7 +820,7 @@ end
 mutual
   private def View.regionRefsAt (path : List Nat) : View Γ → List MountedRegion
     | .element _ _ _ children _ _ _ => children.regionRefsAt path 0
-    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .regionCount _ _ _
+    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .regionCount _ _ _ _
     | .propText _ _ => []
     | .region name span => [{ path, name, span }]
 
@@ -825,7 +835,7 @@ mutual
   private def View.regionCountsAt (path : List Nat) : View Γ → List MountedRegionCount
     | .element _ _ _ children _ _ _ => children.regionCountsAt path 0
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _ | .propText _ _ => []
-    | .regionCount region predicate span => [{ path, region, predicate, span }]
+    | .regionCount region predicate span label => [{ path, region, predicate, label, span }]
 
   private def ViewChildren.regionCountsAt (path : List Nat) (index : Nat) :
       ViewChildren Γ → List MountedRegionCount
@@ -838,7 +848,7 @@ mutual
   private def View.propTextsAt (path : List Nat) : View Γ → List MountedPropText
     | .element _ _ _ children _ _ _ => children.propTextsAt path 0
     | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _
-    | .regionCount _ _ _ => []
+    | .regionCount _ _ _ _ => []
     | .propText field span => [{ path, field, span }]
 
   private def ViewChildren.propTextsAt (path : List Nat) (index : Nat) :

@@ -150,6 +150,9 @@ private def renderFields (fields : List String) : String :=
 
 /-- Rewrite `{count region}` and `{count region (field == "literal")}`
 children of an inline view to the internal `regionCount%` child (ADR-0050),
+`{if count region == 1 then "one" else "other"}` conditional children —
+either count subject compared against the one literal selecting between two
+static strings — to the internal `regionCountLabel%` child (ADR-0062),
 `hidden={count region == 0}` attributes to the internal
 `regionHidden% "region"` attribute (ADR-0058), and
 `checked={count region == 0}` attributes to the internal
@@ -175,9 +178,58 @@ private partial def rewriteCountRefs (regionFields : List (String × List String
     | none =>
         throwErrorAt region
           s!"error[LRX-ELAB-119]: count references unknown region {name}"
+  /- The sealed count-label selection (ADR-0062): a count-headed conditional
+  text child compares the ADR-0050 count subject — total or predicate —
+  against the one literal and selects between two static strings. The one
+  literal and the static branches are the whole surface: any other threshold
+  and any dynamic branch report the sealed shape, and every non-count
+  conditional falls through to the unnamed-dynamic-text rejection. -/
+  let requireOne (lit : TSyntax `num) : CommandElabM Unit := do
+    unless lit.getNat == 1 do
+      throwErrorAt lit
+        "error[LRX-ELAB-127]: a count label compares its row count against the one literal only (ADR-0062)"
   let countChild? (value : TSyntax `term) :
       CommandElabM (Option (TSyntax `leanrxJsxChild)) := do
     match value with
+    | `(if $head:ident $region:ident == $lit:num then $one:str else $other:str) =>
+        if head.getId.eraseMacroScopes == `count then do
+          let _ ← resolve region
+          requireOne lit
+          let regionLit := Syntax.mkStrLit region.getId.eraseMacroScopes.toString
+          pure (some (← `(leanrxJsxChild|
+            regionCountLabel% $regionLit:str $one:str $other:str)))
+        else pure none
+    | `(if $head:ident $region:ident ($field:ident == $flit:str) == $lit:num
+          then $one:str else $other:str) =>
+        if head.getId.eraseMacroScopes == `count then do
+          let fields ← resolve region
+          requireOne lit
+          let fieldName := field.getId.eraseMacroScopes.toString
+          let index ← match fields.idxOf? fieldName with
+            | some index => pure index
+            | none =>
+                throwErrorAt field
+                  s!"error[LRX-ELAB-119]: unknown row field {fieldName}; declared fields are {renderFields fields}"
+          let regionLit := Syntax.mkStrLit region.getId.eraseMacroScopes.toString
+          let indexLit := Syntax.mkNumLit (toString index)
+          pure (some (← `(leanrxJsxChild|
+            regionCountLabel% $regionLit:str $indexLit:num $flit:str $one:str $other:str)))
+        else pure none
+    | `(if $head:ident $region:ident == $lit:num then $_:term else $_:term) =>
+        if head.getId.eraseMacroScopes == `count then do
+          let _ ← resolve region
+          requireOne lit
+          throwErrorAt value
+            "error[LRX-ELAB-127]: a count label selects between two static string literals — \{if count region == 1 then \"one\" else \"other\"} (ADR-0062)"
+        else pure none
+    | `(if $head:ident $region:ident ($_:ident == $_:str) == $lit:num
+          then $_:term else $_:term) =>
+        if head.getId.eraseMacroScopes == `count then do
+          let _ ← resolve region
+          requireOne lit
+          throwErrorAt value
+            "error[LRX-ELAB-127]: a count label selects between two static string literals — \{if count region (field == \"literal\") == 1 then \"one\" else \"other\"} (ADR-0062)"
+        else pure none
     | `($head:ident $region:ident) =>
         if head.getId.eraseMacroScopes == `count then
           let _ ← resolve region
