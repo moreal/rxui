@@ -10,6 +10,7 @@ branch_output="$workspace/branch"
 toggle_output="$workspace/toggle"
 nest_output="$workspace/nest"
 mix_output="$workspace/mix"
+twin_output="$workspace/twin"
 tabs_output="$workspace/tabs"
 temperature_output="$workspace/temperature"
 validated_form_output="$workspace/validated-form"
@@ -28,6 +29,7 @@ lake exe leanrx_branch_js -- "$branch_output"
 lake exe leanrx_toggle_js -- "$toggle_output"
 lake exe leanrx_nest_js -- "$nest_output"
 lake exe leanrx_mix_js -- "$mix_output"
+lake exe leanrx_twin_js -- "$twin_output"
 lake exe leanrx_tabs_js -- "$tabs_output"
 lake exe leanrx_temperature_js -- "$temperature_output"
 lake exe leanrx_validated_form_js -- "$validated_form_output"
@@ -43,6 +45,7 @@ LEANRX_BROWSER_DIST="$output" LEANRX_DIAMOND_DIST="$diamond_output" \
   LEANRX_TOGGLE_DIST="$toggle_output" \
   LEANRX_NEST_DIST="$nest_output" \
   LEANRX_MIX_DIST="$mix_output" \
+  LEANRX_TWIN_DIST="$twin_output" \
   LEANRX_TABS_DIST="$tabs_output" \
   LEANRX_TEMPERATURE_DIST="$temperature_output" \
   LEANRX_VALIDATED_FORM_DIST="$validated_form_output" \

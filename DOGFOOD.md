@@ -4186,3 +4186,76 @@ extension, the two-record artifact gate, three browser tests, the
 guide update, the ADR, and this record. Open: two *filtered*
 regions, and two filters driven by one state field — both coherent
 by construction, neither with a consumer lab.
+
+## Three filtered regions, two fields — the filter distribution round (ADR-0079)
+
+### What was built
+
+The round ADR-0078 left open. Every filtered component in the
+repository carried exactly one filter, so the ADR-0051 sweep had only
+ever been emitted at region index 0 — the repository-wide scan suffix
+was `_0` and nothing else. The survey checked five places before
+touching anything: the sweep allocates `filter_scan_{i}` /
+`filter_row_{i}` inside the per-region loop; the container slot is
+`5 + counts?2` computed from that region's own feature set; the wake
+guard is `region_touched_{i} || changed[filterField]`, one flag and one
+bit both named per region; the commit sweep walks regions in
+declaration order with each region's whole block inside one iteration;
+and `validateFilters` rejects a duplicate *region*, never a duplicate
+field. All five coherent, and — unlike ADR-0078's persist cap — with no
+scaffolding limit hiding behind them.
+
+So the round gates the combination, and the interesting decision was
+*where*. Mix Lab is the widest component in the repository and the
+natural home for new combinations, but its sharpest gate is the
+coincidence that crew's filter container and pins' child inventory both
+land on slot 7; giving `pins` a filter would move the inventory and
+erase that witness. The combination therefore went to a new lab —
+Twin Lab, the first example module added since ADR-0067 — deliberately
+narrow at three regions, no children, no persistence, no routing:
+`left` with a count (container at slot 7 of eight), `right` and `solo`
+without (container at slot 5 of six), `left` and `right` filtered by
+`mode` with inverted arm tables, `solo` filtered by `tone`, and a
+`stir` event appending to `solo` while writing `mode` so one commit
+wakes three sweeps for two different reasons.
+
+### Friction encountered
+
+Two small ones. The row `remove` button had to be nested one level
+deeper than it first was — `LRX-VIEW-027` requires a row event to sit
+strictly inside a row cell, not directly under the row root, which is
+exactly what the delegated cell-index dispatch needs. And measuring a
+trace slice from a browser spec needs the mark stashed on `globalThis`
+*before* the click; a Node-side variable is not in page scope.
+
+### Bugs found
+
+None. A `mode` flip evaluates `left` then `right` and never `solo`, in
+one commit with two evaluate ticks and no mount or disposal anywhere; a
+`tone` flip evaluates `solo` alone and leaves both twins' `hidden`
+values and region metrics identical; a bare append or removal in `left`
+wakes `left`'s sweep alone even though its twin shares the filter
+field; and `stir` commits once with the append first (event order) and
+all three evaluations exactly once in region declaration order, the
+touched region reconciling before its own sweep while the untouched
+twins never reconcile at all. The inverted tables are what make the
+shared-field case unfakeable: one field value hides complementary rows
+in the two regions.
+
+### Performance observations
+
+No generated-code change outside the new module: every other lab and
+the benchmark bundle are byte-identical, so the size gate and
+BENCHMARK.md stand without re-measurement. A second filtered region
+costs one more scan loop behind its own guard — nothing is shared
+between sweeps, and an unwoken sweep emits no trace entry at all.
+
+### Follow-up issue or commit
+
+`feat(examples): gate two filtered regions and a shared filter field in
+Twin Lab (ADR-0079)` — the new example module and its three script
+registrations, the artifact gate, six browser tests, the
+`FilterRegionTwice` compile-fail witness, a compiled language-guide
+snippet, the guide update, the ADR, and this record. Open: a filter
+beside a pending-row drain at region index > 0, and a route over one of
+two filtered fields.

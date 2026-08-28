@@ -581,6 +581,41 @@ component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
 }
 ```
 
+Filters distribute per region (ADR-0079). Several regions may each carry
+one, and two of them may name the *same* state field: each sweep allocates
+its own `filter_scan_{regionIndex}` walk, reads its own container slot
+(`5 + counts?2`, computed from that region's own feature set — so two
+filtered regions of different widths read different slot numbers), and
+wakes on its own `region_touched_{regionIndex} || changed[field]` guard.
+One `set` on a shared filter field therefore runs two sweeps inside one
+commit, in region declaration order, once each; a region touch and a
+filter-field change mixing in one transaction wake their regions for
+different reasons and still run in that order. Two filters over *one*
+region stay rejected (`LRX-TYPE-113`): a region owns one container and one
+row table, so a second table would be two writers of one `hidden` property.
+
+```lean
+component TwinFilterMini (schema := TwinFilterMiniSchema) where {
+  state twinMode : String := "all";
+  state twinTone : String := "all";
+  event showOn := set twinMode "on";
+  event toneOn := set twinTone "on";
+  filter left by twinMode := when "on" (flag == "true");
+  filter right by twinMode := when "on" (flag == "false");
+  filter solo by twinTone := when "on" (flag == "true");
+  region left (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
+  region right (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
+  region solo (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
+  view := jsx% <main> [
+    <button type="button" onClick={showOn}> ["Show on"],
+    <button type="button" onClick={toneOn}> ["Tone on"],
+    <ul ariaLabel="Left"> [<region left/>],
+    <ul ariaLabel="Right"> [<region right/>],
+    <ul ariaLabel="Solo"> [<region solo/>]
+  ];
+}
+```
+
 A `route` item seals the browser's URL hash onto the filter field
 (ADR-0063): `route field := when "#/hash" "literal" then …` maps distinct
 `#/`-shaped hash literals one-to-one onto the routed field's existing state

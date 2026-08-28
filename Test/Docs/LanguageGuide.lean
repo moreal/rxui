@@ -283,6 +283,35 @@ component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
   ];
 }
 
+/- The per-region filter distribution snippet from guide section 7
+(ADR-0079): three regions each carrying one filter, two of them named by the
+same state field. -/
+abbrev TwinFilterMiniSchema : Schema :=
+  .field "twinMode" String <| .field "twinTone" String .empty
+
+def twinMode : Field TwinFilterMiniSchema String := .here
+def twinTone : Field TwinFilterMiniSchema String := .there .here
+
+component TwinFilterMini (schema := TwinFilterMiniSchema) where {
+  state twinMode : String := "all";
+  state twinTone : String := "all";
+  event showOn := set twinMode "on";
+  event toneOn := set twinTone "on";
+  filter left by twinMode := when "on" (flag == "true");
+  filter right by twinMode := when "on" (flag == "false");
+  filter solo by twinTone := when "on" (flag == "true");
+  region left (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
+  region right (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
+  region solo (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
+  view := jsx% <main> [
+    <button type="button" onClick={showOn}> ["Show on"],
+    <button type="button" onClick={toneOn}> ["Tone on"],
+    <ul ariaLabel="Left"> [<region left/>],
+    <ul ariaLabel="Right"> [<region right/>],
+    <ul ariaLabel="Solo"> [<region solo/>]
+  ];
+}
+
 /- The sealed hash route snippet from guide section 7 (ADR-0063). -/
 abbrev RoutedRosterMiniSchema : Schema :=
   .field "routedAdded" Int <| .field "routedShown" String .empty
@@ -633,6 +662,18 @@ def run : IO Unit := do
           "language-guide filter snippet lost its state field or arm table"
   | .error error =>
       throw <| IO.userError s!"language-guide filter component rejected: {error.render}"
+  match TwinFilterMini_check with
+  | .ok twinned =>
+      unless twinned.spec.filters.toList.map
+          (fun filter => (filter.region, filter.field.index, filter.arms)) ==
+          [("left", 0, [("on", .ofField 1 "true")]),
+           ("right", 0, [("on", .ofField 1 "false")]),
+           ("solo", 1, [("on", .ofField 1 "true")])] do
+        throw <| IO.userError
+          "language-guide twin filter snippet lost a per-region filter table"
+  | .error error =>
+      throw <| IO.userError
+        s!"language-guide twin filter component rejected: {error.render}"
   match RoutedRosterMini_check with
   | .ok routed =>
       unless routed.spec.routes.toList.map

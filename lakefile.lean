@@ -73,7 +73,8 @@ lean_lib LeanRxExamples where
     `examples.EchoLab, `examples.EchoLabBuild,
     `examples.FilterLab, `examples.FilterLabBuild,
     `examples.NestLab, `examples.NestLabBuild,
-    `examples.MixLab, `examples.MixLabBuild, `examples.DependentTabs,
+    `examples.MixLab, `examples.MixLabBuild,
+    `examples.TwinLab, `examples.TwinLabBuild, `examples.DependentTabs,
     `examples.DependentTabsBuild, `examples.TemperatureConverter,
     `examples.TemperatureConverterBuild, `examples.ValidatedForm,
     `examples.ValidatedFormBuild, `examples.TodoMVC, `examples.TodoMVCBuild,
@@ -115,6 +116,9 @@ lean_exe leanrx_nest_js where
 
 lean_exe leanrx_mix_js where
   root := `examples.MixLabMain
+
+lean_exe leanrx_twin_js where
+  root := `examples.TwinLabMain
 
 lean_exe leanrx_filter_js where
   root := `examples.FilterLabMain
