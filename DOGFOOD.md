@@ -2661,3 +2661,96 @@ grammar ("no items"/"1 item"/"N items") stays rejected as ADR-0062's
 second open question; and TodoMVC's hide-the-toggle-all-chrome
 refinement (the toggle-all box and footer riding the ADR-0058 emptiness
 subject) is expressible today but unexercised in Toggle Lab.
+
+## Empty-list chrome and Escape revert — a lexicon-invariant round
+
+### Scenario exercised
+
+An execution round, not an ADR: two contracts the sealed vocabulary
+already carried but Toggle Lab had never run. First, TodoMVC's
+main/footer hide-when-empty parity — the toggle-all checkbox takes
+`hidden={count items == 0}` beside its existing `checked` selection, and
+the items-left line plus the three filter buttons move into a
+`<footer hidden={count items == 0}>` after the list. Both are the
+ADR-0058 emptiness subject reused verbatim on two more attr slots:
+`HtmlTag.footer` already existed, the ADR-0045 duplicate detection keys
+on the attribute name (so `checked` and `hidden` coexist on one
+element), and the `hiddenIfEmpty` selection was already valid on any
+static element. Second, the new-todo Escape revert — `confirmAdd` gains
+`then when "Escape" (set draft "")`, executing the Escape half of the
+ADR-0056 sealed Enter/Escape component key set that had been spellable
+but unproven. The arm is unguarded, so it pins the unconditional-commit
+path: Escape clears the draft, the controlled input follows through the
+ADR-0038 reflection, the Add button re-disables through its ADR-0057
+selection in the same commit, and a subsequent Enter hits the ADR-0055
+skip guard as a whole-event no-op. No elaborator, model, backend, or
+host file changed — the diff is the lab source, the gates, and this
+record. No host change, no runtime ABI bump.
+
+### What was pleasant
+
+The claim "expressible today" was literally true: the lab edit was three
+lines of view and one arm, and the generator produced the right code on
+the first build. The attr slot economics composed without any new
+machinery — the two new emptiness slots joined the same region-touch
+sweep block, each with its own evaluation, cache compare, and flip-only
+write, so the browser gates could pin "one commit reveals wrapper, box,
+and footer together" as three `+1` label counts. Placing the footer
+last in document order kept every existing `attr:N` label stable
+(attr:0..3 unchanged, attr:4/attr:5 purely additive), which cut the
+expected gate churn roughly in half.
+
+### Friction encountered
+
+The chrome hiding is honest — and that honesty broke tests. Playwright's
+role queries exclude hidden elements, so every gate that addressed the
+toggle-all box or a filter button while the region was empty had to
+switch to id locators or synthetic clicks (the ADR-0051 appended-rows
+gate sets the completed filter before the first append, which a real
+user can no longer do — the dispatch, not the affordance, carries the
+contract, so the gate clicks the hidden button synthetically). Moving
+the items-left line and the filter buttons into the footer renumbered
+the mount nodes again (ul and toggle-all moved from node_26/node_27 to
+node_14/node_15), which the artifact gate pinned across the usual dozen
+strings — document order is load-bearing and the gate says so.
+
+### Bugs found
+
+None. The duplicate-detection question the round was asked to settle —
+does `hidden` beside `checked` on one element collide? — resolved by
+reading `validateView`: both checks key on attribute/property names, and
+the two selections carry different names, so the element passes both
+LRX-VIEW-001 and LRX-VIEW-021 by construction.
+
+### Performance observations
+
+The freeze held by construction: no compiler or host file changed, so
+every other lab and the benchmark bundle are byte-identical trivially;
+the codegen determinism check passed over the full example set. The new
+chrome costs two more `length === 0` reads per region-touching commit —
+no scan, the subject is the row-table length — and a filter change alone
+still evaluates nothing (pinned per slot in the browser gates). Escape
+costs one transaction with one string write, and the equal-value Escape
+(draft already empty) commits with the changed flag down: no prop write,
+no attr evaluation.
+
+### Follow-up issue or commit
+
+`feat(component): execute the empty-list chrome and Escape revert in
+Toggle Lab` and this record. With this round, Toggle Lab's TodoMVC
+interaction parity has two gaps left, and both need host exports under
+the freeze: URL routing (`#/active` sync) and localStorage persistence.
+Remaining gaps carried forward: affordance-contract agreement stays
+ADR-0059's first open question; the component-scope payload reaches one
+construct (ADR-0061's second open question); the count label stays
+text-position-only with the one literal sealed and the two-threshold
+grammar rejected (ADR-0062's open questions); the ADR-0050 predicate
+removal, ADR-0051 filter arms, ADR-0044 row class selection, and
+ADR-0049 row checked reflection still compare raw fields; the guard
+literal is sealed at the empty string; negated and composite subjects
+stay rejected; row guards stay single-field remove-or-commit; branch
+cells single-level and two-branch with exact click/dblclick agreement;
+child instrumentation still unreachable through the parent disposer. The
+next-next round should be an ADR weighing the freeze-compatible residue
+(unifying the raw-field comparisons, revisiting attribute-position count
+labels) against lifting the freeze for routing and persistence.
