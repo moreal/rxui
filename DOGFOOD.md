@@ -3959,3 +3959,76 @@ DECISIONS.md row, and this record. ADR-0072 OQ1 is closed; the
 remaining prop-boundary OQ is ADR-0068 OQ1 (reactive props), still
 rejected.
 
+## Row children × region features — the coexistence round (ADR-0076)
+
+### What was attempted
+
+Gate ADR-0075's live `childInventory` slot against the region
+features it had only been shipped apart from — ADR-0050 counts,
+the ADR-0051 filter, ADR-0063 persistence — or seal whichever axis
+interfered. The survey found all four suspected axes coherent:
+the record construction appends slots in exactly the
+`regionChildSlot` order (base five, counts?2, filter?1, inventory),
+hydration rides the shared commit sweep whose reconcile forwards
+the inventory slot as the child context, the filter's
+`childAt(container, i)` navigation only ever sees row roots because
+the child mounts *inside* the row root, and every count/visibility/
+persistence subject reads the row table, never the DOM or the
+inventory. So the round was pure execution: Mix Lab
+(`examples/MixLab.lean`) puts all four features plus a static and a
+per-row `<Badge/>` on one `crew` region, the derived artifact gate
+pins the widest 9-slot record literal and the `regions[0][8]`
+child context at both sweep call sites, and six browser tests pin
+hydration-mounted badges, filter-hidden badge survival, and
+removal decrementing counts and inventory in one commit.
+
+### What was pleasant
+
+Zero code changes — backend, elaborator, and hosts untouched, ABI
+17 stands. The lab compiled on the first `lake build` and all six
+browser tests passed on the first run: the slot formula, the
+context forwarding, and the sweep ordering were already right,
+they were just ungated. The commit sweep's ordering (counts →
+hidden → reconcile → filter → persist, all reading one `touched`
+flag captured before the reconcile consumes the dirty bit) meant
+"removal syncs counts and inventory" needed no reasoning beyond
+"same transaction".
+
+### Friction encountered
+
+One tooling false positive: the placeholder scanner is line-based
+and flagged the Mix Lab doc comment when a wrapped sentence put
+the word "constant" at a line start — reworded to
+"prop-stability", no policy change. Otherwise none structural. The
+survey's one real finding is a gap, not a
+bug: the filter slot is spelled inline (`5 + counts?2`) at its own
+call site rather than through a shared helper with
+`regionChildSlot` — coherent today, and now held by the pinned
+record literal either way.
+
+### Bugs found
+
+None. The combination behaves as composed: hidden rows keep their
+badges mounted and stateful (row-identity invariant), hydrated
+rows are full citizens of the child vocabulary, and badge
+transactions are invisible to counts, metrics, and storage.
+
+### Performance observations
+
+No generated-code change anywhere outside the new lab: NestLab,
+ToggleLab, and the benchmark bundle are byte-identical, so the
+size gate and BENCHMARK.md stand without re-measurement. Mix Lab's
+sweep costs are the sum of its parts — no combination-specific
+overhead exists in the emitted code.
+
+### Follow-up issue or commit
+
+`feat(examples): gate row-child composition against counts, filter,
+and persistence in Mix Lab (ADR-0076)` — the Mix Lab example and
+build/main executables, lakefile and check-script wiring, the
+derived artifact gate pinning the widest record layout, six
+browser tests, the ADR, and this record. Open: a broadcast ×
+row-children gate (retained-row re-render must leave the inventory
+untouched) and the two-child-regions inventory interleaving,
+both waiting on a consumer lab.
+
