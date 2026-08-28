@@ -2917,3 +2917,77 @@ one; row guards stay single-field remove-or-commit; row scope still
 has no `s!`; branch cells stay single-level two-branch with exact
 click/dblclick agreement; child instrumentation stays unreachable
 through the parent disposer.
+
+## Field-predicate unification — the ADR-0063 hygiene round (ADR-0064)
+
+### Scenario exercised
+
+The deferred byte-neutral residue of ADR-0063, executed exactly as its
+Context fixed it: a named `FieldPredicate` (a `RowExpr` subject plus
+the compared literal) introduced beside `RowExpr`; four of the five
+spellings joined at the model (`RowGuard` replaced outright,
+`RowClassSelect` and `Update.regionRemoveIf` storing the predicate,
+`RegionFilter.arms` carrying `(String × FieldPredicate)`); the seven
+hand-rebuilt `.binary .eq (item[field + 1]) ("literal")` backend
+subtrees — plus the two sites that already lowered subjects through
+`rowExprJs` and hand-appended only the equality — replaced by one
+`fieldPredicateJs` builder; and the nineteen near-identical
+out-of-bounds validator blocks folded into one `checkFieldBound` rule
+with every error code and message string preserved verbatim. Scan
+loops stayed duplicated on purpose: `count_scan_*`, `hidden_row_*`,
+`kept_*`, and `row_guard` are golden identifier contracts.
+
+### What was pleasant
+
+Byte-neutrality really was "by construction": `rowExprJs (.field i)`
+produces exactly the subtree the seven sites hand-built, so routing
+them through the builder could not move a byte, and the artifacts
+gates confirmed it without a single golden-snippet edit — `git status`
+showed no generated `.mjs` or manifest change at any point. The
+nineteen bounds messages turned out to share one exact sentence shape
+(`"… field {i} outside region {name}'s {n} field(s)"` with the region
+name always equal to the `find?`-resolved `region.name`), so the
+helper preserves every message byte-for-byte while deleting ~90 lines
+of throw blocks. And `RowGuard` being structurally identical to the
+new predicate meant the language-guide test's anonymous
+`some ⟨.trim (.field 1), ""⟩` spellings compiled unchanged.
+
+### Friction encountered
+
+Small and predictable. The five spelling changes rippled into exactly
+the places the survey predicted — one elaborator quotation each, the
+Lean-side test literals, and the audit manifest's `injEq` entry
+(`RowGuard.mk.injEq` → `FieldPredicate.mk.injEq`) — plus one missed
+test literal (`#[("r", 2, [("odd", 0, "x")])]`) that the first build
+caught immediately. The removal-target assertions changed type
+(`(String × Nat)` → `(String × FieldPredicate)`), which is strictly
+stronger: the old pair silently dropped the compared literal.
+
+### Bugs found
+
+None. The one design question — storing a `RowExpr` subject where a
+`Nat` sat makes non-field subjects representable at the model level —
+was resolved by precedent rather than new machinery: the ADR-0049
+reflect subject has always had exactly this representability, the
+elaborator is the only producer and only emits `.field`/`.trim
+(.field i)` there, and the validator bounds-checks every field
+reference either way. ADR-0064 names the trade instead of hiding it.
+
+### Performance observations
+
+Nothing to measure: every lab and the benchmark bundle emit
+byte-identical JavaScript, the size gate passed against the unchanged
+baseline, and no manifest moved — no ABI bump, freeze intact,
+regression watch only.
+
+### Follow-up issue or commit
+
+`refactor(component): unify the field predicate as one sealed spelling
+(ADR-0064)` — the model/backend/validator consolidation, the updated
+Lean-side assertions, ADR-0064, and the DECISIONS row. The invariants
+hold: the key set stays sealed at Enter/Escape; the guard literal
+stays `""`; the count-label literal stays one; row guards stay
+single-field remove-or-commit; row scope still has no `s!`; branch
+cells stay single-level two-branch with exact click/dblclick
+agreement; child instrumentation stays unreachable through the parent
+disposer.
