@@ -564,6 +564,99 @@ component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
 }
 ```
 
+A `route` item seals the browser's URL hash onto the filter field
+(ADR-0063): `route field := when "#/hash" "literal" then …` maps distinct
+`#/`-shaped hash literals one-to-one onto the routed field's existing state
+literals — the declared default plus the ADR-0051 filter table's literals,
+on a `String` state field that must carry a declared filter. Exactly one arm
+maps the declared default, so the unknown-or-empty-hash fallback is a table
+entry rather than a separate path: mount seeds the field through one
+`readHash` (an unknown hash keeps the declared default), every `hashchange`
+dispatches the same set-field transaction the filter buttons dispatch — the
+whole commit path reused, selection, filter sweep, and count labels included
+— and `writeHash` rides the set-field commit flip-only behind the field's
+changed flag, so an equal-value transaction writes nothing and the WHATWG
+equal-value hash assignment closes the echo loop. Arms are written
+`when "#/hash" "literal"` (`LRX-ELAB-128` on any other arm shape); the table
+rules — at most one route item per component, a `String` state field
+carrying a declared filter, a nonempty one-to-one table of distinct
+`#/`-shaped hash literals over the field's existing state literals, exactly
+one arm on the declared default — are `LRX-TYPE-117`:
+
+```lean
+component RoutedRosterMini (schema := RoutedRosterMiniSchema) where {
+  state routedAdded : Int := 0;
+  state routedShown : String := "all";
+  event addItem := append roster (s!"Item {routedAdded}", "false")
+    then set routedAdded (routedAdded + 1);
+  event showAll := set routedShown "all";
+  event showActive := set routedShown "active";
+  event showCompleted := set routedShown "completed";
+  filter roster by routedShown := when "active" (done == "false")
+    then when "completed" (done == "true");
+  route routedShown := when "#/" "all" then when "#/active" "active"
+    then when "#/completed" "completed";
+  row roster toggle (checked : String) := set done checked;
+  region roster (label, done) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    <span> [{label}]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <button type="button" onClick={showAll}> ["Show all"],
+    <button type="button" onClick={showActive}> ["Show active"],
+    <button type="button" onClick={showCompleted}> ["Show completed"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
+A `persist` item seals a keyed region's row table onto one localStorage key
+(ADR-0063): `persist region := "storage-key"` declares one sealed literal
+key per component, targeting one declared keyed region. Serialization lives
+in generated code as a throw-free split/join escape — `%`→`%25` first, then
+`,`→`%2C` and `;`→`%3B`; fields joined by `,`, rows by `;` — so no decode
+step can throw. Mount hydrates through one `storageGet` as one ordinary
+transaction whose writes push the parsed rows through the existing append
+path, so the shared commit sweep settles rows, counts, visibility, filter,
+and the normalized write-back together; a missing or empty value mounts the
+region empty, and any row whose field count differs from the declared arity
+fails the whole value closed to the empty region. One `storageSet` rides
+the region-touch sweep per region-touching transaction — the
+ADR-0050/0051/0058 shared touched flag — so a filter change alone touches
+nothing and therefore persists nothing. The item shape — a declared region
+name, exactly one literal storage key — is `LRX-ELAB-129`; at most one
+persist item per component, with a nonempty key on a declared region, is
+`LRX-TYPE-118`:
+
+```lean
+component PersistedRosterMini (schema := PersistedRosterMiniSchema) where {
+  state persistedAdded : Int := 0;
+  event addItem := append roster (s!"Item {persistedAdded}", "false")
+    then set persistedAdded (persistedAdded + 1);
+  event clearCompleted := remove roster (done == "true");
+  persist roster := "leanrx-language-guide.roster";
+  row roster toggle (checked : String) := set done checked;
+  region roster (label, done) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    <span> [{label}]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <button type="button" onClick={clearCompleted}> ["Clear completed"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+```
+
+Both vocabularies are the runtime ABI 17 host surface (`readHash`,
+`listenHash`, `writeHash` for routing; `storageGet`, `storageSet` for
+persistence — the host moves strings only), and both are reachability-gated
+in the import emission: a component declaring no route or persist item
+emits a byte-identical module.
+
 A keydown row event may *branch* on its key payload (ADR-0052):
 `row region event (pressed : String) := when "Enter" (set field (expr), …)
 then when "Escape" (…)` lowers to a sealed key table — the declared
@@ -864,7 +957,9 @@ the corresponding public dogfood examples before using these specialized APIs.
 
 ## 10. Current limitations
 
-LeanRx does not currently provide a URL router, general VDOM, arbitrary Lean
-transpilation, raw HTML, URL attributes, a CSS DSL, SSR, hydration, a released
-package, or a formal proof relating generated JavaScript to browser DOM behavior.
+LeanRx does not currently provide a general URL router — routing is the
+sealed one-per-component hash route table over the filter field (ADR-0063),
+nothing wider — general VDOM, arbitrary Lean transpilation, raw HTML, URL
+attributes, a CSS DSL, SSR, hydration, a released package, or a formal proof
+relating generated JavaScript to browser DOM behavior.
 The self-hosted documentation site records how these gaps affect a real build.

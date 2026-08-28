@@ -283,6 +283,64 @@ component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
   ];
 }
 
+/- The sealed hash route snippet from guide section 7 (ADR-0063). -/
+abbrev RoutedRosterMiniSchema : Schema :=
+  .field "routedAdded" Int <| .field "routedShown" String .empty
+
+def routedAdded : Field RoutedRosterMiniSchema Int := .here
+def routedShown : Field RoutedRosterMiniSchema String := .there .here
+
+component RoutedRosterMini (schema := RoutedRosterMiniSchema) where {
+  state routedAdded : Int := 0;
+  state routedShown : String := "all";
+  event addItem := append roster (s!"Item {routedAdded}", "false")
+    then set routedAdded (routedAdded + 1);
+  event showAll := set routedShown "all";
+  event showActive := set routedShown "active";
+  event showCompleted := set routedShown "completed";
+  filter roster by routedShown := when "active" (done == "false")
+    then when "completed" (done == "true");
+  route routedShown := when "#/" "all" then when "#/active" "active"
+    then when "#/completed" "completed";
+  row roster toggle (checked : String) := set done checked;
+  region roster (label, done) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    <span> [{label}]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <button type="button" onClick={showAll}> ["Show all"],
+    <button type="button" onClick={showActive}> ["Show active"],
+    <button type="button" onClick={showCompleted}> ["Show completed"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
+/- The sealed persistence snippet from guide section 7 (ADR-0063). -/
+abbrev PersistedRosterMiniSchema : Schema := .field "persistedAdded" Int .empty
+
+def persistedAdded : Field PersistedRosterMiniSchema Int := .here
+
+component PersistedRosterMini (schema := PersistedRosterMiniSchema) where {
+  state persistedAdded : Int := 0;
+  event addItem := append roster (s!"Item {persistedAdded}", "false")
+    then set persistedAdded (persistedAdded + 1);
+  event clearCompleted := remove roster (done == "true");
+  persist roster := "leanrx-language-guide.roster";
+  row roster toggle (checked : String) := set done checked;
+  region roster (label, done) := jsx% <li> [
+    <span> [<input type="checkbox" ariaLabel="Done" checked={done == "true"}
+      onChange={toggle}/>],
+    <span> [{label}]
+  ];
+  view := jsx% <main> [
+    <button type="button" onClick={addItem}> ["Add"],
+    <button type="button" onClick={clearCompleted}> ["Clear completed"],
+    <ul ariaLabel="Items"> [<region roster/>]
+  ];
+}
+
 /- The key-branched row event snippet from guide section 7 (ADR-0052). -/
 abbrev KeyedEditorMiniSchema : Schema := .field "keyedAdded" Int .empty
 
@@ -560,6 +618,35 @@ def run : IO Unit := do
           "language-guide filter snippet lost its state field or arm table"
   | .error error =>
       throw <| IO.userError s!"language-guide filter component rejected: {error.render}"
+  match RoutedRosterMini_check with
+  | .ok routed =>
+      unless routed.spec.routes.toList.map
+          (fun route => (route.field.index, route.arms)) ==
+          [(1, [("#/", "all"), ("#/active", "active"), ("#/completed", "completed")])] do
+        throw <| IO.userError
+          "language-guide route snippet lost its routed field or sealed arm table"
+      unless routed.spec.filters.toList.map
+          (fun filter => (filter.region, filter.field.index, filter.arms)) ==
+          [("roster", 1,
+            [("active", .ofField 1 "false"), ("completed", .ofField 1 "true")])] do
+        throw <| IO.userError
+          "language-guide route snippet lost its filter predicate spelling"
+  | .error error =>
+      throw <| IO.userError s!"language-guide route component rejected: {error.render}"
+  match PersistedRosterMini_check with
+  | .ok persisted =>
+      unless persisted.spec.persists.toList.map
+          (fun persist => (persist.region, persist.key)) ==
+          [("roster", "leanrx-language-guide.roster")] do
+        throw <| IO.userError
+          "language-guide persist snippet lost its region or sealed storage key"
+      unless persisted.spec.events.toList.map
+          (fun event => (event.name, event.update.regionRemoveIfTargets)) ==
+          [("addItem", []), ("clearCompleted", [("roster", .ofField 1 "true")])] do
+        throw <| IO.userError
+          "language-guide persist snippet lost its removal predicate spelling"
+  | .error error =>
+      throw <| IO.userError s!"language-guide persist component rejected: {error.render}"
   match KeyedEditorMini_check with
   | .ok keyed =>
       unless keyed.spec.regions.toList.map (fun region =>

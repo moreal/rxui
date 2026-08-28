@@ -117,7 +117,8 @@ small and imports the module rather than interpolating generated text.
 
 - arbitrary Lean-to-JavaScript compilation;
 - arbitrary JavaScript escape hatches;
-- URL router/history integration;
+- general URL router/history integration (routing is the sealed
+  one-per-component hash route table over the filter field, ADR-0063);
 - general Virtual DOM or runtime dependency tracking;
 - raw HTML, URL attributes, CSS DSL, images, links, or broad element vocabulary;
 - SSR or hydration;
