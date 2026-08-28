@@ -51,7 +51,30 @@ rows without a root VDOM. It validates unique/fresh reachable region state,
 preserves keyed/focus identity, disposes nested branches, and differentially
 compares the complete native logical projection. Bugs included native/generated
 draft drift, unscoped delegated Enter, inaccessible row checkboxes, click-only
-spans, toggle payload drift, and source-write undercounting.
+spans, toggle payload drift, and source-write undercounting. This app predates
+the component-command surface: its dynamic-region event wiring is a
+handwritten-backend-era case, not the sealed vocabulary below.
+
+## Toggle Lab — component-command TodoMVC parity
+
+Toggle Lab (after the Nest, Filter, and Branch labs before it) rebuilt TodoMVC's
+interactions on the sealed component-command surface, one contract per round:
+keyed regions and immutable props, typed row events, branch cells, row focus,
+delegated dblclick/checked toggles, counts/broadcasts/removeIf, filter views,
+row and component key branching, remove-if/skip-if guards, expression trim,
+hidden/checked/disabled attribute selections, the count label, and finally hash
+routing and storage persistence. Twenty-two ADRs (0043–0064) and two runtime ABI
+bumps (16 focus, 17 route/persist) closed interaction parity, each surface
+pinned by compile-fail fixtures, browser gates, and byte-level artifact checks.
+
+The arc's cross-cutting lesson is a sealed-surface extension convention: each
+round adopts exactly the one contract its parity gap demands and rejects
+speculative vocabulary on the record (negated/composed subjects, two-threshold
+grammars, and positional count labels all carry recorded rejections). Under the
+byte-identical performance freeze, host extension is governed by reachability —
+the compactor prunes exports the benchmark never names, so ABI 16 and 17 both
+shipped with the benchmark bundle byte-identical (ADR-0048/0063 precedent).
+Round-by-round records live in `DOGFOOD.md`.
 
 ## Notes and Issue Browser — owned effects
 
@@ -80,7 +103,9 @@ artifacts, editor declarations, an atomic production bundle, hostile-text checks
 keyboard/axe coverage, isolation, disposal, and an exact work snapshot. It uses
 LeanRx for the application rather than another framework.
 
-Self-hosting exposed current learnability/product gaps: there is no URL router,
+Self-hosting exposed learnability/product gaps: at the time there was no URL
+router (ADR-0063 has since sealed a hash route table onto the component filter
+field — still not the general router the site would need), and there is no
 semantic navigation/link/code/list vocabulary, typed CSS, SSR, hydration, or
 interactive graph explorer. The build keeps a small handwritten HTML/CSS boot
 shell and records that boundary instead of hiding it. Full details and exact
