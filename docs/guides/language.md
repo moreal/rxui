@@ -228,7 +228,12 @@ immutable-prop boundary in row scope); the child's own template must carry
 no static `id` because row instances are unbounded (`LRX-ELAB-135`).
 Everything outside that surface — a spec-less head, children on the head,
 a composed prop value, a second child, or a child inside a two-branch cell —
-stays rejected (`LRX-ELAB-131`/`LRX-VIEW-045`, ADR-0072/0075).
+stays rejected (`LRX-ELAB-131`/`LRX-VIEW-045`, ADR-0072/0075). The
+inventory is one mount-scope array shared by every child-composing region
+in the component: entries follow the static child seed in actual mount
+order across regions, and each region's dispose callback splices only its
+own row's entry (ADR-0077). A region broadcast re-renders retained rows
+without remounting their children, so child state survives it.
 
 A `row` item declares a sealed update action on a region's rows (ADR-0043):
 `row roster mark := set marks (marks ++ " ★");` writes new field values —

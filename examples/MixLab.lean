@@ -11,11 +11,45 @@ slot, and the ADR-0075 live children inventory in the last slot, exactly
 the `regionChildSlot` formula (5 + counts?2 + filter?1 = 8) the commit
 sweep's `update`/`updateAt` call sites read. Every row composes
 `<Badge tag={tag}/>` — the prop projects the never-written `tag` row
-field (the row `toggle` event writes only `done`), so the row-mount
-prop-stability rule holds — and the view composes a static `<Badge/>`
-too, so the shared
+field (the row `toggle` event writes only `done` and the `markAllDone`
+broadcast writes only `done` too), so the row-mount prop-stability rule
+holds — and the view composes a static `<Badge/>` too, so the shared
 inventory seeds with the static disposer first and then one entry per
-mounted row in mount order. -/
+mounted row in mount order.
+
+ADR-0077 closes the two open questions ADR-0076 left. The `markAllDone`
+broadcast (`update crew (set done "true")`) re-renders every retained
+crew row through the dirty reconcile, and the retained path calls only
+the update callback — row children never remount, badge state survives,
+and the inventory length is untouched, because the reconcile mounts only
+entries whose key was not retained. And a *second* child-composing
+region, `pins`, shares the one mount-scope `childInventory`: its bare
+record `[handle, rows, nextKey, dirty, pending, childInventory]` ends in
+the same array identifier as crew's widest record (`regionChildSlot`
+5 + 0 + 0 = 5 next to crew's 8), the entries of both regions interleave
+after the static seed in actual mount order, and each region's dispose
+callback splices by `indexOf` of its own row's stashed mount return — a
+per-row function instance — so one region's removal can never
+misidentify the other's entries.
+
+The combination pins three orthogonality contracts. Hydration mounts
+children: `persist crew := "leanrx-mix-lab.crew"` hydrates through the
+ordinary dirty-flag transaction, so the shared commit sweep's reconcile
+mounts each hydrated row's Badge at its cell, stashes it on the row root,
+and pushes it into the inventory — hydrated rows are full citizens of the
+child vocabulary. Filtering never disposes children: the ADR-0051 sweep
+writes each row root's `hidden` property by `childAt(container, i)`
+navigation — row roots are the container's only element children (the
+Badge mounts *inside* the `<li>`, never as a container sibling), so the
+index math is untouched and a hidden row's Badge stays mounted with its
+state intact — row identity is preserved across filter flips. Counts and
+the region-subject selections stay row-table-scoped: `{count crew}`,
+`{count crew (done == "true")}`, the `hidden={count crew == 0}` list
+wrapper, and the clear-done affordance all read the row table, never the
+child inventory — Badge clicks commit in the child's own state array and
+touch no region metric, count, or persisted value, while a removal
+(✕ or `clearDone`) decrements the count texts and splices the inventory
+in the same commit. No host change; runtime ABI stays 17. -/
 
 namespace LeanRxExamples.MixLab
 
@@ -50,6 +84,9 @@ component MixLab (schema := MixSchema) where {
   event addMember := append crew (s!"Member {added}", "false", s!"Tag {added}")
     then set added (added + 1);
   event clearDone := remove crew (done == "true");
+  event markAllDone := update crew (set done "true");
+  event addPin := append pins (s!"Pin {added}")
+    then set added (added + 1);
   event showAll := set filter "all";
   event showActive := set filter "active";
   event showDone := set filter "done";
@@ -69,16 +106,26 @@ component MixLab (schema := MixSchema) where {
       ],
       <Badge tag={tag}/>
     ];
+  region pins (note) := jsx% <li class="pin-row"> [
+    <span class="pin-note"> [{note}],
+    <span class="pin-actions"> [
+      <button type="button" ariaLabel="Remove pin" onClick={remove}> ["✕"]
+    ],
+    <Badge tag={note}/>
+  ];
   view := jsx% <main class="mix-lab"> [
     <h1> ["Mix Lab"],
     <button type="button" onClick={addMember}> ["Add member"],
     <button type="button" onClick={clearDone}
       hidden={count crew (done == "true") == 0}> ["Clear done"],
+    <button type="button" onClick={markAllDone}> ["Mark all done"],
     <p id="crew-line"> [{count crew (done == "true")}, " done of ", {count crew}],
     <ul id="crew" ariaLabel="Crew" hidden={count crew == 0}> [<region crew/>],
     <button type="button" onClick={showAll}> ["Show all"],
     <button type="button" onClick={showActive}> ["Show active"],
     <button type="button" onClick={showDone}> ["Show done"],
+    <button type="button" onClick={addPin}> ["Add pin"],
+    <ul id="pins" ariaLabel="Pins"> [<region pins/>],
     <Badge tag="static badge"/>
   ];
 }

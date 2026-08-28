@@ -19,7 +19,7 @@ if (
   mixManifest.sourceCount !== 2 ||
   mixManifest.derivedCount !== 0 ||
   mixManifest.textSinkCount !== 0 ||
-  mixManifest.eventCount !== 5 ||
+  mixManifest.eventCount !== 7 ||
   JSON.stringify(mixManifest.hostImports) !==
     JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs", "./Badge.mjs"]) ||
   JSON.stringify(mixManifest.features) !== JSON.stringify([
@@ -58,32 +58,46 @@ for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
 for (const required of [
   "import { mount as $lrx_child_0 } from \"./Badge.mjs\";",
   "import { createKeyedRegion } from \"./leanrx_region.mjs\";",
-  "const region_0 = createKeyedRegion(node_11, $lrx_region_0_row, $lrx_region_0_update, $lrx_region_0_dispose);",
+  "const region_0 = createKeyedRegion(node_13, $lrx_region_0_row, $lrx_region_0_update, $lrx_region_0_dispose);",
+  "const region_1 = createKeyedRegion(node_22, $lrx_region_1_row, $lrx_region_1_update, $lrx_region_1_dispose);",
   "const child_off_0 = $lrx_child_0(node_0, [\"static badge\"]);",
   // ADR-0076: the child-composing region carrying counts, a filter, and
   // persistence takes the widest record layout — the base five slots, the two
   // ADR-0050 count slots, the ADR-0051 container slot, and the ADR-0075 live
   // children inventory in the last slot, exactly the regionChildSlot formula
-  // (5 + counts?2 + filter?1 = 8).
+  // (5 + counts?2 + filter?1 = 8). ADR-0077: the bare second child-composing
+  // region ends in the *same* inventory identifier at its own formula slot
+  // (5 + 0 + 0 = 5) — one mount-scope array shared by both records.
   "const childInventory = [child_off_0];",
-  "const regions = [[region_0, [], 0, false, [], [count_text_8, count_text_10], [0, 0], node_11, childInventory]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_10, count_text_12], [0, 0], node_13, childInventory], [region_1, [], 0, false, [], childInventory]];",
   // The reconcile and drain forward the last slot as the child context, so
   // every mount path — appends, broadcasts, and the ADR-0063 hydration that
   // rides the same dirty-flag commit — pushes into the shared inventory.
   "regions[0][0][\"update\"](regions[0][1], regions[0][8]);",
   "regions[0][0][\"updateAt\"](pending_row, regions[0][1][pending_row], regions[0][8]);",
+  "regions[1][0][\"update\"](regions[1][1], regions[1][5]);",
+  // ADR-0077: the broadcast writes every retained row's `done` in place and
+  // raises the dirty flag — the reconcile retains every key, so it re-renders
+  // rows through the update callback and never remounts a row child.
+  "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[2] = row_next_0;\n  }\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:crew:broadcast\");",
   // ADR-0051: the filter sweep navigates row roots from the container slot —
   // slot 7 here, behind the count slots — untouched by the inventory slot
   // behind it, and writes `hidden` without ever touching a child.
   "setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", state[1] === \"active\" ? filter_row_0[2] !== \"false\" : state[1] === \"done\" ? filter_row_0[2] !== \"true\" : false);",
   // ADR-0075: each row mount callback mounts its row-scoped Badge with a
   // never-written projection, stashes it on the row root, and pushes it into
-  // the live inventory; the region's dispose callback splices its own row's
-  // stashed instance back out by indexOf — a per-row function identity.
+  // the live inventory; each region's dispose callback splices its own row's
+  // stashed instance back out by indexOf — a per-row function identity, so
+  // neither region can misidentify the other's entries (ADR-0077).
   "const row_child_0 = $lrx_child_0(row_0, [item[3]]);",
+  "const row_child_0 = $lrx_child_0(row_0, [item[1]]);",
   "context[\"push\"](row_child_0);",
   "row_0[\"$lrxRowChild\"] = row_child_0;",
   "function $lrx_region_0_dispose(row, key, context) {\n  if (context) {\n    context[\"splice\"](context[\"indexOf\"](row[\"$lrxRowChild\"]), 1);\n  }\n  row[\"$lrxRowChild\"]();\n  return null;\n}",
+  "function $lrx_region_1_dispose(row, key, context) {\n  if (context) {\n    context[\"splice\"](context[\"indexOf\"](row[\"$lrxRowChild\"]), 1);\n  }\n  row[\"$lrxRowChild\"]();\n  return null;\n}",
+  // ADR-0077: the pins rows are immutable — the retained-row callback is the
+  // no-op, so a retained pin touches neither its DOM nor its child.
+  "function $lrx_region_1_update(row, item, position, context) {\n  return null;\n}",
   // ADR-0063: hydration is one ordinary mount-time transaction over the
   // shared commit sweep, so hydrated rows mount their Badges through the
   // same context-forwarding reconcile.
@@ -92,8 +106,9 @@ for (const required of [
   "  $lrx_hydrate_0(context, null);",
   "storageSet(\"leanrx-mix-lab.crew\", persist_rows_0[\"join\"](\";\"));",
   // The Badge cells dispatch no delegated action — no carve-out needed.
-  "const region_off_0 = listenDelegatedCells(node_11, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\", \"\"]);",
-  "const region_off_0_change = listenDelegatedCells(node_11, \"change\", state, context, $lrx_region_0_dispatch, [\"\", \"toggle\", \"\", \"\"]);",
+  "const region_off_0 = listenDelegatedCells(node_13, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\", \"\"]);",
+  "const region_off_0_change = listenDelegatedCells(node_13, \"change\", state, context, $lrx_region_0_dispatch, [\"\", \"toggle\", \"\", \"\"]);",
+  "const region_off_1 = listenDelegatedCells(node_22, \"click\", state, context, $lrx_region_1_dispatch, [\"\", \"remove\", \"\"]);",
   "disposer[\"children\"] = childInventory;",
 ]) {
   if (!mixSource.includes(required)) {

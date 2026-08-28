@@ -215,6 +215,120 @@ test("a removal decrements the counts and splices the inventory in one commit", 
   expect(cleared.stored).toBe("Member 2,false,Tag 2");
 });
 
+test("a broadcast re-renders retained rows without remounting or muting their badges", async ({ page }) => {
+  await mountMix(page);
+  const add = page.getByRole("button", { name: "Add member" });
+  await add.click();
+  await add.click();
+  await page.locator("#crew .badge button").first().click();
+  await expect(page.locator("#crew .badge-text").first()).toHaveText("Hits: 1");
+  const before = await page.evaluate(() => ({
+    entries: (globalThis.mixEntries = globalThis.mixDispose.children.slice()).length,
+    metrics: globalThis.mixDispose.regionInstrumentation()[0],
+  }));
+  // ADR-0077: the broadcast writes every row's `done` in place and rides the
+  // dirty reconcile — every key is retained, so rows re-render through the
+  // update callback and no row child is remounted, disposed, or reset.
+  await page.getByRole("button", { name: "Mark all done" }).click();
+  await expect(page.locator("#crew-line")).toHaveText("2 done of 2");
+  await expect(page.locator("#crew > li").first()).toHaveClass("crew-row done");
+  await expect(page.locator("#crew > li").nth(1)).toHaveClass("crew-row done");
+  await expect(page.locator("#crew > li").first()
+    .getByRole("checkbox", { name: "Toggle member" })).toBeChecked();
+  await expect(page.locator("#crew .badge-text")).toHaveText(["Hits: 1", "Hits: 0"]);
+  const after = await page.evaluate(() => ({
+    count: globalThis.mixDispose.children.length,
+    identical: globalThis.mixDispose.children.every(
+      (child, index) => child === globalThis.mixEntries[index],
+    ),
+    metrics: globalThis.mixDispose.regionInstrumentation()[0],
+    trace: globalThis.mixDispose.instrumentation()[7],
+    stored: localStorage.getItem("leanrx-mix-lab.crew"),
+  }));
+  expect(after.count).toBe(before.entries);
+  expect(after.identical).toBe(true);
+  expect(after.metrics[0]).toBe(before.metrics[0]);
+  expect(after.metrics[3]).toBe(before.metrics[3]);
+  expect(after.metrics[1]).toBe(before.metrics[1] + 2);
+  expect(after.trace).toContain("region:crew:broadcast");
+  expect(after.stored).toBe("Member 0,true,Tag 0;Member 1,true,Tag 1");
+  // The retained badge is still the same live instance.
+  await page.locator("#crew .badge button").first().click();
+  await expect(page.locator("#crew .badge-text").first()).toHaveText("Hits: 2");
+});
+
+test("two child-composing regions interleave the shared inventory in mount order", async ({ page }) => {
+  await mountMix(page);
+  // ADR-0077: one mount-scope inventory — the static seed first, then row
+  // entries in actual mount order across both regions, not grouped by region.
+  await page.getByRole("button", { name: "Add pin" }).click();
+  await page.getByRole("button", { name: "Add member" }).click();
+  await page.getByRole("button", { name: "Add pin" }).click();
+  await expect(page.locator("#pins .badge-tag")).toHaveText(["Pin 0", "Pin 2"]);
+  await expect(page.locator("#crew .badge-tag")).toHaveText(["Tag 1"]);
+  await expect(page.locator("#pins .pin-note")).toHaveText(["Pin 0", "Pin 2"]);
+  await page.locator("#pins .badge button").first().click();
+  await page.locator("#crew .badge button").first().click();
+  await page.locator("#crew .badge button").first().click();
+  await page.locator("#pins .badge button").nth(1).click();
+  await page.locator("#pins .badge button").nth(1).click();
+  await page.locator("#pins .badge button").nth(1).click();
+  await expect(page.locator("#pins .badge-text")).toHaveText(["Hits: 1", "Hits: 3"]);
+  await expect(page.locator("#crew .badge-text")).toHaveText(["Hits: 2"]);
+  const commits = await page.evaluate(() =>
+    globalThis.mixDispose.children.map((child) =>
+      child.instrumentation()[7].filter((event) => event === "transaction:commit").length,
+    ),
+  );
+  // Inventory order = [static, first pin, crew member, second pin] — pinned by
+  // each badge's own commit count.
+  expect(commits).toEqual([0, 1, 2, 3]);
+});
+
+test("a removal in one region splices only its own inventory entry", async ({ page }) => {
+  await mountMix(page);
+  await page.getByRole("button", { name: "Add pin" }).click();
+  await page.getByRole("button", { name: "Add member" }).click();
+  await page.getByRole("button", { name: "Add pin" }).click();
+  const seeded = await page.evaluate(() => {
+    globalThis.mixEntries = globalThis.mixDispose.children.slice();
+    return {
+      count: globalThis.mixEntries.length,
+      crewMetrics: globalThis.mixDispose.regionInstrumentation()[0],
+    };
+  });
+  expect(seeded.count).toBe(4);
+  // ADR-0077: each dispose callback splices by indexOf of its own row's
+  // stashed mount return — removing a pin leaves the crew entry (and the
+  // other pin) exactly in place, and the crew region's metrics untouched.
+  await page.locator("#pins > li").first()
+    .getByRole("button", { name: "Remove pin" }).click();
+  const pinRemoved = await page.evaluate(() => ({
+    children: globalThis.mixDispose.children.map((child) =>
+      globalThis.mixEntries.indexOf(child),
+    ),
+    crewMetrics: globalThis.mixDispose.regionInstrumentation()[0],
+    pinDisposals: globalThis.mixDispose.regionInstrumentation()[1][3],
+  }));
+  expect(pinRemoved.children).toEqual([0, 2, 3]);
+  expect(pinRemoved.crewMetrics).toEqual(seeded.crewMetrics);
+  expect(pinRemoved.pinDisposals).toBe(1);
+  await expect(page.locator("#crew .badge-tag")).toHaveText(["Tag 1"]);
+  await expect(page.locator("#pins .badge-tag")).toHaveText(["Pin 2"]);
+  // And the mirror image: removing the crew row leaves both pins' entries.
+  await page.locator("#crew > li").first()
+    .getByRole("button", { name: "Remove member" }).click();
+  const crewRemoved = await page.evaluate(() => ({
+    children: globalThis.mixDispose.children.map((child) =>
+      globalThis.mixEntries.indexOf(child),
+    ),
+    pinMetrics: globalThis.mixDispose.regionInstrumentation()[1],
+  }));
+  expect(crewRemoved.children).toEqual([0, 3]);
+  expect(crewRemoved.pinMetrics[3]).toBe(1);
+  await expect(page.locator("#pins .badge-tag")).toHaveText(["Pin 2"]);
+});
+
 test("root disposal disposes row badges while the inventory keeps reachability", async ({ page }) => {
   await mountMix(page);
   const add = page.getByRole("button", { name: "Add member" });

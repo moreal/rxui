@@ -122,6 +122,7 @@ fixtures=(
   Test/fixtures/compile-fail/RowChildWrittenField.lean
   Test/fixtures/compile-fail/RowChildStaticId.lean
   Test/fixtures/compile-fail/RowChildComposedProp.lean
+  Test/fixtures/compile-fail/RowChildBroadcastField.lean
 )
 fragments=(
   "Constructor for"
@@ -244,6 +245,7 @@ fragments=(
   "error[LRX-VIEW-045]"
   "error[LRX-ELAB-135]"
   "error[LRX-ELAB-131]"
+  "error[LRX-VIEW-045]"
 )
 
 for index in "${!fixtures[@]}"; do

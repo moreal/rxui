@@ -4032,3 +4032,76 @@ row-children gate (retained-row re-render must leave the inventory
 untouched) and the two-child-regions inventory interleaving,
 both waiting on a consumer lab.
 
+## Broadcasts and a second child region — the ADR-0076 OQ closure round (ADR-0077)
+
+### What was built
+
+The round that closes ADR-0076's two open questions as gates. The
+survey came first and found both axes coherent by construction:
+`createKeyedRegion.update` mounts only entries whose key was not
+retained, and a broadcast retains every key (it rewrites tuples,
+never keys), so the reconcile it raises re-renders retained rows
+through the update callback alone — and `rowUpdateTargets` yields
+nothing for a `.child` cell, so that callback cannot even reach a
+row child. On the second axis, the record construction emits one
+`const childInventory` and hands the same identifier to every
+child-composing region's record at its own `regionChildSlot`
+position, and each dispose callback splices by `indexOf` of its
+own row's stashed closure instance. So again pure execution: Mix
+Lab gains a `markAllDone` broadcast (`update crew (set done
+"true")` — `done` written, `tag` still never written) and a
+`pins` region composing `<Badge tag={note}/>` with no other
+features — the bare 6-slot record next to crew's widest 9-slot
+one, and the first two-region component in the repository. The
+artifact gate pins the two-record literal sharing one inventory
+identifier (slot 5 next to slot 8), the broadcast body, both
+dispose splices, and the pins no-op update callback; three new
+browser tests pin badge identity across a broadcast, the
+chronological cross-region interleaving of the inventory, and
+splice isolation in both removal directions. A new compile-fail
+witness (`RowChildBroadcastField`, LRX-VIEW-045) makes the
+rejection's broadcast-writer arm explicit.
+
+### What was pleasant
+
+Zero code changes again — ABI stays 17, and the first multi-region
+component ever compiled worked end to end on the first generation:
+per-region dispatch tables, delegated listeners, dispose functions,
+and commit-sweep entries all index cleanly by region position. The
+interleaving spec needed no new instrumentation: driving each
+badge's commit count to its inventory position identified every
+entry through the existing `children` array.
+
+### Friction encountered
+
+None structural. One self-inflicted spec bug: a page-scoped
+`globalThis` capture compared from Node — caught on
+reread before the first run, the paired-capture idiom from the
+existing tests was the fix.
+
+### Bugs found
+
+None. Retained rows keep their badge instances, hit counts, and
+inventory positions across a broadcast (metrics: mounts and
+disposals frozen, updates +N); the shared inventory is
+chronological across regions behind the static seed; a removal in
+either region splices exactly its own entry and leaves the other
+region's metrics untouched.
+
+### Performance observations
+
+No generated-code change outside Mix Lab itself: the benchmark
+bundle, NestLab, and every other lab are byte-identical, so the
+size gate and BENCHMARK.md stand without re-measurement. The pins
+region's retained-row callback is the no-op — a second
+child-composing region costs exactly its own mounts.
+
+### Follow-up issue or commit
+
+`feat(examples): gate broadcasts and a second child-composing
+region on the shared inventory (ADR-0077)` — the Mix Lab
+extension, the two-record artifact gate, three browser tests, the
+broadcast-writer witness, the ADR, and this record. Open: nothing
+mechanism-shaped — three-plus regions add no new machinery, and
+the interleaving/isolation specs extend directly if a lab ever
+declares one.
