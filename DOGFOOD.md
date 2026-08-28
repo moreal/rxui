@@ -3727,6 +3727,154 @@ single-field remove-or-commit; row scope still has no `s!`; branch
 cells stay single-level two-branch with exact click/dblclick
 agreement.
 
+## Misshapen child references — the fallback-guard round (ADR-0073)
+
+### Scenario exercised
+
+What a user sees when a capitalized head with a checked `_spec` in
+scope leaves the child-reference contract in a component view. Three
+NestLab-derived reproductions: `<Chip tag="x"> ["extra"]` (children
+on the reference), `<Chip tag={heading ++ "!"}/>` (composed dynamic
+value), `<Chip onClick={notAnEvent}/>` (unclaimed non-prop
+attribute). All three fell through `typedElement` into the
+`componentCall` typed-application fallback — the path that exists for
+spec-less template functions (ADR-0039) — and died identically with
+`Unknown identifier 'Chip'` plus the `sorryAx` cascade: the compiler
+denying the existence of the component the user is looking at. The
+survey also pinned two neighbors that never reach the fallback:
+`<Chip onClick={declaredEvent}/>` is claimed by the RHS sugar's
+string rewrite first and reports `LRX-ELAB-112` (which names the
+declared prop inventory), and spec-less forwarding stays
+`LRX-ELAB-130`.
+
+### What was pleasant
+
+The constraint that killed candidate (b) — the macro cannot see
+`_spec`, and the misuse shape `name={term}` is byte-identical to the
+legitimate `<Metric value={metricValue}/>` spec-less application — is
+exactly the split the fix rides: the *reason* is chosen at macro time
+where the shape is visible, the *spec check* runs at term-elab time
+where the spec is visible. `leanrx_jsx_component_fallback%` wraps the
+same application term the macro used to emit, so the no-spec path
+elaborates the identical syntax and ADR-0039 needs no migration —
+the existing `ViewSurface` test is the non-regression witness.
+
+### Friction encountered
+
+The first witness draft used `<Chip onClick={poke}/>` with `poke` a
+declared host event — and got `LRX-ELAB-112`, not the new
+diagnostic, because the RHS sugar rewrites declared event references
+to strings before `literalPropPairs` looks. The fallback only sees
+values the sugar and the forwarding rewrite both declined. The
+witness pair therefore pins the two arms that genuinely reach it:
+non-empty children, and a composed value against a declared parent
+prop (the exact ADR-0068 boundary).
+
+### Bugs found
+
+One diagnostic-quality hole, closed: the fallback now reports
+`LRX-ELAB-132` with the contract (props are literals or one
+forwarded parent prop; children live in the child's own view)
+instead of an unresolved identifier. One latent oddity recorded, not
+changed: a *spec-less* head with children silently drops them —
+pre-existing `componentCall` behavior, no live surface writes it
+(ADR-0073 OQ1).
+
+### Performance observations
+
+Frozen trivially: the guard is error-path-only term elaboration; the
+success path emits the same syntax as before, so no generated
+module, manifest, or host byte moved — byte identity and the size
+gate stand without re-measurement.
+
+### Follow-up issue or commit
+
+`feat(elab): reject misshapen child references at the
+typed-application fallback with LRX-ELAB-132 (ADR-0073)` — the
+`leanrx_jsx_component_fallback%` guard, the two compile-fail
+witnesses and their registration, the language-guide paragraph, the
+ADR, the DECISIONS.md row, and this record. The spec'd-head misuse
+boundary is now fully labeled: LRX-ELAB-112 (wrong names/order),
+LRX-ELAB-130 (forwarding without a spec), LRX-ELAB-131 (row
+templates), LRX-ELAB-132 (shape outside the child-reference
+contract). Remaining OQs: silent child-drop on spec-less heads
+(OQ1), the logical view's raw fallback (OQ2), per-row composition
+(ADR-0072 OQ1), and reactive child props (ADR-0068 OQ1).
+
+## Silent child drop on spec-less heads — the closing round (ADR-0074)
+
+### Scenario exercised
+
+What a user sees when a *spec-less* capitalized head carries
+children. On a `ViewSurface`-derived copy of the live ADR-0039
+surface: `<Metric value={metricValue}> ["extra"]` compiled clean,
+`spec.check` passed, `Backend.Component.emit` succeeded, and the
+printed module contained no `"extra"` — no error, no render, the
+child simply gone (ADR-0073 OQ1 confirmed end to end). The logical
+reference view shared the drop byte for byte:
+`<LogicalMetric label="m"> ["extra"]` lowered to
+`element "main" [] [element "p" … [text "m"]]`. And the logical
+view's spec'd head still denied the component's existence —
+`<Chip tag="x"/>` under `Region.LogicalNode` reported the bare
+`Unknown identifier 'Chip'` (OQ2 reconfirmed).
+
+### What was pleasant
+
+The ADR-0039 contract question answered itself once stated
+precisely: the sealed "ordinary meaning" is the application of the
+head to its rewritten *attributes* — children never reached
+`componentCall`, so no observable program can depend on writing
+them, and rejecting the shape converts dead syntax into a
+diagnostic without moving the sealed surface. The `childCount`
+numeral rides the exact macro-time/term-elab-time split ADR-0073
+built: the count is visible at the macro, the spec at the
+elaborator, and the fall-through still emits the identical
+application term. Wrapping `logicalElement` in the same guard was
+one call site — the symmetric OQ2 fix cost a reason string.
+
+### Friction encountered
+
+Inspecting the emitted module from a scratch `#eval` took three
+tries: `Emitted` exposes `module`/`manifest` (no `contents`), the
+printer lives at `Js.Printer.module` (not `Backend.Js.Printer`),
+and interpolating a `Prop`-valued comparison needs `decide`. The
+logical pin also caught `LogicalNode.element` taking a plain
+`String` tag while the elaborator writes `HtmlTag.name` — fine for
+the macro, but a hand-written reference node uses the bare string.
+
+### Bugs found
+
+One silent-drop hole, closed in both views: non-empty children on a
+spec-less capitalized head now report `LRX-ELAB-133` (the head "is
+an ordinary application (ADR-0039) and consumes no children")
+instead of vanishing; a spec'd head in the logical view now reports
+`LRX-ELAB-132` with "checked components nest in the typed component
+view only" instead of the unresolved identifier. No silent-drop
+path remains on the capitalized-head surface.
+
+### Performance observations
+
+Frozen trivially again: error-path-only elaboration. The spec-less
+no-children fall-through emits the same syntax as before — pinned
+typed by the existing `<Metric value={metricValue}/>` test and
+logical by the new `logicalDashboard` pin — so no generated module,
+manifest, or host byte moved; byte identity and the size gate stand
+without re-measurement.
+
+### Follow-up issue or commit
+
+`feat(elab): reject children on spec-less capitalized heads with
+LRX-ELAB-133 and guard the logical fallback (ADR-0074)` — the
+`childCount` numeral on `leanrx_jsx_component_fallback%`, the
+`logicalElement` wrapper, three compile-fail witnesses
+(TemplateCallWithChildren, ChildRefInLogicalView,
+TemplateChildrenInLogicalView) and their registration, the
+`logicalDashboard` pass-through pin, the language-guide paragraph,
+the ADR, the DECISIONS.md row, and this record. ADR-0073 OQ1 and
+OQ2 are closed; the capitalized-head misuse map is complete in both
+views (112/130/131/132/133). Remaining OQs: per-row composition
+(ADR-0072 OQ1) and reactive child props (ADR-0068 OQ1).
+
 ## Per-row child composition — the ADR-0072 OQ1 round (ADR-0075)
 
 ### What was attempted

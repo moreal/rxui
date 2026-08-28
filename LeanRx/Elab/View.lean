@@ -321,6 +321,28 @@ elab "leanrx_jsx_component_props% " name:ident marker:str pairs:(str <|> num)* :
       result ← `($result ($boundIdent:ident := leanrx_jsx_prop% $boundLit $(⟨value⟩)))
     Term.elabTerm result expectedType
 
+/-- The typed-application fallback for a capitalized head whose attributes or
+children do not form a child reference (empty children with `name="text"` or
+rewritten `name = propRef% index` attributes only). A head without a checked
+spec keeps its ordinary typed-application meaning (ADR-0039), but a head that
+resolves to `{name}_spec` has no ordinary meaning — the component command
+generates the spec, not a term named `{name}` — so the application below
+could only die with an unresolved-identifier error. Reject the misshapen
+reference here, where the spec is visible, with the composition contract
+instead (ADR-0073). The ordinary application never consumed JSX children
+either — `componentCall` receives attributes only — so non-empty children on
+a spec-less head could only vanish silently; reject that shape too instead
+of dropping content (ADR-0074). -/
+elab "leanrx_jsx_component_fallback% " name:ident reason:str childCount:num call:term : term <= expectedType => do
+  if ← resolvesToComponentSpec name then
+    throwErrorAt name
+      s!"error[LRX-ELAB-132]: {componentShortName name} resolves to the checked component spec {componentShortName name}_spec; {reason.getString}"
+  else if childCount.getNat != 0 then
+    throwErrorAt name
+      s!"error[LRX-ELAB-133]: {componentShortName name} does not resolve to a checked component spec; a spec-less capitalized head is an ordinary application (ADR-0039) and consumes no children — its content is the application's own result, so the children here would be dropped"
+  else
+    Term.elabTerm call expectedType
+
 private def componentCall (tag : TSyntax `ident) (attrs : Array Syntax) :
     MacroM (TSyntax `term) := do
   let mut result : TSyntax `term := ⟨tag.raw⟩
@@ -370,7 +392,14 @@ private def typedElement (tag : TSyntax `ident) (attrs : Array Syntax)
       `(leanrx_jsx_component% $tag $(spanMarker span))
     else match (if children.isEmpty then literalPropPairs attrs else none) with
       | some pairs => `(leanrx_jsx_component_props% $tag $(spanMarker span) $pairs*)
-      | none => componentCall tag attrs
+      | none =>
+          let reason := Syntax.mkStrLit <| if children.isEmpty then
+              "a child reference passes immutable props only — name=\"text\" literals (ADR-0042) or one forwarded parent prop name={prop} (ADR-0068); events and composed values stay inside the child's own view"
+            else
+              "a child reference takes no children — the child's content lives in its own component view"
+          let count : TSyntax `num := Syntax.mkNumLit (toString children.size)
+          let call ← componentCall tag attrs
+          `(leanrx_jsx_component_fallback% $tag $reason $count $call)
   else do
     let mut propTerms : Array (TSyntax `term) := #[]
     for attr in attrs do
@@ -724,7 +753,14 @@ private def logicalChildren (children : Array Syntax) : MacroM (TSyntax `term) :
 private def logicalElement (tag : TSyntax `ident) (attrs : Array Syntax)
     (children : Array Syntax) : MacroM (TSyntax `term) := do
   if componentHead? tag then
-    componentCall tag attrs
+    -- Same guard as the typed fallback (ADR-0074): a spec'd head has no
+    -- ordinary meaning here either, and a spec-less head's children would
+    -- vanish — `componentCall` receives attributes only.
+    let reason := Syntax.mkStrLit
+      "checked components nest in the typed component view only — the logical reference view lowers ordinary applications"
+    let count : TSyntax `num := Syntax.mkNumLit (toString children.size)
+    let call ← componentCall tag attrs
+    `(leanrx_jsx_component_fallback% $tag $reason $count $call)
   else do
     let attrTerms ← attrs.mapM logicalAttr
     let childrenTerm ← logicalChildren children

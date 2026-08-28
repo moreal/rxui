@@ -18,6 +18,14 @@ private def Metric (value : RxExpr DashboardSchema deps String) :
     View DashboardSchema :=
   jsx% <p role="status"> [ {"metric": value} ]
 
+/-- A spec-less template application in the logical reference view keeps its
+ordinary meaning through the shared fallback guard (ADR-0039/ADR-0074). -/
+private def LogicalMetric (label : String) : Region.LogicalNode :=
+  .element "p" [("class", "metric")] [.text label]
+
+private def logicalDashboard : Region.LogicalNode :=
+  jsx% <main> [ <LogicalMetric label="m"/> ]
+
 private def bump : EventSpec DashboardSchema :=
   { name := "bump", update := .set countField (rx% countField + 1) }
 
@@ -63,5 +71,9 @@ def run : IO Unit := do
       | .ok emitted =>
           unless emitted.manifest.eventCount == 2 do
             throw <| IO.userError "expanded typed view manifest lost an event"
+  unless logicalDashboard ==
+      .element "main" []
+        [.element "p" [("class", "metric")] [.text "m"]] do
+    throw <| IO.userError "logical template application lost its ordinary meaning"
 
 end LeanRxTest.Elab.ViewSurface

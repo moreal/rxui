@@ -898,6 +898,23 @@ component PropForwardMini (schema := PropForwardMiniSchema) where {
 }
 ```
 
+A reference whose shape leaves this contract while the child's checked
+spec *is* in scope — children on the reference, a composed value such as
+`tag={heading ++ "!"}`, or any non-prop attribute the sugar does not
+claim — is rejected with `LRX-ELAB-132` at the head (ADR-0073), naming
+the child-reference contract instead of the raw `Unknown identifier`
+the typed-application fallback would otherwise produce. A capitalized
+head without a checked spec keeps its ordinary typed-application
+meaning unchanged (ADR-0039) — for its attributes: the application
+never consumes JSX children, so non-empty children on a spec-less head
+are rejected with `LRX-ELAB-133` instead of vanishing silently
+(ADR-0074). The logical reference view shares both guards — a checked
+component reference there reports `LRX-ELAB-132` (checked components
+nest in the typed view only), a spec-less application with children
+`LRX-ELAB-133`, and a spec-less application without children keeps its
+ordinary meaning. Prop-name or order mismatches on a well-shaped
+reference stay `LRX-ELAB-112`.
+
 ```lean
 component CounterExplicitSyntax (schema := CounterSchema) where {
   state count := ValueSpec.state count (.int 1);

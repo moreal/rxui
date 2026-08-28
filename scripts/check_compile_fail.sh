@@ -112,6 +112,11 @@ fixtures=(
   Test/fixtures/compile-fail/PersistDuplicateKey.lean
   Test/fixtures/compile-fail/ForwardWithoutSpec.lean
   Test/fixtures/compile-fail/ChildInRegionRow.lean
+  Test/fixtures/compile-fail/ChildRefWithChildren.lean
+  Test/fixtures/compile-fail/ChildRefComposedProp.lean
+  Test/fixtures/compile-fail/TemplateCallWithChildren.lean
+  Test/fixtures/compile-fail/ChildRefInLogicalView.lean
+  Test/fixtures/compile-fail/TemplateChildrenInLogicalView.lean
   Test/fixtures/compile-fail/RowChildTwoPerRow.lean
   Test/fixtures/compile-fail/RowChildInBranch.lean
   Test/fixtures/compile-fail/RowChildWrittenField.lean
@@ -229,6 +234,11 @@ fragments=(
   "error[LRX-TYPE-118]"
   "error[LRX-ELAB-130]"
   "error[LRX-ELAB-131]"
+  "error[LRX-ELAB-132]"
+  "error[LRX-ELAB-132]"
+  "error[LRX-ELAB-133]"
+  "error[LRX-ELAB-132]"
+  "error[LRX-ELAB-133]"
   "error[LRX-VIEW-045]"
   "error[LRX-VIEW-045]"
   "error[LRX-VIEW-045]"
