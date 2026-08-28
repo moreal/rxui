@@ -2831,3 +2831,89 @@ cells stay single-level two-branch with exact click/dblclick
 agreement; child instrumentation stays unreachable through the parent
 disposer.
 
+## Routing and persistence — the ABI 17 execution round (ADR-0063)
+
+### Scenario exercised
+
+The ADR-0063 execution round: the last TodoMVC interaction parity axis
+closed as one runtime ABI 17 bump adding five sealed DOM-host exports —
+`readHash`, `listenHash`, `writeHash`, `storageGet`, `storageSet` —
+under the ADR-0048 pruning condition. The sealed route item (`route
+filter := when "#/" "all" then when "#/active" "active" then when
+"#/completed" "completed"`) seeds the filter field from the hash at
+mount, dispatches every hashchange through the same set-field commit
+the filter buttons run, and writes the canonical hash flip-only behind
+the field's changed flag. The sealed persist item (`persist items :=
+"leanrx-toggle-lab.items"`) hydrates the region row table at mount
+through one ordinary transaction riding the existing append path and
+re-persists once per region-touching sweep on the shared touched flag;
+a filter change alone persists nothing. Serialization is a throw-free
+split/join escape in generated code; the hosts move strings only.
+
+### What was pleasant
+
+Two shells did almost all the work. Emitting the route arms and the
+hydration as ordinary `transactionShell` functions meant the filter
+sweep, the count labels, the visibility slots, the flip-only hash
+write, and the normalized storage write-back all ran at mount and on
+every hashchange with zero new commit machinery — hydration is
+literally an append-shaped transaction, so "rows, counts, chrome, and
+filter settle together" was true by construction on the first
+successful build. The freeze conditions held exactly as ADR-0063
+surveyed: the size gate came back green with `main.mjs` byte-identical
+on the first run, no benchmark re-run owed.
+
+### Friction encountered
+
+Three small snags. `let key ←` in the elaborator collided with a
+declared token and had to be renamed (`storageKey`). The nested
+validator chain in `ComponentSpec.check` needed a full re-indentation
+to splice two more arms in — Lean's match-arm indentation is
+unforgiving inside eleven nested matches. And binding the found
+`RegionFilter` through `←` inside the route validator tripped a
+universe mismatch (`RegionFilter Γ : Type 1` inside the `Except`
+do-block's `forIn`), solved by projecting the needed pair
+(`filter.arms.map (·.1), filter.span`) instead of the structure. One
+audit-list debt surfaced exactly as the memory predicted: the new
+structures' `injEq` theorems had to join the reviewed axiom manifest.
+
+### Bugs found
+
+None in shipped code. The design dodged two latent ones deliberately:
+`decodeURIComponent` would have made a hand-edited stored value throw
+at mount (the split/join escape cannot throw), and a bare
+`location.hash` writer would have echoed if WHATWG equal-value
+assignments fired hashchange — the browser gate pins the echo settling
+at exactly one route write.
+
+### Performance observations
+
+The benchmark bundle is byte-identical (size gate green, manifest
+`runtimeAbi` number only), so the freeze holds with nothing re-run —
+regression watch only. Every other lab emits byte-identical modules;
+the Toggle Lab module grows by the three route arm transactions, one
+dispatch, one hydrate transaction, and the per-shell route/persist
+ride. Persistence costs one serialization pass per region-touching
+commit — linear in the row table, same order as the count scans that
+already ride the touched flag.
+
+### Follow-up issue or commit
+
+`feat(component): execute routing and persistence as runtime ABI 17
+(ADR-0063)` — the five host exports, the sealed `route`/`persist`
+items, the 24-literal fan-out (doctor line included this time), the
+"ABI 17 adds …" section, five compile-fail fixtures, real-DOM host
+gates in counter.spec.mjs, and seven Toggle Lab browser gates. With
+this round closed, Toggle Lab's TodoMVC interaction parity has no
+known remaining gap. Remaining gaps carried forward: the
+`FieldPredicate` unification stays open with its byte-neutral scope
+recorded (comparison builder only, scan loops excluded — golden ident
+prefixes pinned); affordance-contract agreement stays ADR-0059's first
+open question; the component-scope payload reaches one construct
+(ADR-0061); attribute-position count labels and the two-threshold
+grammar stay rejected (ADR-0062); negated and composite subjects stay
+rejected; the guard literal stays `""`; the count-label literal stays
+one; row guards stay single-field remove-or-commit; row scope still
+has no `s!`; branch cells stay single-level two-branch with exact
+click/dblclick agreement; child instrumentation stays unreachable
+through the parent disposer.
