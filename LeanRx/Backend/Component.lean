@@ -181,10 +181,17 @@ private def incrementAt (array : Ident) (index : Nat) : Stmt :=
   .assign (.index (.ident array) (uint index))
     (.binary .add (arrayAt array index) (uint 1))
 
-private def pushTrace (tx : Ident) (message : String) : Stmt :=
+/-- Push one trace entry whose text is computed at commit time (ADR-0085):
+the serialization sweep reports how many rows it re-encoded, which is a
+number the emission cannot know. Every other trace is a static string and
+rides `pushTrace`. -/
+private def pushTraceExpr (tx : Ident) (message : Expr) : Stmt :=
   .expr <| .call
     (.index (txAt tx 7) (.literal (.string "push")))
-    (.ofList [.literal (.string message)])
+    (.ofList [message])
+
+private def pushTrace (tx : Ident) (message : String) : Stmt :=
+  pushTraceExpr tx (.literal (.string message))
 
 private def eventName (index : Nat) : Except Error Ident :=
   Ident.checked s!"$lrx_event_{index}"
@@ -364,6 +371,49 @@ ADR-0051 filter slot, mirroring the record construction. -/
 private def regionChildSlot (hasCounts hasFilter : Bool) : Nat :=
   5 + (if hasCounts then 2 else 0) + (if hasFilter then 1 else 0)
 
+/-- The regions one component persists, by name (ADR-0063). A persisted
+region's rows carry the ADR-0085 serialization cache cell; every other
+region's rows are exactly the key and the declared fields. -/
+private def persistedRegionNames (spec : ComponentSpec Γ) : List String :=
+  spec.persists.toList.map (·.region)
+
+/-- The *row tuple* slot holding one persisted region's cached serialization
+(ADR-0085): one cell behind the declared fields, so the key at slot 0 and the
+field projections at `field + 1` keep the offsets ADR-0041/0043 sealed and no
+*record* slot moves — the count slots 5/6, the ADR-0051 filter slot, and the
+ADR-0075 inventory slot are all computed exactly as before. `none` for an
+unpersisted region, whose rows keep their exact old shape.
+
+The cache is keyed on row *identity*, not position, which is what makes the
+invalidation total: a rebuild of the row array (`remove`, an ADR-0050
+predicate removal, an ADR-0053 guard hit) moves rows without writing them, so
+every survivor's cell stays valid, and only a write to a field can stale one.
+-/
+private def rowSerialSlot? (persisted : List String) (region : RegionSpec) : Option Nat :=
+  if persisted.contains region.name then some (region.fields.size + 1) else none
+
+/-- Look one region's row serialization slot up by name, for the write sites
+that carry a region name rather than a spec (ADR-0085). -/
+private def rowSerialSlotOf? (persisted : List String) (regionSpecs : Array RegionSpec)
+    (regionName : String) : Option Nat :=
+  (regionSpecs.toList.find? (·.name == regionName)).bind (rowSerialSlot? persisted)
+
+/-- Stale one row's serialization cache cell (ADR-0085), emitted after the
+assignments of every path that writes a persisted region's row fields: the
+ADR-0043 row stage's drain and the ADR-0050/0061 broadcast. Nothing else
+writes a field. -/
+private def staleRowSerial (row : Ident) : Option Nat → List Stmt
+  | none => []
+  | some slot => [.assign (.index (.ident row) (uint slot)) (.literal .null)]
+
+/-- The trailing cells of a freshly constructed row tuple (ADR-0085): a
+persisted region's row is born with an unencoded cache cell, so the array
+shape never changes after construction and the sweep fills it on the first
+write-back that sees it. -/
+private def freshRowSerial : Option Nat → List Expr
+  | none => []
+  | some _ => [.literal .null]
+
 /-- Lower one sealed row expression against the row item array; fields sit
 behind the key slot (ADR-0041/0043). `payload` is the delegated payload
 expression of the dispatching typed row event (ADR-0046); validation keeps
@@ -490,7 +540,8 @@ re-renders every retained row with its identity preserved. `payload` is the
 delegated payload expression of a dispatching payload broadcast event; the
 plain arm passes the inert empty string. -/
 private def regionBroadcastStmts (regions tx : Ident) (regionSpecs : Array RegionSpec)
-    (regionName : String) (assignments : List (Nat × RowExpr)) (payload : Expr) :
+    (persisted : List String) (regionName : String)
+    (assignments : List (Nat × RowExpr)) (payload : Expr) :
     Except Error (List Stmt) := do
   let regionIndex ← match regionSpecs.toList.findIdx? (·.name == regionName) with
     | some index => pure index
@@ -506,16 +557,20 @@ private def regionBroadcastStmts (regions tx : Ident) (regionSpecs : Array Regio
     evaluateStmts := evaluateStmts ++ [.const temp (rowExprJs rowItem payload rhs)]
     assignStmts := assignStmts ++
       [.assign (.index (.ident rowItem) (uint (target + 1))) (.ident temp)]
+  /- ADR-0085: the broadcast writes every row, so it stales every row's
+  serialization cell — the one write path whose invalidation is O(N), and the
+  reason the write-back's own flag stays the region-wide touched bit. -/
+  let stale := staleRowSerial rowItem (rowSerialSlotOf? persisted regionSpecs regionName)
   pure [
     .forOf rowItem (regionEntry regions regionIndex 1)
-      (.ofList (evaluateStmts ++ assignStmts)),
+      (.ofList (evaluateStmts ++ assignStmts ++ stale)),
     .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
       (.literal (.boolean true)),
     pushTrace tx s!"region:{regionName}:broadcast"
   ]
 
 private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
-    (regionSpecs : Array RegionSpec) (eventNames : List String)
+    (regionSpecs : Array RegionSpec) (persisted : List String) (eventNames : List String)
     (valueCount eventIndex : Nat) :
     Update Γ → Nat → Except Error (Nat × List Stmt)
   | .set field _ _, writeIndex => do
@@ -547,9 +602,13 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
         let evaluator ← evaluator evaluators
           s!"event:{eventIndex}:append:{writeIndex}:{fieldIndex}"
         pure (evaluatorCall evaluator state valueCount)
+      /- ADR-0085: a persisted region's row is born with an unencoded cache
+      cell, so the tuple shape is fixed at construction. -/
+      let fresh := freshRowSerial (rowSerialSlotOf? persisted regionSpecs regionName)
       pure (writeIndex + 1, [
         .expr <| .call (.index (regionEntry regions regionIndex 1) (.literal (.string "push")))
-          (.ofList [.array (.ofList (regionEntry regions regionIndex 2 :: fieldCalls))]),
+          (.ofList [.array (.ofList
+            (regionEntry regions regionIndex 2 :: fieldCalls ++ fresh))]),
         .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 2))
           (.binary .add (regionEntry regions regionIndex 2) (uint 1)),
         .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
@@ -562,7 +621,7 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
       dirty flag: the keyed reconcile re-renders every retained row with its
       identity preserved (ADR-0050). -/
       pure (writeIndex + 1,
-        ← regionBroadcastStmts regions tx regionSpecs regionName assignments noPayload)
+        ← regionBroadcastStmts regions tx regionSpecs persisted regionName assignments noPayload)
   | .regionRemoveIf regionName predicate _, writeIndex => do
       /- The predicate removal keeps every row not satisfying the sealed
       field predicate and raises the dirty flag: the keyed reconcile
@@ -591,9 +650,9 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
       ])
   | .sequence first second, writeIndex => do
       let (writeIndex, first) ← updateStatements evaluators context state tx regions
-        regionSpecs eventNames valueCount eventIndex first writeIndex
+        regionSpecs persisted eventNames valueCount eventIndex first writeIndex
       let (writeIndex, second) ← updateStatements evaluators context state tx regions
-        regionSpecs eventNames valueCount eventIndex second writeIndex
+        regionSpecs persisted eventNames valueCount eventIndex second writeIndex
       pure (writeIndex, first ++ second)
 
 private def anyChanged (changed : Ident) (deps : List Nat) : Expr :=
@@ -1119,27 +1178,44 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
         ]]
     /- The sealed persistence sweep (ADR-0063): whenever this region was
     touched this transaction — the write-back reads every field, so
-    `sweepNarrows` never lets it take the narrow flag (ADR-0083) — the
-    whole row table is re-serialized — fields
-    behind the key slot escaped by the throw-free split/join encoding, rows
-    joined by the row separator — and written through one `storageSet`. One
-    write per region-touching transaction; a filter change alone touches
-    nothing and therefore persists nothing. -/
+    `sweepNarrows` never lets it take the narrow flag (ADR-0083) — the whole
+    row table is written through one `storageSet`, rows joined by the row
+    separator.
+
+    ADR-0085: a row's serialization — its fields behind the key slot escaped
+    by the throw-free split/join encoding — is *cached on the row*, in the
+    cell `rowSerialSlot?` puts behind the declared fields. The sweep encodes
+    exactly the rows whose cell a write staled and reads the rest back, and
+    reports the number it encoded as one trace entry, so the cache is
+    observable without a counter and without an entry per row. -/
     if let some persist := persist? then
       let persistFlag ← wakeIdent regionIndex (persistWakes.head?.getD .touched)
       let rows ← Ident.checked s!"persist_rows_{regionIndex}"
       let row ← Ident.checked s!"persist_row_{regionIndex}"
+      let encoded ← Ident.checked s!"persist_encoded_{regionIndex}"
+      let serialSlot := region.fields.size + 1
+      let cell : Expr := .index (.ident row) (uint serialSlot)
+      let cellTarget : AssignTarget := .index (.ident row) (uint serialSlot)
       commitBody := commitBody ++ [.ifThen (.ident persistFlag) <| .ofList [
         .const rows (.array .nil),
+        .const encoded (.array (.ofList [uint 0])),
         .forOf row (regionEntry regions regionIndex 1) (.ofList [
+          .ifThen (.binary .eq cell (.literal .null)) (.ofList [
+            .assign cellTarget (persistRowJs row region.fields.size),
+            .assign (.index (.ident encoded) (uint 0))
+              (.binary .add (.index (.ident encoded) (uint 0)) (uint 1))
+          ]),
           .expr <| .call (.index (.ident rows) (.literal (.string "push")))
-            (.ofList [persistRowJs row region.fields.size])
+            (.ofList [cell])
         ]),
         .expr <| call runtime.storageSet [
           .literal (.string persist.key),
           .call (.index (.ident rows) (.literal (.string "join")))
             (.ofList [.literal (.string ";")])
         ],
+        pushTraceExpr tx (.binary .add
+          (.literal (.string s!"storage:{region.name}:encode:"))
+          (.index (.ident encoded) (uint 0))),
         pushTrace tx s!"storage:{region.name}:write"
       ]]
   commitBody := commitBody ++ [
@@ -1170,7 +1246,8 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
   let tx ← Ident.checked "tx"
   let regions ← Ident.checked "regions"
   let (_, writes) ← updateStatements evaluators context state tx regions
-    checked.spec.regions eventNames checked.spec.values.size eventIndex event.update 0
+    checked.spec.regions (persistedRegionNames checked.spec) eventNames
+    checked.spec.values.size eventIndex event.update 0
   transactionShell checked evaluators runtime (← eventName eventIndex)
     #[context, ignored] event.name writes (skipIf? := event.guard?.map (skipGuardExpr state))
 
@@ -1205,8 +1282,8 @@ private def typedEventFunction (checked : CheckedComponent Γ) (evaluators : Eva
         let regions ← Ident.checked "regions"
         let payloadJs := Expr.conditional (.ident payload)
           (.literal (.string "true")) (.literal (.string "false"))
-        regionBroadcastStmts regions tx checked.spec.regions regionName
-          assignments payloadJs
+        regionBroadcastStmts regions tx checked.spec.regions
+          (persistedRegionNames checked.spec) regionName assignments payloadJs
     | none => do
         let some targetIndex := event.targetIndex?
           | .error { code := "LRX-BE-026", message := "checked typed event lost its target" }
@@ -1253,8 +1330,8 @@ private def keyEventFunctions (checked : CheckedComponent Γ) (evaluators : Eval
   let mut dispatchBody : List Stmt := []
   for (arm, armIndex) in event.arms.zipIdx do
     let (_, writes) ← updateStatements evaluators context state tx regions
-      checked.spec.regions eventNames checked.spec.values.size
-      (bodyIndex + armIndex) arm.update 0
+      checked.spec.regions (persistedRegionNames checked.spec) eventNames
+      checked.spec.values.size (bodyIndex + armIndex) arm.update 0
     let armFn ← keyArmName eventIndex armIndex
     functions := functions ++ [← transactionShell checked evaluators runtime armFn
       #[context, ← Ident.checked "ignored"] s!"{event.name}:{arm.key}" writes
@@ -1397,11 +1474,15 @@ private def hydrateFunction (checked : CheckedComponent Γ) (evaluators : EvalSt
           (.index (.ident rowsId) (.literal (.string "length"))) (uint 0)))) <|
       .ofList [
       .forOf rowId (.ident rowsId) (.ofList [
+        /- ADR-0085: hydrated rows arrive with an unencoded cache cell, so
+        the mount write-back re-encodes them — and therefore normalizes a
+        hand-edited stored value exactly as ADR-0063 promised. -/
         .expr <| .call
           (.index (regionEntry regions regionIndex 1) (.literal (.string "push")))
           (.ofList [.array (.ofList (regionEntry regions regionIndex 2 ::
-            (List.range region.fields.size).map fun index =>
-              persistDecodeJs (.index (.ident rowId) (uint index))))]),
+            ((List.range region.fields.size).map fun index =>
+              persistDecodeJs (.index (.ident rowId) (uint index))) ++
+            [.literal .null]))]),
         .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 2))
           (.binary .add (regionEntry regions regionIndex 2) (uint 1))
       ]),
@@ -2042,7 +2123,7 @@ equality against the resolved row: a guard hit runs the removal sequence
 instead — no field write and no queued position — and a miss commits the
 assignments exactly as an unguarded stage does. -/
 private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
-    (regionName eventName : String) (payloadExpr : Expr)
+    (serialSlot? : Option Nat) (regionName eventName : String) (payloadExpr : Expr)
     (stage : RowStage) : Except Error (List Stmt) := do
   let assignments := stage.assignments
   let scan ← Ident.checked "scan"
@@ -2057,7 +2138,11 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
       [.const temp (rowExprJs rowItem payloadExpr rhs)]
     assignStmts := assignStmts ++
       [.assign (.index (.ident rowItem) (uint (target + 1))) (.ident temp)]
-  let applyStmts := evaluateStmts ++ assignStmts ++ [
+  /- ADR-0085: the drain's field writes stale exactly the drained row's
+  serialization cell, so the write-back re-encodes one row and reads the
+  other N-1 out of the cache. The guard-hit removal below writes no field and
+  therefore stales nothing — the survivors it keeps are byte-identical. -/
+  let applyStmts := evaluateStmts ++ assignStmts ++ staleRowSerial rowItem serialSlot? ++ [
     .expr <| .call
       (.index (regionEntry regions regionIndex 4) (.literal (.string "push")))
       (.ofList [.index (.ident scan) (uint 1)]),
@@ -2109,6 +2194,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
   let eventKey ← Ident.checked "eventKey"
   let regions ← Ident.checked "regions"
   let tx ← Ident.checked "tx"
+  let serialSlot? := rowSerialSlot? (persistedRegionNames checked.spec) region
   let mut writes : List Stmt := []
   for event in region.events do
     match event.action with
@@ -2134,7 +2220,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
           else noPayload
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
-            (.ofList (← rowUpdateApplyStmts regions tx key regionIndex
+            (.ofList (← rowUpdateApplyStmts regions tx key regionIndex serialSlot?
               region.name event.name payloadExpr stage))
         ]
     | .keySelect arms =>
@@ -2148,7 +2234,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
         for (keyLiteral, stage) in arms do
           armStmts := armStmts ++ [
             .ifThen (.binary .eq (.ident eventKey) (.literal (.string keyLiteral)))
-              (.ofList (← rowUpdateApplyStmts regions tx key regionIndex
+              (.ofList (← rowUpdateApplyStmts regions tx key regionIndex serialSlot?
                 region.name event.name noPayload stage))
           ]
         writes := writes ++ [

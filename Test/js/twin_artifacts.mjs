@@ -123,7 +123,17 @@ for (const required of [
   // the persistence sweep rides `region_touched_1` *alone*, with no
   // `changed[1]` disjunct, so a route flip can never provoke a storageSet.
   "    if (region_touched_1) {\n      const persist_rows_1 = [];",
-  "      storageSet(\"leanrx-twin-lab.right\", persist_rows_1[\"join\"](\";\"));\n      tx[7][\"push\"](\"storage:right:write\");",
+  // ADR-0085: the serialization cache is a *row tuple* cell, not a record
+  // slot, and it exists only where a region is persisted. `right` is the one
+  // persisted region of three, so its rows carry the cell behind their two
+  // declared fields and its row stage stales it...
+  "  regions[1][1][\"push\"]([regions[1][2], $lrx_event_0_append_1_0(state[0], state[1], state[2]), $lrx_event_0_append_1_1(state[0], state[1], state[2]), null]);",
+  "      persist_row_1[3] = persist_row_1[1]",
+  // ...while `left` and `solo` append rows of exactly the old shape and
+  // stale nothing. No record slot moved for any of the three.
+  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_0_append_0_0(state[0], state[1], state[2]), $lrx_event_0_append_0_1(state[0], state[1], state[2])]);",
+  "  regions[2][1][\"push\"]([regions[2][2], $lrx_event_0_append_2_0(state[0], state[1], state[2]), $lrx_event_0_append_2_1(state[0], state[1], state[2])]);",
+  "      storageSet(\"leanrx-twin-lab.right\", persist_rows_1[\"join\"](\";\"));\n      tx[7][\"push\"](\"storage:right:encode:\" + persist_encoded_1[0]);\n      tx[7][\"push\"](\"storage:right:write\");",
   // ...while the canonical hash write rides `changed[1]` in the commit
   // prologue, ahead of *every* region block — the first region wake flag in
   // the commit is the statement that follows it.

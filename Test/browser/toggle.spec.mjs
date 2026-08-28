@@ -1842,3 +1842,116 @@ test("each row event wakes only the sweeps its own stage can move (ADR-0084)", a
   expect(afterAppend.filter).toBe(beforeAppend.filter + 1);
   expect(afterAppend.drained).toBe(beforeAppend.drained);
 });
+
+test("the serialization cache re-encodes exactly the rows a write staled (ADR-0085)", async ({ page }) => {
+  await mountToggle(page);
+  // The one trace entry the ADR-0085 sweep reports: how many rows it had to
+  // encode, which is the number whose cache cell a write staled since the
+  // previous write-back. Every other row was read back out of its own tuple.
+  const encodes = (tx) =>
+    tx[7].filter((entry) => entry.startsWith("storage:items:encode:"))
+      .map((entry) => Number(entry.slice("storage:items:encode:".length)));
+  const since = async (before) =>
+    encodes(await page.evaluate(() => globalThis.toggleDispose.instrumentation()))
+      .slice(before.length);
+  const now = async () =>
+    encodes(await page.evaluate(() => globalThis.toggleDispose.instrumentation()));
+  const stored = () =>
+    page.evaluate(() => localStorage.getItem("leanrx-toggle-lab.items"));
+
+  // Mount hydrated an absent value: no region touch, so no write-back and no
+  // encode at all.
+  expect(await now()).toEqual([]);
+
+  // An append is structural — every sweep runs — but only the appended row
+  // is born unencoded, so the write-back encodes one row and reads the rest
+  // back. Three appends, one encode each.
+  const add = page.getByRole("button", { name: "Add item" });
+  let mark = await now();
+  await add.click();
+  await add.click();
+  await add.click();
+  await expect(page.locator("#items > li")).toHaveCount(3);
+  expect(await since(mark)).toEqual([1, 1, 1]);
+  expect(await stored()).toBe(
+    "Item 0,Item 0,false,view;Item 1,Item 1,false,view;Item 2,Item 2,false,view");
+
+  // A `toggle` writes one row's `done`: one encode, two rows read back.
+  mark = await now();
+  await page.locator("#items > li").nth(1)
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  expect(await since(mark)).toEqual([1]);
+  expect(await stored()).toBe(
+    "Item 0,Item 0,false,view;Item 1,Item 1,true,view;Item 2,Item 2,false,view");
+
+  // A filter change is not a region touch: no write-back, so no encode
+  // either — and the cache is untouched by the sweep that does run.
+  mark = await now();
+  await page.getByRole("button", { name: "Show active" }).click();
+  await page.waitForTimeout(100);
+  expect(await since(mark)).toEqual([]);
+  await page.getByRole("button", { name: "Show all" }).click();
+  await page.waitForTimeout(100);
+
+  // `edit`, each `retype` keystroke, and the Enter commit each write the
+  // dispatching row and nothing else: one encode per commit however many
+  // rows the region holds.
+  mark = await now();
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" });
+  await editor.pressSequentially("ab");
+  await editor.press("Enter");
+  await expect(page.locator("#items > li").nth(0).locator(".item-label"))
+    .toHaveText("Item 0ab");
+  expect(await since(mark)).toEqual([1, 1, 1, 1]);
+  expect(await stored()).toBe(
+    "Item 0ab,Item 0ab,false,view;Item 1,Item 1,true,view;Item 2,Item 2,false,view");
+
+  // A removal writes no field: the kept-filter rebuilds the row array around
+  // the *same* row tuples, so every survivor's cell is still valid and the
+  // write-back encodes nothing at all.
+  mark = await now();
+  await page.locator("#items > li").nth(2)
+    .getByRole("button", { name: "Remove item" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(2);
+  expect(await since(mark)).toEqual([0]);
+  expect(await stored()).toBe("Item 0ab,Item 0ab,false,view;Item 1,Item 1,true,view");
+
+  // The ADR-0050 predicate removal is the same shape: rows leave, no field
+  // is written, nothing re-encodes.
+  mark = await now();
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  expect(await since(mark)).toEqual([0]);
+  expect(await stored()).toBe("Item 0ab,Item 0ab,false,view");
+
+  // A broadcast writes *every* row, so it stales every cell: the one write
+  // path whose invalidation is O(N), and the reason the write-back keeps the
+  // region-wide flag.
+  await add.click();
+  mark = await now();
+  await page.getByRole("button", { name: "Complete all" }).click();
+  expect(await since(mark)).toEqual([2]);
+  expect(await stored()).toBe("Item 0ab,Item 0ab,true,view;Item 3,Item 3,true,view");
+
+  // The ADR-0061 payload broadcast is the same: two rows written, two
+  // encoded, and the stored value follows.
+  mark = await now();
+  await page.getByRole("checkbox", { name: "Toggle all" }).uncheck();
+  expect(await since(mark)).toEqual([2]);
+  expect(await stored()).toBe("Item 0ab,Item 0ab,false,view;Item 3,Item 3,false,view");
+
+  // Hydration arrives with unencoded cells, so the mount write-back encodes
+  // the whole table once — which is what normalizes a hand-edited stored
+  // value, exactly as ADR-0063 promised.
+  await page.reload();
+  await page.evaluate(async () => {
+    localStorage.setItem("leanrx-toggle-lab.items", "raw%25,raw%25,false,view;b,b,true,view");
+    const { mount } = await import("/ToggleLab.mjs");
+    globalThis.toggleDispose = mount(document.getElementById("app"));
+  });
+  await expect(page.locator("#items > li")).toHaveCount(2);
+  expect(await now()).toEqual([2]);
+  expect(await stored()).toBe("raw%25,raw%25,false,view;b,b,true,view");
+});

@@ -644,6 +644,24 @@ inside a row editor re-evaluates no count, no `hidden`/`checked` selection
 and no filter table — only a `persist` write-back, which reads every field
 and can never narrow, still walks the table.
 
+What the write-back *costs* when it walks is narrowed instead, on the row
+rather than on the flag (ADR-0085). A persisted region's rows carry one
+extra cell behind their declared fields holding that row's serialization,
+`null` until it is encoded; the write-back encodes exactly the rows whose
+cell is `null` and reads the rest back. Because the cell rides the row
+tuple, it is keyed on row identity, so the invalidation is exactly the two
+paths that write a field — the row stage, for the row it drained, and the
+broadcast, for every row — while `remove`, an `update … remove` predicate
+removal and a remove-if guard hit rebuild the row array around unchanged
+tuples and therefore re-encode nothing at all. The sweep reports what it
+encoded as one trace entry, `storage:{region}:encode:{n}`, so the cache is
+observable on a three-row lab. On a 10 000-row region a keystroke's commit
+drops from 5.11 ms to 0.59 ms; what remains is the join, the `storageSet`,
+and the dispatch's key→position scan. Nothing about the *contract* moves:
+one `storageSet` per region-touching transaction, byte-identical stored
+values, and no region record slot changed — an unpersisted region's rows
+keep their exact shape.
+
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
 **union** of every filter table over that field, not the first-declared

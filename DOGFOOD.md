@@ -4768,3 +4768,92 @@ is now the O(N) floor on a keystroke and narrowing it needs a per-row
 serialization cache (the first region-record change this line would want);
 the key→position scan is still O(N) per dispatch; and the sweeps still have
 no per-row cache.
+
+## A persisted row carries its own serialization (ADR-0085)
+
+### What was built
+
+ADR-0084 named the floor and left it unpriced: a `retype` keystroke on a
+10 000-row region skips every count, every selection and the filter sweep,
+and still costs 5.19 ms. This round measured what the 5.19 ms is made of and
+sealed the one segment worth sealing.
+
+The survey came first, and it had to ablate rather than time: Chromium
+clamps `performance.now()` to 0.1 ms, which is larger than three of the four
+segments, so no instrumentation *inside* one commit can see them. Five
+hand-edited copies of the generated Toggle Lab module, each removing one
+more segment, seeded with N rows and driven with 400 single-row dispatches,
+whole loop timed and divided. Differencing the ladder at 10 000 rows: the
+serialization loop is 93.5% of the commit, `storageSet` 5.6%, the
+key→position scan 0.9%, the `updateAt` drain 0.03%, the transaction shell
+0.02%. The choice the round was asked to make — key index or serialization
+cache — was therefore between 0.9% and 93.5%, and the key index does not
+survive its own cost/benefit: it would owe the whole
+append/remove/broadcast/hydrate invalidation matrix for under one percent.
+
+The record survey happened anyway, because a cache slot was expected to be
+this line's first region-record change, and it is what argued the change out
+of the record. A parallel array beside `rows` is keyed on **position**, so
+`remove`, the ADR-0050 predicate removal and the ADR-0053 guard hit — all
+three of which rebuild the row array around *unchanged* tuples — would each
+have to blow the whole cache while writing no field at all. Keying on row
+**identity** instead deletes that matrix: the cache is one cell on the row
+tuple behind the declared fields, a rebuild moves tuples without writing
+them, and only a field write can stale a cell. ADR-0083 had already
+enumerated the field writers exhaustively — the ADR-0043 row stage and the
+ADR-0050/0061 broadcast — so the invalidation rule is two sites, one
+statement each. As a side effect no record slot moves and Mix Lab's
+nine-slot `crew` / eight-slot `pins` asymmetry gate is untouched.
+
+The cache needed to be observable on a three-row lab, not just a 10 000-row
+one. A trace entry per encoded row would be O(N) entries on a rebuild and a
+new `tx` counter would be a host change and an ABI bump, so the sweep pushes
+one entry per write-back carrying the count — `storage:{region}:encode:{n}`.
+It is the first trace in the emission whose text is computed at commit time.
+
+### What broke or surprised
+
+The first A/B run showed the cached variant *slower* than the baseline. The
+harness was at fault, not the design: the patch that installed the cache
+used a non-global regex, so only the first of the module's seventeen inlined
+commits got it and the dispatch's own commit still re-encoded everything.
+The `encode:0` trace on a 500-row seed is what exposed it — the witness
+mechanism caught its own harness before it ever ran against Lean output.
+
+Nothing in the emission surprised. Every prediction held: Twin Lab's `left`
+and `solo` append rows of exactly the old shape while `right` gains the
+cell, Mix Lab's two persisted regions carry two independent caches at slots
+4 and 2, and `pins` — whose rows are immutable — never stales a cell at all.
+
+### Performance observations
+
+Same harness, cached emission hand-applied to the generated module. Median
+of five runs of 400 dispatches, ms per commit:
+
+| rows | event | before | after | |
+| ---: | --- | ---: | ---: | ---: |
+| 1000 | `retype` | 0.5062 | 0.0710 | **7.1×** |
+| 10000 | `retype` | 5.109 | 0.5868 | **8.7×** |
+| 1000 | `toggle` | 0.6165 | 0.1812 | 3.4× |
+| 10000 | `toggle` | 6.875 | 2.0845 | 3.3× |
+
+`toggle` is ADR-0084's control: it is in the `done` wake class, so it keeps
+paying four predicate scans and the filter sweep's N `childAt`/`setProperty`
+pairs and only its serialization collapses. What is left on `retype` at 10k
+is the `join` over 10 000 cached strings, the `storageSet` (0.28 ms of it),
+and the key scan (0.05 ms). The benchmark artifacts are byte-identical and
+BENCHMARK.md stands unre-measured — the js-framework-benchmark backend is
+hand-written and persists nothing.
+
+### Follow-up issue or commit
+
+`feat(component): cache each persisted row's serialization on the row
+(ADR-0085)` — `rowSerialSlot?`/`staleRowSerial`/`freshRowSerial`, the
+`pushTraceExpr` the computed encode trace needs, the persisted-region set
+threaded through the append and broadcast emitters, the artifact-gate pins
+across Toggle/Twin/Mix, the invalidation-matrix browser witness, the
+language guide, the ADR, and this record. Open: the `join` plus `storageSet`
+is the new floor (0.59 ms at 10k, and caching the joined string would put
+the region-record change back on the table); the key→position scan is still
+O(N) and is now 7.8% of a smaller commit; and the sweeps still have no
+per-row cache.

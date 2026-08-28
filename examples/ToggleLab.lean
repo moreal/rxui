@@ -295,7 +295,26 @@ ran, because `listenDelegatedCells` hands it the action — those become two
 `retype` keystroke lands in neither class: it drains its one retained row,
 re-serializes the table, and re-evaluates nothing else at all. Every other
 transaction function keeps the region-wide flags, because none of them can
-queue a position at all. Still no host change and no runtime ABI bump. -/
+queue a position at all. Still no host change and no runtime ABI bump.
+
+The ADR-0085 serialization cache is what ADR-0084 left standing. The
+write-back reads every field, so no wake rule narrows it, and this lab's
+survey priced a 10 000-row keystroke commit at 93.5% serialization against
+0.9% key scan. `items` rows therefore carry one cell behind `(label, draft,
+done, mode)` — slot 5 — holding that row's serialization, `null` until it is
+encoded; the write-back encodes only the `null`s and reads the rest back.
+Because the cell rides the row tuple it is keyed on row identity, so this
+lab witnesses the whole invalidation matrix on three rows through the
+`storage:items:encode:{n}` trace: an append encodes one row, a `toggle`, an
+`edit`, each `retype` keystroke and the Enter commit encode one each, a
+filter change encodes nothing because it touches nothing, the ✕ removal and
+`clearCompleted` encode **zero** — the kept-filter rebuilds the row array
+around the same tuples, so the survivors' cells are still valid — while
+`completeAll` and the `toggleAll` payload broadcast encode every row, and a
+hydration encodes the whole table, which is exactly what normalizes a
+hand-edited stored value. The stored string is byte-identical to what the
+uncached sweep wrote, no region record slot moved, and once more: no host
+change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 

@@ -84,7 +84,7 @@ for (const required of [
   // ADR-0077: the broadcast writes every retained row's `done` in place and
   // raises the dirty flag — the reconcile retains every key, so it re-renders
   // rows through the update callback and never remounts a row child.
-  "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[2] = row_next_0;\n  }\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:crew:broadcast\");",
+  "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[2] = row_next_0;\n    row_item[4] = null;\n  }\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:crew:broadcast\");",
   // ADR-0051: the filter sweep navigates row roots from the container slot —
   // slot 7 here, behind the count slots — untouched by the inventory slot
   // behind it, and writes `hidden` without ever touching a child. ADR-0078:
@@ -128,12 +128,25 @@ for (const required of [
   "  const stored_value = storageGet(\"leanrx-mix-lab.pins\");",
   "  $lrx_hydrate_0(context, null);\n  $lrx_hydrate_1(context, null);",
   "storageSet(\"leanrx-mix-lab.crew\", persist_rows_0[\"join\"](\";\"));",
+  // ADR-0085: two persisted regions carry two independent row caches, each
+  // in the cell behind its own region's declared fields — slot 4 in crew's
+  // three-field rows, slot 2 in pins' one-field rows — and each reports its
+  // own encode count. The cache is a *row tuple* cell, so the record slot
+  // asymmetry above is untouched: crew still ends at nine, pins at eight.
+  "        if (persist_row_0[4] === null) {\n          persist_row_0[4] = persist_row_0[1]",
+  "        if (persist_row_1[2] === null) {\n          persist_row_1[2] = persist_row_1[1]",
+  "      tx[7][\"push\"](\"storage:crew:encode:\" + persist_encoded_0[0]);",
+  "      tx[7][\"push\"](\"storage:pins:encode:\" + persist_encoded_1[0]);",
+  // pins' rows are immutable — no row event, no broadcast — so nothing ever
+  // stales a pin's cell: it is encoded once, at the write-back after the
+  // append that created it, and read back forever after.
+  "  regions[1][1][\"push\"]([regions[1][2], $lrx_event_3_append_0_0(state[0], state[1]), null]);",
   "storageSet(\"leanrx-mix-lab.pins\", persist_rows_1[\"join\"](\";\"));",
   // ADR-0078: one chained event touches both regions in one transaction — the
   // pins append and the crew removal raise their own dirty flags in *event*
   // order, and the commit sweep then drains them in *region declaration*
   // order, crew before pins.
-  "  tx[7][\"push\"](\"event:stowDone\");\n  regions[1][1][\"push\"]([regions[1][2], $lrx_event_4_append_0_0(state[0], state[1])]);\n  regions[1][2] += 1;\n  regions[1][3] = true;\n  tx[7][\"push\"](\"region:pins:append\");",
+  "  tx[7][\"push\"](\"event:stowDone\");\n  regions[1][1][\"push\"]([regions[1][2], $lrx_event_4_append_0_0(state[0], state[1]), null]);\n  regions[1][2] += 1;\n  regions[1][3] = true;\n  tx[7][\"push\"](\"region:pins:append\");",
   "  regions[0][1] = kept_1;\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:crew:removeIf\");",
   // The Badge cells dispatch no delegated action — no carve-out needed.
   "const region_off_0 = listenDelegatedCells(node_13, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\", \"\"]);",
