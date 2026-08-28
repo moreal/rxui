@@ -93,6 +93,22 @@ function occurrences(slice, event) {
   return slice.filter((entry) => entry === event).length;
 }
 
+// ADR-0080: `mode` is routed, so a `mode` button writes the canonical hash
+// inside its own commit and the browser answers with one `hashchange` whose
+// dispatch is an equal-value set-field commit (ADR-0063) — a second commit
+// that wakes no sweep. `flipMode` returns once both have landed, so a trace
+// window opened afterwards measures only what follows it.
+async function flipMode(page, name, hash) {
+  const before = await page.evaluate(
+    () => globalThis.twinDispose.instrumentation()[1],
+  );
+  await page.getByRole("button", { name }).click();
+  await expect(page).toHaveURL(new RegExp(`${hash}$`));
+  await expect
+    .poll(() => page.evaluate(() => globalThis.twinDispose.instrumentation()[1]))
+    .toBe(before + 2);
+}
+
 test("three filtered regions mount with their own containers", async ({ page }) => {
   await mountTwin(page);
   await expect(page.locator("#left-line")).toHaveText("0 left");
@@ -124,9 +140,19 @@ test("one state field drives both twin sweeps in one commit", async ({ page }) =
   // `solo` reads `tone`, still `"all"`: it is not woken at all.
   await expect(page.locator("#solo > li").nth(0)).toBeVisible();
   await expect(page.locator("#solo > li").nth(1)).toBeVisible();
+  // ADR-0080: the flip writes the canonical hash, so the browser answers with
+  // one `hashchange` — an equal-value set-field commit. The window below is
+  // widened over *both* commits to show that the echo wakes neither sweep.
+  await expect(page).toHaveURL(/#\/on$/);
+  await expect
+    .poll(() => page.evaluate(() => globalThis.twinDispose.instrumentation()[1]))
+    .toBe(before.commits + 2);
   const after = await readTrace(page);
-  expect(after.commits).toBe(before.commits + 1);
-  expect(occurrences(after.slice, "transaction:commit")).toBe(1);
+  expect(after.commits).toBe(before.commits + 2);
+  expect(occurrences(after.slice, "transaction:commit")).toBe(2);
+  // Only the first commit does any work: one changed bit, two sweeps, once
+  // each — and one route write for the two regions that share the field.
+  expect(occurrences(after.slice, "route:mode:write")).toBe(1);
   expect(occurrences(after.slice, "filter:left:evaluated")).toBe(1);
   expect(occurrences(after.slice, "filter:right:evaluated")).toBe(1);
   expect(occurrences(after.slice, "filter:solo:evaluated")).toBe(0);
@@ -142,7 +168,7 @@ test("one state field drives both twin sweeps in one commit", async ({ page }) =
 test("a second field filters the third region alone", async ({ page }) => {
   await mountTwin(page);
   await seedBoth(page);
-  await page.getByRole("button", { name: "Show on" }).click();
+  await flipMode(page, "Show on", "#/on");
   const before = await page.evaluate(() => {
     const tx = globalThis.twinDispose.instrumentation();
     globalThis.twinTraceLength = tx[7].length;
@@ -185,7 +211,7 @@ test("a second field filters the third region alone", async ({ page }) => {
 test("a region touch alone wakes only that region's sweep", async ({ page }) => {
   await mountTwin(page);
   await seedBoth(page);
-  await page.getByRole("button", { name: "Show on" }).click();
+  await flipMode(page, "Show on", "#/on");
   const before = await markTrace(page);
   // No field changes: `left`'s sweep wakes on its own touched flag, and the
   // twin sharing its filter field stays asleep.
@@ -224,9 +250,16 @@ test("one transaction mixes a region touch with a shared filter change", async (
   await expect(page.locator("#right > li").nth(1)).toBeVisible();
   // `tone` is untouched, so `solo`'s own table still shows every row.
   await expect(page.locator("#solo > li").nth(1)).toBeVisible();
+  // `stir` writes `mode`, so its commit writes the hash and the echo follows
+  // — one more commit that wakes none of the three sweeps.
+  await expect(page).toHaveURL(/#\/on$/);
+  await expect
+    .poll(() => page.evaluate(() => globalThis.twinDispose.instrumentation()[1]))
+    .toBe(before.commits + 2);
   const after = await readTrace(page);
-  expect(after.commits).toBe(before.commits + 1);
-  expect(occurrences(after.slice, "transaction:commit")).toBe(1);
+  expect(after.commits).toBe(before.commits + 2);
+  expect(occurrences(after.slice, "transaction:commit")).toBe(2);
+  expect(occurrences(after.slice, "route:mode:write")).toBe(1);
   expect(occurrences(after.slice, "filter:left:evaluated")).toBe(1);
   expect(occurrences(after.slice, "filter:right:evaluated")).toBe(1);
   expect(occurrences(after.slice, "filter:solo:evaluated")).toBe(1);
@@ -249,21 +282,156 @@ test("one transaction mixes a region touch with a shared filter change", async (
   expect(occurrences(after.slice, "region:right:update")).toBe(0);
 });
 
+test("a union literal only one twin declares seeds from the hash", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    location.hash = "#/mixed";
+    const { mount } = await import("/TwinLab.mjs");
+    globalThis.twinDispose = mount(document.getElementById("app"));
+  });
+  await seedBoth(page);
+  // ADR-0080: `"mixed"` is named by `right`'s arm table alone. The route's
+  // sealed literal set is the declared default plus the *union* of every
+  // filter table over `mode`, so `#/mixed` is a legal hash on the strength of
+  // the second-declared table — under a first-match rule it would have been
+  // rejected purely because `left` is declared first. At runtime the region
+  // that names the literal filters, and the twin that does not falls through
+  // to show-all, which is exactly what its own arm chain already does.
+  await expect(page.locator("#right > li").nth(0)).toBeVisible();
+  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  await expect(page.locator("#left > li").nth(0)).toBeVisible();
+  await expect(page.locator("#left > li").nth(1)).toBeVisible();
+  // `solo` reads `tone`; the routed field never reaches it.
+  await expect(page.locator("#solo > li").nth(0)).toBeVisible();
+  await expect(page.locator("#solo > li").nth(1)).toBeVisible();
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("one hashchange wakes both twin sweeps and writes the hash once", async ({ page }) => {
+  await mountTwin(page);
+  await seedBoth(page);
+  const before = await markTrace(page);
+  // ADR-0080: the hash dispatch is the ordinary set-field transaction, so one
+  // `hashchange` raises the one `changed[mode]` bit that both twin sweeps are
+  // guarded on — two sweeps, one commit, still in declaration order.
+  await page.evaluate(() => {
+    location.hash = "#/off";
+  });
+  await expect(page.locator("#left > li").nth(0)).toBeHidden();
+  await expect(page.locator("#left > li").nth(1)).toBeVisible();
+  await expect(page.locator("#right > li").nth(0)).toBeVisible();
+  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  const after = await readTrace(page);
+  expect(after.commits).toBe(before.commits + 1);
+  expect(after.slice).toContain("event:route:mode:off");
+  expect(occurrences(after.slice, "filter:left:evaluated")).toBe(1);
+  expect(occurrences(after.slice, "filter:right:evaluated")).toBe(1);
+  expect(occurrences(after.slice, "filter:solo:evaluated")).toBe(0);
+  expect(after.slice.indexOf("filter:left:evaluated"))
+    .toBeLessThan(after.slice.indexOf("filter:right:evaluated"));
+  expect(after.evaluations).toBe(before.evaluations + 2);
+  // One route write for the two regions that share the field — the write
+  // rides the routed field's changed bit, not any region's touched flag —
+  // and it is equal-value here, so no echo commit follows.
+  expect(occurrences(after.slice, "route:mode:write")).toBe(1);
+  expect(occurrences(after.slice, "transaction:commit")).toBe(1);
+  expect(after.metrics).toEqual(before.metrics);
+  // The same hash dispatch reaches the union literal too.
+  const beforeMixed = await markTrace(page);
+  await page.evaluate(() => {
+    location.hash = "#/mixed";
+  });
+  await expect(page.locator("#left > li").nth(0)).toBeVisible();
+  await expect(page.locator("#left > li").nth(1)).toBeVisible();
+  await expect(page.locator("#right > li").nth(0)).toBeVisible();
+  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  const afterMixed = await readTrace(page);
+  expect(afterMixed.commits).toBe(beforeMixed.commits + 1);
+  expect(afterMixed.slice).toContain("event:route:mode:mixed");
+  expect(occurrences(afterMixed.slice, "filter:left:evaluated")).toBe(1);
+  expect(occurrences(afterMixed.slice, "filter:right:evaluated")).toBe(1);
+  expect(occurrences(afterMixed.slice, "filter:solo:evaluated")).toBe(0);
+  expect(afterMixed.metrics).toEqual(beforeMixed.metrics);
+});
+
+test("a row update drains beside the filter sweep at region index 1", async ({ page }) => {
+  await mountTwin(page);
+  await seedBoth(page);
+  await flipMode(page, "Show on", "#/on");
+  // Under `"on"` `right` keeps the `flag == "false"` rows, so R1 alone shows.
+  await expect(page.locator("#right > li").nth(0)).toBeHidden();
+  await expect(page.locator("#right > li").nth(1)).toBeVisible();
+  const before = await page.evaluate(() => {
+    const tx = globalThis.twinDispose.instrumentation();
+    globalThis.twinTraceLength = tx[7].length;
+    globalThis.twinRow = document.querySelectorAll("#right > li")[1];
+    return {
+      commits: tx[1],
+      evaluations: tx[8],
+      metrics: globalThis.twinDispose.regionInstrumentation(),
+    };
+  });
+  // ADR-0080: the checkbox writes the very field `right`'s filter reads, so
+  // one commit drains the pending row through `updateAt` and then re-selects
+  // it — a drain beside a filter sweep at region index *1*, where the two had
+  // never met (Toggle Lab and Mix Lab only ever pair them at index 0).
+  await page.locator("#right > li").nth(1)
+    .getByRole("checkbox", { name: "Flag right" }).check();
+  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  const after = await readTrace(page);
+  const flag = await page.evaluate(
+    () => globalThis.twinRow.querySelector(".twin-flag").textContent,
+  );
+  expect(flag).toBe("true");
+  expect(after.commits).toBe(before.commits + 1);
+  // The drain runs first; the sweep then reads the settled row table. The
+  // pending array feeds `region_touched_1`, so one flag wakes both.
+  expect(occurrences(after.slice, "region:right:updateAt")).toBe(1);
+  expect(occurrences(after.slice, "region:right:update")).toBe(0);
+  expect(occurrences(after.slice, "filter:right:evaluated")).toBe(1);
+  expect(after.slice.indexOf("region:right:updateAt"))
+    .toBeLessThan(after.slice.indexOf("filter:right:evaluated"));
+  // The twin sharing the filter field stays asleep: no field changed, and
+  // `left` was never touched.
+  expect(occurrences(after.slice, "filter:left:evaluated")).toBe(0);
+  expect(occurrences(after.slice, "filter:solo:evaluated")).toBe(0);
+  expect(after.evaluations).toBe(before.evaluations + 1);
+  // One update in `right` — no mount, no move, no disposal anywhere — and
+  // the drained row is the same node it was.
+  expect(after.metrics[1]).toEqual([
+    before.metrics[1][0], before.metrics[1][1] + 1,
+    before.metrics[1][2], before.metrics[1][3],
+  ]);
+  expect(after.metrics[0]).toEqual(before.metrics[0]);
+  expect(after.metrics[2]).toEqual(before.metrics[2]);
+  const identical = await page.evaluate(
+    () => document.querySelectorAll("#right > li")[1] === globalThis.twinRow,
+  );
+  expect(identical).toBe(true);
+  // The ADR-0060 checked reflection survives the drain: the box the click
+  // set stays set after the row is re-rendered and re-selected.
+  const checked = await page.evaluate(
+    () => globalThis.twinRow.querySelector("input").checked,
+  );
+  expect(checked).toBe(true);
+});
+
 test("flipping back restores every region without remounting a row", async ({ page }) => {
   await mountTwin(page);
   await seedBoth(page);
-  await page.getByRole("button", { name: "Show on" }).click();
+  await flipMode(page, "Show on", "#/on");
   await page.getByRole("button", { name: "Tone on" }).click();
   const before = await page.evaluate(() => {
     globalThis.twinRows = Array.from(document.querySelectorAll("li"));
     return globalThis.twinDispose.regionInstrumentation();
   });
-  await page.getByRole("button", { name: "Show off" }).click();
+  await flipMode(page, "Show off", "#/off");
   await expect(page.locator("#left > li").nth(0)).toBeHidden();
   await expect(page.locator("#left > li").nth(1)).toBeVisible();
   await expect(page.locator("#right > li").nth(0)).toBeVisible();
   await expect(page.locator("#right > li").nth(1)).toBeHidden();
-  await page.getByRole("button", { name: "Show all" }).click();
+  await flipMode(page, "Show all", "#/");
   await page.getByRole("button", { name: "Tone all" }).click();
   await expect(page.locator("#left > li").nth(1)).toBeVisible();
   await expect(page.locator("#right > li").nth(0)).toBeVisible();

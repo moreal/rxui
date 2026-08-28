@@ -25,7 +25,8 @@ if (
     JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs"]) ||
   JSON.stringify(twinManifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
-    "keyed-regions", "row-aggregates", "region-filters",
+    "keyed-regions", "typed-row-events", "row-reflects", "row-aggregates",
+    "region-filters", "routing",
   ])
 ) {
   throw new Error("generated Twin Lab manifest is invalid");
@@ -56,7 +57,10 @@ for (const required of [
   // other's container or row table. The two inline arm tables are inverted,
   // so one field value hides complementary rows in the two regions.
   "      const filter_scan_0 = [0];\n      for (const filter_row_0 of regions[0][1]) {\n        setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", state[1] === \"on\" ? filter_row_0[2] !== \"true\" : state[1] === \"off\" ? filter_row_0[2] !== \"false\" : false);\n        filter_scan_0[0] += 1;\n      }",
-  "      const filter_scan_1 = [0];\n      for (const filter_row_1 of regions[1][1]) {\n        setProperty(childAt(regions[1][5], filter_scan_1[0]), \"hidden\", state[1] === \"on\" ? filter_row_1[2] !== \"false\" : state[1] === \"off\" ? filter_row_1[2] !== \"true\" : false);\n        filter_scan_1[0] += 1;\n      }",
+  // ADR-0080: `right` names one literal (`"mixed"`) its twin does not. The
+  // two chains stay independent — `left`'s chain has no `"mixed"` test at
+  // all, so under that literal `left` falls through to show-all.
+  "      const filter_scan_1 = [0];\n      for (const filter_row_1 of regions[1][1]) {\n        setProperty(childAt(regions[1][5], filter_scan_1[0]), \"hidden\", state[1] === \"on\" ? filter_row_1[2] !== \"false\" : state[1] === \"off\" ? filter_row_1[2] !== \"true\" : state[1] === \"mixed\" ? filter_row_1[2] !== \"true\" : false);\n        filter_scan_1[0] += 1;\n      }",
   "      const filter_scan_2 = [0];\n      for (const filter_row_2 of regions[2][1]) {\n        setProperty(childAt(regions[2][5], filter_scan_2[0]), \"hidden\", state[2] === \"on\" ? filter_row_2[2] !== \"true\" : false);\n        filter_scan_2[0] += 1;\n      }",
   // ADR-0079, axis two — two filters over one state field: `left` and
   // `right` both wake on `changed[1]`, `solo` only on `changed[2]`. Each
@@ -73,20 +77,43 @@ for (const required of [
   // commit runs all three sweeps, two woken by the changed bit and one by
   // its own touched flag.
   "  tx[7][\"push\"](\"event:stir\");\n  regions[2][1][\"push\"]([regions[2][2], $lrx_event_8_append_0_0(state[0], state[1], state[2]), $lrx_event_8_append_0_1(state[0], state[1], state[2])]);\n  regions[2][2] += 1;\n  regions[2][3] = true;\n  tx[7][\"push\"](\"region:solo:append\");\n  state[1] = $lrx_event_8_write_1(state[0], state[1], state[2]);",
-  // Only `left` binds a row event, so only its container carries a
-  // delegated listener; the unbound neighbours emit no dispatch at all.
+  // ADR-0080: `left` and `right` each bind one row event of their own kind —
+  // a delegated `click` on `left`'s container and a delegated `change` on
+  // `right`'s — so the two dispatches never share a listener; `solo` binds
+  // none and emits no dispatch at all.
   "const region_off_0 = listenDelegatedCells(node_24, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\"]);",
+  "const region_off_1_change = listenDelegatedCells(node_25, \"change\", state, context, $lrx_region_1_dispatch, [\"\", \"\", \"toggle\"]);",
+  // ADR-0080, axis one — a route over the *shared* filter field. The sealed
+  // literal set is the declared default plus the union of both tables over
+  // `mode`, so `#/mixed` is legal on the strength of `right`'s table alone
+  // even though `left` is declared first.
+  "  const route_hash_0 = readHash();\n  state[1] = route_hash_0 === \"#/\" ? \"all\" : route_hash_0 === \"#/on\" ? \"on\" : route_hash_0 === \"#/off\" ? \"off\" : route_hash_0 === \"#/mixed\" ? \"mixed\" : state[1];",
+  "function $lrx_route_0(hostState, context, hash) {\n  if (hash === \"#/\") {\n    return $lrx_route_0_arm_0(context, null);\n  }\n  if (hash === \"#/on\") {\n    return $lrx_route_0_arm_1(context, null);\n  }\n  if (hash === \"#/off\") {\n    return $lrx_route_0_arm_2(context, null);\n  }\n  if (hash === \"#/mixed\") {\n    return $lrx_route_0_arm_3(context, null);\n  }\n  return $lrx_route_0_arm_0(context, null);\n}",
+  // One route write per commit, behind the routed field's own changed bit —
+  // not per filtered region. Two regions filter on `mode`; there is still
+  // exactly one `route:mode:write` block, and it sits ahead of both sweeps.
+  "    if (changed[1]) {\n      if (state[1] === \"all\") {\n        writeHash(\"#/\");\n      }\n      if (state[1] === \"on\") {\n        writeHash(\"#/on\");\n      }\n      if (state[1] === \"off\") {\n        writeHash(\"#/off\");\n      }\n      if (state[1] === \"mixed\") {\n        writeHash(\"#/mixed\");\n      }\n      tx[7][\"push\"](\"route:mode:write\");\n    }",
+  // ADR-0080, axis two — a pending-row drain beside a filter sweep at region
+  // index *1*: the `updateAt` loop settles the retained row and the very
+  // next statement is that region's own filter sweep, both woken by the one
+  // `region_touched_1` flag the drain's pending array feeds.
+  "    if (regions[1][4][\"length\"] !== 0) {\n      for (const pending_row of regions[1][4]) {\n        regions[1][0][\"updateAt\"](pending_row, regions[1][1][pending_row], null);\n        tx[7][\"push\"](\"region:right:updateAt\");\n      }\n      regions[1][4] = [];\n    }\n    if (region_touched_1 || changed[1]) {",
 ]) {
   if (!twinSource.includes(required)) {
     throw new Error(`generated Twin Lab is missing ${required}`);
   }
 }
 for (const banned of [
-  "$lrx_region_1_dispatch",
   "$lrx_region_2_dispatch",
   "count_next_1_",
   "count_next_2_",
   "filter_scan_3",
+  // ADR-0080: the union rule seals the literal set for *validation* only —
+  // it never merges the tables. `left` declares no `"mixed"` arm, so no
+  // `filter_row_0` test for it may appear, and no second route item or
+  // per-region hash write may either.
+  "filter_row_0[2] !== \"true\" : state[1] === \"mixed\"",
+  "$lrx_route_1",
 ]) {
   if (twinSource.includes(banned)) {
     throw new Error(`generated Twin Lab unexpectedly emits ${banned}`);

@@ -125,6 +125,7 @@ fixtures=(
   Test/fixtures/compile-fail/RowChildComposedProp.lean
   Test/fixtures/compile-fail/RowChildBroadcastField.lean
   Test/fixtures/compile-fail/FilterRegionTwice.lean
+  Test/fixtures/compile-fail/RouteLiteralOutsideFilterUnion.lean
 )
 fragments=(
   "Constructor for"
@@ -250,6 +251,7 @@ fragments=(
   "error[LRX-ELAB-131]"
   "error[LRX-VIEW-045]"
   "error[LRX-TYPE-113]"
+  "error[LRX-TYPE-117]"
 )
 
 for index in "${!fixtures[@]}"; do
@@ -290,6 +292,21 @@ derived_read_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/Deri
 if [[ "$derived_read_output" != *"derived reads require a transaction barrier"* ]]; then
   echo "derived event read diagnostic lost its future-capability guidance" >&2
   echo "$derived_read_output" >&2
+  exit 1
+fi
+
+union_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/RouteLiteralOutsideFilterUnion.lean 2>&1 || true)"
+if [[ "$union_output" != *"every filter table over the field"* ]]; then
+  echo "route literal diagnostic lost the ADR-0080 union wording" >&2
+  echo "$union_output" >&2
+  exit 1
+fi
+# ADR-0080: the sealed set is the union, so the diagnostic points at *both*
+# filter declarations (lines 19 and 20), not just the first-declared one.
+if [[ "$union_output" != *"RouteLiteralOutsideFilterUnion.lean:19:3"* ||
+      "$union_output" != *"RouteLiteralOutsideFilterUnion.lean:20:3"* ]]; then
+  echo "route literal diagnostic lost one of the two filter declarations" >&2
+  echo "$union_output" >&2
   exit 1
 fi
 

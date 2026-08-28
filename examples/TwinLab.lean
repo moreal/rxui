@@ -5,8 +5,8 @@ import LeanRx
 when two of those filters are driven by the *same* state field.
 
 The lab is deliberately narrow — three regions, no child components, no
-persistence, no routing — so the generated module is a direct reading of
-the per-region filter contract:
+persistence — so the generated module is a direct reading of the
+per-region filter contract:
 
 - `left` carries a count cell, so its record is `[handle, rows, nextKey,
   dirty, pending, countRefs, countCache, container]` and its filter
@@ -46,6 +46,28 @@ flag — still in declaration order, still once each. Two filters on *one*
 region remain rejected (`LRX-TYPE-113`): one region owns one container
 and one row table, so a second table over it would be two writers of one
 `hidden` property.
+
+ADR-0080 closes the two axes ADR-0079 left open on top of that shape:
+
+- `route mode := when "#/" "all" then when "#/on" "on" then when "#/off"
+  "off" then when "#/mixed" "mixed"` routes the *shared* filter field.
+  The sealed literal set is the declared default plus the **union** of
+  every filter table over the field, not the first-declared table:
+  `"mixed"` appears only in `right`'s arm table, so a first-match rule
+  would reject `#/mixed` purely because `left` is declared first. Under
+  `"mixed"` the region that names the literal filters and the region
+  that does not falls through to show-all — exactly what the emitted arm
+  chain already does — and one `hashchange` raises one `changed[mode]`
+  bit that wakes both twin sweeps inside the one route-arm transaction,
+  while `writeHash` rides that same bit, once, regardless of how many
+  regions filter on it.
+- `row right toggle (checked : String) := set flag checked` puts a
+  pending-row drain (`updateAt`) beside a filter sweep at region index
+  *1*: the checkbox writes the very field `right`'s filter reads, so one
+  commit reconciles the retained row and then re-selects it. The
+  `region_touched_1` flag folds the pending array in, so the drain and
+  the sweep wake together by construction; `left` and `solo` stay asleep
+  even though `left` shares the filter field.
 
 No host change; runtime ABI stays 17. -/
 
@@ -88,8 +110,12 @@ component TwinLab (schema := TwinSchema) where {
   filter left by mode := when "on" (flag == "true")
     then when "off" (flag == "false");
   filter right by mode := when "on" (flag == "false")
-    then when "off" (flag == "true");
+    then when "off" (flag == "true")
+    then when "mixed" (flag == "true");
   filter solo by tone := when "on" (flag == "true");
+  route mode := when "#/" "all" then when "#/on" "on"
+    then when "#/off" "off" then when "#/mixed" "mixed";
+  row right toggle (checked : String) := set flag checked;
   region left (label, flag) := jsx% <li class="twin-row"> [
     <span class="twin-label"> [{label}],
     <span class="twin-flag"> [{flag}],
@@ -99,7 +125,11 @@ component TwinLab (schema := TwinSchema) where {
   ];
   region right (label, flag) := jsx% <li class="twin-row"> [
     <span class="twin-label"> [{label}],
-    <span class="twin-flag"> [{flag}]
+    <span class="twin-flag"> [{flag}],
+    <span class="twin-actions"> [
+      <input type="checkbox" ariaLabel="Flag right" checked={flag == "true"}
+        onChange={toggle}/>
+    ]
   ];
   region solo (label, flag) := jsx% <li class="twin-row"> [
     <span class="twin-label"> [{label}],

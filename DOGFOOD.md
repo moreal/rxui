@@ -4259,3 +4259,88 @@ registrations, the artifact gate, six browser tests, the
 snippet, the guide update, the ADR, and this record. Open: a filter
 beside a pending-row drain at region index > 0, and a route over one of
 two filtered fields.
+
+## A route over a shared filter field — the ADR-0079 OQ closure round (ADR-0080)
+
+### What was built
+
+Both of ADR-0079's open questions, closed on Twin Lab. The route one
+needed a decision first, so the round started by making the ambiguity
+reproducible instead of arguing about it: two scratch components,
+identical except for which literal the route arm names, one rejected
+and one accepted purely because `filter left` is written above `filter
+right`. `validateRoutes` was reading the routed field's filter table
+with `spec.filters.find?` — the first match — which was the only
+sensible reading while a component could have one filter, and stopped
+being one when ADR-0079 made two legal.
+
+Nothing downstream agreed with `find?`. The route arm functions, the
+hash dispatch chain, and the mount seed are functions of the *route*
+table alone; each region's filter chain is emitted from its own arms and
+falls through to show-all on a literal it does not name; one
+`hashchange` is an ordinary set-field transaction, so `changed[field]`
+wakes every sweep guarded on that field; and `writeHash` sits in
+`if (changed[route.field.index])`, once per route item, ahead of all the
+sweeps. The runtime already treated the field's literal space as the
+union of the tables over it. So the sealed set became the union, and the
+`LRX-TYPE-117` diagnostic now names every table it was computed from
+rather than whichever one came first.
+
+Twin Lab carries both witnesses. `filter right` gained a third arm on
+`"mixed"` — a literal its twin does not name — and `route mode` maps
+`#/mixed` onto it, which is legal only through the union; at runtime
+`"mixed"` filters `right` and leaves `left` showing every row.
+`row right toggle` puts a reflected checkbox in `right`'s rows writing
+the very field `right`'s filter reads, so one commit drains the retained
+row through `updateAt` and re-selects it at region index 1 — the
+drain-beside-filter pairing that had only ever run at index 0.
+
+### Friction encountered
+
+Routing a field the existing tests already flip changed what those tests
+measure. Every `mode` button click now lands *two* commits: the flip,
+whose commit writes the canonical hash, and the `hashchange` the write
+provokes, whose dispatch is an equal-value set-field commit. Three
+ADR-0079 tests asserted `commits + 1`. Papering over that with a sleep
+would have been the wrong repair — the echo is a real, countable
+property — so the trace windows were widened over both commits and the
+assertions restated: one changed bit, two sweeps once each, one
+`route:mode:write`, across two `transaction:commit`s of which only the
+first does any work. The tests that merely need the echo *out of the
+way* got a `flipMode` helper that polls the commit counter to `+2`
+rather than waiting on a timeout.
+
+Worth recording for the next round: a hash-*dispatched* flip is one
+commit, not two, because the write its commit would make is equal-value
+and fires no further `hashchange`. The echo exists only when the flip
+originates outside the hash.
+
+### Bugs found
+
+One, and it was the round's subject: the first-match filter lookup made
+a type error depend on declaration order, and pointed the diagnostic at
+the wrong table while doing it. Everything else held. `#/mixed` seeds at
+mount and filters `right` alone; one `hashchange` evaluates `left` then
+`right` and never `solo`, with one route write for the two regions
+sharing the field; the row toggle drains before its own sweep in one
+commit, `left` asleep throughout, one update and no mount, move, or
+disposal, with row identity and the ADR-0060 checked reflection intact.
+
+### Performance observations
+
+Validation-only: every generated artifact outside Twin Lab is
+byte-identical, so the benchmark size gate and BENCHMARK.md stand
+without re-measurement. Inside Twin Lab the route costs four arm
+functions, one dispatch chain, one seed fold, and one write block — all
+per *route item*, none per filtered region.
+
+### Follow-up issue or commit
+
+`feat(component): seal a route onto the union of its field's filter
+tables (ADR-0080)` — the `validateRoutes` change and its diagnostic, the
+Twin Lab route, third arm and row event, the artifact gate's union and
+drain pins, three new browser tests plus four restated ones, the
+`RouteLiteralOutsideFilterUnion` fixture with its two-span check, the
+compiled language-guide snippet and guide text, the ADR, and this
+record. Open: a persisted region under a route, and whether a row write
+that provably cannot change a selection should still wake the sweep.

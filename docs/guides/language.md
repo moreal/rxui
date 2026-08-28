@@ -594,6 +594,19 @@ different reasons and still run in that order. Two filters over *one*
 region stay rejected (`LRX-TYPE-113`): a region owns one container and one
 row table, so a second table would be two writers of one `hidden` property.
 
+A `route` may target a filter field that several regions share (ADR-0080).
+The field's sealed state literals are then the declared default plus the
+**union** of every filter table over that field, not the first-declared
+table's: below, `"mixed"` is named by `right` alone, and `#/mixed` is a
+legal route arm on the strength of that table even though `left` is
+declared first. The union is what the emission already means — the routed
+field is component-wide, one `hashchange` raises the one changed bit both
+sweeps are guarded on, and a literal one table omits is simply that
+region's fall-through to show-all — so a first-match reading would make a
+`LRX-TYPE-117` rejection depend on declaration order. `writeHash` still
+rides the routed field's own changed flag once per commit, however many
+regions filter on it.
+
 ```lean
 component TwinFilterMini (schema := TwinFilterMiniSchema) where {
   state twinMode : String := "all";
@@ -601,8 +614,11 @@ component TwinFilterMini (schema := TwinFilterMiniSchema) where {
   event showOn := set twinMode "on";
   event toneOn := set twinTone "on";
   filter left by twinMode := when "on" (flag == "true");
-  filter right by twinMode := when "on" (flag == "false");
+  filter right by twinMode := when "on" (flag == "false")
+    then when "mixed" (flag == "true");
   filter solo by twinTone := when "on" (flag == "true");
+  route twinMode := when "#/" "all" then when "#/on" "on"
+    then when "#/mixed" "mixed";
   region left (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
   region right (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
   region solo (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
@@ -619,8 +635,9 @@ component TwinFilterMini (schema := TwinFilterMiniSchema) where {
 A `route` item seals the browser's URL hash onto the filter field
 (ADR-0063): `route field := when "#/hash" "literal" then …` maps distinct
 `#/`-shaped hash literals one-to-one onto the routed field's existing state
-literals — the declared default plus the ADR-0051 filter table's literals,
-on a `String` state field that must carry a declared filter. Exactly one arm
+literals — the declared default plus the literals of every ADR-0051 filter
+table over that field (ADR-0080), on a `String` state field that must carry
+at least one declared filter. Exactly one arm
 maps the declared default, so the unknown-or-empty-hash fallback is a table
 entry rather than a separate path: mount seeds the field through one
 `readHash` (an unknown hash keeps the declared default), every `hashchange`
@@ -631,9 +648,10 @@ changed flag, so an equal-value transaction writes nothing and the WHATWG
 equal-value hash assignment closes the echo loop. Arms are written
 `when "#/hash" "literal"` (`LRX-ELAB-128` on any other arm shape); the table
 rules — at most one route item per component, a `String` state field
-carrying a declared filter, a nonempty one-to-one table of distinct
-`#/`-shaped hash literals over the field's existing state literals, exactly
-one arm on the declared default — are `LRX-TYPE-117`:
+carrying at least one declared filter, a nonempty one-to-one table of
+distinct `#/`-shaped hash literals over the field's existing state literals
+(the declared default and every filter table over the field), exactly one
+arm on the declared default — are `LRX-TYPE-117`:
 
 ```lean
 component RoutedRosterMini (schema := RoutedRosterMiniSchema) where {
@@ -1055,7 +1073,8 @@ the corresponding public dogfood examples before using these specialized APIs.
 ## 10. Current limitations
 
 LeanRx does not currently provide a general URL router — routing is the
-sealed one-per-component hash route table over the filter field (ADR-0063),
+sealed one-per-component hash route table over one filtered state field
+(ADR-0063, ADR-0080),
 nothing wider — general VDOM, arbitrary Lean transpilation, raw HTML, URL
 attributes, a CSS DSL, SSR, hydration, a released package, or a formal proof
 relating generated JavaScript to browser DOM behavior.

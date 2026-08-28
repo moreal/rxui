@@ -284,8 +284,9 @@ component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
 }
 
 /- The per-region filter distribution snippet from guide section 7
-(ADR-0079): three regions each carrying one filter, two of them named by the
-same state field. -/
+(ADR-0079, ADR-0080): three regions each carrying one filter, two of them
+named by the same state field, and a route over that shared field whose
+`"mixed"` literal comes from the second-declared table alone. -/
 abbrev TwinFilterMiniSchema : Schema :=
   .field "twinMode" String <| .field "twinTone" String .empty
 
@@ -298,8 +299,11 @@ component TwinFilterMini (schema := TwinFilterMiniSchema) where {
   event showOn := set twinMode "on";
   event toneOn := set twinTone "on";
   filter left by twinMode := when "on" (flag == "true");
-  filter right by twinMode := when "on" (flag == "false");
+  filter right by twinMode := when "on" (flag == "false")
+    then when "mixed" (flag == "true");
   filter solo by twinTone := when "on" (flag == "true");
+  route twinMode := when "#/" "all" then when "#/on" "on"
+    then when "#/mixed" "mixed";
   region left (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
   region right (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
   region solo (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
@@ -667,10 +671,19 @@ def run : IO Unit := do
       unless twinned.spec.filters.toList.map
           (fun filter => (filter.region, filter.field.index, filter.arms)) ==
           [("left", 0, [("on", .ofField 1 "true")]),
-           ("right", 0, [("on", .ofField 1 "false")]),
+           ("right", 0,
+            [("on", .ofField 1 "false"), ("mixed", .ofField 1 "true")]),
            ("solo", 1, [("on", .ofField 1 "true")])] do
         throw <| IO.userError
           "language-guide twin filter snippet lost a per-region filter table"
+      -- ADR-0080: the sealed literal set is the union of both tables over the
+      -- routed field, so `"mixed"` — named only by the second-declared one —
+      -- is a legal route target. A first-match rule would reject this arm.
+      unless twinned.spec.routes.toList.map
+          (fun route => (route.field.index, route.arms)) ==
+          [(0, [("#/", "all"), ("#/on", "on"), ("#/mixed", "mixed")])] do
+        throw <| IO.userError
+          "language-guide twin route snippet lost its union literal arm"
   | .error error =>
       throw <| IO.userError
         s!"language-guide twin filter component rejected: {error.render}"

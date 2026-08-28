@@ -250,8 +250,11 @@ structure RegionFilter (Γ : Schema) where
 
 /-- One sealed route view (ADR-0063): a one-to-one correspondence from sealed
 `#/`-shaped hash literals to existing state literals of the routed field — the
-one component state field that already carries a declared ADR-0051 region
-filter. Mount seeds the field through `readHash` (an unknown or empty hash
+one component state field that already carries at least one declared ADR-0051
+region filter. Several regions may filter on the routed field; the sealed
+literal set is then the union of their tables, and one hashchange wakes every
+one of their sweeps through the single changed bit (ADR-0080). Mount seeds the
+field through `readHash` (an unknown or empty hash
 falls to the declared default), `hashchange` dispatches the same set-field
 transaction the filter buttons dispatch, and `writeHash` rides the set-field
 commit flip-only behind the field's changed flag. Exactly one arm must map the
@@ -1707,12 +1710,16 @@ private def stringInitial? : ValueSpec Γ → Option String
   | .source _ _ _ (.string value) _ => some value
   | _ => none
 
-/-- Validate the sealed route table (ADR-0063): at most one route item, whose
-field is a `String` source carrying a declared ADR-0051 region filter; the
-arms are a nonempty one-to-one table from distinct `#/`-shaped hash literals
-onto the field's existing state literals — the declared default plus the
-filter table's literals — and exactly one arm maps the declared default, so
-the unknown-hash fallback is a table entry. -/
+/-- Validate the sealed route table (ADR-0063, ADR-0080): at most one route
+item, whose field is a `String` source carrying at least one declared ADR-0051
+region filter; the arms are a nonempty one-to-one table from distinct
+`#/`-shaped hash literals onto the field's existing state literals — the
+declared default plus the *union* of every filter table driven by that field —
+and exactly one arm maps the declared default, so the unknown-hash fallback is
+a table entry. The union, not the first-declared table, is the sealed set: the
+routed field is component-wide, every filter over it wakes on the same changed
+bit, and a literal one table omits is that region's fall-through to show-all
+(ADR-0080). -/
 private def validateRoutes (spec : ComponentSpec Γ) (sourceCount : Nat) :
     Except ComponentError Unit := do
   unless spec.routes.size ≤ 1 do
@@ -1728,15 +1735,15 @@ private def validateRoutes (spec : ComponentSpec Γ) (sourceCount : Nat) :
         message := s!"route item targets derived value {route.field.index}; the routed field is one String state field"
         spans := #[route.span]
       }
-    let filterTable ← match spec.filters.toList.find?
-        (·.field.index == route.field.index) with
-      | some filter => pure (filter.arms.map (·.1), filter.span)
-      | none =>
-          throw {
-            code := "LRX-TYPE-117"
-            message := "route item targets a field with no declared region filter; routing seals onto the filter field"
-            spans := #[route.span]
-          }
+    let routedFilters := spec.filters.toList.filter (·.field.index == route.field.index)
+    if routedFilters.isEmpty then
+      throw {
+        code := "LRX-TYPE-117"
+        message := "route item targets a field with no declared region filter; routing seals onto the filter field"
+        spans := #[route.span]
+      }
+    let filterLiterals := routedFilters.flatMap (·.arms.map (·.1))
+    let filterSpans := routedFilters.toArray.map (·.span)
     if route.arms.isEmpty then
       throw {
         code := "LRX-TYPE-117"
@@ -1770,13 +1777,13 @@ private def validateRoutes (spec : ComponentSpec Γ) (sourceCount : Nat) :
             message := "route item targets a field without a declared String initial"
             spans := #[route.span]
           }
-    let sealedLiterals := default :: filterTable.1
+    let sealedLiterals := default :: filterLiterals
     for (_, literal) in route.arms do
       unless sealedLiterals.contains literal do
         throw {
           code := "LRX-TYPE-117"
-          message := s!"route state literal {literal} is outside the field's existing state literals (the declared default and the filter table)"
-          spans := #[route.span, filterTable.2]
+          message := s!"route state literal {literal} is outside the field's existing state literals (the declared default and every filter table over the field)"
+          spans := #[route.span] ++ filterSpans
         }
     unless route.arms.any (·.2 == default) do
       throw {
