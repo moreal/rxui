@@ -255,6 +255,16 @@ private def rowExprJs (item : Ident) (payload : Expr) : RowExpr → Expr
 /-- The inert payload expression for payload-free row expression positions. -/
 private def noPayload : Expr := .literal (.string "")
 
+/-- The shared single-field-literal comparison (ADR-0064): the sealed
+predicate's subject lowered through `rowExprJs`, compared against its string
+literal — for a `.field` subject, exactly the
+`item[field + 1] === "literal"` subtree the spelling sites previously rebuilt
+by hand, so the printed output is unchanged by construction. -/
+private def fieldPredicateJs (item : Ident) (payload : Expr)
+    (predicate : FieldPredicate) : Expr :=
+  .binary .eq (rowExprJs item payload predicate.subject)
+    (.literal (.string predicate.equals))
+
 /-- Lower one sealed row property reflection to its written value
 (ADR-0047/0049): a `value` target writes the row expression string; a
 `checked` target writes the boolean equality of the row expression against
@@ -262,14 +272,11 @@ its literal. -/
 private def rowReflectJs (item : Ident) (reflect : RowReflect) : Expr :=
   match reflect.target with
   | .value => rowExprJs item noPayload reflect.value
-  | .checkedIf equals =>
-      .binary .eq (rowExprJs item noPayload reflect.value) (.literal (.string equals))
+  | .checkedIf equals => fieldPredicateJs item noPayload ⟨reflect.value, equals⟩
 
 /-- Lower one sealed class selection to its conditional value (ADR-0044). -/
 private def rowClassJs (item : Ident) (select : RowClassSelect) : Expr :=
-  .conditional
-    (.binary .eq (.index (.ident item) (uint (select.field + 1)))
-      (.literal (.string select.equals)))
+  .conditional (fieldPredicateJs item noPayload select.predicate)
     (.literal (.string select.whenTrue))
     (.literal (.string select.whenFalse))
 
@@ -426,9 +433,9 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
       identity preserved (ADR-0050). -/
       pure (writeIndex + 1,
         ← regionBroadcastStmts regions tx regionSpecs regionName assignments noPayload)
-  | .regionRemoveIf regionName field equals _, writeIndex => do
-      /- The predicate removal keeps every row whose projected field does not
-      equal the literal and raises the dirty flag: the keyed reconcile
+  | .regionRemoveIf regionName predicate _, writeIndex => do
+      /- The predicate removal keeps every row not satisfying the sealed
+      field predicate and raises the dirty flag: the keyed reconcile
       disposes exactly the dropped keys (ADR-0050). -/
       let regionIndex ← match regionSpecs.toList.findIdx? (·.name == regionName) with
         | some index => pure index
@@ -441,9 +448,8 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
       pure (writeIndex + 1, [
         .const kept (.array .nil),
         .forOf rowEntry (regionEntry regions regionIndex 1) (.ofList [
-          .ifThen (.unary .not (.binary .eq
-              (.index (.ident rowEntry) (uint (field + 1)))
-              (.literal (.string equals)))) <| .ofList [
+          .ifThen (.unary .not (fieldPredicateJs rowEntry noPayload predicate)) <|
+            .ofList [
             .expr <| .call (.index (.ident kept) (.literal (.string "push")))
               (.ofList [.ident rowEntry])
           ]
@@ -756,8 +762,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
               pure [
                 Stmt.const scan (.array (.ofList [uint 0])),
                 .forOf row (regionEntry regions regionIndex 1) (.ofList [
-                  .ifThen (.binary .eq (.index (.ident row) (uint (field + 1)))
-                      (.literal (.string equals))) <| .ofList [
+                  .ifThen (fieldPredicateJs row noPayload
+                      (.ofField field equals)) <| .ofList [
                     .assign (.index (.ident scan) (uint 0))
                       (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
                   ]
@@ -820,8 +826,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
               pure [
                 Stmt.const scan (.array (.ofList [uint 0])),
                 .forOf row (regionEntry regions regionIndex 1) (.ofList [
-                  .ifThen (.binary .eq (.index (.ident row) (uint (field + 1)))
-                      (.literal (.string equals))) <| .ofList [
+                  .ifThen (fieldPredicateJs row noPayload
+                      (.ofField field equals)) <| .ofList [
                     .assign (.index (.ident scan) (uint 0))
                       (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
                   ]
@@ -883,12 +889,10 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
       let scan ← Ident.checked s!"filter_scan_{regionIndex}"
       let filterRow ← Ident.checked s!"filter_row_{regionIndex}"
       let hiddenExpr := filter.arms.foldr
-        (fun (equals, fieldIndex, value) acc =>
+        (fun (equals, predicate) acc =>
           Expr.conditional
             (.binary .eq (stateAt state filter.field.index) (.literal (.string equals)))
-            (.unary .not (.binary .eq
-              (.index (.ident filterRow) (uint (fieldIndex + 1)))
-              (.literal (.string value))))
+            (.unary .not (fieldPredicateJs filterRow noPayload predicate))
             acc)
         (Expr.literal (.boolean false))
       commitBody := commitBody ++ [.ifThen
@@ -1456,8 +1460,8 @@ mutual
         let dom := { dom with allocator, count := dom.count + 1 }
         let dom := rowAppend dom <| .const wrapper <|
           call runtime.createElement [.literal (.string HtmlTag.span.name)]
-        let dom := rowAppend dom <| .const flag <| .binary .eq
-          (.index (.ident item) (uint (field + 1))) (.literal (.string equals))
+        let dom := rowAppend dom <| .const flag <|
+          fieldPredicateJs item noPayload (.ofField field equals)
         let dom := rowAppend dom <| .expr <| call runtime.append [
           .ident wrapper,
           .conditional (.ident flag) (call whenTrueFn [.ident item])
@@ -1670,8 +1674,7 @@ private def regionUpdateFunction (runtime : RuntimeNames) (region : RegionSpec)
           let same ← Ident.checked s!"branch_same_{branchIndex}"
           body := body ++ [
             .const cell (rowNavigate runtime (.ident row) path),
-            .const want (.binary .eq (.index (.ident item) (uint (field + 1)))
-              (.literal (.string equals))),
+            .const want (fieldPredicateJs item noPayload (.ofField field equals)),
             .const same (.binary .eq
               (.index (.ident cell) (.literal (.string branchMarker))) (.ident want))
           ]
@@ -1784,9 +1787,7 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
           /- The guard subject rides the same `rowExprJs` lowering the commit
           assignments use (ADR-0054): a raw field projects the row slot, a
           trimmed subject wraps it in the sealed trim emission. -/
-          .const rowGuard (.binary .eq
-            (rowExprJs rowItem noPayload guard.value)
-            (.literal (.string guard.equals))),
+          .const rowGuard (fieldPredicateJs rowItem noPayload guard),
           .ifThen (.ident rowGuard) (.ofList
             (← rowRemoveStmts regions tx key regionIndex regionName eventName)),
           .ifThen (.unary .not (.ident rowGuard)) (.ofList applyStmts)

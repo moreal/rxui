@@ -437,7 +437,8 @@ private def rowClassSelectTerm (fields : List String) (attr : Syntax)
       | some index =>
           let indexLit := Syntax.mkNumLit (toString index)
           let span ← sourceSpanTerm attr
-          `(LeanRx.RowClassSelect.mk $indexLit $lit $whenTrue $whenFalse $span)
+          `(LeanRx.RowClassSelect.mk (LeanRx.FieldPredicate.ofField $indexLit $lit)
+              $whenTrue $whenFalse $span)
       | none =>
           throwErrorAt field
             s!"error[LRX-ELAB-116]: unknown row field {field.getId.eraseMacroScopes}; declared fields are {renderFields fields}"
@@ -694,7 +695,8 @@ private def updateStepTerm? (regionFields : List (String × List String))
                     s!"error[LRX-ELAB-119]: unknown row field {fieldName}; declared fields are {renderFields fields}"
             let indexLit := Syntax.mkNumLit (toString index)
             let regionLit := Syntax.mkStrLit region
-            pure (some (← `(LeanRx.Update.regionRemoveIf $regionLit $indexLit $lit)))
+            pure (some (← `(LeanRx.Update.regionRemoveIf $regionLit
+              (LeanRx.FieldPredicate.ofField $indexLit $lit))))
         | _ =>
             throwErrorAt value
               "error[LRX-ELAB-119]: a region removal is written `remove region (field == \"literal\")`"
@@ -780,7 +782,8 @@ private def rowGuardedStageTerm (fields : List String)
       `(LeanRx.RowExpr.trim (LeanRx.RowExpr.field $indexLit))
     else
       `(LeanRx.RowExpr.field $indexLit)
-  `(LeanRx.RowStage.mk [$assignments,*] (some (LeanRx.RowGuard.mk $subjectTerm $guardLit)))
+  `(LeanRx.RowStage.mk [$assignments,*]
+    (some (LeanRx.FieldPredicate.mk $subjectTerm $guardLit)))
 
 /-- Lower one guarded component event (ADR-0055):
 `if draft == "" then skip else (set field (expr), …)`. The guard subject is
@@ -1060,7 +1063,8 @@ private def elabFilterItem (regionFields : List (String × List String))
               throwErrorAt rowField
                 s!"error[LRX-ELAB-120]: unknown row field {rowFieldName}; declared fields are {renderFields fields}"
         let indexLit := Syntax.mkNumLit (toString index)
-        arms := arms.push (← `(($stateLit, $indexLit, $rowLit)))
+        arms := arms.push
+          (← `(($stateLit, LeanRx.FieldPredicate.ofField $indexLit $rowLit)))
     | _ =>
         throwErrorAt step
           "error[LRX-ELAB-120]: a filter arm is written `when \"literal\" (field == \"literal\")`"

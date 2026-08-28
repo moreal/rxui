@@ -530,7 +530,7 @@ def run : IO Unit := do
             event.update.regionBroadcastTargets, event.update.regionRemoveIfTargets)) ==
           [("addItem", [], []),
             ("completeAll", [("roster", [(1, .lit "true")])], []),
-            ("clearCompleted", [], [("roster", 1)])] do
+            ("clearCompleted", [], [("roster", .ofField 1 "true")])] do
         throw <| IO.userError
           "language-guide count snippet lost its broadcast or removal steps"
       unless counting.view.attrSelects.map (fun mounted =>
@@ -554,7 +554,8 @@ def run : IO Unit := do
   | .ok filtered =>
       unless filtered.spec.filters.toList.map
           (fun filter => (filter.region, filter.field.index, filter.arms)) ==
-          [("roster", 1, [("active", 1, "false"), ("completed", 1, "true")])] do
+          [("roster", 1,
+            [("active", .ofField 1 "false"), ("completed", .ofField 1 "true")])] do
         throw <| IO.userError
           "language-guide filter snippet lost its state field or arm table"
   | .error error =>

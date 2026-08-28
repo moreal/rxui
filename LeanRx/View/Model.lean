@@ -212,27 +212,39 @@ def RowExpr.guardSubject? : RowExpr → Option Nat
   | .trim (.field index) => some index
   | _ => none
 
-/-- One sealed row-field guard (ADR-0053): equality of a single projected row
-field against one string literal — the empty string for TodoMVC's
-destroy-on-empty-commit. The subject is a sealed row expression restricted by
-`ComponentSpec.check` to one field projection, optionally behind the ADR-0054
-trim unary; the guard shape itself is the whole predicate language: no
-negation, no conjunction, no payload reference, and no component state. -/
-structure RowGuard where
-  value : RowExpr
+/-- The one sealed single-field-literal equality (ADR-0064): a sealed row
+expression subject compared against one string literal. The subject is a
+`RowExpr` so the ADR-0049 checked reflection and the ADR-0053/0054 trimmed
+guards join the same spelling without regression; every other producer stores
+a bare `.field` projection through `ofField`. The shape itself is the whole
+predicate language: no negation, no conjunction, no payload reference, and no
+component state. It is the guard of an ADR-0053 remove-if stage (subject
+restricted by `ComponentSpec.check` to one field projection, optionally behind
+the trim unary, compared against the empty string for TodoMVC's
+destroy-on-empty-commit), the predicate of an ADR-0044 class selection, an
+ADR-0050 predicate removal, and an ADR-0051 filter arm. -/
+structure FieldPredicate where
+  subject : RowExpr
   equals : String
 deriving Repr, BEq, DecidableEq
 
+/-- The predicate over one raw projected row field — the spelling the
+`Nat`-indexed producers (class selection, predicate removal, filter arm)
+store (ADR-0064). -/
+def FieldPredicate.ofField (field : Nat) (equals : String) : FieldPredicate :=
+  ⟨.field field, equals⟩
+
 /-- One sealed row update stage (ADR-0043/0053): simultaneous assignments
 evaluated against the dispatching row's current fields. `removeIf` is the
-optional ADR-0053 guard — when the guarded field equals its literal the
+optional ADR-0053 guard — the sealed `FieldPredicate` (ADR-0064) — when the
+guarded field equals its literal the
 dispatching row is removed instead and no assignment runs; otherwise the
 assignments commit as one retained-row update. The stage shape is shared by
 the plain update action and every ADR-0052 key arm, and the guard equality
 runs inside the generated dispatch function — no host change. -/
 structure RowStage where
   assignments : List (Nat × RowExpr)
-  removeIf : Option RowGuard := none
+  removeIf : Option FieldPredicate := none
 deriving Repr, BEq, DecidableEq
 
 /-- Closed row action vocabulary for keyed region rows (ADR-0041/0043).
@@ -278,7 +290,7 @@ guard subject — uses the ADR-0054 trim unary, for the manifest feature
 stamp. -/
 def RowStage.hasTrim (stage : RowStage) : Bool :=
   stage.assignments.any (·.2.hasTrim) ||
-    (stage.removeIf.map (·.value.hasTrim)).getD false
+    (stage.removeIf.map (·.subject.hasTrim)).getD false
 
 /-- Whether any stage of the action uses the ADR-0054 trim unary, for the
 manifest feature stamp. -/
@@ -302,13 +314,13 @@ structure RowEventSpec where
 deriving Repr, BEq
 
 /-- One sealed row-scoped class selection (ADR-0044): the element's `class`
-attribute is `whenTrue` while the projected row field equals the comparison
-literal and `whenFalse` otherwise. Both class values, the attribute name, and
+attribute is `whenTrue` while the sealed predicate — one projected row field
+against the comparison literal (ADR-0064) — holds and `whenFalse` otherwise.
+Both class values, the attribute name, and
 the predicate shape are fixed at elaboration time; the retained-row update
 callback re-emits the selection so it tracks ADR-0043 row field updates. -/
 structure RowClassSelect where
-  field : Nat
-  equals : String
+  predicate : FieldPredicate
   whenTrue : String
   whenFalse : String
   span : SourceSpan := .generated

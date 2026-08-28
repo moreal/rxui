@@ -86,8 +86,8 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
       match region.template with
       | .element _ _ _ _ _ classIf =>
           classIf.map fun select =>
-            (select.field, select.equals, select.whenTrue, select.whenFalse)
-      | _ => []) == [[(1, "", "roster-row", "roster-row marked")]] do
+            (select.predicate, select.whenTrue, select.whenFalse)
+      | _ => []) == [[(.ofField 1 "", "roster-row", "roster-row marked")]] do
     throw <| IO.userError "region table lost the sealed class selection"
   unless checked.view.regionRefs.map (fun ref => (ref.name, ref.path)) ==
       [("roster", [4, 0])] do
@@ -217,7 +217,7 @@ private def verifyToggle
   match checked.spec.events.toList.find? (·.name == "clearCompleted") with
   | none => throw <| IO.userError "toggle removal event disappeared"
   | some event =>
-      unless event.update.regionRemoveIfTargets == [("items", 2)] do
+      unless event.update.regionRemoveIfTargets == [("items", .ofField 2 "true")] do
         throw <| IO.userError "toggle removal lost its target or predicate field"
   unless checked.view.regionCounts.map
       (fun count => (count.region, count.predicate, count.label)) ==
@@ -230,7 +230,7 @@ private def verifyToggle
   design, so it is absent from the table. -/
   unless checked.spec.filters.toList.map
       (fun filter => (filter.region, filter.field.index, filter.arms)) ==
-      [("items", 1, [("active", 2, "false"), ("completed", 2, "true")])] do
+      [("items", 1, [("active", .ofField 2 "false"), ("completed", .ofField 2 "true")])] do
     throw <| IO.userError "toggle filter view lost its state field or arm table"
   /- The ADR-0055 component-scope add path: the controlled new-todo draft is
   the per-keystroke `setDraft` typed event, and `addTodo` carries the sealed

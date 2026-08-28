@@ -162,7 +162,7 @@ def run : IO Unit := do
     RowNode.node .span [RowNode.node .button [RowNode.text "m"]
       (attrs := [.buttonType .button])
       (events := [{ kind := .click, eventName := "mark" }])]
-  ] (classIf := [{ field := 0, equals := "", whenTrue := "a", whenFalse := "b" }])
+  ] (classIf := [{ predicate := .ofField 0 "", whenTrue := "a", whenFalse := "b" }])
   let updatingRegion : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
         template := updatingTemplate
@@ -198,13 +198,13 @@ def run : IO Unit := do
   let classSelectOutOfBounds : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
         template := RowNode.node .li [RowNode.fieldText 0]
-          (classIf := [{ field := 1, equals := "", whenTrue := "a", whenFalse := "b" }]) }] }
+          (classIf := [{ predicate := .ofField 1 "", whenTrue := "a", whenFalse := "b" }]) }] }
   expectError "LRX-VIEW-026" classSelectOutOfBounds.check
   let classSelectBesideClass : ComponentSpec CounterSchema :=
     { goodRegion with regions := #[{ rosterRegion with
         template := RowNode.node .li [RowNode.fieldText 0]
           (attrs := [.className "static"])
-          (classIf := [{ field := 0, equals := "", whenTrue := "a", whenFalse := "b" }]) }] }
+          (classIf := [{ predicate := .ofField 0 "", whenTrue := "a", whenFalse := "b" }]) }] }
   expectError "LRX-VIEW-001" classSelectBesideClass.check
   /- ADR-0045 state-scoped attribute selections, exercised through forged
   specifications against the typed `parity` field. -/
@@ -849,11 +849,11 @@ def run : IO Unit := do
   expectError "LRX-TYPE-116" payloadBroadcastReadOutOfBounds.check
   let removeIfUnknownRegion : ComponentSpec CounterSchema :=
     { goodRegion with events := #[{
-        name := "bad", update := .regionRemoveIf "ghost" 0 "x" }] }
+        name := "bad", update := .regionRemoveIf "ghost" (.ofField 0 "x") }] }
   expectError "LRX-TYPE-112" removeIfUnknownRegion.check
   let removeIfOutOfBounds : ComponentSpec CounterSchema :=
     { goodRegion with events := #[{
-        name := "bad", update := .regionRemoveIf "r" 1 "x" }] }
+        name := "bad", update := .regionRemoveIf "r" (.ofField 1 "x") }] }
   expectError "LRX-TYPE-112" removeIfOutOfBounds.check
   let countingView : View CounterSchema := View.node .main [
     View.node .ul [View.region "r"],
@@ -902,36 +902,36 @@ def run : IO Unit := do
   second filter on one region. -/
   let goodFilter : ComponentSpec CounterSchema :=
     { goodRegion with filters := #[{
-        region := "r", field := parity, arms := [("odd", 0, "x")] }] }
+        region := "r", field := parity, arms := [("odd", .ofField 0 "x")] }] }
   match goodFilter.check with
   | .error error =>
       throw <| IO.userError s!"forged region filter rejected: {error.code}"
   | .ok checked =>
       unless checked.spec.filters.map
           (fun filter => (filter.region, filter.field.index, filter.arms)) ==
-          #[("r", 2, [("odd", 0, "x")])] do
+          #[("r", 2, [("odd", .ofField 0 "x")])] do
         throw <| IO.userError "forged region filter lost its arm table"
       unless (checked.graph.graph.nodes.map (·.name)).contains "filter:0:r" do
         throw <| IO.userError "forged region filter lost its graph sink node"
   let filterUnknownRegion : ComponentSpec CounterSchema :=
     { goodRegion with filters := #[{
-        region := "ghost", field := parity, arms := [("odd", 0, "x")] }] }
+        region := "ghost", field := parity, arms := [("odd", .ofField 0 "x")] }] }
   expectError "LRX-TYPE-113" filterUnknownRegion.check
   let filterNoArms : ComponentSpec CounterSchema :=
     { goodRegion with filters := #[{ region := "r", field := parity, arms := [] }] }
   expectError "LRX-TYPE-113" filterNoArms.check
   let filterDuplicateLiteral : ComponentSpec CounterSchema :=
     { goodRegion with filters := #[{
-        region := "r", field := parity, arms := [("odd", 0, "x"), ("odd", 0, "y")] }] }
+        region := "r", field := parity, arms := [("odd", .ofField 0 "x"), ("odd", .ofField 0 "y")] }] }
   expectError "LRX-TYPE-113" filterDuplicateLiteral.check
   let filterFieldOutOfBounds : ComponentSpec CounterSchema :=
     { goodRegion with filters := #[{
-        region := "r", field := parity, arms := [("odd", 1, "x")] }] }
+        region := "r", field := parity, arms := [("odd", .ofField 1 "x")] }] }
   expectError "LRX-TYPE-113" filterFieldOutOfBounds.check
   let filterDuplicateRegion : ComponentSpec CounterSchema :=
     { goodRegion with filters := #[
-        { region := "r", field := parity, arms := [("odd", 0, "x")] },
-        { region := "r", field := parity, arms := [("even", 0, "y")] }] }
+        { region := "r", field := parity, arms := [("odd", .ofField 0 "x")] },
+        { region := "r", field := parity, arms := [("even", .ofField 0 "y")] }] }
   expectError "LRX-TYPE-113" filterDuplicateRegion.check
   /- ADR-0052 key-branched row events, exercised through forged
   specifications: the good selection checks and keeps its arm table;

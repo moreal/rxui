@@ -68,7 +68,8 @@ def RowValue.of {Γ : Schema} {d : DepSet Γ} (value : RxExpr Γ d String) : Row
 `regionAppend` pushes one row (fresh region-owned key, evaluated field values)
 onto a declared keyed region (ADR-0041); `regionBroadcast` writes sealed row
 expressions into every row of a declared region simultaneously, and
-`regionRemoveIf` removes every row whose projected field equals the literal —
+`regionRemoveIf` removes every row satisfying the sealed field predicate —
+one projected field against one literal (ADR-0064) —
 both re-render through the keyed reconcile with retained-row identity
 preserved (ADR-0050). -/
 inductive Update (Γ : Schema) where
@@ -78,7 +79,7 @@ inductive Update (Γ : Schema) where
       (span : SourceSpan := .generated)
   | regionBroadcast (region : String) (assignments : List (Nat × RowExpr))
       (span : SourceSpan := .generated)
-  | regionRemoveIf (region : String) (field : Nat) (equals : String)
+  | regionRemoveIf (region : String) (predicate : FieldPredicate)
       (span : SourceSpan := .generated)
   | sequence (first second : Update Γ)
 
@@ -116,11 +117,11 @@ def regionBroadcastTargets : Update Γ → List (String × List (Nat × RowExpr)
   | .regionBroadcast region assignments _ => [(region, assignments)]
   | .sequence first second => first.regionBroadcastTargets ++ second.regionBroadcastTargets
 
-/-- Region removal targets with their predicate field, for region-table
-checks (ADR-0050). -/
-def regionRemoveIfTargets : Update Γ → List (String × Nat)
+/-- Region removal targets with their sealed predicate, for region-table
+checks (ADR-0050/0064). -/
+def regionRemoveIfTargets : Update Γ → List (String × FieldPredicate)
   | .set .. | .dispatch .. | .regionAppend .. | .regionBroadcast .. => []
-  | .regionRemoveIf region field _ _ => [(region, field)]
+  | .regionRemoveIf region predicate _ => [(region, predicate)]
   | .sequence first second => first.regionRemoveIfTargets ++ second.regionRemoveIfTargets
 
 end Update
@@ -233,8 +234,9 @@ deriving Repr, BEq
 /-- One sealed region filter view (ADR-0051): a correspondence from distinct
 `String` state literals of one component value to row-field equality
 predicates, selecting which of a keyed region's rows are displayed. Each arm
-is `(stateLiteral, rowField, rowLiteral)`: while the filter field equals
-`stateLiteral`, exactly the rows whose projected field equals `rowLiteral`
+is `(stateLiteral, predicate)` — the sealed single-field-literal equality
+(ADR-0064): while the filter field equals
+`stateLiteral`, exactly the rows satisfying the predicate
 stay visible; a state value outside the table carries no predicate and shows
 every row. The commit sweep records the selection as each row root's
 `hidden` property — rows never mount or dispose on a filter change, so row
@@ -243,7 +245,7 @@ cross-typed selector unrepresentable. -/
 structure RegionFilter (Γ : Schema) where
   region : String
   field : Field Γ String
-  arms : List (String × Nat × String)
+  arms : List (String × FieldPredicate)
   span : SourceSpan := .generated
 
 /-- One sealed route view (ADR-0063): a one-to-one correspondence from sealed
@@ -337,6 +339,21 @@ private def sourceCount (values : List (ValueSpec Γ)) : Nat :=
   match values with
   | [] => 0
   | head :: tail => if head.isSource then sourceCount tail + 1 else 0
+
+/-- The shared bounds rule of every projected-row-field position (ADR-0064):
+one throw shape for the nineteen near-identical out-of-bounds checks, each
+call site keeping its error code, subject phrasing, path, and spans
+verbatim. -/
+private def checkFieldBound (code : String) (subject : String) (field : Nat)
+    (region : RegionSpec) (spans : Array SourceSpan)
+    (path : Array String := #[]) : Except ComponentError Unit := do
+  unless field < region.fields.size do
+    throw {
+      code
+      message :=
+        s!"{subject} field {field} outside region {region.name}'s {region.fields.size} field(s)"
+      path, spans
+    }
 
 private def refsFor (values : Array (ValueSpec Γ)) (ids : List Nat) :
     Except ComponentError (Array TypedNodeRef) := do
@@ -551,13 +568,9 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
               spans := #[broadcast.span]
             }
           for (fieldIndex, value) in broadcast.assignments do
-            unless fieldIndex < region.fields.size do
-              throw {
-                code := "LRX-TYPE-116"
-                message := s!"event {broadcast.name} broadcasts field {fieldIndex} outside region {broadcast.region}'s {region.fields.size} field(s)"
-                path := #[broadcast.name, broadcast.region]
-                spans := #[broadcast.span, region.span]
-              }
+            checkFieldBound "LRX-TYPE-116" s!"event {broadcast.name} broadcasts"
+              fieldIndex region #[broadcast.span, region.span]
+              #[broadcast.name, broadcast.region]
             unless value == .payload || !value.hasPayload do
               throw {
                 code := "LRX-TYPE-116"
@@ -566,13 +579,9 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
                 spans := #[broadcast.span]
               }
             for field in value.fieldRefs do
-              unless field < region.fields.size do
-                throw {
-                  code := "LRX-TYPE-116"
-                  message := s!"event {broadcast.name} broadcasts a read of field {field} outside region {broadcast.region}'s {region.fields.size} field(s)"
-                  path := #[broadcast.name, broadcast.region]
-                  spans := #[broadcast.span, region.span]
-                }
+              checkFieldBound "LRX-TYPE-116"
+                s!"event {broadcast.name} broadcasts a read of" field region
+                #[broadcast.span, region.span] #[broadcast.name, broadcast.region]
           unless broadcast.assignments.any (·.2 == .payload) do
             throw {
               code := "LRX-TYPE-116"
@@ -708,13 +717,8 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
               spans := #[span]
             }
           for (fieldIndex, value) in assignments do
-            unless fieldIndex < region.fields.size do
-              throw {
-                code := "LRX-TYPE-111"
-                message := s!"event {eventName} broadcasts field {fieldIndex} outside region {target}'s {region.fields.size} field(s)"
-                path := #[eventName, target]
-                spans := #[span, region.span]
-              }
+            checkFieldBound "LRX-TYPE-111" s!"event {eventName} broadcasts"
+              fieldIndex region #[span, region.span] #[eventName, target]
             if value.hasPayload then
               throw {
                 code := "LRX-TYPE-111"
@@ -723,14 +727,10 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
                 spans := #[span]
               }
             for field in value.fieldRefs do
-              unless field < region.fields.size do
-                throw {
-                  code := "LRX-TYPE-111"
-                  message := s!"event {eventName} broadcasts a read of field {field} outside region {target}'s {region.fields.size} field(s)"
-                  path := #[eventName, target]
-                  spans := #[span, region.span]
-                }
-    for (target, fieldIndex) in update.regionRemoveIfTargets do
+              checkFieldBound "LRX-TYPE-111"
+                s!"event {eventName} broadcasts a read of" field region
+                #[span, region.span] #[eventName, target]
+    for (target, predicate) in update.regionRemoveIfTargets do
       match spec.regions.toList.find? (·.name == target) with
       | none =>
           throw {
@@ -740,13 +740,9 @@ private def validateEvents (spec : ComponentSpec Γ) (sourceCount : Nat)
             spans := #[span]
           }
       | some region =>
-          unless fieldIndex < region.fields.size do
-            throw {
-              code := "LRX-TYPE-112"
-              message := s!"event {eventName} removes rows by field {fieldIndex} outside region {target}'s {region.fields.size} field(s)"
-              path := #[eventName, target]
-              spans := #[span, region.span]
-            }
+          for fieldIndex in predicate.subject.fieldRefs do
+            checkFieldBound "LRX-TYPE-112" s!"event {eventName} removes rows by"
+              fieldIndex region #[span, region.span] #[eventName, target]
   for mounted in split.events do
     if mounted.binding.kind.payload == .none then
       unless names.contains mounted.binding.eventName do
@@ -1053,12 +1049,9 @@ mutual
         if duplicate? (attrs.map StaticAttr.name ++ classIf.map fun _ => "class") then
           throw { code := "LRX-VIEW-001", message := "element has duplicate static attributes", spans := #[span] }
         for select in classIf do
-          unless select.field < region.fields.size do
-            throw {
-              code := "LRX-VIEW-026"
-              message := s!"class selection projects field {select.field} outside region {region.name}'s {region.fields.size} field(s)"
-              spans := #[select.span]
-            }
+          for field in select.predicate.subject.fieldRefs do
+            checkFieldBound "LRX-VIEW-026" "class selection projects" field
+              region #[select.span]
         /- Sealed row property reflections (ADR-0047/0049): the `value`
         property of a native input — or the `checked` property of a
         `type="checkbox"` input — at most once per element and property
@@ -1092,12 +1085,8 @@ mutual
               spans := #[reflect.span]
             }
           for field in reflect.value.fieldRefs do
-            unless field < region.fields.size do
-              throw {
-                code := "LRX-VIEW-026"
-                message := s!"a row value reflection projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
-                spans := #[reflect.span]
-              }
+            checkFieldBound "LRX-VIEW-026" "a row value reflection projects"
+              field region #[reflect.span]
         /- The sealed focus marker (ADR-0048): a native input inside a
         two-branch cell's subtrees only, so the update callback's replacement
         arm — and nothing else — can honor it. -/
@@ -1198,12 +1187,7 @@ mutual
         validateRowChildren region (depth + 1) inBranch children
     | .text _ _ => pure ()
     | .fieldText field span =>
-        unless field < region.fields.size do
-          throw {
-            code := "LRX-VIEW-026"
-            message := s!"row template projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
-            spans := #[span]
-          }
+        checkFieldBound "LRX-VIEW-026" "row template projects" field region #[span]
     | .exprText value span => do
         if value.hasPayload then
           throw {
@@ -1212,12 +1196,7 @@ mutual
             spans := #[span]
           }
         for field in value.fieldRefs do
-          unless field < region.fields.size do
-            throw {
-              code := "LRX-VIEW-026"
-              message := s!"row expression projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
-              spans := #[span]
-            }
+          checkFieldBound "LRX-VIEW-026" "row expression projects" field region #[span]
     | .branch field _ whenTrue whenFalse span => do
         /- The sealed two-branch row cell (ADR-0047): only at a cell position
         (depth 1), so it occupies exactly one row-root child index, its
@@ -1229,12 +1208,8 @@ mutual
             message := s!"a two-branch row cell in region {region.name} must be a direct cell of the row root"
             spans := #[span]
           }
-        unless field < region.fields.size do
-          throw {
-            code := "LRX-VIEW-026"
-            message := s!"a two-branch row cell projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
-            spans := #[span]
-          }
+        checkFieldBound "LRX-VIEW-026" "a two-branch row cell projects" field
+          region #[span]
         for subtree in [whenTrue, whenFalse] do
           match subtree with
           | .element .. => pure ()
@@ -1358,7 +1333,7 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               spans := #[event.span]
             }
           if let some guard := stage.removeIf then
-            match guard.value.guardSubject? with
+            match guard.subject.guardSubject? with
             | none =>
                 throw {
                   code := "LRX-VIEW-040"
@@ -1366,12 +1341,9 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
                   spans := #[event.span]
                 }
             | some field =>
-                unless field < region.fields.size do
-                  throw {
-                    code := "LRX-VIEW-040"
-                    message := s!"key-branched row event {event.name} guards on field {field} outside region {region.name}'s {region.fields.size} field(s)"
-                    spans := #[event.span]
-                  }
+                checkFieldBound "LRX-VIEW-040"
+                  s!"key-branched row event {event.name} guards on" field region
+                  #[event.span]
           if assignments.isEmpty then
             throw {
               code := "LRX-VIEW-039"
@@ -1385,12 +1357,9 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               spans := #[event.span]
             }
           for (target, value) in assignments do
-            unless target < region.fields.size do
-              throw {
-                code := "LRX-VIEW-039"
-                message := s!"key-branched row event {event.name} writes field {target} outside region {region.name}'s {region.fields.size} field(s)"
-                spans := #[event.span]
-              }
+            checkFieldBound "LRX-VIEW-039"
+              s!"key-branched row event {event.name} writes" target region
+              #[event.span]
             if value.hasPayload then
               throw {
                 code := "LRX-VIEW-039"
@@ -1398,12 +1367,9 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
                 spans := #[event.span]
               }
             for field in value.fieldRefs do
-              unless field < region.fields.size do
-                throw {
-                  code := "LRX-VIEW-039"
-                  message := s!"key-branched row event {event.name} reads field {field} outside region {region.name}'s {region.fields.size} field(s)"
-                  spans := #[event.span]
-                }
+              checkFieldBound "LRX-VIEW-039"
+                s!"key-branched row event {event.name} reads" field region
+                #[event.span]
       if let .update stage := event.action then
         let assignments := stage.assignments
         if let some guard := stage.removeIf then
@@ -1413,7 +1379,7 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               message := s!"guarded row event {event.name} of region {region.name} cannot take a payload; guards live on payload-less row events and key arms"
               spans := #[event.span]
             }
-          match guard.value.guardSubject? with
+          match guard.subject.guardSubject? with
           | none =>
               throw {
                 code := "LRX-VIEW-040"
@@ -1421,12 +1387,9 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
                 spans := #[event.span]
               }
           | some field =>
-              unless field < region.fields.size do
-                throw {
-                  code := "LRX-VIEW-040"
-                  message := s!"guarded row event {event.name} guards on field {field} outside region {region.name}'s {region.fields.size} field(s)"
-                  spans := #[event.span]
-                }
+              checkFieldBound "LRX-VIEW-040"
+                s!"guarded row event {event.name} guards on" field region
+                #[event.span]
         if assignments.isEmpty then
           throw {
             code := "LRX-VIEW-031"
@@ -1440,12 +1403,8 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
             spans := #[event.span]
           }
         for (target, value) in assignments do
-          unless target < region.fields.size do
-            throw {
-              code := "LRX-VIEW-031"
-              message := s!"row event {event.name} writes field {target} outside region {region.name}'s {region.fields.size} field(s)"
-              spans := #[event.span]
-            }
+          checkFieldBound "LRX-VIEW-031" s!"row event {event.name} writes"
+            target region #[event.span]
           if value.hasPayload && !event.takesPayload then
             throw {
               code := "LRX-VIEW-033"
@@ -1453,12 +1412,8 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
               spans := #[event.span]
             }
           for field in value.fieldRefs do
-            unless field < region.fields.size do
-              throw {
-                code := "LRX-VIEW-031"
-                message := s!"row event {event.name} reads field {field} outside region {region.name}'s {region.fields.size} field(s)"
-                spans := #[event.span]
-              }
+            checkFieldBound "LRX-VIEW-031" s!"row event {event.name} reads"
+              field region #[event.span]
     match region.template with
     | .element _ _ events cells _ _ _ _ => do
         unless events.isEmpty do
@@ -1581,12 +1536,8 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
         }
     | some region =>
         if let some (fieldIndex, _) := count.predicate then
-          unless fieldIndex < region.fields.size do
-            throw {
-              code := "LRX-VIEW-038"
-              message := s!"a count predicate projects field {fieldIndex} outside region {count.region}'s {region.fields.size} field(s)"
-              spans := #[count.span, region.span]
-            }
+          checkFieldBound "LRX-VIEW-038" "a count predicate projects"
+            fieldIndex region #[count.span, region.span]
   /- Sealed region-count subjects (ADR-0058/0059/0060): every `hiddenIfEmpty`
   and `checkedIfEmpty` selection names a declared region — the row-table
   subject exists exactly when the region does — and a predicate-count
@@ -1603,12 +1554,9 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
           }
       | some region =>
           if let some (fieldIndex, _) := mounted.select.regionPredicate? then
-            unless fieldIndex < region.fields.size do
-              throw {
-                code := "LRX-VIEW-042"
-                message := s!"a {mounted.select.name} reflection's predicate projects field {fieldIndex} outside region {regionName}'s {region.fields.size} field(s)"
-                spans := #[mounted.select.span, region.span]
-              }
+            checkFieldBound "LRX-VIEW-042"
+              s!"a {mounted.select.name} reflection's predicate projects"
+              fieldIndex region #[mounted.select.span, region.span]
   unless spec.regions.isEmpty do
     if let View.region _ span := spec.view then
       throw {
@@ -1649,13 +1597,10 @@ private def validateFilters (spec : ComponentSpec Γ) : Except ComponentError Un
             message := s!"filter view on region {filter.region} maps one state literal twice"
             spans := #[filter.span]
           }
-        for (_, fieldIndex, _) in filter.arms do
-          unless fieldIndex < region.fields.size do
-            throw {
-              code := "LRX-TYPE-113"
-              message := s!"filter view projects field {fieldIndex} outside region {filter.region}'s {region.fields.size} field(s)"
-              spans := #[filter.span, region.span]
-            }
+        for (_, predicate) in filter.arms do
+          for fieldIndex in predicate.subject.fieldRefs do
+            checkFieldBound "LRX-TYPE-113" "filter view projects" fieldIndex
+              region #[filter.span, region.span]
 
 /-- The declared initial of one `String` source, for the ADR-0063 route
 default rule. -/
