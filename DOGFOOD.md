@@ -2567,3 +2567,97 @@ the parent disposer; the items-left singular/plural text ("1 item left")
 stays an unexpressed candidate; and TodoMVC's hide-the-toggle-all-chrome
 refinement (the toggle-all box and footer riding the ADR-0058 emptiness
 subject) is expressible today but unexercised in Toggle Lab.
+
+## Count label — the items-left grammar
+
+### Scenario exercised
+
+The ADR-0062 round: TodoMVC's items-left singular/plural text ("1 item
+left") closed as a sealed count-driven text selection with no host change
+and no ABI bump. `{if count items (done == "false") == 1 then " item
+left" else " items left"}` is a text position comparing the ADR-0050
+count subject — total or predicate — against the one literal and
+selecting between two static strings. The surface rides the same
+component-command rewrite the count children and the visibility subjects
+use (internal `regionCountLabel%` child), the model carries the label as
+the optional string pair on `View.regionCount`/`MountedRegionCount`
+under the unchanged `LRX-VIEW-038` obligations, and the backend gives the
+label one more count slot: mounted at the `else` string (an empty region
+counts zero, and zero differs from one) with the cache slot mounting the
+same string, recomputed on the region-touch sweep with the same per-slot
+scan every count runs (no scan sharing — ADR-0050 already re-scans per
+position), and written through the existing `setText` export only on a
+singular/plural flip. Toggle Lab's items-left line now reads
+`<strong>N</strong>{label} of {total}`, and the guide's
+`CountedRosterMini` teaches the same shape. The vocabulary decisions are
+recorded as rejections — threshold generalization, negation and
+composition, non-count subjects, dynamic strings, a separate keyword
+surface, and a label-specific host export all declined (`LRX-ELAB-127`
+for the count-headed violations, `LRX-VIEW-012` for everything else).
+
+### What was pleasant
+
+The label really was one slot away: the mounted count inventory, the
+region record's ref/cache slots, the touched flag, and the sweep loop all
+took the label as one more entry, so the whole backend delta is a
+three-line value selection between the recomputed count and the cache
+compare — the numeric slots emit byte-identically, which is what kept
+every other lab and the benchmark bundle byte-identical under the freeze.
+The count-headed rewrite pattern from ADR-0058/0059/0060 transferred
+verbatim to the child position: claim the `count` head, seal the literal,
+resolve the region and field where the inventory exists.
+
+### Friction encountered
+
+Two knife-edges, both caught by gates. Adding the label field to the
+`View.regionCount` constructor touched every `.regionCount _ _ _`
+pattern in the mutual view traversals — Lean fills omitted default-valued
+constructor arguments in patterns with the defaults, not wildcards, so
+each arm needed its explicit fourth argument (the standing audit note).
+And the label text node shifted Toggle Lab's mount numbering (the ul and
+the toggle-all box moved from node_25/node_26 to node_26/node_27), which
+the artifact gate pinned across a dozen required strings — mechanical,
+but a reminder that the gate pins document order on purpose. The
+environment audit needed one new reviewed entry: `MountNode.countText`
+gained arguments, so its generated `injEq` theorem now uses propext.
+
+### Bugs found
+
+None in the host or the dispatcher. The pre-change divergence was purely
+expressive: the singular flip was unrepresentable, and the items-left
+line read a lab-specific "N left of M" instead of TodoMVC's grammar.
+
+### Performance observations
+
+The performance freeze held by construction: every file of every other
+lab and of the js-framework-benchmark bundle is byte-identical to the
+HEAD baseline (full before/after builds into the scratchpad); only
+Toggle Lab's module, manifest (gaining `count-labels`), and graph
+(source spans only) change. A label count costs exactly a predicate
+count — one scan per region-touching transaction — and the browser gates
+pin the flip economics: one evaluation and one write on the first
+append's singular flip, one more write on the plural return, evaluate-only
+on an equal selection, and no evaluation at all on a filter change.
+
+### Follow-up issue or commit
+
+`feat(component): select the items-left label from the region count
+(ADR-0062)`, `test(component): forge the count-label gates and teach the
+guide`, and `docs(adr): accept the count label (ADR-0062)`. Remaining
+gaps carried forward: the component-scope Escape arm is sealed but
+unproven (no new-todo revert contract exists to prove it);
+affordance-contract agreement stays ADR-0059's first open question; the
+component-scope payload reaches one construct (guards, appends, key arms,
+and filter predicates stay payload-blind, ADR-0061's second open
+question); the ADR-0050 predicate removal, ADR-0051 filter arms, ADR-0044
+row class selection, and ADR-0049 row checked reflection still compare
+raw fields; the guard literal is sealed at the empty string; negated and
+composite subjects stay rejected; row guards stay single-field
+remove-or-commit; the key set stays sealed at Enter/Escape; `s!`
+interpolation absent from row scope; branch cells single-level and
+two-branch with exact click/dblclick agreement; child instrumentation
+still unreachable through the parent disposer; the two-threshold count
+grammar ("no items"/"1 item"/"N items") stays rejected as ADR-0062's
+second open question; and TodoMVC's hide-the-toggle-all-chrome
+refinement (the toggle-all box and footer riding the ADR-0058 emptiness
+subject) is expressible today but unexercised in Toggle Lab.
