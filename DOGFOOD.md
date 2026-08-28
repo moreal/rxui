@@ -3656,3 +3656,158 @@ stay single-field remove-or-commit; row scope still has no `s!`;
 branch cells stay single-level two-branch with exact click/dblclick
 agreement.
 
+## Child composition in region rows — the boundary-sealing round (ADR-0072)
+
+### Scenario exercised
+
+The last place a `<Child/>` head could appear without a contract:
+inside a sealed keyed-region row template. The survey put
+`<Chip tag="x"/>` into a NestLab-shaped region row and watched where
+it died. Not in the backend — `collectComponentHeads` only walks view
+items, but `lowerRowElement` also never lowers a capitalized head to
+`View.child`, so the `childMounts.find?` miss (`LRX-BE-029`) is
+unreachable. It died at elaboration in `leanrx_jsx_tag%` with the
+generic `LRX-VIEW-007: unsupported element <Chip>` — early, but
+misleading: the tag-whitelist message (the `<h4>` answer) for what is
+actually a lifecycle-contract conflict. The round sealed the boundary
+with a dedicated diagnostic: `checkRowElementHead` fires
+`LRX-ELAB-131: a sealed row template does not compose child
+components; mount <Chip/> from the component view instead` at the
+head's own span, before attr lowering so prop-shaped attrs never
+produce a stray unknown-attribute error first.
+
+### What was pleasant
+
+The check is one guard called from both `lowerRowElement` arms, and
+nested heads come free because `lowerRowChild` delegates every
+element child back to `lowerRowElement`. The witness
+(`ChildInRegionRow.lean`) keeps a checked `Chip` spec in scope, so it
+also pins that the rejection is about the row contract, not a missing
+`_spec` — one fixture separates `LRX-ELAB-131` from `LRX-ELAB-130`
+and `LRX-VIEW-007` at once.
+
+### Friction encountered
+
+The first repro drafted a one-field region and discovered that
+`append roster (expr,)` is not a parse — single-field appends take
+`(expr)` without the trailing comma; the repro moved to the two-field
+NestLab shape rather than relitigating tuple syntax. Otherwise the
+round was as small as a round gets: the survey's two candidate death
+sites (late backend vs. sealed syntax) were both wrong in the same
+informative way — the whitelist caught it first.
+
+### Bugs found
+
+None in the pipeline — the boundary was already closed, just
+mislabeled. The finding is diagnostic-quality: "unsupported element"
+invites a tag-whitelist request; the new message names the actual
+contract and points at the supported path.
+
+### Performance observations
+
+Frozen trivially: the change is elaborator-only (one throw before
+any term is built), so no generated module, manifest, or host byte
+moved; byte identity and the size gate stand without re-measurement.
+
+### Follow-up issue or commit
+
+`feat(elab): reject child composition in sealed row templates with
+LRX-ELAB-131 (ADR-0072)` — the `checkRowElementHead` guard, the
+compile-fail witness and its registration, the language-guide
+sentence, the ADR, the DECISIONS.md row, and this record. The
+static-composition surface is now closed on all sides: supported and
+witnessed in views (depth ADR-0069 × width ADR-0070 × multiplicity
+ADR-0071), rejected with a dedicated diagnostic in rows (ADR-0072).
+Per-row composition stays an OQ pending a per-row disposer
+republication contract with a concrete consumer. The remaining prop
+boundary is reactivity alone (ADR-0068 OQ1). The other invariants
+hold: the key set stays sealed at Enter/Escape; the guard literal
+stays `""`; the count-label literal stays one; row guards stay
+single-field remove-or-commit; row scope still has no `s!`; branch
+cells stay single-level two-branch with exact click/dblclick
+agreement.
+
+## Per-row child composition — the ADR-0072 OQ1 round (ADR-0075)
+
+### What was attempted
+
+Close ADR-0072's open question by survey-then-execution: either
+seal per-row `<Child/>` composition inside keyed-region row
+templates on a minimal surface, or fix the conflict axes as
+rejection witnesses. The survey found every lifecycle hook already
+present — all removal paths (reconcile, `removeAt`, region dispose)
+funnel through the generated dispose callback, which was a no-op
+placeholder; the component backend never emits `swapAt`/`removeAt`
+itself; a child mount appends exactly one root, preserving the
+structural `childAt` and cell-action index math — so the round
+executed: `RowNode.child` with `RowChildProp.lit/field`, the row
+mount callback mounting `$lrx_child_k(cell, [item[i+1]])`, the
+`$lrxRowChild` stash on the row root, the dispose-callback splice
+and invoke, the live `childInventory` shared between the region
+record's last slot, the `update`/`updateAt` context argument, and
+`disposer["children"]`. NestLab grew the unwritten `origin` field
+and a per-row `<Chip tag={origin}/>` — four Chip instances through
+one aliased import.
+
+### What was pleasant
+
+The host needed nothing: `createKeyedRegion` already forwarded a
+context argument to every callback and generated code had always
+passed `null`, so the live inventory rode a slot that existed since
+ADR-0041 — ABI stays 17. The immutable-prop boundary translated
+mechanically: "props are mount-time constants" becomes "row child
+props are row-mount constants", and the writer set (row event
+stages, key-branch arms, broadcasts) is fully static, so
+`LRX-VIEW-045` makes divergence unrepresentable instead of
+documenting it. Delegated events needed no carve-out — a click
+inside the row chip resolves the chip's own cell, whose action
+entry is `""`.
+
+### Friction encountered
+
+The region's full dispose calls `disposeItem(handle, key)` without
+context, so the inventory splice had to be guarded (`if (context)`)
+— acceptable because post-dispose the static ADR-0066 array also
+keeps its disposed entries. Message strings in `throwErrorAt`
+interpolate `{…}`, so the diagnostic's `name={field}` needed the
+`\{` escape. The environment audit fails closed on every new
+mutual walker and evaluated predicate: four `_unsafe_rec` entries,
+one `unsafe_1` helper, and three `injEq`/`propext` pairs joined the
+reviewed lists. The child table order follows first occurrence, so
+the region item (declared before the view) makes Chip
+`$lrx_child_0` and Pulse `$lrx_child_1` in NestLab.
+
+### Bugs found
+
+None in existing behavior — the sealed surface is new. The
+boundary is witnessed per axis: children on the head and composed
+prop values keep `LRX-ELAB-131` (ChildInRegionRow repointed,
+RowChildComposedProp), multiplicity and branch placement and the
+written-field conflict land on `LRX-VIEW-045` (RowChildTwoPerRow,
+RowChildInBranch, RowChildWrittenField), and an id-carrying child
+template lands on `LRX-ELAB-135` (RowChildStaticId).
+
+### Performance observations
+
+All codegen changes are gated on a region actually composing a
+child: modules without one emit byte-identical code (Pulse/Tick/
+Blip/Chip byte-diffed clean; the benchmark bundle never enters the
+path), so the size gate and BENCHMARK.md stand without
+re-measurement. Per-row cost is one child mount call, one property
+stash, and one inventory push per row mount; one splice-by-identity
+and one dispose call per row removal.
+
+### Follow-up issue or commit
+
+`feat(region): seal per-row child composition through the row
+dispose callback (ADR-0075)` — `RowNode.child`/`RowChildProp`, the
+row lowering behind `componentHead?`, the written-field and
+placement checks (`LRX-VIEW-045`), the static-id evaluated
+predicate (`LRX-ELAB-135`), the live `childInventory` and region
+record slot, the NestLab origin field and row chip, six compile-fail
+witnesses and registrations, the derived artifact gate, three
+browser specs, the language-guide paragraph, the ADR, the
+DECISIONS.md row, and this record. ADR-0072 OQ1 is closed; the
+remaining prop-boundary OQ is ADR-0068 OQ1 (reactive props), still
+rejected.
+

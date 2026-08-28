@@ -44,7 +44,15 @@ concatenation `{label ++ marks}` and selects the row class from the `marks`
 field, the row `★` button mutates the dispatching row through the sealed
 `mark` update action (one `updateAt` on commit), and the row `✕` button
 removes it — resolved through structural delegated listeners on the `<ul>`
-container. The per-row edit input dogfoods typed row payloads (ADR-0046):
+container. The row template also composes one child per row (ADR-0075):
+`<Chip tag={origin}/>` mounts a fourth `Chip` instance inside every mounted
+row, its prop projecting the `origin` row field — a row-mount constant,
+legal exactly because no row event or broadcast ever writes `origin` — and
+its mount return is stashed on the row root, called by the generated row
+dispose callback on every removal path, and republished through the live
+`children` inventory the disposer shares with the region record: `children`
+holds the static `Pulse` disposer first and then one entry per mounted row,
+spliced as rows leave. The per-row edit input dogfoods typed row payloads (ADR-0046):
 `row roster rename (value : String) := set label value;` receives the
 delegated `input` value and `row roster record (pressed : String) := …`
 receives the delegated `keydown` key, each draining exactly one `updateAt`
@@ -131,11 +139,12 @@ component NestLab (schema := NestSchema) where {
   state clicks : Int := 0;
   state added : Int := 0;
   event bump := set clicks (clicks + 1);
-  event addItem := append roster (s!"Item {added}", "", "") then set added (added + 1);
+  event addItem := append roster (s!"Item {added}", "", "", s!"Origin {added}")
+    then set added (added + 1);
   row roster mark := set marks (marks ++ " ★");
   row roster rename (value : String) := set label value;
   row roster record (pressed : String) := set lastKey ("key:" ++ pressed);
-  region roster (label, marks, lastKey) := jsx%
+  region roster (label, marks, lastKey, origin) := jsx%
     <li class={if marks == "" then "roster-row" else "roster-row marked"}> [
       <span class="roster-label"> [{label ++ marks}],
       <span class="roster-key"> [{lastKey}],
@@ -147,7 +156,8 @@ component NestLab (schema := NestSchema) where {
       ],
       <span class="roster-actions"> [
         <button type="button" ariaLabel="Remove row" onClick={remove}> ["✕"]
-      ]
+      ],
+      <Chip tag={origin}/>
     ];
   view := jsx% <main class="nest-lab"> [
     <h1> ["Nest Lab"],

@@ -216,7 +216,19 @@ component RosterMini (schema := RosterMiniSchema) where {
 
 The delegated button must sit strictly inside a row cell (a direct child of
 the row root) so the dispatcher can resolve the action from row structure —
-`LRX-VIEW-027` rejects a button that is itself a cell.
+`LRX-VIEW-027` rejects a button that is itself a cell. A row template may
+also compose at most one child component per row (ADR-0075): a capitalized
+`<Chip tag={field}/>` head whose checked spec is in scope mounts one child
+instance per row — mounted by the generated row mount callback, disposed on
+every removal path through the row dispose callback, and republished on the
+disposer's live `children` inventory. Its props are row-mount constants: a
+string literal or the bare projection of one declared row field that no row
+event or broadcast rewrites (`LRX-VIEW-045` otherwise, the ADR-0068 OQ1
+immutable-prop boundary in row scope); the child's own template must carry
+no static `id` because row instances are unbounded (`LRX-ELAB-135`).
+Everything outside that surface — a spec-less head, children on the head,
+a composed prop value, a second child, or a child inside a two-branch cell —
+stays rejected (`LRX-ELAB-131`/`LRX-VIEW-045`, ADR-0072/0075).
 
 A `row` item declares a sealed update action on a region's rows (ADR-0043):
 `row roster mark := set marks (marks ++ " ★");` writes new field values —

@@ -111,6 +111,12 @@ fixtures=(
   Test/fixtures/compile-fail/PersistUnknownRegion.lean
   Test/fixtures/compile-fail/PersistDuplicateKey.lean
   Test/fixtures/compile-fail/ForwardWithoutSpec.lean
+  Test/fixtures/compile-fail/ChildInRegionRow.lean
+  Test/fixtures/compile-fail/RowChildTwoPerRow.lean
+  Test/fixtures/compile-fail/RowChildInBranch.lean
+  Test/fixtures/compile-fail/RowChildWrittenField.lean
+  Test/fixtures/compile-fail/RowChildStaticId.lean
+  Test/fixtures/compile-fail/RowChildComposedProp.lean
 )
 fragments=(
   "Constructor for"
@@ -222,6 +228,12 @@ fragments=(
   "error[LRX-ELAB-129]"
   "error[LRX-TYPE-118]"
   "error[LRX-ELAB-130]"
+  "error[LRX-ELAB-131]"
+  "error[LRX-VIEW-045]"
+  "error[LRX-VIEW-045]"
+  "error[LRX-VIEW-045]"
+  "error[LRX-ELAB-135]"
+  "error[LRX-ELAB-131]"
 )
 
 for index in "${!fixtures[@]}"; do

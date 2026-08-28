@@ -491,3 +491,124 @@ test("fan-out sibling leaves stay independently reachable through the re-forward
   expect(after.blipSnapshot).toEqual(before.blipSnapshot);
 });
 
+test("each roster row mounts its own chip with a row-mount-constant prop", async ({ page }) => {
+  // ADR-0075: the row template composes one Chip per row, its `tag` prop
+  // projecting the `origin` row field at row mount — a row-mount constant,
+  // legal exactly because no row event or broadcast writes `origin`.
+  await mountNest(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(page.locator("#roster .chip-tag")).toHaveText([
+    "Origin 0", "Origin 1", "Origin 2",
+  ]);
+  // Each row's chip owns its own state array — clicking one never touches
+  // its row siblings or the view-level chips inside Tick.
+  const rowChipButtons = page.locator("#roster .chip button");
+  await rowChipButtons.nth(1).click();
+  await rowChipButtons.nth(1).click();
+  await expect(page.locator("#roster .chip-text")).toHaveText([
+    "Chips: 0", "Chips: 2", "Chips: 0",
+  ]);
+  await expect(page.locator(".tick .chip-text")).toHaveText(["Chips: 0", "Chips: 0"]);
+  // A row update (rename, mark) re-renders the row's own text through
+  // updateAt but never revisits the child: the prop stays the row-mount
+  // constant and the chip's state survives untouched.
+  await page.locator("#roster > li").nth(1).getByRole("textbox").fill("Renamed");
+  await page.locator("#roster > li").nth(1).getByRole("button", { name: "Mark row" }).click();
+  await expect(page.locator("#roster > li .roster-label").nth(1)).toHaveText("Renamed ★");
+  await expect(page.locator("#roster .chip-tag")).toHaveText([
+    "Origin 0", "Origin 1", "Origin 2",
+  ]);
+  await expect(page.locator("#roster .chip-text").nth(1)).toHaveText("Chips: 2");
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("the live children inventory tracks row mounts and removals", async ({ page }) => {
+  // ADR-0075: `disposer.children` republishes the shared live inventory —
+  // the static Pulse disposer seeded first, then one entry per mounted row
+  // in mount order, spliced as rows leave.
+  await mountNest(page);
+  const seeded = await page.evaluate(() => globalThis.nestDispose.children.length);
+  expect(seeded).toBe(1);
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(page.locator("#roster > li")).toHaveCount(2);
+  const mounted = await page.evaluate(() => {
+    const children = globalThis.nestDispose.children;
+    return {
+      count: children.length,
+      rowChildKind: typeof children[1].instrumentation,
+    };
+  });
+  expect(mounted.count).toBe(3);
+  expect(mounted.rowChildKind).toBe("function");
+  // Removing the first row splices its chip out of the inventory and
+  // disposes it: the DOM leaves with the row, the captured disposer stays
+  // reachable with frozen counters, and the retained row keeps its chip
+  // instance (and state) across the structural reconcile.
+  await page.locator("#roster .chip button").nth(1).click();
+  await page.evaluate(() => {
+    globalThis.firstRowChip = globalThis.nestDispose.children[1];
+    globalThis.firstRowChipButton = document.querySelectorAll("#roster .chip button")[0];
+  });
+  await page.locator("#roster > li").first().getByRole("button", { name: "Remove row" }).click();
+  await expect(page.locator("#roster > li")).toHaveCount(1);
+  await expect(page.locator("#roster .chip-tag")).toHaveText(["Origin 1"]);
+  await expect(page.locator("#roster .chip-text")).toHaveText(["Chips: 1"]);
+  const removed = await page.evaluate(() => {
+    globalThis.firstRowChipButton.dispatchEvent(new Event("click", { bubbles: true }));
+    return {
+      count: globalThis.nestDispose.children.length,
+      stillListed: globalThis.nestDispose.children.includes(globalThis.firstRowChip),
+      attached: document.contains(globalThis.firstRowChipButton),
+      snapshot: globalThis.firstRowChip.instrumentation(),
+    };
+  });
+  expect(removed.count).toBe(2);
+  expect(removed.stillListed).toBe(false);
+  expect(removed.attached).toBe(false);
+  expect(removed.snapshot[7].filter((event) => event === "transaction:commit")).toHaveLength(0);
+  // A fresh append mounts a fresh chip with fresh state behind the retained
+  // row's entry.
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(page.locator("#roster .chip-tag")).toHaveText(["Origin 1", "Origin 2"]);
+  await expect(page.locator("#roster .chip-text")).toHaveText(["Chips: 1", "Chips: 0"]);
+  const readded = await page.evaluate(() => globalThis.nestDispose.children.length);
+  expect(readded).toBe(3);
+});
+
+test("root disposal disposes row chips while the inventory keeps reachability", async ({ page }) => {
+  // ADR-0075: the region's own dispose path passes no context, so the
+  // inventory keeps its entries exactly as the static ADR-0066 array does —
+  // every entry disposed, counters frozen, DOM gone.
+  await mountNest(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.locator("#roster .chip button").first().click();
+  await expect(page.locator("#roster .chip-text").first()).toHaveText("Chips: 1");
+  const before = await page.evaluate(() => {
+    globalThis.rowChipButtons = Array.from(
+      document.querySelectorAll("#roster .chip button"),
+    );
+    const snapshot = globalThis.nestDispose.children[1].instrumentation();
+    globalThis.nestDispose();
+    return snapshot;
+  });
+  const after = await page.evaluate(() => {
+    for (const button of globalThis.rowChipButtons) {
+      button.dispatchEvent(new Event("click", { bubbles: true }));
+    }
+    return {
+      count: globalThis.nestDispose.children.length,
+      attachedCount: globalThis.rowChipButtons.filter((button) =>
+        document.contains(button),
+      ).length,
+      snapshot: globalThis.nestDispose.children[1].instrumentation(),
+    };
+  });
+  expect(after.count).toBe(3);
+  expect(after.attachedCount).toBe(0);
+  expect(after.snapshot).toEqual(before);
+});

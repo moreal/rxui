@@ -254,6 +254,18 @@ def componentPropNames (tag : TSyntax `ident) : TermElabM (List String) := do
   let expression ← instantiateMVars expression
   unsafe Meta.evalExpr (checkMeta := false) (List String) listString expression
 
+/-- Evaluate whether the checked component `{tag}_spec`'s own view template
+carries a static `id` attribute (ADR-0075), mirroring the prop-names
+compile-time evaluation: a row-composed child mounts one instance per row,
+so the parent-side row lowering rejects an id-carrying child template. -/
+def componentViewHasStaticId (tag : TSyntax `ident) : TermElabM Bool := do
+  let specIdent := mkIdentFrom tag (tag.getId.appendAfter "_spec")
+  let expression ← Term.elabTermEnsuringType
+    (← `(LeanRx.ComponentSpec.viewHasStaticId $specIdent)) (mkConst ``Bool)
+  Term.synthesizeSyntheticMVarsNoPostponing
+  let expression ← instantiateMVars expression
+  unsafe Meta.evalExpr (checkMeta := false) Bool (mkConst ``Bool) expression
+
 private def renderNames (names : List String) : String :=
   String.intercalate ", " names
 

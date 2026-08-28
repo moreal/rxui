@@ -499,6 +499,17 @@ structure RowReflect where
   span : SourceSpan := .generated
 deriving Repr, BEq
 
+/-- One immutable prop value carried by a row-scoped child reference
+(ADR-0075): a string literal fixed at elaboration, or a projection of one
+declared row field — the value the row was appended with. Both are row-mount
+constants: validation rejects forwarding a field that any row event stage or
+region broadcast rewrites, so the projected value provably never diverges
+from the child's immutable prop (the ADR-0068 OQ1 boundary in row scope). -/
+inductive RowChildProp where
+  | lit (value : String)
+  | field (index : Nat)
+deriving Repr, BEq
+
 /- Sealed row template of a keyed region (ADR-0041/0043/0044/0047/0048).
 Dynamic row content is a typed projection of the row tuple (`fieldText`) or a
 sealed row expression over it (`exprText`), never an `RxExpr`; row events
@@ -512,7 +523,11 @@ branch follows equality of one projected row field against one literal, and
 the retained-row update callback replaces the cell's subtree only on a
 branch change. `autoFocus` is the sealed focus marker (ADR-0048): inputs
 inside branch subtrees only, at most one per subtree, honored exclusively by
-the update callback's replacement arm — row mount never focuses. -/
+the update callback's replacement arm — row mount never focuses. A `child`
+position statically nests another checked component per row (ADR-0075): at
+most one per template, never the template root and never inside a branch
+subtree, mounted by the row mount callback and disposed through the row
+dispose callback, with row-mount-constant props only. -/
 mutual
   inductive RowNode where
     | element (tag : HtmlTag) (attrs : List StaticAttr) (events : List EventBinding)
@@ -523,6 +538,8 @@ mutual
     | fieldText (field : Nat) (span : SourceSpan := .generated)
     | exprText (value : RowExpr) (span : SourceSpan := .generated)
     | branch (field : Nat) (equals : String) (whenTrue whenFalse : RowNode)
+        (span : SourceSpan := .generated)
+    | child (name : String) (props : List (String × RowChildProp) := [])
         (span : SourceSpan := .generated)
 
   inductive RowChildren where
@@ -563,7 +580,7 @@ mutual
   def RowNode.hasTrim : RowNode → Bool
     | .element _ _ _ children _ _ reflects _ =>
         reflects.any (·.value.hasTrim) || RowChildren.hasTrim children
-    | .text _ _ | .fieldText _ _ => false
+    | .text _ _ | .fieldText _ _ | .child .. => false
     | .exprText value _ => value.hasTrim
     | .branch _ _ whenTrue whenFalse _ =>
         RowNode.hasTrim whenTrue || RowNode.hasTrim whenFalse
@@ -571,6 +588,25 @@ mutual
   def RowChildren.hasTrim : RowChildren → Bool
     | .nil => false
     | .cons head tail => RowNode.hasTrim head || RowChildren.hasTrim tail
+end
+
+/- The row-scoped child references of one sealed template in traversal order
+(ADR-0075). Validation admits at most one per template and none inside branch
+subtrees, so the first entry is the whole inventory of a valid template; the
+walker still visits branch subtrees so validation can reject strays. -/
+mutual
+  def RowNode.childRefs :
+      RowNode → List (String × List (String × RowChildProp) × SourceSpan)
+    | .element _ _ _ children _ _ _ _ => RowChildren.childRefs children
+    | .text _ _ | .fieldText _ _ | .exprText _ _ => []
+    | .branch _ _ whenTrue whenFalse _ =>
+        RowNode.childRefs whenTrue ++ RowNode.childRefs whenFalse
+    | .child name props span => [(name, props, span)]
+
+  def RowChildren.childRefs :
+      RowChildren → List (String × List (String × RowChildProp) × SourceSpan)
+    | .nil => []
+    | .cons head tail => RowNode.childRefs head ++ RowChildren.childRefs tail
 end
 
 /-- One keyed region declaration (ADR-0040/0041). Rows are tuples of `String`
@@ -632,6 +668,23 @@ def ofList : List (View Γ) → ViewChildren Γ
   | head :: tail => .cons head (ofList tail)
 
 end ViewChildren
+
+/- Whether the view's static tree carries a static `id` attribute anywhere
+(ADR-0075): a row-composed child template mounts one instance per row, so an
+id-carrying template would duplicate document ids — the parent-side row
+lowering rejects such a child. Only this component's own template is walked;
+nested child references keep their own contracts. -/
+mutual
+  def View.hasStaticId : View Γ → Bool
+    | .element _ attrs _ children _ _ _ =>
+        attrs.any (fun attr => attr.name == "id") || ViewChildren.hasStaticId children
+    | .text _ _ | .scalarText _ _ _ | .child _ _ _ | .region _ _
+    | .regionCount _ _ _ _ | .propText _ _ => false
+
+  def ViewChildren.hasStaticId : ViewChildren Γ → Bool
+    | .nil => false
+    | .cons head tail => View.hasStaticId head || ViewChildren.hasStaticId tail
+end
 
 namespace View
 

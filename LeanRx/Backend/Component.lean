@@ -234,6 +234,17 @@ event (ADR-0043) or a component-event broadcast into it (ADR-0050). -/
 private def regionRowsMutate (broadcasts : List String) (region : RegionSpec) : Bool :=
   regionHasUpdates region || broadcasts.contains region.name
 
+/-- Whether one region's sealed template composes a row-scoped child
+component (ADR-0075). -/
+private def regionHasChildRef (region : RegionSpec) : Bool :=
+  !region.template.childRefs.isEmpty
+
+/-- The record slot of one child-composing region's live children inventory
+(ADR-0075): behind the base five slots, the ADR-0050 count slots, and the
+ADR-0051 filter slot, mirroring the record construction. -/
+private def regionChildSlot (hasCounts hasFilter : Bool) : Nat :=
+  5 + (if hasCounts then 2 else 0) + (if hasFilter then 1 else 0)
+
 /-- Lower one sealed row expression against the row item array; fields sit
 behind the key slot (ADR-0041/0043). `payload` is the delegated payload
 expression of the dispatching typed row event (ADR-0046); validation keeps
@@ -853,11 +864,18 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     dirty reconcile re-runs every retained row, so it drops pending update
     positions unrendered; an update-only transaction drains them through
     `updateAt` instead (ADR-0043). -/
+    /- The row-scoped child context (ADR-0075): a child-composing region's
+    record carries the live children inventory in its last slot, and the
+    reconcile and drain forward it so the row mount callback pushes and the
+    row dispose callback splices; other regions keep the null context. -/
+    let rowContext := if regionHasChildRef region then
+        regionEntry regions regionIndex (regionChildSlot (!counts.isEmpty) filter?.isSome)
+      else Expr.literal .null
     commitBody := commitBody ++ [.ifThen (regionEntry regions regionIndex 3) <| .ofList ([
       .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
         (.literal (.boolean false)),
       .expr <| .call (.index (regionEntry regions regionIndex 0) (.literal (.string "update")))
-        (.ofList [regionEntry regions regionIndex 1, .literal .null]),
+        (.ofList [regionEntry regions regionIndex 1, rowContext]),
       pushTrace tx s!"region:{region.name}:update"
     ] ++ (if regionHasUpdates region then [
       .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 4)) (.array .nil)
@@ -872,7 +890,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
               (.index (regionEntry regions regionIndex 0) (.literal (.string "updateAt")))
               (.ofList [.ident pendingRow,
                 .index (regionEntry regions regionIndex 1) (.ident pendingRow),
-                .literal .null]),
+                rowContext]),
             pushTrace tx s!"region:{region.name}:updateAt"
           ]),
           .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 4)) (.array .nil)
@@ -1368,7 +1386,7 @@ mutual
         match events.find? (·.kind == kind) with
         | some event => some event.eventName
         | none => rowActionOfChildren kind children
-    | .text _ _ | .fieldText _ _ | .exprText _ _ => none
+    | .text _ _ | .fieldText _ _ | .exprText _ _ | .child .. => none
     | .branch _ _ whenTrue whenFalse _ =>
         match rowActionOf kind whenTrue with
         | some action => some action
@@ -1413,6 +1431,13 @@ private structure RowDom where
   /- The builder-function pairs of the template's branch cells in traversal
   order (ADR-0047); each branch cell consumes one pair. -/
   branchFns : List (Ident × Ident) := []
+  /- The aliased child mount imports by child name (ADR-0075), for row-scoped
+  child references; empty outside the row mount callback, where validation
+  keeps child references out anyway. -/
+  childMounts : List (String × Ident) := []
+  /- The row-scoped child mount returns in traversal order (ADR-0075); the
+  row mount callback stashes each on the row root for the dispose callback. -/
+  childOffs : List Ident := []
 
 private def rowAppend (dom : RowDom) (statement : Stmt) : RowDom :=
   { dom with statements := dom.statements ++ [statement] }
@@ -1420,6 +1445,12 @@ private def rowAppend (dom : RowDom) (statement : Stmt) : RowDom :=
 /-- The compiler-owned marker property naming the rendered branch of one
 branch cell wrapper, in the `setKey`/`$lrxKey` style (ADR-0047). -/
 private def branchMarker : String := "$lrxBranch"
+
+/-- The compiler-owned property stashing a row's child mount return on the
+row root (ADR-0075), in the `$lrxKey`/`$lrxBranch` style: every host removal
+path hands the row root to the dispose callback, so the stash is the one
+place the per-row child disposer stays reachable from. -/
+private def rowChildMarker : String := "$lrxRowChild"
 
 mutual
   private def rowNodeStmts (runtime : RuntimeNames) (item : Ident) :
@@ -1492,10 +1523,42 @@ mutual
         let dom := { dom with allocator, count := dom.count + 1 }
         pure (name, rowAppend dom <| .const name <|
           call runtime.createText [rowExprJs item noPayload value])
+    | .child .., _ =>
+        .error {
+          code := "LRX-BE-035"
+          message := "a row child reference cannot be the row template root"
+        }
 
   private def rowChildrenStmts (runtime : RuntimeNames) (item : Ident) (parent : Ident) :
       RowChildren → RowDom → Except Error RowDom
     | .nil, dom => pure dom
+    | .cons (.child childName propValues _) tail, dom => do
+        /- The row-scoped child mount (ADR-0075): the child's `mount(parent)`
+        appends its root right here, so document order and structural
+        `childAt` navigation hold without a wrapper (the ADR-0039 shape in
+        row scope). Prop values are row-mount constants — string literals or
+        projections of the row item behind the key slot — and the mount
+        return joins the live children inventory the region call sites pass
+        as the callback `context` (ADR-0075's extension of the ADR-0066
+        republication). -/
+        let mountName ← match dom.childMounts.find? (·.1 == childName) with
+          | some entry => pure entry.2
+          | none => .error {
+              code := "LRX-BE-029"
+              message := s!"checked child component disappeared: {childName}"
+            }
+        let (off, allocator) ← dom.allocator.allocate
+          s!"row_child_{dom.childOffs.length}"
+        let dom := { dom with allocator, childOffs := dom.childOffs ++ [off] }
+        let args := [Expr.ident parent] ++ (if propValues.isEmpty then []
+          else [Expr.array (.ofList (propValues.map fun value => match value.2 with
+            | .lit text => .literal (.string text)
+            | .field index => .index (.ident item) (uint (index + 1))))])
+        let dom := rowAppend dom <| .const off <| call mountName args
+        let context ← Ident.checked "context"
+        let dom := rowAppend dom <| .expr <| .call
+          (.index (.ident context) (.literal (.string "push"))) (.ofList [.ident off])
+        rowChildrenStmts runtime item parent tail dom
     | .cons head tail, dom => do
         let (child, dom) ← rowNodeStmts runtime item head dom
         let dom := rowAppend dom <| .expr <| call runtime.append [.ident parent, .ident child]
@@ -1521,7 +1584,7 @@ mutual
   private def rowFocusPath? : RowNode → Option (List Nat)
     | .element _ _ _ children _ _ _ autoFocus =>
         if autoFocus then some [] else rowFocusPathChildren 0 children
-    | .text _ _ | .fieldText _ _ | .exprText _ _ | .branch .. => none
+    | .text _ _ | .fieldText _ _ | .exprText _ _ | .branch .. | .child .. => none
 
   private def rowFocusPathChildren (index : Nat) : RowChildren → Option (List Nat)
     | .nil => none
@@ -1549,7 +1612,7 @@ mutual
   private def rowHasReflect : RowNode → Bool
     | .element _ _ _ children _ _ reflects _ =>
         !reflects.isEmpty || rowHasReflectChildren children
-    | .text _ _ | .fieldText _ _ | .exprText _ _ => false
+    | .text _ _ | .fieldText _ _ | .exprText _ _ | .child .. => false
     | .branch _ _ whenTrue whenFalse _ => rowHasReflect whenTrue || rowHasReflect whenFalse
 
   private def rowHasReflectChildren : RowChildren → Bool
@@ -1569,14 +1632,20 @@ private def regionBranchFunction (runtime : RuntimeNames) (root : RowNode)
          body := (dom.statements ++ [Stmt.return (.ident rootName)]).toArray }
 
 private def regionRowFunction (runtime : RuntimeNames) (region : RegionSpec)
-    (branchFns : List (Ident × Ident)) (name : Ident) : Except Error Function := do
+    (branchFns : List (Ident × Ident)) (childMounts : List (String × Ident))
+    (name : Ident) : Except Error Function := do
   let item ← Ident.checked "item"
   let position ← Ident.checked "position"
   let context ← Ident.checked "context"
   let initial : RowDom :=
-    { allocator := { used := ["item", "position", "context"] }, branchFns }
+    { allocator := { used := ["item", "position", "context"] }, branchFns, childMounts }
   let (root, dom) ← rowNodeStmts runtime item region.template initial
-  let body : List Stmt := dom.statements ++ [
+  /- The ADR-0075 stash: the row root carries its child mount return so the
+  dispose callback can reach it from the row handle alone — the region's own
+  dispose path passes no context. -/
+  let stashStmts := dom.childOffs.map fun off =>
+    Stmt.assign (.index (.ident root) (.literal (.string rowChildMarker))) (.ident off)
+  let body : List Stmt := dom.statements ++ stashStmts ++ [
     .expr <| call runtime.setKey [.ident root, .index (.ident item) (uint 0)],
     .return (.ident root)
   ]
@@ -1600,7 +1669,7 @@ mutual
         classIf.map (RowUpdateTarget.classSelect path) ++
           reflects.map (RowUpdateTarget.reflect path) ++
           rowUpdateTargetsChildren path 0 children
-    | .text _ _ => []
+    | .text _ _ | .child .. => []
     | .fieldText field _ => [.text path (.field field)]
     | .exprText value _ => [.text path value]
     | .branch field equals whenTrue whenFalse _ =>
@@ -1720,12 +1789,34 @@ private def regionUpdateFunction (runtime : RuntimeNames) (region : RegionSpec)
   pure { name, params := #[row, item, position, context]
          body := (body ++ [Stmt.return (.literal .null)]).toArray }
 
-private def regionDisposeFunction (name : Ident) : Except Error Function := do
+private def regionDisposeFunction (hasChild : Bool) (name : Ident) :
+    Except Error Function := do
   let row ← Ident.checked "row"
   let key ← Ident.checked "key"
   let context ← Ident.checked "context"
-  let body : Array Stmt := #[.return (.literal .null)]
-  pure { name, params := #[row, key, context], body }
+  let body : List Stmt :=
+    if hasChild then
+      /- The per-row child dispose (ADR-0075): every host removal path — the
+      reconcile, `removeAt`, and the region's own dispose — funnels through
+      this callback with the row root, so the stashed mount return is called
+      here. The live-inventory splice is guarded: the region's full dispose
+      passes no context, and by then the whole component is being disposed —
+      the inventory keeps its (disposed) entries exactly as the static
+      ADR-0066 array does after a root dispose. -/
+      [
+        .ifThen (.ident context) (.ofList [
+          .expr <| .call (.index (.ident context) (.literal (.string "splice")))
+            (.ofList [
+              .call (.index (.ident context) (.literal (.string "indexOf")))
+                (.ofList [.index (.ident row) (.literal (.string rowChildMarker))]),
+              uint 1
+            ])
+        ]),
+        .expr <| .call (.index (.ident row) (.literal (.string rowChildMarker))) .nil,
+        .return (.literal .null)
+      ]
+    else [.return (.literal .null)]
+  pure { name, params := #[row, key, context], body := body.toArray }
 
 /-- The row removal sequence of one dispatch branch: filter the dispatching
 key out of the row table, mark the region dirty for the reconcile, and push
@@ -1914,6 +2005,9 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
       (if checked.view.attrSelects.isEmpty then #[] else #["attr-selections"]) ++
       (if checked.spec.children.isEmpty then #[] else #["child-components"]) ++
       (if checked.spec.regions.isEmpty then #[] else #["keyed-regions"]) ++
+      (if checked.spec.regions.toList.any regionHasChildRef then
+        #["row-child-components"]
+      else #[]) ++
       (if checked.spec.regions.toList.any
           (fun region => region.events.toList.any (·.takesPayload)) then
         #["typed-row-events"]
@@ -2050,10 +2144,10 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           functions := functions ++ [
             ← regionBranchFunction runtime whenTrue whenTrueFn,
             ← regionBranchFunction runtime whenFalse whenFalseFn]
-      pure (functions ++ [← regionRowFunction runtime region branchFns rowFn,
+      pure (functions ++ [← regionRowFunction runtime region branchFns childMounts rowFn,
         ← regionUpdateFunction runtime region (regionRowsMutate broadcasts region)
           branchFns updateFn,
-        ← regionDisposeFunction disposeFn])
+        ← regionDisposeFunction (regionHasChildRef region) disposeFn])
   let regionDispatches ← checked.spec.regions.toList.zipIdx.mapM fun (region, index) => do
     if regionEventKinds.any fun kind => (regionActions region kind).any (· ≠ "") then
       let name ← Ident.checked s!"$lrx_region_{index}_dispatch"
@@ -2128,7 +2222,17 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     for (mounted, index) in checked.view.attrSelects.zipIdx do
       mountBody := mountBody ++ [attrSelectWrite runtime (arrayAt attrRefs index)
         mounted.select (arrayAt attrCache index)]
+  let hasChildRegions := checked.spec.regions.toList.any regionHasChildRef
+  let childInventory ← Ident.checked "childInventory"
   unless checked.spec.regions.isEmpty do
+    /- The live children inventory (ADR-0075): one shared array seeded with
+    the static child mount returns in declaration order; each child-composing
+    region's record references it so row mounts push and row disposes splice,
+    and the disposer republishes the same array on `children`. -/
+    if hasChildRegions then
+      mountBody := mountBody ++ [
+        .const childInventory (.array (.ofList (dom.childOffs.map Expr.ident)))
+      ]
     /- One record per region in declaration order: `[handle, items, nextKey,
     dirty, pending]`. Keys are region-owned monotone safe integers
     (ADR-0027/0029), so uniqueness holds by construction; `pending` holds the
@@ -2168,7 +2272,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
         Expr.array (.ofList (counts.map fun count => match count.label with
           | none => uint 0
           | some (_, other) => .literal (.string other)))
-      ]) ++ containerRef)
+      ]) ++ containerRef ++
+        (if regionHasChildRef region then [Expr.ident childInventory] else []))
     mountBody := mountBody ++ [
       .const regions (.array (.ofList regionRecords))
     ]
@@ -2287,7 +2392,15 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       .ident root, .array (.ofList disposers), .ident tx
     ] ++ (if dom.regionHandles.isEmpty then []
       else [.array (.ofList (dom.regionHandles.map fun (_, handle) => Expr.ident handle))]))
-  ] ++ (if dom.childOffs.isEmpty then [] else [
+  ] ++ (if hasChildRegions then [
+    /- Live child reachability (ADR-0075): the disposer republishes the
+    shared inventory array — static child mount returns in declaration order,
+    then the mounted rows' children in mount order, spliced as rows leave.
+    The array identity is fixed at mount, so the ADR-0066 reachability
+    contract is unchanged; only its contents became live. -/
+    Stmt.assign (.index (.ident disposer) (.literal (.string "children")))
+      (.ident childInventory)
+  ] else if dom.childOffs.isEmpty then [] else [
     /- Child reachability (ADR-0066): the parent disposer republishes each
     child's mount return in declaration order, so child instrumentation stays
     reachable after the parent's dispose splices its listener list. The host

@@ -499,6 +499,61 @@ private def rowClassSelectTerm (fields : List String) (attr : Syntax)
       throwErrorAt attr
         "error[LRX-ELAB-116]: a row class selection is written class=\{if field == \"literal\" then \"whenTrue\" else \"whenFalse\"}"
 
+/-- Lower one row-scoped child reference (ADR-0075): a capitalized
+self-closing head inside a sealed row template whose checked `{name}_spec`
+is in scope. The reference mounts one child instance per row — mounted by the
+row mount callback, disposed through the row dispose callback — so the
+sealed surface is deliberately narrow: props are the child's declared
+immutable props in name and order (LRX-ELAB-112), each value a string
+literal or the bare projection of one declared row field (a row-mount
+constant; a written field is rejected downstream by LRX-VIEW-045), and the
+child's own template must not carry a static `id` (LRX-ELAB-135) because
+row instances are unbounded. Everything else keeps the ADR-0072 rejection
+under LRX-ELAB-131. -/
+private def lowerRowChildRef (fields : List String) (tag : TSyntax `ident)
+    (attrs : Array Syntax) (element : TSyntax `leanrxJsxElement) :
+    CommandElabM (TSyntax `term) := do
+  unless ← liftTermElabM (resolvesToComponentSpec tag) do
+    throwErrorAt tag
+      s!"error[LRX-ELAB-131]: {componentShortName tag} does not resolve to a checked component spec; a sealed row template composes checked child components only (ADR-0075)"
+  if ← liftTermElabM (componentViewHasStaticId tag) then
+    throwErrorAt tag
+      s!"error[LRX-ELAB-135]: child component {componentShortName tag} carries a static id attribute in its view; a row-composed child mounts one instance per row, so its template must use classes instead (ADR-0075)"
+  let declared ← liftTermElabM (componentPropNames tag)
+  let mut boundNames : List String := []
+  let mut pairTerms : Array (TSyntax `term) := #[]
+  for attr in attrs do
+    let attrStx : TSyntax `leanrxJsxAttr := ⟨attr⟩
+    match attrStx with
+    | `(leanrxJsxAttr| $attrName:ident = $value:str) =>
+        boundNames := boundNames ++ [attrName.getId.eraseMacroScopes.toString]
+        let nameLit := Syntax.mkStrLit attrName.getId.eraseMacroScopes.toString
+        pairTerms := pairTerms.push (← `(($nameLit, LeanRx.RowChildProp.lit $value)))
+    | `(leanrxJsxAttr| $attrName:ident = { $value:term }) => do
+        unless value.raw.isIdent do
+          throwErrorAt attr
+            "error[LRX-ELAB-131]: a row child prop is a string literal name=\"text\" or one projected row field name=\{field} (ADR-0075)"
+        let fieldName := value.raw.getId.eraseMacroScopes.toString
+        let index ← match fields.idxOf? fieldName with
+          | some index => pure index
+          | none =>
+              throwErrorAt value
+                s!"error[LRX-ELAB-115]: unknown row field {fieldName}; declared fields are {renderFields fields}"
+        boundNames := boundNames ++ [attrName.getId.eraseMacroScopes.toString]
+        let nameLit := Syntax.mkStrLit attrName.getId.eraseMacroScopes.toString
+        let indexLit := Syntax.mkNumLit (toString index)
+        pairTerms := pairTerms.push
+          (← `(($nameLit, LeanRx.RowChildProp.field $indexLit)))
+    | _ =>
+        throwErrorAt attr
+          "error[LRX-ELAB-131]: a row child prop is a string literal name=\"text\" or one projected row field name=\{field} (ADR-0075)"
+  unless boundNames == declared do
+    throwErrorAt tag
+      s!"error[LRX-ELAB-112]: child component {componentShortName tag} declares immutable props ({String.intercalate ", " declared}); got ({String.intercalate ", " boundNames}) — bindings must match the declaration names and order"
+  let nameLit := Syntax.mkStrLit (componentShortName tag)
+  let span ← sourceSpanTerm element
+  `(LeanRx.RowNode.child $nameLit (props := [$pairTerms,*]) (span := $span))
+
 /- Lower one sealed row template (ADR-0041): dynamic content is restricted to
 declared row field projections, and events were already rewritten to string
 bindings against the sealed row event vocabulary. -/
@@ -610,6 +665,11 @@ mutual
     match element with
     | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* >
           [$children:leanrxJsxChild,*]) => do
+        if componentHead? tag then
+          unless children.getElems.isEmpty do
+            throwErrorAt tag
+              s!"error[LRX-ELAB-131]: a row child reference takes no children — the content of <{componentShortName tag}/> lives in its own component view (ADR-0075)"
+          return ← lowerRowChildRef fields tag attrs element
         let (attrTerms, selectTerms, reflectTerms, autoFocus) ← lowerRowAttrs fields attrs
         let childTerms ← children.getElems.mapM (lowerRowChild fields ·)
         let span ← sourceSpanTerm element
@@ -618,6 +678,8 @@ mutual
           (attrs := [$attrTerms,*]) (span := $span) (classIf := [$selectTerms,*])
           (reflects := [$reflectTerms,*]) (autoFocus := $focusTerm))
     | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* />) => do
+        if componentHead? tag then
+          return ← lowerRowChildRef fields tag attrs element
         let (attrTerms, selectTerms, reflectTerms, autoFocus) ← lowerRowAttrs fields attrs
         let span ← sourceSpanTerm element
         let focusTerm ← if autoFocus then `(Bool.true) else `(Bool.false)
@@ -1173,6 +1235,29 @@ private partial def collectComponentHeads (props : List String) (stx : Syntax)
       collectComponentHeads props arg acc
   | _ => found
 
+/-- The head identifier of one row-template JSX element, self-closing or with
+a children block, regardless of attribute shapes — the ADR-0075 pre-scan for
+capitalized composition heads inside a sealed region item. -/
+private def rowElementHead? (stx : Syntax) : Option (TSyntax `ident) :=
+  let element : TSyntax `leanrxJsxElement := ⟨stx⟩
+  match element with
+  | `(leanrxJsxElement| <$tag:ident $_:leanrxJsxAttr* />) => some tag
+  | `(leanrxJsxElement| <$tag:ident $_:leanrxJsxAttr* > [$_:leanrxJsxChild,*]) =>
+      some tag
+  | _ => none
+
+/-- Collect every capitalized element head inside one region item's sealed
+row template, in first-occurrence order (ADR-0075). -/
+private partial def collectRowComponentHeads (stx : Syntax)
+    (found : Array (TSyntax `ident) := #[]) : Array (TSyntax `ident) :=
+  let found := match rowElementHead? stx with
+    | some tag => if componentHead? tag then found.push tag else found
+    | none => found
+  match stx with
+  | .node _ _ args => args.foldl (init := found) fun acc arg =>
+      collectRowComponentHeads arg acc
+  | _ => found
+
 /- The single command elaborator now dispatches nine item kinds; compiling
 its one large match needs more than the default heartbeat budget. -/
 set_option maxHeartbeats 800000 in
@@ -1358,6 +1443,20 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
           else if item.raw.getKind == ``leanrxItemProp then
             propTerms := propTerms.push (← elabPropItem item.raw itemSpan)
           else if item.raw.getKind == ``leanrxItemRegion then
+            /- The child table also collects row-scoped composition heads
+            (ADR-0075): a capitalized head inside a sealed row template joins
+            `ComponentSpec.children` exactly when `{name}_spec` is in scope,
+            deduplicated by name against the view heads — one aliased import
+            serves both scopes. A spec-less head is rejected by the row
+            lowering itself (LRX-ELAB-131). -/
+            for tag in collectRowComponentHeads item.raw do
+              if ← liftTermElabM (resolvesToComponentSpec tag) then
+                let shortName := componentShortName tag
+                unless childNames.contains shortName do
+                  childNames := childNames ++ [shortName]
+                  let tagLit := Syntax.mkStrLit shortName
+                  childTerms := childTerms.push
+                    (← `(LeanRx.ChildComponent.of $tagLit $(← sourceSpanTerm tag)))
             regionTerms := regionTerms.push
               (← elabRegionItem item.raw itemSpan rowEventTerms)
           else if item.raw.getKind == ``leanrxItemRowEvent ||

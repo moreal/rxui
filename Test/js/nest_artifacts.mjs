@@ -21,10 +21,11 @@ if (
   nestManifest.textSinkCount !== 1 ||
   nestManifest.eventCount !== 2 ||
   JSON.stringify(nestManifest.hostImports) !==
-    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs", "./Pulse.mjs"]) ||
+    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs", "./Chip.mjs", "./Pulse.mjs"]) ||
   JSON.stringify(nestManifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
-    "child-components", "keyed-regions", "typed-row-events",
+    "child-components", "keyed-regions", "row-child-components",
+    "typed-row-events",
   ])
 ) {
   throw new Error("generated Nest Lab manifest is invalid");
@@ -103,23 +104,27 @@ for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
   }
 }
 for (const required of [
-  "import { mount as $lrx_child_0 } from \"./Pulse.mjs\";",
+  // ADR-0075: the child table serves both scopes — the row-composed Chip and
+  // the view-composed Pulse share one aliased-import convention, ordered by
+  // first occurrence (the region item precedes the view item).
+  "import { mount as $lrx_child_0 } from \"./Chip.mjs\";",
+  "import { mount as $lrx_child_1 } from \"./Pulse.mjs\";",
   "import { createKeyedRegion } from \"./leanrx_region.mjs\";",
   "const child_off_0 = $lrx_child_1(node_0, [\"Pulse child\"]);",
   "const region_0 = createKeyedRegion(node_9, $lrx_region_0_row, $lrx_region_0_update, $lrx_region_0_dispose);",
   // ADR-0046: one structural delegated listener per bound event kind, each
   // with its own per-cell action array, sharing one dispatch function.
-  "const region_off_0 = listenDelegatedCells(node_9, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"\", \"mark\", \"remove\"]);",
-  "const region_off_0_input = listenDelegatedCells(node_9, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"rename\", \"\", \"\"]);",
-  "const region_off_0_keydown = listenDelegatedCells(node_9, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"record\", \"\", \"\"]);",
-  "regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1]), $lrx_event_1_append_0_1(state[0], state[1]), $lrx_event_1_append_0_2(state[0], state[1])]);",
+  "const region_off_0 = listenDelegatedCells(node_9, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"\", \"mark\", \"remove\", \"\"]);",
+  "const region_off_0_input = listenDelegatedCells(node_9, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"rename\", \"\", \"\", \"\"]);",
+  "const region_off_0_keydown = listenDelegatedCells(node_9, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"record\", \"\", \"\", \"\"]);",
+  "regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1]), $lrx_event_1_append_0_1(state[0], state[1]), $lrx_event_1_append_0_2(state[0], state[1]), $lrx_event_1_append_0_3(state[0], state[1])]);",
   "setKey(row_0, item[0]);",
-  "const regions = [[region_0, [], 0, false, []]];",
+  "const regions = [[region_0, [], 0, false, [], childInventory]];",
   // ADR-0043: the mark dispatch mutates the retained item in place and the
   // commit sweep drains exactly the pending positions through updateAt.
   "const row_next_0 = row_item[2] + \" ★\";",
   "regions[0][4][\"push\"](scan[1]);",
-  "regions[0][0][\"updateAt\"](pending_row, regions[0][1][pending_row], null);",
+  "regions[0][0][\"updateAt\"](pending_row, regions[0][1][pending_row], regions[0][5]);",
   // ADR-0046: typed row payloads lower to the delegated value/key argument
   // selected by the template binding kind.
   "if (action === \"rename\") {",
@@ -132,10 +137,20 @@ for (const required of [
   "  setText(childAt(childAt(row, 0), 0), item[1] + item[2]);",
   "  setText(childAt(childAt(row, 1), 0), item[3]);",
   "makeDisposer(node_0, [child_off_0, off_0, off_1, region_off_0, region_off_0_input, region_off_0_keydown, region_0[\"dispose\"]], tx, [region_0])",
-  // ADR-0066: the parent disposer republishes the child mount returns in
-  // declaration order, so child instrumentation stays reachable after the
-  // parent dispose splices its listener list.
-  "disposer[\"children\"] = [child_off_0];",
+  // ADR-0075: the row mount callback mounts the row-scoped child at its cell
+  // with the projected origin field, stashes the mount return on the row root
+  // for the dispose callback, and pushes it into the live inventory the
+  // region call sites pass as context.
+  "const row_child_0 = $lrx_child_0(row_0, [item[4]]);",
+  "context[\"push\"](row_child_0);",
+  "row_0[\"$lrxRowChild\"] = row_child_0;",
+  "function $lrx_region_0_dispose(row, key, context) {",
+  "    context[\"splice\"](context[\"indexOf\"](row[\"$lrxRowChild\"]), 1);",
+  "  row[\"$lrxRowChild\"]();",
+  // ADR-0066/0075: the disposer republishes the live inventory — the static
+  // Pulse disposer seeded first, then one entry per mounted row.
+  "const childInventory = [child_off_0];",
+  "disposer[\"children\"] = childInventory;",
 ]) {
   if (!nestSource.includes(required)) {
     throw new Error(`generated Nest Lab is missing ${required}`);

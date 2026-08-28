@@ -61,9 +61,10 @@ private def verifyFilter
 
 private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSchema) :
     IO Unit := do
-  unless checked.spec.children.toList.map (·.name) == ["Pulse"] do
+  unless checked.spec.children.toList.map (·.name) == ["Chip", "Pulse"] do
     throw <| IO.userError "child component table lost the nested Pulse reference"
-  unless checked.spec.children.toList.map (·.moduleSpecifier) == ["./Pulse.mjs"] do
+  unless checked.spec.children.toList.map (·.moduleSpecifier) ==
+      ["./Chip.mjs", "./Pulse.mjs"] do
     throw <| IO.userError "child component table lost the module specifier convention"
   unless checked.view.childRefs.map (fun ref => (ref.name, ref.path)) == [("Pulse", [5])] do
     throw <| IO.userError "view split lost the mounted child reference"
@@ -72,8 +73,15 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
   unless checked.spec.regions.toList.map (·.name) == ["roster"] do
     throw <| IO.userError "region table lost the roster declaration"
   unless checked.spec.regions.toList.map (·.fields) ==
-      [#["label", "marks", "lastKey"]] do
+      [#["label", "marks", "lastKey", "origin"]] do
     throw <| IO.userError "region table lost the row field inventory"
+  /- ADR-0075: the sealed row template composes one Chip per row, its `tag`
+  prop projecting the unwritten `origin` field. -/
+  unless checked.spec.regions.toList.map
+      (fun region => region.template.childRefs.map
+        (fun (name, props, _) => (name, props))) ==
+      [[("Chip", [("tag", .field 3)])]] do
+    throw <| IO.userError "region table lost the row child reference"
   unless checked.spec.regions.toList.map
       (fun region => region.events.toList.map
         (fun event => (event.name, event.action, event.takesPayload))) ==
@@ -95,7 +103,7 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
   match checked.spec.events.toList.find? (·.name == "addItem") with
   | none => throw <| IO.userError "region append event disappeared"
   | some addItem =>
-      unless addItem.update.regionAppendTargets == [("roster", 3)] do
+      unless addItem.update.regionAppendTargets == [("roster", 4)] do
         throw <| IO.userError "region append target or arity changed"
 
 private def verifyBranch

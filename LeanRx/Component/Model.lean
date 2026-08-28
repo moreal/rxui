@@ -297,6 +297,14 @@ elaboration validates child prop bindings against this list (ADR-0042). -/
 def ComponentSpec.propNames (spec : ComponentSpec Γ) : List String :=
   spec.props.toList.map (·.name)
 
+/-- Whether this component's own view template carries a static `id`
+attribute anywhere (ADR-0075). A row-composed child mounts one instance per
+row, so the parent-side row lowering evaluates this predicate to reject
+composing an id-carrying child — unbounded instances would duplicate
+document ids. -/
+def ComponentSpec.viewHasStaticId (spec : ComponentSpec Γ) : Bool :=
+  spec.view.hasStaticId
+
 structure ComponentError where
   code : String
   message : String
@@ -956,6 +964,32 @@ private def validateChildren : ViewChildren Γ → Except ComponentError Unit
       validateChildren tail
 end
 
+/-- The row-field indices of one region that any declared writer can rewrite
+after row mount (ADR-0075): the update stages and key-branch arm stages of the
+region's row events, the payload-free broadcasts of plain and key-branched
+component events (ADR-0050), and the typed payload broadcasts (ADR-0061).
+Remove actions and remove-if guards dispose whole rows — the row child is
+disposed with them — so they are not writers. -/
+private def regionWrittenFields (spec : ComponentSpec Γ) (region : RegionSpec) :
+    List Nat :=
+  let stageFields : RowStage → List Nat := fun stage => stage.assignments.map (·.1)
+  let eventFields := region.events.toList.flatMap fun event =>
+    match event.action with
+    | .remove => []
+    | .update stage => stageFields stage
+    | .keySelect arms => arms.flatMap fun arm => stageFields arm.2
+  let updates := spec.events.toList.map (·.update) ++
+    spec.keyEvents.toList.flatMap fun event => event.arms.map (·.update)
+  let broadcastFields := updates.flatMap fun update =>
+    update.regionBroadcastTargets.flatMap fun (target, assignments) =>
+      if target == region.name then assignments.map (·.1) else []
+  let typedFields := spec.typedEvents.toList.flatMap fun event =>
+    match event.broadcast? with
+    | some (target, assignments) =>
+        if target == region.name then assignments.map (·.1) else []
+    | none => []
+  eventFields ++ broadcastFields ++ typedFields
+
 /-- Every nested component reference must name a declared child, and the child
 table itself must be well formed: nonempty unique names and same-directory
 `.mjs` module specifiers. -/
@@ -995,13 +1029,42 @@ private def validateChildComponents (spec : ComponentSpec Γ)
             message := s!"child prop {bound} forwards parent prop index {field}, but only {spec.props.size} immutable props are declared"
             spans := #[reference.span]
           }
+  /- Row-scoped child references (ADR-0075): at most one per template, each
+  naming a declared child, and a projected prop field must be one no row
+  event stage or region broadcast rewrites — the child's immutable prop is a
+  row-mount constant, so a writable field would silently diverge from the
+  row's own re-rendered text. -/
+  for region in spec.regions do
+    let rowRefs := region.template.childRefs
+    unless rowRefs.length ≤ 1 do
+      throw {
+        code := "LRX-VIEW-045"
+        message := s!"the row template of region {region.name} composes at most one child reference, found {rowRefs.length}"
+        spans := #[region.span]
+      }
+    let written := regionWrittenFields spec region
+    for (childName, props, span) in rowRefs do
+      unless names.contains childName do
+        throw {
+          code := "LRX-VIEW-023"
+          message := s!"row template references unknown child component {childName}"
+          spans := #[span]
+        }
+      for (bound, value) in props do
+        if let .field field := value then
+          if written.contains field then
+            throw {
+              code := "LRX-VIEW-045"
+              message := s!"row child prop {bound} projects row field {field} of region {region.name}, which a row event or broadcast rewrites; a row child prop is a row-mount constant (ADR-0075)"
+              spans := #[span]
+            }
 
 /- Row event bindings bound anywhere inside one row-template subtree; a
 branch cell contributes the bindings of both of its sealed subtrees. -/
 mutual
   private def rowBindings : RowNode → List EventBinding
     | .element _ _ events children _ _ _ _ => events ++ rowBindingsChildren children
-    | .text _ _ | .fieldText _ _ | .exprText _ _ => []
+    | .text _ _ | .fieldText _ _ | .exprText _ _ | .child .. => []
     | .branch _ _ whenTrue whenFalse _ => rowBindings whenTrue ++ rowBindings whenFalse
 
   private def rowBindingsChildren : RowChildren → List EventBinding
@@ -1016,7 +1079,7 @@ mutual
   private def rowFocusCount : RowNode → Nat
     | .element _ _ _ children _ _ _ autoFocus =>
         (if autoFocus then 1 else 0) + rowFocusCountChildren children
-    | .text _ _ | .fieldText _ _ | .exprText _ _ => 0
+    | .text _ _ | .fieldText _ _ | .exprText _ _ | .child .. => 0
     | .branch _ _ whenTrue whenFalse _ => rowFocusCount whenTrue + rowFocusCount whenFalse
 
   private def rowFocusCountChildren : RowChildren → Nat
@@ -1031,7 +1094,7 @@ mutual
   private def rowContainsTag (tag : HtmlTag) : RowNode → Bool
     | .element nodeTag _ _ children _ _ _ _ =>
         nodeTag == tag || rowContainsTagChildren tag children
-    | .text _ _ | .fieldText _ _ | .exprText _ _ => false
+    | .text _ _ | .fieldText _ _ | .exprText _ _ | .child .. => false
     | .branch _ _ whenTrue whenFalse _ =>
         rowContainsTag tag whenTrue || rowContainsTag tag whenFalse
 
@@ -1237,6 +1300,31 @@ mutual
             }
         validateRowNode region 2 true whenTrue
         validateRowNode region 2 true whenFalse
+    | .child _ props span => do
+        /- The row-scoped child reference (ADR-0075): never the template root
+        (the root carries the delegated row key), never inside a branch
+        subtree (branch replacement re-renders without a dispose path), and
+        every projected prop field in bounds. -/
+        unless depth ≥ 1 do
+          throw {
+            code := "LRX-VIEW-045"
+            message := s!"a row child reference in region {region.name} cannot be the row template root"
+            spans := #[span]
+          }
+        if inBranch then
+          throw {
+            code := "LRX-VIEW-045"
+            message := s!"a row child reference in region {region.name} cannot sit inside a two-branch row cell's subtrees"
+            spans := #[span]
+          }
+        for (_, value) in props do
+          if let .field field := value then
+            unless field < region.fields.size do
+              throw {
+                code := "LRX-VIEW-045"
+                message := s!"a row child prop projects field {field} outside region {region.name}'s {region.fields.size} field(s)"
+                spans := #[span]
+              }
 
   private def validateRowChildren (region : RegionSpec) (depth : Nat) (inBranch : Bool) :
       RowChildren → Except ComponentError Unit
