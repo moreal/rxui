@@ -63,6 +63,7 @@
 | [0059](docs/adr/0059-predicate-count-visibility.md) | Accepted | Hide the clear-completed affordance through the sealed predicate-count hidden subject | 2026-08-28 |
 | [0060](docs/adr/0060-region-checked-reflection.md) | Accepted | Reflect the sealed region-count boolean into the toggle-all checkbox's checked property | 2026-08-28 |
 | [0061](docs/adr/0061-payload-broadcast.md) | Accepted | Flow the delegated checked payload into the region broadcast to close toggle-all | 2026-08-28 |
+| [0062](docs/adr/0062-count-label-selection.md) | Accepted | Select between two static strings from a region count against the one literal — items-left singular/plural | 2026-08-28 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
