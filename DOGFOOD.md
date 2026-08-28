@@ -4105,3 +4105,84 @@ broadcast-writer witness, the ADR, and this record. Open: nothing
 mechanism-shaped — three-plus regions add no new machinery, and
 the interleaving/isolation specs extend directly if a lab ever
 declares one.
+
+## Two regions, four features — the distribution round (ADR-0078)
+
+### What was built
+
+The generalization round Mix Lab's second region opened. ADR-0077
+made the repository's first two-region component, but every region
+feature was still carried by exactly one of the two: `crew` had
+counts, a filter, and persistence; `pins` had none. The survey
+asked what happens when a feature sits on *both* regions, and
+checked five places in the backend before touching anything —
+every emitted temporary already carries the region index
+(`filter_scan_{i}`, `count_next_{i}_{slot}`, `persist_rows_{i}`);
+the filter container slot and the child inventory slot are both
+computed *inside* the per-region loop from that region's own
+feature set; `countRefs`/`countCache` are per-record arrays sized
+by the cells naming that region; region-subject selections keep
+their global document-order labels while re-evaluating under their
+own region's touched flag; and `Update.sequence` composes region
+actions across regions freely, each raising its own dirty flag.
+
+All five coherent — but the survey found one axis that was not
+merely ungated: `validatePersists` capped the whole component at
+one persist item, even for two regions under two different keys,
+while the backend was already index-generalized
+(`hydrateFunction … persistIndex`, a mount loop over
+`persists.zipIdx`, a write-back inside the per-region sweep). The
+cap was stage-1 scaffolding. So this round has a code change after
+all: the cap becomes one persist item *per region* with keys
+distinct across the component — the real invariant is one writer
+per key, and both violations (a region persisting twice, two
+regions sharing a key) stay `LRX-TYPE-118` because both would make
+one commit sweep emit two write-backs racing for one slot.
+
+Mix Lab's `pins` then took its own count cell, its own emptiness
+selection, its own persist key, and the component took one chained
+cross-region event (`append pins (…) then remove crew (…) then
+set added (…)`). The artifact gate pins the two-record literal
+with crew's container at slot 7 and pins' *inventory* at slot 7 —
+the same number meaning two different things in two records, which
+is the sharpest evidence available that feature slots are computed
+per region.
+
+### Friction encountered
+
+None structural. The one design tension was real and had to be
+resolved by choosing: giving `pins` a filter too would have made
+both records identical in width and slot numbering, erasing the
+divergence that makes the layout gate sharp. Kept `pins`
+unfiltered, gated the crew-filter-flip non-interference instead,
+and recorded two filtered regions as an open question with its
+construction argument.
+
+### Bugs found
+
+None. Two hydrations run in declaration order and seed the shared
+inventory crew-first; a write in one region rewrites its key
+alone; the chained event commits once with `region:pins:append`
+before `region:crew:removeIf` (event order) and
+`region:crew:update` before `region:pins:update` (sweep order);
+and a crew filter flip leaves every pins row, child instance,
+metric, and the pins key untouched.
+
+### Performance observations
+
+No generated-code change outside Mix Lab: the benchmark bundle,
+NestLab, ToggleLab, and every other lab are byte-identical, so the
+size gate and BENCHMARK.md stand without re-measurement. A second
+persisted region costs exactly one more hydrate function and one
+more write-back, both behind their own region's touched flag.
+
+### Follow-up issue or commit
+
+`feat(component): persist one key per region and gate the
+two-region feature distribution (ADR-0078)` — the
+`validatePersists` generalization, two compile-fail fixtures (a
+shared key across regions, a region persisting twice), the Mix Lab
+extension, the two-record artifact gate, three browser tests, the
+guide update, the ADR, and this record. Open: two *filtered*
+regions, and two filters driven by one state field — both coherent
+by construction, neither with a consumer lab.

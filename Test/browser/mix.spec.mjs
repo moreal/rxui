@@ -58,6 +58,11 @@ test("the combined region mounts empty with the static badge seeded first", asyn
   await expect(page.locator("#crew-line")).toHaveText("0 done of 0");
   await expect(page.locator("#crew")).toBeHidden();
   await expect(page.getByRole("button", { name: "Clear done" })).toBeHidden();
+  // ADR-0078: the second region owns its own count cell and its own
+  // emptiness selection — attr 2 in document order, behind crew's attrs 0
+  // and 1, driven by pins' own touched flag.
+  await expect(page.locator("#pins-line")).toHaveText("0 pinned");
+  await expect(page.locator("#pins")).toBeHidden();
   await expect(page.locator(".badge-tag")).toHaveText(["static badge"]);
   const seeded = await page.evaluate(() => globalThis.mixDispose.children.length);
   expect(seeded).toBe(1);
@@ -327,6 +332,139 @@ test("a removal in one region splices only its own inventory entry", async ({ pa
   expect(crewRemoved.children).toEqual([0, 3]);
   expect(crewRemoved.pinMetrics[3]).toBe(1);
   await expect(page.locator("#pins .badge-tag")).toHaveText(["Pin 2"]);
+});
+
+test("two persisted regions hydrate and save under their own keys", async ({ page }) => {
+  // ADR-0078: one persist item per region, each with its own sealed key —
+  // mount runs one hydrate transaction per persisted region in declaration
+  // order, and each region's write-back rides its own touched flag.
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    localStorage.setItem("leanrx-mix-lab.crew", "Alpha,true,Tag A");
+    localStorage.setItem("leanrx-mix-lab.pins", "Pin A;Pin B");
+    const { mount } = await import("/MixLab.mjs");
+    globalThis.mixDispose = mount(document.getElementById("app"));
+  });
+  await expect(page.locator("#crew > li .crew-label")).toHaveText(["Alpha"]);
+  await expect(page.locator("#pins .pin-note")).toHaveText(["Pin A", "Pin B"]);
+  await expect(page.locator("#crew-line")).toHaveText("1 done of 1");
+  await expect(page.locator("#pins-line")).toHaveText("2 pinned");
+  await expect(page.locator("#crew")).toBeVisible();
+  await expect(page.locator("#pins")).toBeVisible();
+  const hydrated = await page.evaluate(() => ({
+    count: globalThis.mixDispose.children.length,
+    trace: globalThis.mixDispose.instrumentation()[7],
+    tags: Array.from(document.querySelectorAll(".badge-tag"), (node) => node.textContent),
+  }));
+  // Both hydrations mount their row children into the one shared inventory,
+  // crew's before pins' — the hydrate transactions run in declaration order.
+  expect(hydrated.count).toBe(4);
+  expect(hydrated.tags).toEqual(["Tag A", "Pin A", "Pin B", "static badge"]);
+  for (const event of [
+    "event:hydrate:crew", "region:crew:hydrate", "storage:crew:write",
+    "event:hydrate:pins", "region:pins:hydrate", "storage:pins:write",
+  ]) {
+    expect(hydrated.trace).toContain(event);
+  }
+  expect(hydrated.trace.indexOf("event:hydrate:crew"))
+    .toBeLessThan(hydrated.trace.indexOf("event:hydrate:pins"));
+  // A write in one region rewrites its own key alone.
+  await page.locator("#pins > li").first()
+    .getByRole("button", { name: "Remove pin" }).click();
+  const afterPin = await page.evaluate(() => ({
+    crew: localStorage.getItem("leanrx-mix-lab.crew"),
+    pins: localStorage.getItem("leanrx-mix-lab.pins"),
+  }));
+  expect(afterPin.crew).toBe("Alpha,true,Tag A");
+  expect(afterPin.pins).toBe("Pin B");
+  await page.getByRole("button", { name: "Add member" }).click();
+  const afterMember = await page.evaluate(() => ({
+    crew: localStorage.getItem("leanrx-mix-lab.crew"),
+    pins: localStorage.getItem("leanrx-mix-lab.pins"),
+  }));
+  expect(afterMember.crew).toBe("Alpha,true,Tag A;Member 0,false,Tag 0");
+  expect(afterMember.pins).toBe("Pin B");
+});
+
+test("one chained event drains both regions in one commit", async ({ page }) => {
+  await mountMix(page);
+  const add = page.getByRole("button", { name: "Add member" });
+  await add.click();
+  await add.click();
+  await page.locator("#crew > li").first()
+    .getByRole("checkbox", { name: "Toggle member" }).check();
+  await expect(page.locator("#crew-line")).toHaveText("1 done of 2");
+  const before = await page.evaluate(() => {
+    const tx = globalThis.mixDispose.instrumentation();
+    globalThis.mixTraceLength = tx[7].length;
+    return { commits: tx[1], length: tx[7].length };
+  });
+  // ADR-0078: `append pins (…) then remove crew (…) then set added (…)`
+  // raises both dirty flags inside one transaction; the commit sweep then
+  // drains them in region declaration order, crew before pins, regardless of
+  // the order the event touched them.
+  await page.getByRole("button", { name: "Stow done" }).click();
+  await expect(page.locator("#crew > li .crew-label")).toHaveText(["Member 1"]);
+  await expect(page.locator("#pins .pin-note")).toHaveText(["Stowed 2"]);
+  await expect(page.locator("#crew-line")).toHaveText("0 done of 1");
+  await expect(page.locator("#pins-line")).toHaveText("1 pinned");
+  const after = await page.evaluate(() => {
+    const tx = globalThis.mixDispose.instrumentation();
+    return {
+      commits: tx[1],
+      slice: tx[7].slice(globalThis.mixTraceLength),
+      children: globalThis.mixDispose.children.length,
+      crew: localStorage.getItem("leanrx-mix-lab.crew"),
+      pins: localStorage.getItem("leanrx-mix-lab.pins"),
+    };
+  });
+  expect(after.commits).toBe(before.commits + 1);
+  expect(after.slice.filter((event) => event === "transaction:commit")).toHaveLength(1);
+  // Event order: pins append before the crew removal.
+  expect(after.slice.indexOf("region:pins:append"))
+    .toBeLessThan(after.slice.indexOf("region:crew:removeIf"));
+  // Sweep order: crew reconcile and write-back before pins'.
+  expect(after.slice.indexOf("region:crew:update"))
+    .toBeLessThan(after.slice.indexOf("region:pins:update"));
+  expect(after.slice.indexOf("storage:crew:write"))
+    .toBeLessThan(after.slice.indexOf("storage:pins:write"));
+  // One removal, one mount: the static seed, the surviving member, the pin.
+  expect(after.children).toBe(3);
+  expect(after.crew).toBe("Member 1,false,Tag 1");
+  expect(after.pins).toBe("Stowed 2");
+});
+
+test("a filter flip in one region never touches the other", async ({ page }) => {
+  await mountMix(page);
+  await page.getByRole("button", { name: "Add member" }).click();
+  await page.getByRole("button", { name: "Add pin" }).click();
+  await page.locator("#pins .badge button").first().click();
+  await expect(page.locator("#pins .badge-text")).toHaveText(["Hits: 1"]);
+  const before = await page.evaluate(() => ({
+    pinMetrics: globalThis.mixDispose.regionInstrumentation()[1],
+    children: (globalThis.mixEntries = globalThis.mixDispose.children.slice()).length,
+    pins: localStorage.getItem("leanrx-mix-lab.pins"),
+  }));
+  // ADR-0078: the filter sweep is the one filtered region's own — its scan
+  // walks crew's row table through crew's own container slot, and the
+  // unfiltered neighbour has no scan, no touched flag, and no write-back.
+  await page.getByRole("button", { name: "Show done" }).click();
+  await expect(page.locator("#crew > li").first()).toBeHidden();
+  await expect(page.locator("#pins > li").first()).toBeVisible();
+  await expect(page.locator("#pins .badge-text")).toHaveText(["Hits: 1"]);
+  await expect(page.locator("#pins-line")).toHaveText("1 pinned");
+  const after = await page.evaluate(() => ({
+    pinMetrics: globalThis.mixDispose.regionInstrumentation()[1],
+    identical: globalThis.mixDispose.children.every(
+      (child, index) => child === globalThis.mixEntries[index],
+    ),
+    children: globalThis.mixDispose.children.length,
+    pins: localStorage.getItem("leanrx-mix-lab.pins"),
+  }));
+  expect(after.pinMetrics).toEqual(before.pinMetrics);
+  expect(after.identical).toBe(true);
+  expect(after.children).toBe(before.children);
+  expect(after.pins).toBe(before.pins);
 });
 
 test("root disposal disposes row badges while the inventory keeps reachability", async ({ page }) => {

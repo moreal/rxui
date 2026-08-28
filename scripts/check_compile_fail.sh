@@ -110,6 +110,7 @@ fixtures=(
   Test/fixtures/compile-fail/RouteDefaultUnmapped.lean
   Test/fixtures/compile-fail/PersistUnknownRegion.lean
   Test/fixtures/compile-fail/PersistDuplicateKey.lean
+  Test/fixtures/compile-fail/PersistRegionTwice.lean
   Test/fixtures/compile-fail/ForwardWithoutSpec.lean
   Test/fixtures/compile-fail/ChildInRegionRow.lean
   Test/fixtures/compile-fail/ChildRefWithChildren.lean
@@ -232,6 +233,7 @@ fragments=(
   "error[LRX-TYPE-117]"
   "error[LRX-TYPE-117]"
   "error[LRX-ELAB-129]"
+  "error[LRX-TYPE-118]"
   "error[LRX-TYPE-118]"
   "error[LRX-ELAB-130]"
   "error[LRX-ELAB-131]"

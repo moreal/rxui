@@ -23,14 +23,35 @@ crew row through the dirty reconcile, and the retained path calls only
 the update callback — row children never remount, badge state survives,
 and the inventory length is untouched, because the reconcile mounts only
 entries whose key was not retained. And a *second* child-composing
-region, `pins`, shares the one mount-scope `childInventory`: its bare
-record `[handle, rows, nextKey, dirty, pending, childInventory]` ends in
-the same array identifier as crew's widest record (`regionChildSlot`
-5 + 0 + 0 = 5 next to crew's 8), the entries of both regions interleave
-after the static seed in actual mount order, and each region's dispose
-callback splices by `indexOf` of its own row's stashed mount return — a
-per-row function instance — so one region's removal can never
-misidentify the other's entries.
+region, `pins`, shares the one mount-scope `childInventory`: both
+records end in the same array identifier, the entries of both regions
+interleave after the static seed in actual mount order, and each
+region's dispose callback splices by `indexOf` of its own row's stashed
+mount return — a per-row function instance — so one region's removal
+can never misidentify the other's entries.
+
+ADR-0078 spreads the region features across *both* regions. `pins` now
+carries its own count cell, its own emptiness selection, and its own
+persist key, so its record is `[handle, rows, nextKey, dirty, pending,
+countRefs, countCache, childInventory]` — its inventory at
+`regionChildSlot` 5 + 2 + 0 = 7, the slot number that means *container*
+in crew's nine-slot record and *inventory* in pins', which is the
+sharpest evidence every feature slot is computed from that region's own
+feature set. Three contracts follow. Two persist keys are independent:
+`persist crew := "leanrx-mix-lab.crew"` and `persist pins :=
+"leanrx-mix-lab.pins"` emit one hydrate transaction each, run at mount
+in declaration order, and each write-back rides its own region's touched
+flag — one region persisting twice, or two regions sharing one key, is
+`LRX-TYPE-118`. Counts and selections distribute by record and by
+document order: crew's two cells fill crew's own two-slot refs and
+cache, pins' single cell fills its own one-slot pair, and the emptiness
+selections keep document-order labels across the region boundary (crew
+owns attrs 0 and 1, pins attr 2) while each re-evaluates only under its
+own region's flag. And one chained event reaches both regions:
+`stowDone` appends a pin and then removes the done crew rows inside one
+transaction, so the dirty flags are raised in *event* order and drained
+by the commit sweep in *region declaration* order, crew before pins,
+with one commit and one write-back per region.
 
 The combination pins three orthogonality contracts. Hydration mounts
 children: `persist crew := "leanrx-mix-lab.crew"` hydrates through the
@@ -49,7 +70,9 @@ wrapper, and the clear-done affordance all read the row table, never the
 child inventory — Badge clicks commit in the child's own state array and
 touch no region metric, count, or persisted value, while a removal
 (✕ or `clearDone`) decrements the count texts and splices the inventory
-in the same commit. No host change; runtime ABI stays 17. -/
+in the same commit; the `crew` filter flip is likewise crew's alone —
+`pins` has no filter, no scan, and no touched flag on a filter change.
+No host change; runtime ABI stays 17. -/
 
 namespace LeanRxExamples.MixLab
 
@@ -87,12 +110,16 @@ component MixLab (schema := MixSchema) where {
   event markAllDone := update crew (set done "true");
   event addPin := append pins (s!"Pin {added}")
     then set added (added + 1);
+  event stowDone := append pins (s!"Stowed {added}")
+    then remove crew (done == "true")
+    then set added (added + 1);
   event showAll := set filter "all";
   event showActive := set filter "active";
   event showDone := set filter "done";
   filter crew by filter := when "active" (done == "false")
     then when "done" (done == "true");
   persist crew := "leanrx-mix-lab.crew";
+  persist pins := "leanrx-mix-lab.pins";
   row crew toggle (checked : String) := set done checked;
   region crew (label, done, tag) := jsx%
     <li class={if done == "true" then "crew-row done" else "crew-row"}> [
@@ -125,7 +152,9 @@ component MixLab (schema := MixSchema) where {
     <button type="button" onClick={showActive}> ["Show active"],
     <button type="button" onClick={showDone}> ["Show done"],
     <button type="button" onClick={addPin}> ["Add pin"],
-    <ul id="pins" ariaLabel="Pins"> [<region pins/>],
+    <button type="button" onClick={stowDone}> ["Stow done"],
+    <p id="pins-line"> [{count pins}, " pinned"],
+    <ul id="pins" ariaLabel="Pins" hidden={count pins == 0}> [<region pins/>],
     <Badge tag="static badge"/>
   ];
 }

@@ -9,7 +9,8 @@ def mode : Field S String := .here
 component PersistDuplicateKey (schema := S) where {
   state mode : String := "all";
   region items (label) := jsx% <li> [<span> [{label}]];
-  persist items := "leanrx-fixture.items";
-  persist items := "leanrx-fixture.other";
-  view := jsx% <main> [<ul> [<region items/>]];
+  region notes (label) := jsx% <li> [<span> [{label}]];
+  persist items := "leanrx-fixture.shared";
+  persist notes := "leanrx-fixture.shared";
+  view := jsx% <main> [<ul> [<region items/>], <ul> [<region notes/>]];
 }

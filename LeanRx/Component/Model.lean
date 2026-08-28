@@ -265,11 +265,12 @@ structure RouteSpec (Γ : Schema) where
 
 /-- One sealed persistence declaration (ADR-0063): one declared keyed region's
 row table persisted under one sealed literal storage key — one key per
-component in stage 1. Mount hydrates through the existing append path from one
-`storageGet` (a missing, empty, or wrong-arity value mounts the region empty,
-fail closed), and one `storageSet` rides the region-touch sweep per
-region-touching transaction; serialization lives in generated code, so the
-host moves strings only. -/
+persisted region, and a component may persist several regions under distinct
+keys (ADR-0078). Mount hydrates through the existing append path from one
+`storageGet` per persisted region, in declaration order (a missing, empty, or
+wrong-arity value mounts that region empty, fail closed), and one `storageSet`
+rides each region's own region-touch sweep per region-touching transaction;
+serialization lives in generated code, so the host moves strings only. -/
 structure PersistSpec where
   region : String
   key : String
@@ -1784,14 +1785,23 @@ private def validateRoutes (spec : ComponentSpec Γ) (sourceCount : Nat) :
         spans := #[route.span]
       }
 
-/-- Validate the sealed persistence table (ADR-0063): at most one persist item
-per component — one sealed literal key — targeting a declared region with a
-nonempty key. -/
+/-- Validate the sealed persistence table (ADR-0063/ADR-0078): one persist item
+per declared region — each with its own sealed literal key, distinct across the
+component — targeting a declared region with a nonempty key. Two regions may
+each persist (ADR-0078); one region persisting twice, or two regions sharing a
+storage key, would make the two write-backs of one commit sweep race for one
+localStorage slot and is rejected. -/
 private def validatePersists (spec : ComponentSpec Γ) : Except ComponentError Unit := do
-  unless spec.persists.size ≤ 1 do
+  if duplicate? (spec.persists.toList.map (·.region)) then
     throw {
       code := "LRX-TYPE-118"
-      message := "a component declares at most one persist item — one sealed literal storage key"
+      message := "a keyed region carries at most one persist item — one sealed literal storage key"
+      spans := spec.persists.map (·.span)
+    }
+  if duplicate? (spec.persists.toList.map (·.key)) then
+    throw {
+      code := "LRX-TYPE-118"
+      message := "two persist items share one storage key; each persisted region owns its own key"
       spans := spec.persists.map (·.span)
     }
   for persist in spec.persists do

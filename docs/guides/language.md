@@ -631,21 +631,26 @@ component RoutedRosterMini (schema := RoutedRosterMiniSchema) where {
 
 A `persist` item seals a keyed region's row table onto one localStorage key
 (ADR-0063): `persist region := "storage-key"` declares one sealed literal
-key per component, targeting one declared keyed region. Serialization lives
+key per persisted region, targeting one declared keyed region. A component
+may persist several regions, each under its own key (ADR-0078). Serialization lives
 in generated code as a throw-free split/join escape — `%`→`%25` first, then
 `,`→`%2C` and `;`→`%3B`; fields joined by `,`, rows by `;` — so no decode
-step can throw. Mount hydrates through one `storageGet` as one ordinary
-transaction whose writes push the parsed rows through the existing append
-path, so the shared commit sweep settles rows, counts, visibility, filter,
-and the normalized write-back together; a missing or empty value mounts the
-region empty, and any row whose field count differs from the declared arity
-fails the whole value closed to the empty region. One `storageSet` rides
-the region-touch sweep per region-touching transaction — the
-ADR-0050/0051/0058 shared touched flag — so a filter change alone touches
-nothing and therefore persists nothing. The item shape — a declared region
-name, exactly one literal storage key — is `LRX-ELAB-129`; at most one
-persist item per component, with a nonempty key on a declared region, is
-`LRX-TYPE-118`:
+step can throw. Mount hydrates each persisted region through its own `storageGet` as one
+ordinary transaction whose writes push the parsed rows through the existing
+append path, so the shared commit sweep settles rows, counts, visibility,
+filter, and the normalized write-back together; the hydrate transactions run
+in persist declaration order, each settling the whole sweep before the next
+begins. A missing or empty value mounts that region empty, and any row whose
+field count differs from the declared arity fails the whole value closed to
+the empty region. One `storageSet` rides the region-touch sweep per
+region-touching transaction — the ADR-0050/0051/0058 shared touched flag —
+so a filter change alone touches nothing and therefore persists nothing, and
+a transaction touching one of two persisted regions rewrites that region's
+key alone. The item shape — a declared region name, exactly one literal
+storage key — is `LRX-ELAB-129`; one persist item per region, keys distinct
+across the component, each nonempty and on a declared region, is
+`LRX-TYPE-118` (two items on one region, or two regions sharing one key,
+would make one commit sweep's two write-backs race for one slot):
 
 ```lean
 component PersistedRosterMini (schema := PersistedRosterMiniSchema) where {
