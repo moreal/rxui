@@ -392,7 +392,12 @@ test("a row update that changes the predicated field re-applies the filter live 
 
 test("appended rows take their visibility inside the appending commit (ADR-0051)", async ({ page }) => {
   await mountToggle(page);
-  await page.getByRole("button", { name: "Show completed" }).click();
+  // The empty-list chrome hides the filter buttons with the footer, so the
+  // completed filter is set through a synthetic click on the hidden button —
+  // the dispatch, not the affordance, carries the contract (the ADR-0055
+  // rejection 2 reasoning).
+  await page.locator("button", { hasText: "Show completed" })
+    .evaluate((button) => button.click());
   const add = page.getByRole("button", { name: "Add item" });
   await add.click();
   // The append raises the touched flag, so the fresh row mounts and is
@@ -1026,7 +1031,9 @@ test("a filter change never re-evaluates the affordance and completeAll keeps it
 
 test("the toggle-all box mounts checked and the first not-done append unchecks it (ADR-0060)", async ({ page }) => {
   await mountToggle(page);
-  const box = page.getByRole("checkbox", { name: "Toggle all" });
+  // The box now also mounts hidden with the empty-list chrome, so address
+  // it by id — the role query excludes hidden elements.
+  const box = page.locator("#toggle-all");
   // An empty region has no row failing the predicate: the box mounts with
   // its checked property already true — the vacuous all-complete truth,
   // written by mount before any transaction exists, exactly like the
@@ -1058,7 +1065,9 @@ test("the toggle-all box mounts checked and the first not-done append unchecks i
 
 test("untoggling and appending uncheck the box and an emptied region restores the vacuous truth (ADR-0060)", async ({ page }) => {
   await mountToggle(page);
-  const box = page.getByRole("checkbox", { name: "Toggle all" });
+  // Addressed by id: clearCompleted empties the region at the end, hiding
+  // the box with the empty-list chrome.
+  const box = page.locator("#toggle-all");
   const add = page.getByRole("button", { name: "Add item" });
   await add.click();
   const rowToggle = page.locator("#items > li").first()
@@ -1203,7 +1212,9 @@ test("one payload broadcast's region touch updates the counts and every selectio
 
 test("an equal-payload broadcast is an evaluate-only sweep and an empty-region broadcast is a no-op (ADR-0061)", async ({ page }) => {
   await mountToggle(page);
-  const box = page.getByRole("checkbox", { name: "Toggle all" });
+  // Addressed by id: the box hides with the empty-list chrome once the
+  // region drains, and the role query excludes hidden elements.
+  const box = page.locator("#toggle-all");
   const count = (tx, label) => tx[7].filter((entry) => entry === label).length;
   const fireChange = (checked) =>
     page.evaluate((value) => {
@@ -1340,6 +1351,183 @@ test("the count label follows every region mutation in the same commit (ADR-0062
   await page.locator("#items > li").nth(0)
     .getByRole("button", { name: "Remove item" }).click();
   await expect(page.locator("#items-left")).toHaveText("0 items left of 0");
+});
+
+test("the empty-list chrome mounts hidden and one commit reveals it", async ({ page }) => {
+  await mountToggle(page);
+  const footer = page.locator("#footer");
+  const box = page.locator("#toggle-all");
+  // The footer wrapping the items-left line and the filter buttons, and the
+  // toggle-all box, mount with their hidden property already true — the
+  // ADR-0058 emptiness subject reused verbatim on two more attr slots,
+  // written by mount before any transaction exists. The box carries hidden
+  // beside its checked selection: two selections of different attributes
+  // share one element because duplicate detection keys on the attribute
+  // name (ADR-0045), so the vacuous checked truth and the emptiness hidden
+  // coexist.
+  expect(await footer.evaluate((element) => element.hidden)).toBe(true);
+  expect(await box.evaluate((element) => element.hidden)).toBe(true);
+  expect(await box.evaluate((element) => element.checked)).toBe(true);
+  await expect(page.locator("#items")).toBeHidden();
+  const count = (tx, label) => tx[7].filter((entry) => entry === label).length;
+  // The first append reveals the list wrapper, the box, and the footer in
+  // the same commit — one evaluation and one write per emptiness slot, all
+  // three riding the one region-touch sweep.
+  const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await page.getByRole("button", { name: "Add item" }).click();
+  const after = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  for (const label of [
+    "attr:2:hidden:evaluated", "attr:4:hidden:evaluated",
+    "attr:5:hidden:evaluated", "dom:attr:2:hidden:write",
+    "dom:attr:4:hidden:write", "dom:attr:5:hidden:write",
+  ]) {
+    expect(count(after, label)).toBe(count(before, label) + 1);
+  }
+  await expect(footer).toBeVisible();
+  await expect(page.locator("#items")).toBeVisible();
+  expect(await box.evaluate((element) => element.hidden)).toBe(false);
+  await expect(page.getByRole("button", { name: "Show active" })).toBeVisible();
+  await expect(page.locator("#items-left")).toBeVisible();
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("every removal path re-hides the empty-list chrome", async ({ page }) => {
+  await mountToggle(page);
+  const footer = page.locator("#footer");
+  const box = page.locator("#toggle-all");
+  const add = page.getByRole("button", { name: "Add item" });
+  const chromeHidden = () => page.evaluate(() => [
+    document.getElementById("footer").hidden,
+    document.getElementById("toggle-all").hidden,
+  ]);
+  // The ✕ removal drains the region: the same commit's sweep re-hides the
+  // footer and the box beside the list wrapper.
+  await add.click();
+  await expect(footer).toBeVisible();
+  await page.locator("#items > li").first()
+    .getByRole("button", { name: "Remove item" }).click();
+  expect(await chromeHidden()).toEqual([true, true]);
+  // The guarded empty commit (ADR-0053) removes through the same reconcile.
+  await add.click();
+  await expect(footer).toBeVisible();
+  await page.locator("#items > li").first().locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").first()
+    .getByRole("textbox", { name: "Item editor" });
+  await editor.fill("");
+  await editor.press("Enter");
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  expect(await chromeHidden()).toEqual([true, true]);
+  // completeAll + clearCompleted drain the region through the predicate
+  // removal — the broadcast leaves the chrome revealed, the drain hides it.
+  await add.click();
+  await add.click();
+  await expect(footer).toBeVisible();
+  await page.getByRole("button", { name: "Complete all" }).click();
+  expect(await chromeHidden()).toEqual([false, false]);
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  expect(await chromeHidden()).toEqual([true, true]);
+  expect(await box.evaluate((element) => element.checked)).toBe(true);
+});
+
+test("a filter hiding every row keeps the chrome and a filter change never evaluates it", async ({ page }) => {
+  await mountToggle(page);
+  const footer = page.locator("#footer");
+  const box = page.locator("#toggle-all");
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  const count = (tx, label) => tx[7].filter((entry) => entry === label).length;
+  // Every row is active, so the completed filter hides all of them — but
+  // the chrome's subject is the row table, not the displayed rows: the
+  // footer and the box stay revealed around an all-hidden list, and the
+  // filter change alone touches no region, so the emptiness slots are not
+  // even re-evaluated.
+  const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await page.getByRole("button", { name: "Show completed" }).click();
+  await expect(page.locator("#items > li:visible")).toHaveCount(0);
+  const filtered = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  for (const label of [
+    "attr:4:hidden:evaluated", "attr:5:hidden:evaluated",
+  ]) {
+    expect(count(filtered, label)).toBe(count(before, label));
+  }
+  expect(await footer.evaluate((element) => element.hidden)).toBe(false);
+  expect(await box.evaluate((element) => element.hidden)).toBe(false);
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
+  // Appending while filtered re-evaluates the slots on the region touch but
+  // writes nothing: the chrome is already revealed.
+  await add.click();
+  const appended = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  for (const label of [
+    "attr:4:hidden:evaluated", "attr:5:hidden:evaluated",
+  ]) {
+    expect(count(appended, label)).toBe(count(filtered, label) + 1);
+  }
+  for (const label of [
+    "dom:attr:4:hidden:write", "dom:attr:5:hidden:write",
+  ]) {
+    expect(count(appended, label)).toBe(count(filtered, label));
+  }
+  await page.getByRole("button", { name: "Show all" }).click();
+  await expect(page.locator("#items > li:visible")).toHaveCount(3);
+});
+
+test("Escape clears the new-todo draft through the unguarded component arm (ADR-0056)", async ({ page }) => {
+  await mountToggle(page);
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  const addTodo = page.getByRole("button", { name: "Add todo" });
+  const count = (tx, label) => tx[7].filter((entry) => entry === label).length;
+  await draft.fill("  buy milk ");
+  await expect(addTodo).toBeEnabled();
+  const beforeRegion = await regionMetrics(page);
+  const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  // The Escape arm is unguarded: it commits unconditionally — one
+  // transaction traced under its own event:confirmAdd:Escape label, the
+  // draft reset to the empty literal, the controlled input following
+  // through the ADR-0038 reflection, and the Add affordance re-disabling
+  // through its ADR-0057 selection in the same commit. No region is
+  // touched: the revert is a component-scope write only.
+  await draft.press("Escape");
+  await expect(draft).toHaveValue("");
+  await expect(addTodo).toBeDisabled();
+  const after = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  for (const label of [
+    "event:confirmAdd:Escape", "transaction:begin", "dom:prop:0:value:write",
+    "attr:0:disabled:evaluated", "dom:attr:0:disabled:write",
+  ]) {
+    expect(count(after, label)).toBe(count(before, label) + 1);
+  }
+  expect(count(after, "region:items:append")).toBe(count(before, "region:items:append"));
+  expect(await regionMetrics(page)).toEqual(beforeRegion);
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  // Escape on an already-empty draft still runs the unconditional commit —
+  // the transaction shell and the event trace appear — but the equal-value
+  // draft leaves the changed flag down: no prop write, no attr evaluation.
+  const beforeEqual = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await draft.press("Escape");
+  const afterEqual = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(count(afterEqual, "event:confirmAdd:Escape"))
+    .toBe(count(beforeEqual, "event:confirmAdd:Escape") + 1);
+  expect(count(afterEqual, "transaction:begin"))
+    .toBe(count(beforeEqual, "transaction:begin") + 1);
+  expect(count(afterEqual, "dom:prop:0:value:write"))
+    .toBe(count(beforeEqual, "dom:prop:0:value:write"));
+  expect(count(afterEqual, "attr:0:disabled:evaluated"))
+    .toBe(count(beforeEqual, "attr:0:disabled:evaluated"));
+  // Enter after the revert hits the ADR-0055 skip guard as a whole-event
+  // no-op: the reverted draft is empty, so the dispatch returns before any
+  // transaction exists.
+  const beforeEnter = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  await draft.press("Enter");
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  const afterEnter = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(afterEnter).toEqual(beforeEnter);
+  // A key outside the sealed arm table still moves nothing.
+  await draft.press("ArrowLeft");
+  const afterOther = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(afterOther).toEqual(afterEnter);
 });
 
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {

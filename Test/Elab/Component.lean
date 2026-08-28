@@ -274,21 +274,29 @@ private def verifyToggle
   included. -/
   unless checked.spec.keyEvents.toList.map (fun event =>
       (event.name, event.parameterName, event.arms.map (·.key))) ==
-      [("confirmAdd", "pressed", ["Enter"])] do
+      [("confirmAdd", "pressed", ["Enter", "Escape"])] do
     throw <| IO.userError "toggle key-branched event inventory changed"
   match checked.spec.keyEvents.toList.find? (·.name == "confirmAdd") with
   | none => throw <| IO.userError "toggle key-branched event disappeared"
   | some event =>
       match event.arms with
-      | [arm] =>
-          unless arm.guard?.map (fun guard => (guard.field.index, guard.trimmed)) ==
+      | [enterArm, escapeArm] =>
+          unless enterArm.guard?.map (fun guard => (guard.field.index, guard.trimmed)) ==
               some (2, true) do
             throw <| IO.userError "toggle Enter arm lost its skip guard"
-          unless arm.update.regionAppendTargets == [("items", 4)] do
+          unless enterArm.update.regionAppendTargets == [("items", 4)] do
             throw <| IO.userError "toggle Enter arm lost its append target"
-          unless arm.update.directWriteTargets == [2] do
+          unless enterArm.update.directWriteTargets == [2] do
             throw <| IO.userError "toggle Enter arm lost its draft reset"
-      | _ => throw <| IO.userError "toggle Enter arm table changed"
+          /- The Escape revert arm is unguarded — the sealed Enter/Escape
+          component set executed on both keys: an unconditional commit
+          writing the empty literal into the draft, nothing else. -/
+          unless escapeArm.guard?.isNone do
+            throw <| IO.userError "toggle Escape arm grew a guard"
+          unless escapeArm.update.regionAppendTargets.isEmpty &&
+              escapeArm.update.directWriteTargets == [2] do
+            throw <| IO.userError "toggle Escape arm lost its draft revert"
+      | _ => throw <| IO.userError "toggle confirmAdd arm table changed"
   match checked.eventSummaries.toList.find? (·.name == "confirmAdd") with
   | none => throw <| IO.userError "toggle key-branched summary disappeared"
   | some summary =>
@@ -304,19 +312,27 @@ private def verifyToggle
   The ADR-0059 predicate-count visibility sits between them: the Clear
   completed button's `hidden` selection carries the same region subject
   behind the sealed done-equality predicate. The ADR-0060 toggle-all
-  checked selection closes the table: the static checkbox after the list
-  exports the not-done predicate count as its `checked` property. -/
+  checked selection follows: the static checkbox after the list exports
+  the not-done predicate count as its `checked` property. The empty-list
+  chrome reuses the ADR-0058 emptiness subject on two more slots without
+  any grammar change: the toggle-all box carries `hidden` beside its
+  `checked` selection (different attribute names on one element pass
+  duplicate detection), and the footer wrapping the items-left line and
+  the filter buttons closes the table with the same subject. -/
   unless checked.view.attrSelects.map (fun mounted =>
       (mounted.select.name, mounted.select.fieldIndex?, mounted.select.equals?,
         mounted.select.trimmed, mounted.path)) ==
       [("disabled", some 2, some "", true, [2]),
         ("hidden", none, none, false, [5]),
-        ("hidden", none, none, false, [11]),
-        ("checked", none, none, false, [12])] do
+        ("hidden", none, none, false, [7]),
+        ("checked", none, none, false, [8]),
+        ("hidden", none, none, false, [8]),
+        ("hidden", none, none, false, [9])] do
     throw <| IO.userError "toggle Add affordance lost its trimmed disabled selection"
   unless checked.view.attrSelects.map (·.select.debug) ==
       ["select:disabled:trim:2", "select:hidden:items:2:true",
-        "select:hidden:items", "select:checked:items:2:false"] do
+        "select:hidden:items", "select:checked:items:2:false",
+        "select:hidden:items", "select:hidden:items"] do
     throw <| IO.userError "toggle Add affordance lost its trimmed debug marker"
   unless checked.view.attrSelects.map (fun mounted =>
       (mounted.select.regionSubject?, mounted.select.regionPredicate?,
@@ -324,7 +340,9 @@ private def verifyToggle
       [(none, none, none, none),
         (some "items", some (2, "true"), some "items", none),
         (some "items", none, some "items", none),
-        (some "items", some (2, "false"), none, some "items")] do
+        (some "items", some (2, "false"), none, some "items"),
+        (some "items", none, some "items", none),
+        (some "items", none, some "items", none)] do
     throw <| IO.userError "toggle list wrapper lost its empty-region visibility subject"
   /- The ADR-0061 toggle-all rebinding: the checkbox's change binding is the
   ADR-0038 `onCheckedChange` surface naming the payload broadcast — the
@@ -332,7 +350,7 @@ private def verifyToggle
   discarded by the ADR-0060 payload-less binding it replaces. -/
   unless checked.view.events.any (fun mounted =>
       mounted.binding.kind == .checkedChange &&
-        mounted.binding.eventName == "toggleAll" && mounted.path == [12]) do
+        mounted.binding.eventName == "toggleAll" && mounted.path == [8]) do
     throw <| IO.userError "toggle-all checkbox lost its payload broadcast binding"
   /- The hidden and checked selections are region-driven (ADR-0058/0060):
   like the ADR-0050 count texts they join the region-touch sweep, not the

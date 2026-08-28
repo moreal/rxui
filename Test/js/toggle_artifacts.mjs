@@ -60,11 +60,21 @@ for (const required of [
   "  const off_1 = listenKey(node_3, \"keydown\", state, context, $lrx_key_event_0);",
   // The ADR-0056 dispatch function: one sealed key equality per arm over the
   // delegated key payload — a non-matching key returns before the context is
-  // even destructured, and the matched Enter arm is the ADR-0055 guarded
-  // transaction function tracing its own event:confirmAdd:Enter label.
-  "function $lrx_key_event_0(hostState, context, pressed) {\n  if (pressed === \"Enter\") {\n    return $lrx_key_event_0_arm_0(context, null);\n  }\n  return null;\n}",
+  // even destructured. The matched Enter arm is the ADR-0055 guarded
+  // transaction function tracing its own event:confirmAdd:Enter label; the
+  // Escape arm is unguarded, so its transaction function commits the draft
+  // reset unconditionally — the sealed Enter/Escape component set executed
+  // on both keys.
+  "function $lrx_key_event_0(hostState, context, pressed) {\n  if (pressed === \"Enter\") {\n    return $lrx_key_event_0_arm_0(context, null);\n  }\n  if (pressed === \"Escape\") {\n    return $lrx_key_event_0_arm_1(context, null);\n  }\n  return null;\n}",
   "function $lrx_key_event_0_arm_0(context, ignored) {",
   "  tx[7][\"push\"](\"event:confirmAdd:Enter\");",
+  "function $lrx_key_event_0_arm_1(context, ignored) {",
+  "  tx[7][\"push\"](\"event:confirmAdd:Escape\");",
+  // The Escape arm's write evaluator lives in the pseudo event namespace
+  // behind the Enter arm's (events.size + arm index, ADR-0056): the empty
+  // string literal written to the component draft, nothing else.
+  "  state[2] = $lrx_event_8_write_0(state[0], state[1], state[2]);",
+  "function $lrx_event_8_write_0(added, filter, draft) {\n  return \"\";\n}",
   // The Enter arm's guard miss appends through its own evaluator namespace
   // behind the plain events (pseudo event index 7), with the same trimmed
   // append and draft reset the Add button's $lrx_event_1 runs.
@@ -89,40 +99,56 @@ for (const required of [
   // re-evaluates it behind the draft's changed flag with the shared
   // evaluate-compare-write shape and the tx[8]/tx[9] counters. The ADR-0058
   // empty-region visibility rides the same attr slots: the items list
-  // wrapper (node_26, also the region container) mounts hidden — regions
+  // wrapper (node_14, also the region container) mounts hidden — regions
   // mount empty by construction, so the initial cache value is the literal
   // true — through the same setProperty export. The ADR-0059 predicate
   // hidden selection sits between them: the Clear completed button
   // (node_10) mounts hidden through the same slots and the same literal
   // true — an empty region satisfies no predicate. The ADR-0060 toggle-all
-  // checked selection (node_27) closes the block: the box mounts vacuously
+  // checked selection (node_15) follows: the box mounts vacuously
   // checked — the same literal true read the other way, no row fails the
-  // predicate — through the same setProperty export.
-  "  const attrRefs = [node_4, node_10, node_26, node_27];",
-  "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\", true, true, true];",
+  // predicate — through the same setProperty export. The empty-list chrome
+  // round reuses the ADR-0058 emptiness subject on two more slots without
+  // any grammar change: the toggle-all box carries hidden beside its
+  // checked selection (two selections of different attributes share one
+  // element — node_15 holds attr slots 3 and 4 — because the ADR-0045
+  // duplicate detection keys on the attribute name), and the footer
+  // (node_16) wrapping the items-left line and the filter buttons closes
+  // the block with the same subject. All three emptiness slots mount the
+  // literal true.
+  "  const attrRefs = [node_4, node_10, node_14, node_15, node_15, node_16];",
+  "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\", true, true, true, true, true];",
   "  setProperty(attrRefs[0], \"disabled\", attrCache[0]);",
   "  setProperty(attrRefs[1], \"hidden\", attrCache[1]);",
   "  setProperty(attrRefs[2], \"hidden\", attrCache[2]);",
   "  setProperty(attrRefs[3], \"checked\", attrCache[3]);",
+  "  setProperty(attrRefs[4], \"hidden\", attrCache[4]);",
+  "  setProperty(attrRefs[5], \"hidden\", attrCache[5]);",
   // The ADR-0058/0059/0060 sweep re-evaluates every region-count subject
   // on the region-touch path the count texts ride — behind the shared
   // touched flag, before the reconcile consumes it — and writes each
   // boolean property only on a flip: the button's subject is the ADR-0050
   // predicate scan against zero, the wrapper's the row-table emptiness,
   // and the toggle-all box's the not-done predicate scan exported into
-  // the checked property with the same attr:{index} label shape.
-  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const hidden_scan_0_1 = [0];\n      for (const hidden_row_0_1 of regions[0][1]) {\n        if (hidden_row_0_1[3] === \"true\") {\n          hidden_scan_0_1[0] += 1;\n        }\n      }\n      const attr_next_1 = hidden_scan_0_1[0] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:2:hidden:evaluated\");\n      const attr_next_2 = regions[0][1][\"length\"] === 0;\n      const attr_changed_2 = attrCache[2] !== attr_next_2;\n      if (attr_changed_2) {\n        attrCache[2] = attr_next_2;\n        setProperty(attrRefs[2], \"hidden\", attr_next_2);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:2:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:3:checked:evaluated\");\n      const checked_scan_0_3 = [0];\n      for (const checked_row_0_3 of regions[0][1]) {\n        if (checked_row_0_3[3] === \"false\") {\n          checked_scan_0_3[0] += 1;\n        }\n      }\n      const attr_next_3 = checked_scan_0_3[0] === 0;\n      const attr_changed_3 = attrCache[3] !== attr_next_3;\n      if (attr_changed_3) {\n        attrCache[3] = attr_next_3;\n        setProperty(attrRefs[3], \"checked\", attr_next_3);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:3:checked:write\");\n      }\n    }",
+  // the checked property with the same attr:{index} label shape. The
+  // empty-list chrome slots extend the same block: the toggle-all hidden
+  // (attr 4) and the footer hidden (attr 5) evaluate the same row-table
+  // emptiness the wrapper's attr 2 reads — three slots, one subject, each
+  // with its own evaluation, cache compare, and flip-only write, so the
+  // first append reveals wrapper, toggle-all, and footer in one commit and
+  // draining the region re-hides all three in one commit.
+  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const hidden_scan_0_1 = [0];\n      for (const hidden_row_0_1 of regions[0][1]) {\n        if (hidden_row_0_1[3] === \"true\") {\n          hidden_scan_0_1[0] += 1;\n        }\n      }\n      const attr_next_1 = hidden_scan_0_1[0] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:2:hidden:evaluated\");\n      const attr_next_2 = regions[0][1][\"length\"] === 0;\n      const attr_changed_2 = attrCache[2] !== attr_next_2;\n      if (attr_changed_2) {\n        attrCache[2] = attr_next_2;\n        setProperty(attrRefs[2], \"hidden\", attr_next_2);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:2:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:3:checked:evaluated\");\n      const checked_scan_0_3 = [0];\n      for (const checked_row_0_3 of regions[0][1]) {\n        if (checked_row_0_3[3] === \"false\") {\n          checked_scan_0_3[0] += 1;\n        }\n      }\n      const attr_next_3 = checked_scan_0_3[0] === 0;\n      const attr_changed_3 = attrCache[3] !== attr_next_3;\n      if (attr_changed_3) {\n        attrCache[3] = attr_next_3;\n        setProperty(attrRefs[3], \"checked\", attr_next_3);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:3:checked:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:4:hidden:evaluated\");\n      const attr_next_4 = regions[0][1][\"length\"] === 0;\n      const attr_changed_4 = attrCache[4] !== attr_next_4;\n      if (attr_changed_4) {\n        attrCache[4] = attr_next_4;\n        setProperty(attrRefs[4], \"hidden\", attr_next_4);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:4:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:5:hidden:evaluated\");\n      const attr_next_5 = regions[0][1][\"length\"] === 0;\n      const attr_changed_5 = attrCache[5] !== attr_next_5;\n      if (attr_changed_5) {\n        attrCache[5] = attr_next_5;\n        setProperty(attrRefs[5], \"hidden\", attr_next_5);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:5:hidden:write\");\n      }\n    }",
   "    if (changed[2]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:0:disabled:evaluated\");\n      const attr_next_0 = state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      const attr_changed_0 = attrCache[0] !== attr_next_0;\n      if (attr_changed_0) {\n        attrCache[0] = attr_next_0;\n        setProperty(attrRefs[0], \"disabled\", attr_next_0);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:0:disabled:write\");\n      }\n    }",
   // The attr slots ride behind the prop slots; the region record follows
   // them (ADR-0045), so the context carries eleven slots.
   "  const context = [state, refs, tx, oldSources, changed, sinkCache, propRefs, propCache, attrRefs, attrCache, regions];",
   // One structural delegated listener per bound kind, in registration order,
   // each with its own static per-cell action array (ADR-0041/0046/0049).
-  "const region_off_0 = listenDelegatedCells(node_26, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
-  "const region_off_0_dblclick = listenDelegatedCells(node_26, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
-  "const region_off_0_input = listenDelegatedCells(node_26, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
-  "const region_off_0_keydown = listenDelegatedCells(node_26, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"keys\", \"\", \"\"]);",
-  "const region_off_0_change = listenDelegatedCells(node_26, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
+  "const region_off_0 = listenDelegatedCells(node_14, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
+  "const region_off_0_dblclick = listenDelegatedCells(node_14, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
+  "const region_off_0_input = listenDelegatedCells(node_14, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
+  "const region_off_0_keydown = listenDelegatedCells(node_14, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"keys\", \"\", \"\"]);",
+  "const region_off_0_change = listenDelegatedCells(node_14, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
   // The ADR-0052 key-branched selection: one eventKey equality per arm
   // inside the existing action match — a matched key runs the ADR-0043
   // scan-evaluate-assign-queue sequence, a non-matching key falls through
@@ -156,7 +182,7 @@ for (const required of [
   // existing listenChecked form-event export handing the delegated checked
   // boolean to the payload broadcast dispatch — the ADR-0060 payload-less
   // listen mount is replaced, and still no new host export.
-  "  const off_9 = listenChecked(node_27, \"change\", state, context, $lrx_typed_event_1);",
+  "  const off_6 = listenChecked(node_15, \"change\", state, context, $lrx_typed_event_1);",
   // The ADR-0061 payload broadcast body: the Bool payload lowers to the
   // "true"/"false" strings exactly as the ADR-0049 row payload does, and
   // the write body is the shared ADR-0050 broadcast's — every row's done
@@ -171,7 +197,7 @@ for (const required of [
   // The ADR-0062 label count joins the count slots: its ref sits between
   // the predicate count and the total in view order, and its cache slot
   // mounts as the else string — the mounted DOM text of the empty region.
-  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_23, count_text_25], [0, \" items left\", 0], node_26]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_19, count_text_20, count_text_22], [0, \" items left\", 0], node_14]];",
   // The broadcast writes every row from the sealed row expression and raises
   // the dirty flag; the predicate removal keeps the non-matching rows.
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n  }\n  regions[0][3] = true;",
@@ -190,7 +216,7 @@ for (const required of [
   "        setText(regions[0][5][1], count_label_0_1);",
   // The label mounts as the else string: an empty region counts zero and
   // zero differs from one — the plural branch is the mount text.
-  "  const count_text_23 = createText(\" items left\");",
+  "  const count_text_20 = createText(\" items left\");",
   // The ADR-0051 filter sweep runs after the reconcile and drain whenever
   // the region was touched or the filter field changed, writing each row
   // root's hidden property from the sealed state-to-predicate table by

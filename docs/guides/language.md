@@ -493,6 +493,16 @@ toggle binding, valid only on a checkbox (`LRX-VIEW-043`) — but the
 delegated checked payload it discards can instead drive the whole
 toggle-all contract (ADR-0061, next paragraph).
 
+Selections of *different* attributes may share one element: duplicate
+detection keys on the attribute name (`LRX-VIEW-001`/`LRX-VIEW-021`), so
+the toggle-all checkbox can carry `hidden={count region == 0}` beside its
+`checked` selection and hide with the rest of the empty-list chrome — the
+TodoMVC shape where the toggle-all box and the footer (the counts line and
+the filter buttons, wrapped in a `<footer hidden={count region == 0}>`)
+disappear together with the empty list. Each selection keeps its own attr
+slot, evaluation, and flip-only write, so one appending commit reveals the
+whole chrome and the drain of the last row hides it again.
+
 A typed component event may flow its payload into a region broadcast
 (ADR-0061): `event toggleAll (checked : Bool) := update region (set field
 checked)` is the payload broadcast — the ADR-0050 `update … (set …)` body
