@@ -4458,3 +4458,115 @@ tests, the language-guide snippet and prose, the ADR, and this record.
 Open: a tuple route as the additive way to route more than one field, and
 whether a row write that provably cannot change a selection should still
 wake the sweep.
+
+## A key is a namespace, a touch is two events (ADR-0082)
+
+### What was built
+
+Two closures on one round. The persistence contract's last unwitnessed
+rejection — `persist r := ""` — was taken to the browser to find out what
+kind of rule it is, and ADR-0081's OQ2 (a row write that provably cannot
+change a selection still wakes the filter sweep) was closed by
+measurement rather than by argument.
+
+The empty key was surveyed by rewriting the generated Twin Lab module's
+persist key to `""` — the key appears only as a literal inside
+`storageGet`/`storageSet`, so the edit produces exactly what the compiler
+would emit — and mounting it in Chromium. `localStorage` accepted it
+without complaint: `setItem("", v)` does not throw, `length` becomes 1,
+`key(0)` is `""`, `Object.keys` returns `[""]`, and the module round-trips
+its rows through it perfectly. The rejection therefore buys nothing at
+runtime; what it buys is the origin. Two further probes settled the
+character of the failure: mounting a second instance in the same page made
+the two views diverge from one stored string, and — the decisive one —
+hydrating against a foreign value of the same field arity adopted the
+foreign rows as this region's own and re-persisted them under the same key.
+Fail-closed ends at the row *shape*; the key is the only thing carrying
+identity.
+
+The sweep was measured, not reasoned about. Two hand-edited copies of the
+generated module — one with the persisted region's row event rewritten to
+write `label` (which no arm reads) instead of `flag` (which every arm
+does), one with that plus the sweep guard narrowed to the structural bit —
+were mounted with N rows hydrated from storage in a single transaction and
+driven with 450 single-row writes apiece. At 10k rows the drain-only commit
+costs 4.098 ms with a persistence write-back beside it and 2.938 ms
+narrowed; with the filter sweep alone it is 1.004 ms against 0.046 ms. The
+second column is the decision: what remains after narrowing is a pure-JS
+key scan, and the sweep is ~0.1 µs per row of pure DOM.
+
+So the sweep narrows. The rule is that a region's touched flag conflates
+two events — the row set changed, or some row's fields changed — and only
+the first can move a selection unless the second writes a field the arms
+read. The pending slot has exactly one writer (the row stage's
+queue-the-position step); `remove`, a guard hit, a broadcast, a predicate
+removal, an append, and hydration all raise the dirty bit instead, so every
+row-set change is on the structural side by construction, and `updateAt`
+re-runs the retained handle without moving or remounting the root. Two
+helpers (`regionDrainWrites`, `filterSubjectFields`) decide it from the
+spec, and the sweep takes `region_structural_{i}` when the sets are
+disjoint.
+
+### Friction encountered
+
+The narrowing had to be scoped twice before it was right. The first
+instinct was to make it unconditional — every region reads a structural
+flag — which would have rewritten every filtered region's emission in the
+tree for regions whose pending slot is provably always empty, i.e. for no
+behavioural gain at all. Requiring a drain path before narrowing keeps
+every existing artifact byte-identical, which was verified the boring way:
+generate all six component dists, `git stash`, rebuild, generate again,
+diff. All six identical.
+
+Writing the witness surface ran into the per-cell row-event rule
+(`LRX-VIEW-027`): `left` already binds `remove` on a click, and putting the
+new `mark` button in the same `twin-actions` cell binds two click events to
+one cell. Nest Lab's roster has the same pair and separates them into two
+cells, which is the shape adopted — the new button lives in its own
+`twin-marks` span, so the delegated action array grows from
+`["", "", "remove"]` to `["", "", "remove", "mark"]` and the existing index
+does not move.
+
+Playwright will not click a hidden element, which is exactly the row the
+witness most wants to exercise: the one the filter is hiding, whose
+`hidden` must survive a drain that no sweep follows. The test marks the
+displayed row with a real click and the hidden row with a programmatic
+one, so both halves are covered without weakening the visible-row click.
+
+### Bugs found
+
+None. Both halves came out as confirmations, but of opposite kinds: the
+empty-key rule turned out to be load-bearing for a reason nobody had
+written down (a legal key, a silent collision, a hydration path that
+cannot tell foreign rows from its own), while the sweep guard turned out
+to be genuinely conservative — correct, but paying an O(N) DOM pass for a
+transaction that cannot change what it writes.
+
+One thing the round deliberately did *not* fix: the count, emptiness, and
+persistence sweeps beside the narrowed one still wake on the touched flag,
+and a total count or a total emptiness subject reads only `rows.length`,
+so *no* drain can move them. That generalization changes existing
+artifacts and their evaluation counters (Mix Lab and Toggle Lab both
+re-evaluate a total count on every row toggle), so it is recorded as the
+open question and pinned as a boundary instead: the new browser test
+asserts the count sweep *does* re-evaluate on the same drain the filter
+sweep now skips.
+
+### Performance observations
+
+The generated tree is byte-identical outside Twin Lab, so the benchmark
+size gate and BENCHMARK.md stand without re-measurement — the
+js-framework-benchmark backend is hand-written and never sees this path at
+all. Inside Twin Lab the change is one extra `const` in the commit
+prologue of every transaction function for one region, and one fewer O(N)
+DOM pass on every `mark`.
+
+### Follow-up issue or commit
+
+`feat(component): narrow the filter wake and seal the persist key contract
+(ADR-0082)` — the two backend helpers and the narrowed guard, the
+`PersistEmptyKey` fixture and its harness row, Twin Lab's `row left mark`
+with its own cell, the artifact-gate pins for both flags, the browser
+witness, the language-guide prose, the ADR, and this record. Open: the
+same read-set treatment for the count, emptiness, and persistence sweeps,
+and the sweep's missing per-row cache.

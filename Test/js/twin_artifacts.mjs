@@ -54,6 +54,12 @@ for (const required of [
   "    const region_touched_0 = regions[0][3] || regions[0][4][\"length\"] !== 0;",
   "    const region_touched_1 = regions[1][3] || regions[1][4][\"length\"] !== 0;",
   "    const region_touched_2 = regions[2][3] || regions[2][4][\"length\"] !== 0;",
+  // ADR-0082: `left`'s only drain path writes `label`, and its filter arms
+  // read `flag`, so the sweep takes a second, narrower flag — the structural
+  // bit alone, read at the same point in the commit, before the reconcile
+  // clears it. The touched flag stays for the count sweep beside it, so both
+  // wake reasons are visible in one region's emission.
+  "    const region_touched_0 = regions[0][3] || regions[0][4][\"length\"] !== 0;\n    const region_structural_0 = regions[0][3];",
   // ADR-0079, axis one — two filtered regions: two scans with their own
   // `filter_scan_{i}` / `filter_row_{i}` identifiers, each navigating
   // `childAt` from *its own* container slot, so neither walk can reach the
@@ -69,7 +75,11 @@ for (const required of [
   // `right` both wake on `changed[1]`, `solo` only on `changed[2]`. Each
   // guard names exactly one region's flag and exactly one field's bit, and
   // the three blocks sit in region declaration order inside one commit.
-  "    if (region_touched_0 || changed[1]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"filter:left:evaluated\");",
+  // ADR-0082: `left` wakes on the structural bit, `right` — whose drain
+  // writes the very field its arms read — still on the touched flag, and
+  // `solo`, which has no drain path at all, keeps the uniform flag because
+  // its pending slot is provably empty.
+  "    if (region_structural_0 || changed[1]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"filter:left:evaluated\");",
   "    if (region_touched_1 || changed[1]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"filter:right:evaluated\");",
   "    if (region_touched_2 || changed[2]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"filter:solo:evaluated\");",
   // The row-aggregate sweep stays `left`'s alone: one count cell, one
@@ -84,7 +94,11 @@ for (const required of [
   // a delegated `click` on `left`'s container and a delegated `change` on
   // `right`'s — so the two dispatches never share a listener; `solo` binds
   // none and emits no dispatch at all.
-  "const region_off_0 = listenDelegatedCells(node_24, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\"]);",
+  "const region_off_0 = listenDelegatedCells(node_24, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\", \"mark\"]);",
+  // ADR-0082: the count sweep beside the narrowed filter sweep still reads
+  // the touched flag — a `mark` drain re-evaluates the row total (finding it
+  // unchanged) while the filter scan does not run at all.
+  "    if (region_touched_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:left:0:evaluated\");",
   "const region_off_1_change = listenDelegatedCells(node_25, \"change\", state, context, $lrx_region_1_dispatch, [\"\", \"\", \"toggle\"]);",
   // ADR-0080, axis one — a route over the *shared* filter field. The sealed
   // literal set is the declared default plus the union of both tables over
@@ -142,6 +156,12 @@ for (const banned of [
   "persist_rows_2",
   "$lrx_hydrate_1",
   "if (region_touched_1 || changed[1]) {\n      const persist_rows_1",
+  // ADR-0082: the narrowing is per region and per sweep. `right`'s drain
+  // writes its filter's subject, so its sweep keeps the touched flag; the
+  // two regions without a narrowed sweep grow no structural flag at all.
+  "const region_structural_1",
+  "const region_structural_2",
+  "if (region_touched_0 || changed[1]) {",
 ]) {
   if (twinSource.includes(banned)) {
     throw new Error(`generated Twin Lab unexpectedly emits ${banned}`);

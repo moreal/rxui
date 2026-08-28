@@ -594,6 +594,20 @@ different reasons and still run in that order. Two filters over *one*
 region stay rejected (`LRX-TYPE-113`): a region owns one container and one
 row table, so a second table would be two writers of one `hidden` property.
 
+The touch half of that guard narrows at elaboration time (ADR-0082). A
+region's touched flag folds two events together — the row set changed
+(structural), or a `row` update queued a position for the drain — and only
+the first can change which rows a table selects unless the drain writes a
+field the arms read. So when a region has a drain path and *no* declared
+`row` update stage writes a filter subject field, that region's sweep is
+emitted behind `region_structural_{regionIndex} || changed[field]` instead:
+renaming a row no longer walks every row root to rewrite `hidden` with the
+value already there. The narrowing is per region and per sweep — a region
+whose drain does write a subject field keeps the touched flag, and so do
+the count and persistence sweeps beside it — and it is invisible where it
+cannot pay: a region with no drain path at all has a provably empty pending
+slot, so its emission is unchanged.
+
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
 **union** of every filter table over that field, not the first-declared
@@ -725,7 +739,14 @@ key alone. The item shape — a declared region name, exactly one literal
 storage key — is `LRX-ELAB-129`; one persist item per region, keys distinct
 across the component, each nonempty and on a declared region, is
 `LRX-TYPE-118` (two items on one region, or two regions sharing one key,
-would make one commit sweep's two write-backs race for one slot):
+would make one commit sweep's two write-backs race for one slot). The
+nonempty rule is not a shape check: `""` is a perfectly legal localStorage
+key — the browser stores under it, enumerates it, and hands it back — so an
+empty key produces no error at all, just an origin-wide slot that every
+other unnamed writer shares. Hydration cannot recover, because a foreign
+value with this region's field arity parses as this region's own rows and
+is then re-persisted as such; the key is the whole namespace guarantee, so
+the empty one is rejected where it is written (ADR-0082):
 
 ```lean
 component PersistedRosterMini (schema := PersistedRosterMiniSchema) where {

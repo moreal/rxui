@@ -234,6 +234,38 @@ event (ADR-0043) or a component-event broadcast into it (ADR-0050). -/
 private def regionRowsMutate (broadcasts : List String) (region : RegionSpec) : Bool :=
   regionHasUpdates region || broadcasts.contains region.name
 
+/-- The row fields one region's pending drain can write (ADR-0082): the
+assignment targets of every declared `row` update stage, the ADR-0052 key
+arms included. A `remove` action — and an ADR-0053 guard hit — raises the
+dirty flag instead of queueing a position, and so does a broadcast
+(ADR-0050), so neither is a drain path. The list is empty exactly when the
+record's pending slot can never receive a position. -/
+private def regionDrainWrites (region : RegionSpec) : List Nat :=
+  region.events.toList.flatMap fun event =>
+    match event.action with
+    | .remove => []
+    | .update stage => stage.assignments.map (·.1)
+    | .keySelect arms => arms.flatMap fun arm => arm.2.assignments.map (·.1)
+
+/-- The row fields one sealed filter table reads (ADR-0082): every arm
+predicate's subject, which is the whole of what the emitted `hidden`
+expression projects out of a row. -/
+private def filterSubjectFields (filter : RegionFilter Γ) : List Nat :=
+  filter.arms.flatMap fun arm => arm.2.subject.fieldRefs
+
+/-- Whether one region's filter sweep may skip the pending-drain wake
+(ADR-0082): the region has a drain path, and no field that path writes is
+read by the filter's arm predicates, so a drain-only transaction provably
+leaves every row's selection where the last sweep put it. Regions without a
+drain path keep the uniform touched flag — their pending slot is provably
+empty, so the two guards are the same predicate. -/
+private def filterNarrows (region : RegionSpec) (filter? : Option (RegionFilter Γ)) : Bool :=
+  match filter? with
+  | none => false
+  | some filter =>
+      let writes := regionDrainWrites region
+      !writes.isEmpty && !(filterSubjectFields filter).any writes.contains
+
 /-- Whether one region's sealed template composes a row-scoped child
 component (ADR-0075). -/
 private def regionHasChildRef (region : RegionSpec) : Bool :=
@@ -747,7 +779,13 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
       fun (mounted, _) => mounted.select.regionSubject? == some region.name
     let persist? := checked.spec.persists.toList.find? (·.region == region.name)
     let touched ← Ident.checked s!"region_touched_{regionIndex}"
-    unless counts.isEmpty && filter?.isNone && hiddens.isEmpty && persist?.isNone do
+    /- The ADR-0082 narrowed filter wake: when no drain path writes a field
+    the filter's arms read, the sweep is guarded on the structural flag
+    alone and the region's touched flag serves only its other sweeps. -/
+    let narrowed := filterNarrows region filter?
+    let structural ← Ident.checked s!"region_structural_{regionIndex}"
+    unless counts.isEmpty && (filter?.isNone || narrowed) && hiddens.isEmpty &&
+        persist?.isNone do
       /- The shared touched flag serves the count sweep (ADR-0050), the
       filter sweep (ADR-0051), the empty-region visibility sweep (ADR-0058),
       and the persistence sweep (ADR-0063); all read it before the reconcile
@@ -757,6 +795,12 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           (.unary .not (.binary .eq
             (.index (regionEntry regions regionIndex 4) (.literal (.string "length")))
             (uint 0))))
+      ]
+    if narrowed then
+      /- Read before the reconcile below clears the dirty bit, exactly as the
+      touched flag is (ADR-0082). -/
+      commitBody := commitBody ++ [
+        .const structural (regionEntry regions regionIndex 3)
       ]
     unless counts.isEmpty do
       let mut countStmts : List Stmt := []
@@ -896,7 +940,9 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 4)) (.array .nil)
         ]]
     /- The sealed region filter view (ADR-0051): after the reconcile and
-    drain, whenever the region was touched or the filter field changed, walk
+    drain, whenever the region was touched — or, when no drain path writes a
+    field the arms read, whenever it was structurally dirty (ADR-0082) — or
+    the filter field changed, walk
     the row table in order and write each row root's `hidden` property from
     the sealed state-to-predicate table — a state value outside the table
     shows every row. Row roots are `childAt(container, i)` because the
@@ -914,7 +960,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             acc)
         (Expr.literal (.boolean false))
       commitBody := commitBody ++ [.ifThen
-        (.binary .or (.ident touched) (arrayAt changed filter.field.index)) <| .ofList [
+        (.binary .or (.ident (if narrowed then structural else touched))
+          (arrayAt changed filter.field.index)) <| .ofList [
           incrementAt tx 8,
           pushTrace tx s!"filter:{region.name}:evaluated",
           .const scan (.array (.ofList [uint 0])),

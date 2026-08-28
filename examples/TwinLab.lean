@@ -91,6 +91,26 @@ items compile, but their two `writeHash` blocks race for one
 dispatches, the second reading the hash the first just rewrote
 (ADR-0081).
 
+`row left mark := set label (label ++ "*")` is the last shape on top of
+that: a drain path on a *filtered* region that writes a field no arm of
+its table reads. A region's touched flag folds two events together — the
+row set changed, or a row's fields did — and only the first can move a
+selection unless the second writes a subject field, so `left`'s sweep is
+guarded on the structural bit alone while the count sweep beside it keeps
+reading the touched flag (ADR-0082):
+
+```js
+    const region_touched_0 = regions[0][3] || regions[0][4]["length"] !== 0;
+    const region_structural_0 = regions[0][3];
+```
+
+`right` is the control on that axis: its `toggle` writes the very field
+its arms read, so it keeps `region_touched_1 || changed[1]`; `solo` has no
+drain path at all, so its pending slot is provably empty and it grows no
+second flag. A `mark` therefore drains one row and runs no scan — the
+`hidden` the last sweep wrote survives on both the displayed and the
+hidden row, because `updateAt` re-runs the retained handle in place.
+
 No host change; runtime ABI stays 17. -/
 
 namespace LeanRxExamples.TwinLab
@@ -139,11 +159,15 @@ component TwinLab (schema := TwinSchema) where {
     then when "#/off" "off" then when "#/mixed" "mixed";
   persist right := "leanrx-twin-lab.right";
   row right toggle (checked : String) := set flag checked;
+  row left mark := set label (label ++ "*");
   region left (label, flag) := jsx% <li class="twin-row"> [
     <span class="twin-label"> [{label}],
     <span class="twin-flag"> [{flag}],
     <span class="twin-actions"> [
       <button type="button" ariaLabel="Remove left" onClick={remove}> ["✕"]
+    ],
+    <span class="twin-marks"> [
+      <button type="button" ariaLabel="Mark left" onClick={mark}> ["★"]
     ]
   ];
   region right (label, flag) := jsx% <li class="twin-row"> [

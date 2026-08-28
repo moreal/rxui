@@ -417,6 +417,82 @@ test("a row update drains beside the filter sweep at region index 1", async ({ p
   expect(checked).toBe(true);
 });
 
+test("a row write outside the filter subject drains without waking the sweep",
+  async ({ page }) => {
+  await mountTwin(page);
+  await seedBoth(page);
+  await flipMode(page, "Show on", "#/on");
+  // Under `"on"` `left` keeps the `flag == "true"` rows, so L0 shows and L1
+  // is hidden. `mark` writes `label`, which no arm of `left`'s table reads.
+  await expect(page.locator("#left > li").nth(0)).toBeVisible();
+  await expect(page.locator("#left > li").nth(1)).toBeHidden();
+  const before = await page.evaluate(() => {
+    const tx = globalThis.twinDispose.instrumentation();
+    globalThis.twinTraceLength = tx[7].length;
+    globalThis.twinRows = Array.from(document.querySelectorAll("#left > li"));
+    return {
+      commits: tx[1],
+      evaluations: tx[8],
+      metrics: globalThis.twinDispose.regionInstrumentation(),
+      hidden: globalThis.twinRows.map((row) => row.hidden),
+    };
+  });
+  // ADR-0082: the drain queues a position, so the region *is* touched — but
+  // the sweep is guarded on the structural bit alone, because no drain path
+  // of this region writes a field its arms read. One `updateAt`, no scan.
+  await page.locator("#left > li").nth(0)
+    .getByRole("button", { name: "Mark left" }).click();
+  await expect(page.locator("#left .twin-label").nth(0)).toHaveText("L0*");
+  const after = await readTrace(page);
+  expect(after.commits).toBe(before.commits + 1);
+  expect(occurrences(after.slice, "region:left:updateAt")).toBe(1);
+  expect(occurrences(after.slice, "region:left:update")).toBe(0);
+  expect(occurrences(after.slice, "filter:left:evaluated")).toBe(0);
+  expect(occurrences(after.slice, "dom:filter:left:write")).toBe(0);
+  expect(after.evaluations).toBe(before.evaluations);
+  // The sibling axis is still open: the count sweep beside it reads the
+  // shared touched flag, so the drain re-evaluates the row total — and
+  // finds it unchanged, so no text is written.
+  expect(occurrences(after.slice, "count:left:0:evaluated")).toBe(1);
+  expect(occurrences(after.slice, "dom:count:left:0:write")).toBe(0);
+  // The selection is exactly where the last sweep left it, on both rows.
+  const marked = await page.evaluate(() => ({
+    hidden: globalThis.twinRows.map((row) => row.hidden),
+    identical: globalThis.twinRows.every((row) => document.contains(row)),
+  }));
+  expect(marked.hidden).toEqual(before.hidden);
+  expect(marked.identical).toBe(true);
+  // The same holds for the row the filter is *hiding*: the retained-row
+  // update re-renders its cells and no sweep re-asserts `hidden`, so the
+  // property the last sweep wrote survives the drain. The click is
+  // programmatic because the row is hidden.
+  const beforeHidden = await markTrace(page);
+  await page.evaluate(() => {
+    document.querySelectorAll("#left > li")[1]
+      .querySelector(".twin-marks button").click();
+  });
+  await expect(page.locator("#left .twin-label").nth(1)).toHaveText("L1*");
+  const afterHidden = await readTrace(page);
+  expect(occurrences(afterHidden.slice, "region:left:updateAt")).toBe(1);
+  expect(occurrences(afterHidden.slice, "filter:left:evaluated")).toBe(0);
+  expect(afterHidden.evaluations).toBe(beforeHidden.evaluations);
+  await expect(page.locator("#left > li").nth(1)).toBeHidden();
+  // The twins' shared field and the unrelated region are untouched, and a
+  // structural touch afterwards still wakes the sweep and re-selects every
+  // row — the marked labels included.
+  expect(occurrences(afterHidden.slice, "filter:right:evaluated")).toBe(0);
+  expect(occurrences(afterHidden.slice, "filter:solo:evaluated")).toBe(0);
+  const beforeAppend = await markTrace(page);
+  await page.getByRole("button", { name: "Add left" }).click();
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0*", "L1*", "L2"]);
+  const afterAppend = await readTrace(page);
+  expect(occurrences(afterAppend.slice, "filter:left:evaluated")).toBe(1);
+  expect(afterAppend.evaluations).toBe(beforeAppend.evaluations + 1);
+  await expect(page.locator("#left > li").nth(0)).toBeVisible();
+  await expect(page.locator("#left > li").nth(1)).toBeHidden();
+  await expect(page.locator("#left > li").nth(2)).toBeVisible();
+});
+
 test("flipping back restores every region without remounting a row", async ({ page }) => {
   await mountTwin(page);
   await seedBoth(page);

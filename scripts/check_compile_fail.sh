@@ -131,6 +131,7 @@ fixtures=(
   Test/fixtures/compile-fail/RouteUnfilteredField.lean
   Test/fixtures/compile-fail/RouteDuplicateHash.lean
   Test/fixtures/compile-fail/RouteDuplicateLiteral.lean
+  Test/fixtures/compile-fail/PersistEmptyKey.lean
 )
 fragments=(
   "Constructor for"
@@ -264,6 +265,9 @@ fragments=(
   "routing seals onto the filter field"
   "route item maps one hash literal twice"
   "the correspondence is one-to-one"
+  # ADR-0082: the fourth `validatePersists` branch, pinned on its own message
+  # because three siblings share LRX-TYPE-118.
+  "declares an empty storage key"
 )
 
 for index in "${!fixtures[@]}"; do
