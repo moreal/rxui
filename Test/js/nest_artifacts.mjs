@@ -36,19 +36,36 @@ const pulseManifest = JSON.parse(
 if (
   pulseManifest.module !== "Pulse.mjs" ||
   JSON.stringify(pulseManifest.hostImports) !==
-    JSON.stringify(["./leanrx_dom.mjs"]) ||
+    JSON.stringify(["./leanrx_dom.mjs", "./Tick.mjs"]) ||
   JSON.stringify(pulseManifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
-    "immutable-props",
+    "child-components", "immutable-props",
   ])
 ) {
   throw new Error("generated Pulse manifest is invalid");
 }
 
+const tickManifest = JSON.parse(
+  await readFile(path.join(directory, "Tick.mjs.manifest.json"), "utf8"),
+);
+if (
+  tickManifest.module !== "Tick.mjs" ||
+  JSON.stringify(tickManifest.hostImports) !==
+    JSON.stringify(["./leanrx_dom.mjs"]) ||
+  JSON.stringify(tickManifest.features) !== JSON.stringify([
+    "scalar", "events", "transactions", "instrumentation", "trace",
+    "immutable-props",
+  ])
+) {
+  throw new Error("generated Tick manifest is invalid");
+}
+
 const nestSource = await readFile(path.join(directory, "NestLab.mjs"), "utf8");
 const pulseSource = await readFile(path.join(directory, "Pulse.mjs"), "utf8");
+const tickSource = await readFile(path.join(directory, "Tick.mjs"), "utf8");
 for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
-  if (nestSource.includes(banned) || pulseSource.includes(banned)) {
+  if (nestSource.includes(banned) || pulseSource.includes(banned) ||
+      tickSource.includes(banned)) {
     throw new Error(`generated Nest Lab contains ${banned}`);
   }
 }
@@ -94,13 +111,28 @@ for (const required of [
 for (const required of [
   "function mount(target, props)",
   "createText(props[0])",
+  // ADR-0067: the intermediate module composes its own child through the
+  // same aliased-import convention and republishes the grandchild mount
+  // return on its own disposer, so `children[0].children[0]` reaches the
+  // grandchild from the root disposer with no new vocabulary.
+  "import { mount as $lrx_child_0 } from \"./Tick.mjs\";",
+  "const child_off_0 = $lrx_child_0(node_0, [\"Tick child\"]);",
+  "disposer[\"children\"] = [child_off_0];",
 ]) {
   if (!pulseSource.includes(required)) {
     throw new Error(`generated Pulse is missing ${required}`);
   }
 }
-if (pulseSource.includes("$lrx_child") || pulseSource.includes("Pulse.mjs")) {
-  throw new Error("generated Pulse module unexpectedly nests children");
+for (const required of [
+  "function mount(target, props)",
+  "createText(props[0])",
+]) {
+  if (!tickSource.includes(required)) {
+    throw new Error(`generated Tick is missing ${required}`);
+  }
+}
+if (tickSource.includes("$lrx_child") || tickSource.includes("Tick.mjs")) {
+  throw new Error("generated Tick module unexpectedly nests children");
 }
 
 const generated = await import(pathToFileURL(path.join(directory, "NestLab.mjs")).href);

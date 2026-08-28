@@ -10,6 +10,7 @@ if (!directory) throw new Error("LEANRX_NEST_DIST is required");
 const files = new Set([
   "NestLab.mjs",
   "Pulse.mjs",
+  "Tick.mjs",
   "leanrx_dom.mjs",
   "leanrx_region.mjs",
 ]);
@@ -64,6 +65,16 @@ test("the child component mounts inline in document order with its prop", async 
     ),
   );
   expect(order).toEqual(["h1", "button", "p", "button", "ul", "pulse"]);
+  // ADR-0067: the grandchild mounts inline inside the child, in document
+  // order, with its own literal prop riding the nested mount call.
+  await expect(page.locator("#tick-label")).toHaveText("Tick child");
+  await expect(page.locator("#tick-text")).toHaveText("Ticks: 0");
+  const pulseOrder = await page.evaluate(() =>
+    Array.from(document.querySelector(".pulse").children).map((node) =>
+      node.className || node.tagName.toLowerCase(),
+    ),
+  );
+  expect(pulseOrder).toEqual(["h2", "button", "p", "tick"]);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });
@@ -75,6 +86,11 @@ test("parent and child state stay independent", async ({ page }) => {
   await expect(page.locator("#nest-text")).toHaveText("Clicks: 2");
   await expect(page.locator("#pulse-text")).toHaveText("Beats: 0");
   await page.getByRole("button", { name: "Pulse" }).click();
+  await expect(page.locator("#pulse-text")).toHaveText("Beats: 1");
+  await expect(page.locator("#nest-text")).toHaveText("Clicks: 2");
+  await expect(page.locator("#tick-text")).toHaveText("Ticks: 0");
+  await page.getByRole("button", { name: "Tick" }).click();
+  await expect(page.locator("#tick-text")).toHaveText("Ticks: 1");
   await expect(page.locator("#pulse-text")).toHaveText("Beats: 1");
   await expect(page.locator("#nest-text")).toHaveText("Clicks: 2");
 });
@@ -246,6 +262,7 @@ test("disposing the parent disposes the child, roster, and listeners", async ({ 
   });
   await expect(page.locator(".nest-lab")).toHaveCount(0);
   await expect(page.locator(".pulse")).toHaveCount(0);
+  await expect(page.locator(".tick")).toHaveCount(0);
   await expect(page.locator("#roster")).toHaveCount(0);
   const stillAttached = await page.evaluate(() => {
     globalThis.pulseButton.dispatchEvent(new Event("click", { bubbles: true }));
@@ -276,4 +293,44 @@ test("child instrumentation stays reachable through the parent disposer", async 
     return globalThis.nestDispose.children[0].instrumentation();
   });
   expect(after).toEqual(before.snapshot);
+});
+
+test("grandchild instrumentation composes transitively through children arrays", async ({ page }) => {
+  // ADR-0067: the intermediate module republishes its own child through the
+  // same ADR-0066 convention, so the grandchild's mount return is reachable
+  // from the root disposer as `children[0].children[0]` — and parent
+  // disposal removes the grandchild's DOM while freezing its counters
+  // without erasing that reachability.
+  await mountNest(page);
+  await page.getByRole("button", { name: "Tick" }).click();
+  await expect(page.locator("#tick-text")).toHaveText("Ticks: 1");
+  const before = await page.evaluate(() => {
+    const pulse = globalThis.nestDispose.children[0];
+    const ticks = pulse.children;
+    return {
+      count: ticks.length,
+      nested: ticks[0] === undefined ? null : typeof ticks[0].instrumentation,
+      snapshot: ticks[0].instrumentation(),
+      parentTrace: pulse.instrumentation()[7],
+    };
+  });
+  expect(before.count).toBe(1);
+  expect(before.nested).toBe("function");
+  expect(before.snapshot[7].filter((event) => event === "transaction:commit")).toHaveLength(1);
+  // The tick transaction ran in the grandchild's own state array: the
+  // intermediate child saw no transaction at all.
+  expect(before.parentTrace.filter((event) => event === "transaction:commit")).toHaveLength(0);
+  await page.evaluate(() => {
+    globalThis.tickButton = document.querySelector(".tick button");
+    globalThis.nestDispose();
+  });
+  const after = await page.evaluate(() => {
+    globalThis.tickButton.dispatchEvent(new Event("click", { bubbles: true }));
+    return {
+      attached: document.contains(globalThis.tickButton),
+      snapshot: globalThis.nestDispose.children[0].children[0].instrumentation(),
+    };
+  });
+  expect(after.attached).toBe(false);
+  expect(after.snapshot).toEqual(before.snapshot);
 });

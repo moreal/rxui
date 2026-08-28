@@ -7,7 +7,12 @@ view resolves against the checked `Pulse_spec` in scope and lowers to a
 `View.child` reference whose prop values ride the child's
 `mount(target, props)` call, so the generated `NestLab.mjs` imports `mount`
 from `./Pulse.mjs`, mounts the child in document order without a wrapper
-element, and folds the child's disposer into its own. The `roster` region is a
+element, and folds the child's disposer into its own. Composition is
+transitive (ADR-0067): `Pulse` itself composes `<Tick label="…"/>` through
+the same child table, so the generated `Pulse.mjs` imports `mount` from
+`./Tick.mjs` and republishes the grandchild's mount return on its own
+disposer's `children` array (ADR-0066), making the grandchild's
+instrumentation reachable as `children[0].children[0]` from the root. The `roster` region is a
 keyed list built entirely by the generic backend: `append roster (…)` pushes
 rows with region-owned monotone keys, the sealed row template renders the
 concatenation `{label ++ marks}` and selects the row class from the `marks`
@@ -25,11 +30,26 @@ namespace LeanRxExamples.NestLab
 
 open LeanRx
 
+abbrev TickSchema : Schema := .field "ticks" Int .empty
+
+def ticks : Field TickSchema Int := .here
+
+open scoped LeanRxDsl
+
+component Tick (schema := TickSchema) where {
+  state ticks : Int := 0;
+  prop label : String;
+  event tick := set ticks (ticks + 1);
+  view := jsx% <div class="tick"> [
+    <h3 id="tick-label"> [{label}],
+    <button type="button" onClick={tick}> ["Tick"],
+    <p id="tick-text"> [{"tickText": rx% s!"Ticks: {ticks}"}]
+  ];
+}
+
 abbrev PulseSchema : Schema := .field "beats" Int .empty
 
 def beats : Field PulseSchema Int := .here
-
-open scoped LeanRxDsl
 
 component Pulse (schema := PulseSchema) where {
   state beats : Int := 0;
@@ -38,7 +58,8 @@ component Pulse (schema := PulseSchema) where {
   view := jsx% <div class="pulse"> [
     <h2 id="pulse-title"> [{title}],
     <button type="button" onClick={pulse}> ["Pulse"],
-    <p id="pulse-text"> [{"pulseText": rx% s!"Beats: {beats}"}]
+    <p id="pulse-text"> [{"pulseText": rx% s!"Beats: {beats}"}],
+    <Tick label="Tick child"/>
   ];
 }
 

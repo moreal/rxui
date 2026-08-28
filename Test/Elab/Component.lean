@@ -407,12 +407,31 @@ def run : IO Unit := do
   match LeanRxExamples.NestLab.Pulse_check with
   | .error error => throw <| IO.userError s!"child component rejected: {error.code}"
   | .ok checked =>
-      unless checked.spec.children.isEmpty && checked.view.childRefs.isEmpty do
-        throw <| IO.userError "leaf child component unexpectedly nests children"
+      /- ADR-0067: the intermediate child composes its own child through the
+      same table and reference shapes as the root component. -/
+      unless checked.spec.children.toList.map (·.name) == ["Tick"] do
+        throw <| IO.userError "intermediate child component lost its child table"
+      unless checked.spec.children.toList.map (·.moduleSpecifier) == ["./Tick.mjs"] do
+        throw <| IO.userError "intermediate child component lost its child module specifier"
+      unless checked.view.childRefs.map (fun ref => (ref.name, ref.path)) ==
+          [("Tick", [3])] do
+        throw <| IO.userError "intermediate child component lost its grandchild reference"
+      unless checked.view.childRefs.map (·.props) == [[("label", "Tick child")]] do
+        throw <| IO.userError "intermediate child component lost its grandchild prop values"
       unless checked.spec.propNames == ["title"] do
         throw <| IO.userError "child component lost its immutable prop table"
       unless checked.view.propTexts.map (fun ref => (ref.path, ref.field)) ==
           [([0, 0], 0)] do
         throw <| IO.userError "child view lost its immutable prop text position"
+  match LeanRxExamples.NestLab.Tick_check with
+  | .error error => throw <| IO.userError s!"grandchild component rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.children.isEmpty && checked.view.childRefs.isEmpty do
+        throw <| IO.userError "leaf grandchild component unexpectedly nests children"
+      unless checked.spec.propNames == ["label"] do
+        throw <| IO.userError "grandchild component lost its immutable prop table"
+      unless checked.view.propTexts.map (fun ref => (ref.path, ref.field)) ==
+          [([0, 0], 0)] do
+        throw <| IO.userError "grandchild view lost its immutable prop text position"
 
 end LeanRxTest.Elab.Component

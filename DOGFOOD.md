@@ -3281,3 +3281,74 @@ at Enter/Escape; the guard literal stays `""`; the count-label literal
 stays one; row guards stay single-field remove-or-commit; row scope
 still has no `s!`; branch cells stay single-level two-branch with
 exact click/dblclick agreement.
+
+## Transitive child composition — the two-level round (ADR-0067)
+
+### Scenario exercised
+
+ADR-0066 OQ1 asked whether the `children` republication actually
+composes when a child module composes its own child. The survey walked
+every stage of the `<Child/>` pipeline looking for a root-only
+assumption — the elaborator's capitalized-head collection and
+`{Name}_spec` resolution, the ADR-0042 `propNames` check, the
+LRX-VIEW-023/024 validations, the LRX-BE-030 root guard, the aliased
+`import { mount as $lrx_child_0 }` emission, and the
+`dom.childOffs`-gated ADR-0066 line — and found none: nothing in the
+path knows whether the module being emitted is a root or somebody's
+child. So the round executed rather than sealed: NestLab gained a
+`Tick` leaf (state, one event, one immutable prop) composed by
+`Pulse`, making `Pulse.mjs` an intermediate module that both exports
+`mount` and mounts a child, and ADR-0067 records that transitivity
+needs no new vocabulary — per-level republication *is* the contract,
+and `children[0].children[0]` is the composed surface.
+
+### What was pleasant
+
+The intermediate module fell out of the existing backend untouched:
+`Pulse.mjs` grew exactly the pinned child-composing shape — aliased
+import, mid-mount `$lrx_child_0(node_0, ["Tick child"])`, the offset
+in its `makeDisposer` list, and `disposer["children"] = [child_off_0]`
+— while `NestLab.mjs` stayed byte-identical, which is the freeze
+argument in one diff. The ADR-0066 design choice that the array
+element *is* the mount return paid off immediately: the grandchild
+gate needed no new accessor, just two index hops.
+
+### Friction encountered
+
+Declaration order is the one authoring constraint: `Tick`'s `_spec`
+must elaborate before `Pulse` references it, which in a single file
+just means the leaf is written first. Moving NestLab down the file
+shifted its graph spans, so `NestLab.mjs.manifest.json` changed by
+`graphHash` alone with byte-identical generated JS — a reminder that
+the graph hash covers source spans, not just structure.
+
+### Bugs found
+
+None. The two-level path worked on the first generation, which is
+itself the round's finding: the ADR-0039/0042/0066 conventions were
+already component-generic, and only a witness was missing.
+
+### Performance observations
+
+Frozen by construction: the benchmark bundle composes no children, so
+every module outside the nest bundle is byte-identical and the size
+gate baseline stands. The new browser gate costs one test: a Tick
+click puts exactly one `transaction:commit` in the grandchild's trace
+and zero in the intermediate child's (state arrays stay separate
+across levels), and after the root disposes, the detached tick button
+click changes nothing — the ten-slot snapshot is frozen behind a
+still-reachable two-hop path.
+
+### Follow-up issue or commit
+
+`feat(examples): pin transitive child composition through the
+two-level NestLab (ADR-0067)` — the Tick component, the build
+registration, the artifacts pins (including the leaf's no-nesting
+pin), the transitivity browser gate, the ADR, the DECISIONS.md row,
+and this record. ADR-0066 OQ1 is discharged. Open: prop forwarding
+across levels stays ADR-0039's later phase, and tree aggregation
+stays with the consumer (ADR-0066 OQ2). The other invariants hold:
+the key set stays sealed at Enter/Escape; the guard literal stays
+`""`; the count-label literal stays one; row guards stay single-field
+remove-or-commit; row scope still has no `s!`; branch cells stay
+single-level two-branch with exact click/dblclick agreement.

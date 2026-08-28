@@ -68,6 +68,7 @@
 | [0064](docs/adr/0064-field-predicate-unification.md) | Accepted | Unify the single-field-literal equality behind one sealed FieldPredicate, one shared comparison builder, and one bounds rule — byte-neutral under the freeze | 2026-08-28 |
 | [0065](docs/adr/0065-affordance-contract-alignment.md) | Accepted | Reject the affordance-contract alignment check — affordance predicates are presentation policy and the dispatch layer stays the one contract | 2026-08-28 |
 | [0066](docs/adr/0066-child-instrumentation-reachability.md) | Accepted | Reach child instrumentation through the parent disposer's `children` array — republish child mount returns in generated code; reject counter merging and host accessors | 2026-08-28 |
+| [0067](docs/adr/0067-transitive-child-composition.md) | Accepted | Transitive child composition needs no new vocabulary — the ADR-0066 republication applies per level and `children[i].children[j]` is the composed surface, pinned by the two-level NestLab | 2026-08-28 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
