@@ -1530,6 +1530,190 @@ test("Escape clears the new-todo draft through the unguarded component arm (ADR-
   expect(afterOther).toEqual(afterEnter);
 });
 
+test("the hash seeds the filter at mount (ADR-0063)", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    location.hash = "#/completed";
+    const { mount } = await import("/ToggleLab.mjs");
+    globalThis.toggleDispose = mount(document.getElementById("app"));
+  });
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  // The mount seed folded "#/completed" into the filter slot before the DOM
+  // mounted, so the appending commit's filter sweep hides the fresh active
+  // rows immediately — and the counts stay filter-independent.
+  await expect(page.locator("#items > li")).toHaveCount(2);
+  await expect(page.locator("#items > li:visible")).toHaveCount(0);
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
+  // Toggling a filter-hidden row done keeps the seeded filter live: the
+  // done row joins the completed set and becomes visible (the synthetic
+  // click reaches the delegated listener — the dispatch, not the
+  // affordance, carries the contract).
+  await page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item", includeHidden: true })
+    .evaluate((box) => box.click());
+  await expect(page.locator("#items > li:visible")).toHaveCount(1);
+});
+
+test("an unknown hash keeps the declared default at mount (ADR-0063)", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    location.hash = "#/bogus";
+    const { mount } = await import("/ToggleLab.mjs");
+    globalThis.toggleDispose = mount(document.getElementById("app"));
+  });
+  // A hash outside the sealed table falls to the declared "all" default:
+  // every appended row is displayed.
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(page.locator("#items > li:visible")).toHaveCount(1);
+});
+
+test("hashchange dispatches the filter set-field transaction (ADR-0063)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  // Navigating the hash dispatches exactly the set-field transaction the
+  // filter buttons dispatch — the whole commit path reused: selection,
+  // filter sweep, and counts together, traced under the arm's own label.
+  await page.evaluate(() => {
+    location.hash = "#/active";
+  });
+  await expect(page.locator("#items > li").first()).toBeHidden();
+  await expect(page.locator("#items > li").nth(1)).toBeVisible();
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 2");
+  const trace = await page.evaluate(() => globalThis.toggleDispose.instrumentation()[7]);
+  expect(trace).toContain("event:route:filter:active");
+  // An unknown hash dispatches the default arm: the filter falls back to
+  // "all" and every retained row shows again.
+  await page.evaluate(() => {
+    location.hash = "#/bogus";
+  });
+  await expect(page.locator("#items > li:visible")).toHaveCount(2);
+});
+
+test("filter buttons write the canonical hash flip-only with no echo loop (ADR-0063)", async ({ page }) => {
+  await mountToggle(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  const count = (tx, label) => tx[7].filter((entry) => entry === label).length;
+  // The set-field commit writes the canonical hash literal behind the
+  // field's changed flag: one route write for the flip.
+  await page.getByRole("button", { name: "Show active" }).click();
+  await expect(page).toHaveURL(/#\/active$/);
+  const after = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(count(after, "route:filter:write")).toBe(1);
+  // The hash write itself fires one hashchange, whose dispatch is an
+  // equal-value set-field commit: changed stays false, so no second route
+  // write exists once the echo settles — no loop.
+  await page.waitForTimeout(100);
+  const settled = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(count(settled, "route:filter:write")).toBe(1);
+  // Re-dispatching the same filter is an equal-value commit: still no
+  // route write.
+  await page.getByRole("button", { name: "Show active" }).click();
+  await page.waitForTimeout(100);
+  const again = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(count(again, "route:filter:write")).toBe(1);
+  await page.getByRole("button", { name: "Show all" }).click();
+  await expect(page).toHaveURL(/#\/$/);
+});
+
+test("region commits persist the row table and a remount hydrates it (ADR-0063)", async ({ page }) => {
+  await mountToggle(page);
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  // A label carrying every separator and the escape character round-trips
+  // through the sealed split/join encoding.
+  await draft.fill("milk, eggs; 100%");
+  await draft.press("Enter");
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  const stored = await page.evaluate(() =>
+    localStorage.getItem("leanrx-toggle-lab.items"));
+  expect(stored).toBe(
+    "milk%2C eggs%3B 100%25,milk%2C eggs%3B 100%25,true,view;Item 0,Item 0,false,view",
+  );
+  // A fresh mount hydrates through one ordinary transaction: rows, toggle
+  // state, counts, chrome, and the normalized write-back all settle in the
+  // shared commit sweep.
+  await page.reload();
+  await page.evaluate(async () => {
+    const { mount } = await import("/ToggleLab.mjs");
+    globalThis.toggleDispose = mount(document.getElementById("app"));
+  });
+  await expect(page.locator("#items > li .item-label")).toHaveText([
+    "milk, eggs; 100%", "Item 0",
+  ]);
+  await expect(page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" })).toBeChecked();
+  await expect(page.locator("#items > li").first()).toHaveClass("item-row done");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 2");
+  await expect(page.locator("#items")).toBeVisible();
+  const trace = await page.evaluate(() => globalThis.toggleDispose.instrumentation()[7]);
+  expect(trace).toContain("event:hydrate:items");
+  expect(trace).toContain("region:items:hydrate");
+  expect(trace).toContain("storage:items:write");
+  // Hydrated rows are full citizens of the row vocabulary: the region
+  // metrics count their mounts and the editor opens on the mirrored draft.
+  const metrics = await regionMetrics(page);
+  expect(metrics[0]).toBe(2);
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  await expect(page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" })).toHaveValue("milk, eggs; 100%");
+});
+
+test("a wrong-arity stored value fails closed to the empty region (ADR-0063)", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    localStorage.setItem("leanrx-toggle-lab.items", "only,two");
+    const { mount } = await import("/ToggleLab.mjs");
+    globalThis.toggleDispose = mount(document.getElementById("app"));
+  });
+  // The two-field row disagrees with the declared four-field arity: the
+  // whole value hydrates nothing and the chrome keeps its empty-mount
+  // state — fail closed, no throw, no partial row.
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  await expect(page.locator("#items")).toBeHidden();
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 0");
+  const trace = await page.evaluate(() => globalThis.toggleDispose.instrumentation()[7]);
+  expect(trace).toContain("event:hydrate:items");
+  expect(trace).not.toContain("region:items:hydrate");
+  // The next region-touching commit overwrites the stale value with the
+  // normalized four-field serialization.
+  await page.getByRole("button", { name: "Add item" }).click();
+  expect(await page.evaluate(() => localStorage.getItem("leanrx-toggle-lab.items")))
+    .toBe("Item 0,Item 0,false,view");
+});
+
+test("a filter change alone persists nothing; one storageSet per region touch (ADR-0063)", async ({ page }) => {
+  await mountToggle(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  const count = (tx, label) => tx[7].filter((entry) => entry === label).length;
+  const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  // Mount hydrated an absent value (no touch, no write); the append is the
+  // first region touch and therefore the first storageSet.
+  expect(count(before, "storage:items:write")).toBe(1);
+  // The filter change is not a region touch: no serialization, no write —
+  // the stored value is byte-identical afterwards, echo dispatch included.
+  await page.getByRole("button", { name: "Show active" }).click();
+  await page.waitForTimeout(100);
+  const filtered = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(count(filtered, "storage:items:write")).toBe(1);
+  expect(await page.evaluate(() => localStorage.getItem("leanrx-toggle-lab.items")))
+    .toBe("Item 0,Item 0,false,view");
+  // A row toggle is a region touch: exactly one more storageSet, carrying
+  // the flipped done field.
+  await page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  const toggled = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  expect(count(toggled, "storage:items:write")).toBe(2);
+  expect(await page.evaluate(() => localStorage.getItem("leanrx-toggle-lab.items")))
+    .toBe("Item 0,Item 0,true,view");
+});
+
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();

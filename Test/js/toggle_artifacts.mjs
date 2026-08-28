@@ -13,9 +13,10 @@ if (
   manifest.module !== "ToggleLab.mjs" ||
   typeof manifest.graphHash !== "string" ||
   manifest.graphHash.length === 0 ||
-  // ADR-0049/0050/0051/0052/0055/0056/0061 ship with no host change: the
-  // ABI stays at the ADR-0048 level.
-  manifest.runtimeAbi !== 16 ||
+  // The ADR-0063 execution round is the one ABI 17 bump: five sealed DOM-host
+  // exports (readHash, listenHash, writeHash, storageGet, storageSet) for the
+  // routing and persistence vocabularies.
+  manifest.runtimeAbi !== 17 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "string", "string"]) ||
   manifest.sourceCount !== 3 ||
@@ -33,6 +34,7 @@ if (
     "row-branches", "row-reflects", "row-focus", "row-aggregates",
     "count-labels", "region-broadcasts", "payload-broadcasts", "region-filters",
     "region-visibility", "predicate-visibility", "region-checked",
+    "routing", "persistence",
   ])
 ) {
   throw new Error("generated Toggle Lab manifest is invalid");
@@ -45,11 +47,10 @@ for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
   }
 }
 for (const required of [
-  // ADR-0049/0050/0051 ride the existing exports: no new host export and no
-  // ABI bump for the kinds, the aggregates, the broadcasts, or the filter
-  // view. The ADR-0061 payload broadcast adds only the existing ADR-0038
-  // listenChecked export to the form-event import line.
-  "import { createElement, createText, setAttribute, append, listen, setText, makeDisposer, setProperty, setKey, childAt, listenDelegatedCells, focus } from \"./leanrx_dom.mjs\";",
+  // The ADR-0063 routing/persistence vocabularies add the five ABI 17 host
+  // exports to the DOM import line, reachability-gated: a component with no
+  // route/persist item never names them and emits a byte-identical module.
+  "import { createElement, createText, setAttribute, append, listen, setText, makeDisposer, setProperty, setKey, childAt, listenDelegatedCells, focus, readHash, listenHash, writeHash, storageGet, storageSet } from \"./leanrx_dom.mjs\";",
   "import { listenValue, listenKey, listenChecked } from \"./leanrx_form_events.mjs\";",
   "import { createKeyedRegion, detach } from \"./leanrx_region.mjs\";",
   // The ADR-0055 controlled new-todo input rides the ADR-0038 path: the
@@ -190,7 +191,42 @@ for (const required of [
   // the same region trace.
   "function $lrx_typed_event_1(hostState, context, checked) {",
   "  tx[7][\"push\"](\"event:toggleAll\");\n  for (const row_item of regions[0][1]) {\n    const row_next_0 = checked ? \"true\" : \"false\";\n    row_item[3] = row_next_0;\n  }\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:items:broadcast\");",
-  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, off_6, off_7, off_8, off_9, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, region_0[\"dispose\"]], tx, [region_0])",
+  // The listenHash removal closure is the first listener whose lifetime is
+  // not rooted in the mounted subtree, so it joins the listenerDisposers
+  // array explicitly (ADR-0063).
+  "makeDisposer(node_0, [off_0, off_1, off_2, off_3, off_4, off_5, off_6, off_7, off_8, off_9, region_off_0, region_off_0_dblclick, region_off_0_input, region_off_0_keydown, region_off_0_change, route_off_0, region_0[\"dispose\"]], tx, [region_0])",
+  // The ADR-0063 route seed: mount reads the hash once and folds it through
+  // the sealed table into the filter slot before the derived initials and
+  // the DOM mount run; an unknown or empty hash keeps the declared default.
+  "  const route_hash_0 = readHash();\n  state[1] = route_hash_0 === \"#/\" ? \"all\" : route_hash_0 === \"#/active\" ? \"active\" : route_hash_0 === \"#/completed\" ? \"completed\" : state[1];",
+  // The ADR-0063 route dispatch: one sealed hash equality per arm handing
+  // the matched set-field transaction the context; an unknown or empty hash
+  // falls to the arm carrying the declared default literal.
+  "function $lrx_route_0(hostState, context, hash) {\n  if (hash === \"#/\") {\n    return $lrx_route_0_arm_0(context, null);\n  }\n  if (hash === \"#/active\") {\n    return $lrx_route_0_arm_1(context, null);\n  }\n  if (hash === \"#/completed\") {\n    return $lrx_route_0_arm_2(context, null);\n  }\n  return $lrx_route_0_arm_0(context, null);\n}",
+  "function $lrx_route_0_arm_1(context, ignored) {",
+  "  tx[7][\"push\"](\"event:route:filter:active\");",
+  "const route_off_0 = listenHash(state, context, $lrx_route_0);",
+  // The ADR-0063 flip-only writeHash ride: the commit sweep writes the
+  // canonical hash literal only when the routed field flipped this commit —
+  // an equal-value transaction writes nothing, and the WHATWG equal-value
+  // hash assignment fires no hashchange, so no echo loop exists.
+  "    if (changed[1]) {\n      if (state[1] === \"all\") {\n        writeHash(\"#/\");\n      }\n      if (state[1] === \"active\") {\n        writeHash(\"#/active\");\n      }\n      if (state[1] === \"completed\") {\n        writeHash(\"#/completed\");\n      }\n      tx[7][\"push\"](\"route:filter:write\");\n    }",
+  // The ADR-0063 persistence sweep: one storageSet per region-touching
+  // transaction on the shared touched flag, serializing the whole row table
+  // with the throw-free split/join escape — fields behind the key slot
+  // joined by "," and rows by ";".
+  "    if (region_touched_0) {\n      const persist_rows_0 = [];\n      for (const persist_row_0 of regions[0][1]) {\n        persist_rows_0[\"push\"](persist_row_0[1][\"split\"](\"%\")[\"join\"](\"%25\")[\"split\"](\",\")[\"join\"](\"%2C\")[\"split\"](\";\")[\"join\"](\"%3B\") + \",\" + persist_row_0[2][\"split\"](\"%\")[\"join\"](\"%25\")[\"split\"](\",\")[\"join\"](\"%2C\")[\"split\"](\";\")[\"join\"](\"%3B\") + \",\" + persist_row_0[3][\"split\"](\"%\")[\"join\"](\"%25\")[\"split\"](\",\")[\"join\"](\"%2C\")[\"split\"](\";\")[\"join\"](\"%3B\") + \",\" + persist_row_0[4][\"split\"](\"%\")[\"join\"](\"%25\")[\"split\"](\",\")[\"join\"](\"%2C\")[\"split\"](\";\")[\"join\"](\"%3B\"));\n      }\n      storageSet(\"leanrx-toggle-lab.items\", persist_rows_0[\"join\"](\";\"));\n      tx[7][\"push\"](\"storage:items:write\");\n    }",
+  // The ADR-0063 mount hydration: one ordinary transaction whose writes
+  // parse the stored value — arity mismatch fails the whole value closed to
+  // the empty region — and push the parsed rows through the existing append
+  // path, so the shared commit sweep reconciles rows, counts, visibility,
+  // and the filter table together.
+  "function $lrx_hydrate_0(context, ignored) {",
+  "  tx[7][\"push\"](\"event:hydrate:items\");",
+  "  const stored_value = storageGet(\"leanrx-toggle-lab.items\");",
+  "        const hydrate_fields = hydrate_part[\"split\"](\",\");\n        if (hydrate_fields[\"length\"] !== 4) {\n          hydrate_ok[0] = false;\n        }\n        hydrate_rows[\"push\"](hydrate_fields);",
+  "  if (hydrate_ok[0] && hydrate_rows[\"length\"] !== 0) {\n    for (const hydrate_row of hydrate_rows) {\n      regions[0][1][\"push\"]([regions[0][2], hydrate_row[0][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), hydrate_row[1][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), hydrate_row[2][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), hydrate_row[3][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\")]);\n      regions[0][2] += 1;\n    }\n    regions[0][3] = true;\n    tx[7][\"push\"](\"region:items:hydrate\");\n  }",
+  "  $lrx_hydrate_0(context, null);",
   // The ADR-0050 region record carries the count refs and numeric cache in
   // two region-local slots behind the pending slot, and the ADR-0051 filter
   // slot holds the container element behind them.

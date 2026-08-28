@@ -308,6 +308,76 @@ test("listenDelegatedCells resolves a keyed row's action from the clicked cell",
   });
 });
 
+test("readHash and writeHash read and assign the location hash (ADR-0063)", async ({ page }) => {
+  await page.goto(origin);
+  const result = await page.evaluate(async () => {
+    const { readHash, writeHash } = await import("/leanrx_dom.mjs");
+    const initial = readHash();
+    writeHash("#/route-check");
+    const written = readHash() === "#/route-check" && location.hash === "#/route-check";
+    writeHash("#/");
+    const rewritten = readHash();
+    return { initial, written, rewritten };
+  });
+  expect(result).toEqual({ initial: "", written: true, rewritten: "#/" });
+});
+
+test("listenHash dispatches per hashchange with no equal-value echo (ADR-0063)", async ({ page }) => {
+  await page.goto(origin);
+  const result = await page.evaluate(async () => {
+    const { listenHash, writeHash } = await import("/leanrx_dom.mjs");
+    const state = ["state"];
+    const context = ["context"];
+    const calls = [];
+    const off = listenHash(state, context, (...args) => calls.push(args));
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+    writeHash("#/active");
+    await settle();
+    const afterFirst = calls.length;
+    // A WHATWG equal-value assignment fires no hashchange, so the generated
+    // flip-only write cannot echo through its own listener.
+    writeHash("#/active");
+    await settle();
+    const afterEqual = calls.length;
+    off();
+    writeHash("#/completed");
+    await settle();
+    return {
+      identity: calls.every(([givenState, givenContext]) =>
+        givenState === state && givenContext === context),
+      hashes: calls.map(([, , hash]) => hash),
+      afterFirst,
+      afterEqual,
+      afterDispose: calls.length,
+    };
+  });
+  expect(result).toEqual({
+    identity: true,
+    hashes: ["#/active"],
+    afterFirst: 1,
+    afterEqual: 1,
+    afterDispose: 1,
+  });
+});
+
+test("storageGet and storageSet move one string through localStorage (ADR-0063)", async ({ page }) => {
+  await page.goto(origin);
+  const result = await page.evaluate(async () => {
+    const { storageGet, storageSet } = await import("/leanrx_dom.mjs");
+    const missing = storageGet("leanrx-spec-missing");
+    storageSet("leanrx-spec-key", "a,b;c%25 value");
+    const roundTrip = storageGet("leanrx-spec-key");
+    const agreement = localStorage.getItem("leanrx-spec-key") === roundTrip;
+    localStorage.removeItem("leanrx-spec-key");
+    return { missing, roundTrip, agreement };
+  });
+  expect(result).toEqual({
+    missing: null,
+    roundTrip: "a,b;c%25 value",
+    agreement: true,
+  });
+});
+
 test("focus moves keyboard focus to an attached input and only then (ADR-0048)", async ({ page }) => {
   await page.goto(origin);
   const result = await page.evaluate(async () => {

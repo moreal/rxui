@@ -86,9 +86,9 @@ private def roleName (role : Ident) : String :=
 private def checkRole (role : Ident) : CommandElabM String := do
   let name := roleName role
   unless ["state", "derived", "event", "view", "region", "row", "prop",
-      "filter"].contains name do
+      "filter", "route", "persist"].contains name do
     throwErrorAt role
-      s!"error[LRX-ELAB-003]: unknown component item role {name}; expected state, derived, event, region, row, prop, filter, or view"
+      s!"error[LRX-ELAB-003]: unknown component item role {name}; expected state, derived, event, region, row, prop, filter, route, persist, or view"
   pure name
 
 private def scalarLiteralTerm (ty : Ident) (value : TSyntax `term) :
@@ -1177,6 +1177,8 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
       let mut childNames : List String := []
       let mut regionTerms : Array (TSyntax `term) := #[]
       let mut filterTerms : Array (TSyntax `term) := #[]
+      let mut routeTerms : Array (TSyntax `term) := #[]
+      let mut persistTerms : Array (TSyntax `term) := #[]
       let mut propTerms : Array (TSyntax `term) := #[]
       let mut viewTerm? : Option (TSyntax `term) := none
       for item in items do
@@ -1376,6 +1378,44 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
                   events := events.push eventTerm
                   declarations := declarations.push (← `(LeanRx.SurfaceDecl.mk
                     LeanRx.SurfaceRole.event $nameLit $itemSpan))
+            | "route" => do
+                /- The sealed route item (ADR-0063): `route field := when
+                "#/hash" "literal" then …` — the ADR-0051 filter-table shape
+                over the sealed `#/`-shaped hash literal set, mapped
+                one-to-one onto the routed field's existing state
+                literals. -/
+                let mut arms : Array (TSyntax `term) := #[]
+                for step in steps do
+                  match step with
+                  | `($head:ident $hashLit:str $stateLit:str) =>
+                      unless head.getId.eraseMacroScopes == `when do
+                        throwErrorAt step
+                          "error[LRX-ELAB-128]: a route arm is written `when \"#/hash\" \"literal\"` (ADR-0063)"
+                      arms := arms.push (← `(($hashLit, $stateLit)))
+                  | _ =>
+                      throwErrorAt step
+                        "error[LRX-ELAB-128]: a route arm is written `when \"#/hash\" \"literal\"` (ADR-0063)"
+                routeTerms := routeTerms.push
+                  (← `(LeanRx.RouteSpec.mk $itemName [$arms,*] $itemSpan))
+            | "persist" => do
+                /- The sealed persist item (ADR-0063): `persist region :=
+                "storage-key"` — one sealed literal storage key per
+                component, targeting one declared keyed region. -/
+                let region := itemName.getId.eraseMacroScopes.toString
+                unless (regionFields.find? (·.1 == region)).isSome do
+                  throwErrorAt itemName
+                    s!"error[LRX-ELAB-129]: persist item references unknown region {region}"
+                unless steps.size == 1 do
+                  throwErrorAt item
+                    "error[LRX-ELAB-129]: a persist item takes exactly one sealed literal storage key (ADR-0063)"
+                let storageKey ← match steps[0]! with
+                  | `($storageKey:str) => pure storageKey
+                  | _ =>
+                      throwErrorAt steps[0]!
+                        "error[LRX-ELAB-129]: a persist item is written `persist region := \"storage-key\"` (ADR-0063)"
+                let regionLit := Syntax.mkStrLit region
+                persistTerms := persistTerms.push
+                  (← `(LeanRx.PersistSpec.mk $regionLit $storageKey $itemSpan))
             | _ =>
                 throwErrorAt role
                   "error[LRX-ELAB-003]: view items are written `view := …` without a name"
@@ -1426,6 +1466,8 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
         children := #[$childTerms,*]
         regions := #[$regionTerms,*]
         filters := #[$filterTerms,*]
+        routes := #[$routeTerms,*]
+        persists := #[$persistTerms,*]
         props := #[$propTerms,*]
         span := $componentSpan }))
       elabCommand (← `(abbrev $checkName := LeanRx.ComponentSpec.check $specName))

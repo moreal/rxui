@@ -280,6 +280,39 @@ private def asciiTrimJs (subject : Expr) : Expr :=
   .call (.index subject (.literal (.string "replace")))
     (.ofList [.literal .asciiTrimPattern, .literal (.string "")])
 
+/-- `subject.split(needle).join(replacement)` — the throw-free replace-all the
+persistence serialization uses (ADR-0063): no regex literal enters the
+generated module and no decode step can throw, so a hand-edited stored value
+fails closed instead of failing the mount. -/
+private def splitJoinJs (subject : Expr) (needle replacement : String) : Expr :=
+  .call
+    (.index
+      (.call (.index subject (.literal (.string "split")))
+        (.ofList [.literal (.string needle)]))
+      (.literal (.string "join")))
+    (.ofList [.literal (.string replacement)])
+
+/-- Escape one row field for the sealed storage encoding (ADR-0063): `%` first
+(so decode can restore it last), then the field and row separators. -/
+private def persistEncodeJs (subject : Expr) : Expr :=
+  splitJoinJs (splitJoinJs (splitJoinJs subject "%" "%25") "," "%2C") ";" "%3B"
+
+/-- Reverse the sealed storage encoding (ADR-0063): the separators first, `%`
+last. -/
+private def persistDecodeJs (subject : Expr) : Expr :=
+  splitJoinJs (splitJoinJs (splitJoinJs subject "%2C" ",") "%3B" ";") "%25" "%"
+
+/-- One serialized row of a persisted region (ADR-0063): the escaped fields
+behind the key slot joined with the field separator. -/
+private def persistRowJs (row : Ident) (fieldCount : Nat) : Expr :=
+  match (List.range fieldCount).map
+      (fun index => persistEncodeJs (.index (.ident row) (uint (index + 1)))) with
+  | [] => .literal (.string "")
+  | first :: rest =>
+      rest.foldl
+        (fun acc field => .binary .add (.binary .add acc (.literal (.string ","))) field)
+        first
+
 /-- Lower one sealed state-scoped attribute selection to its value expression
 (ADR-0045): `class` selects between its two static strings, `aria-pressed`
 reflects the equality as `"true"`/`"false"`, and `disabled` is the bare
@@ -452,6 +485,11 @@ private structure RuntimeNames where
   listenChecked : Ident
   listenSubmit : Ident
   focus : Ident
+  readHash : Ident
+  listenHash : Ident
+  writeHash : Ident
+  storageGet : Ident
+  storageSet : Ident
 
 private def runtimeNames : Except Error RuntimeNames := do
   pure {
@@ -473,6 +511,11 @@ private def runtimeNames : Except Error RuntimeNames := do
     listenChecked := ← Ident.checked "listenChecked"
     listenSubmit := ← Ident.checked "listenSubmit"
     focus := ← Ident.checked "focus"
+    readHash := ← Ident.checked "readHash"
+    listenHash := ← Ident.checked "listenHash"
+    writeHash := ← Ident.checked "writeHash"
+    storageGet := ← Ident.checked "storageGet"
+    storageSet := ← Ident.checked "storageSet"
   }
 
 /-- The write statement of one attribute selection: `disabled`, `hidden`,
@@ -578,6 +621,20 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
         pushTrace tx s!"source:{source.name}:changed"
       ]
     ]
+  /- The sealed route write (ADR-0063): whenever the routed field flipped this
+  commit, the reverse of the route table writes the canonical hash literal
+  through `writeHash` — flip-only behind the field's changed flag, so an
+  equal-value transaction writes nothing, and a WHATWG equal-value hash
+  assignment fires no hashchange, so the hashchange-dispatched set-field
+  commit cannot echo. A state value outside the table writes nothing. -/
+  for route in checked.spec.routes do
+    let routeField ← graphNodeAt? checked route.field.index
+    let writeStmts := route.arms.map fun (hash, literal) =>
+      Stmt.ifThen
+        (.binary .eq (stateAt state route.field.index) (.literal (.string literal)))
+        (.ofList [.expr <| call runtime.writeHash [.literal (.string hash)]])
+    commitBody := commitBody ++ [.ifThen (arrayAt changed route.field.index)
+      (.ofList (writeStmts ++ [pushTrace tx s!"route:{routeField.name}:write"]))]
   for id in derivedOrder checked do
     let value ← graphNodeAt? checked id
     let evalName ← evaluator evaluators s!"value:{id}"
@@ -671,12 +728,13 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     let filter? := checked.spec.filters.toList.find? (·.region == region.name)
     let hiddens := checked.view.attrSelects.zipIdx.filter
       fun (mounted, _) => mounted.select.regionSubject? == some region.name
+    let persist? := checked.spec.persists.toList.find? (·.region == region.name)
     let touched ← Ident.checked s!"region_touched_{regionIndex}"
-    unless counts.isEmpty && filter?.isNone && hiddens.isEmpty do
+    unless counts.isEmpty && filter?.isNone && hiddens.isEmpty && persist?.isNone do
       /- The shared touched flag serves the count sweep (ADR-0050), the
-      filter sweep (ADR-0051), and the empty-region visibility sweep
-      (ADR-0058); all read it before the reconcile and drain
-      below consume the dirty flag and the pending positions. -/
+      filter sweep (ADR-0051), the empty-region visibility sweep (ADR-0058),
+      and the persistence sweep (ADR-0063); all read it before the reconcile
+      and drain below consume the dirty flag and the pending positions. -/
       commitBody := commitBody ++ [
         .const touched (.binary .or (regionEntry regions regionIndex 3)
           (.unary .not (.binary .eq
@@ -850,6 +908,28 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           incrementAt tx 9,
           pushTrace tx s!"dom:filter:{region.name}:write"
         ]]
+    /- The sealed persistence sweep (ADR-0063): whenever this region was
+    touched this transaction, the whole row table is re-serialized — fields
+    behind the key slot escaped by the throw-free split/join encoding, rows
+    joined by the row separator — and written through one `storageSet`. One
+    write per region-touching transaction; a filter change alone touches
+    nothing and therefore persists nothing. -/
+    if let some persist := persist? then
+      let rows ← Ident.checked s!"persist_rows_{regionIndex}"
+      let row ← Ident.checked s!"persist_row_{regionIndex}"
+      commitBody := commitBody ++ [.ifThen (.ident touched) <| .ofList [
+        .const rows (.array .nil),
+        .forOf row (regionEntry regions regionIndex 1) (.ofList [
+          .expr <| .call (.index (.ident rows) (.literal (.string "push")))
+            (.ofList [persistRowJs row region.fields.size])
+        ]),
+        .expr <| call runtime.storageSet [
+          .literal (.string persist.key),
+          .call (.index (.ident rows) (.literal (.string "join")))
+            (.ofList [.literal (.string ";")])
+        ],
+        pushTrace tx s!"storage:{region.name}:write"
+      ]]
   commitBody := commitBody ++ [
     incrementAt tx 1,
     pushTrace tx "transaction:commit"
@@ -976,6 +1056,150 @@ private def keyEventFunctions (checked : CheckedComponent Γ) (evaluators : Eval
     name := ← keyEventName eventIndex
     params := #[hostState, context, payload]
     body := dispatchBody.toArray }])
+
+private def routeArmName (routeIndex armIndex : Nat) : Except Error Ident :=
+  Ident.checked s!"$lrx_route_{routeIndex}_arm_{armIndex}"
+
+private def routeDispatchName (routeIndex : Nat) : Except Error Ident :=
+  Ident.checked s!"$lrx_route_{routeIndex}"
+
+/-- The declared initial of the routed `String` source (ADR-0063), for the
+dispatch fallback arm. -/
+private def routeDefault? (values : Array (ValueSpec Γ)) (index : Nat) : Option String :=
+  values[index]?.bind fun value =>
+    match value with
+    | .source _ _ _ (.string literal) _ => some literal
+    | _ => none
+
+/-- The generated functions of one sealed route item (ADR-0063): one
+transaction function per arm — the filter buttons' set-field transaction
+shape with the arm's state literal written directly, tracing
+`event:route:{field}:{literal}` — and the dispatch function `listenHash`
+calls, which compares the delegated hash against each sealed hash literal and
+hands the matched arm the context; an unknown or empty hash falls to the arm
+carrying the declared default literal, so the whole hash space lands in the
+table. An equal-value dispatch is an ordinary empty commit — `changed` stays
+false, so the flip-only `writeHash` ride writes nothing and no echo loop
+exists. -/
+private def routeFunctions (checked : CheckedComponent Γ) (evaluators : EvalState)
+    (runtime : RuntimeNames) (route : RouteSpec Γ) (routeIndex : Nat)
+    (defaultLiteral : String) : Except Error (List Function) := do
+  let hostState ← Ident.checked "hostState"
+  let context ← Ident.checked "context"
+  let hash ← Ident.checked "hash"
+  let state ← Ident.checked "state"
+  let tx ← Ident.checked "tx"
+  let routeField ← graphNodeAt? checked route.field.index
+  let mut functions : List Function := []
+  let mut dispatchBody : List Stmt := []
+  let mut defaultArm? : Option Ident := none
+  for ((hashLiteral, literal), armIndex) in route.arms.zipIdx do
+    let armFn ← routeArmName routeIndex armIndex
+    let writes : List Stmt := [
+      .assign (.index (.ident state) (uint route.field.index))
+        (.literal (.string literal)),
+      incrementAt tx 2,
+      pushTrace tx s!"source:{routeField.name}:write"
+    ]
+    functions := functions ++ [← transactionShell checked evaluators runtime armFn
+      #[context, ← Ident.checked "ignored"]
+      s!"route:{routeField.name}:{literal}" writes]
+    dispatchBody := dispatchBody ++ [
+      .ifThen (.binary .eq (.ident hash) (.literal (.string hashLiteral)))
+        (.ofList [.return (call armFn [.ident context, .literal .null])])
+    ]
+    if literal == defaultLiteral then
+      defaultArm? := some armFn
+  let defaultArm ← match defaultArm? with
+    | some armFn => pure armFn
+    | none => .error {
+        code := "LRX-BE-034"
+        message := "checked route lost its default arm"
+      }
+  dispatchBody := dispatchBody ++ [.return (call defaultArm [.ident context, .literal .null])]
+  pure (functions ++ [{
+    name := ← routeDispatchName routeIndex
+    params := #[hostState, context, hash]
+    body := dispatchBody.toArray }])
+
+private def hydrateName (persistIndex : Nat) : Except Error Ident :=
+  Ident.checked s!"$lrx_hydrate_{persistIndex}"
+
+/-- The generated mount hydration of one persisted region (ADR-0063): one
+ordinary transaction function whose writes parse the stored value and push
+the parsed rows through the existing append path — region-owned keys, the
+nextKey increment, the dirty flag — so the shared commit sweep reconciles the
+rows, recomputes every count and visibility subject, applies the filter
+table, and re-persists the normalized serialization, all through the code
+every other transaction runs. A missing or empty value parses to no rows,
+and any row whose field count differs from the declared arity fails the
+whole value closed to the empty region. -/
+private def hydrateFunction (checked : CheckedComponent Γ) (evaluators : EvalState)
+    (runtime : RuntimeNames) (persist : PersistSpec) (persistIndex : Nat) :
+    Except Error Function := do
+  let context ← Ident.checked "context"
+  let regions ← Ident.checked "regions"
+  let tx ← Ident.checked "tx"
+  let regionIndex ← match checked.spec.regions.toList.findIdx?
+      (·.name == persist.region) with
+    | some index => pure index
+    | none => .error {
+        code := "LRX-BE-031"
+        message := s!"checked region disappeared: {persist.region}"
+      }
+  let region ← match checked.spec.regions.toList.find? (·.name == persist.region) with
+    | some region => pure region
+    | none => .error {
+        code := "LRX-BE-031"
+        message := s!"checked region disappeared: {persist.region}"
+      }
+  let stored ← Ident.checked "stored_value"
+  let rowsId ← Ident.checked "hydrate_rows"
+  let okId ← Ident.checked "hydrate_ok"
+  let part ← Ident.checked "hydrate_part"
+  let fieldsId ← Ident.checked "hydrate_fields"
+  let rowId ← Ident.checked "hydrate_row"
+  let writes : List Stmt := [
+    .const stored (call runtime.storageGet [.literal (.string persist.key)]),
+    .const rowsId (.array .nil),
+    .const okId (.array (.ofList [.literal (.boolean true)])),
+    .ifThen (.unary .not (.binary .eq (.ident stored) (.literal .null))) <| .ofList [
+      .ifThen (.unary .not (.binary .eq (.ident stored) (.literal (.string "")))) <|
+        .ofList [
+        .forOf part (.call (.index (.ident stored) (.literal (.string "split")))
+            (.ofList [.literal (.string ";")])) (.ofList [
+          .const fieldsId (.call (.index (.ident part) (.literal (.string "split")))
+            (.ofList [.literal (.string ",")])),
+          .ifThen (.unary .not (.binary .eq
+              (.index (.ident fieldsId) (.literal (.string "length")))
+              (uint region.fields.size))) (.ofList [
+            .assign (.index (.ident okId) (uint 0)) (.literal (.boolean false))
+          ]),
+          .expr <| .call (.index (.ident rowsId) (.literal (.string "push")))
+            (.ofList [.ident fieldsId])
+        ])
+      ]
+    ],
+    .ifThen (.binary .and (.index (.ident okId) (uint 0))
+        (.unary .not (.binary .eq
+          (.index (.ident rowsId) (.literal (.string "length"))) (uint 0)))) <|
+      .ofList [
+      .forOf rowId (.ident rowsId) (.ofList [
+        .expr <| .call
+          (.index (regionEntry regions regionIndex 1) (.literal (.string "push")))
+          (.ofList [.array (.ofList (regionEntry regions regionIndex 2 ::
+            (List.range region.fields.size).map fun index =>
+              persistDecodeJs (.index (.ident rowId) (uint index))))]),
+        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 2))
+          (.binary .add (regionEntry regions regionIndex 2) (uint 1))
+      ]),
+      .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+        (.literal (.boolean true)),
+      pushTrace tx s!"region:{persist.region}:hydrate"
+    ]
+  ]
+  transactionShell checked evaluators runtime (← hydrateName persistIndex)
+    #[context, ← Ident.checked "ignored"] s!"hydrate:{persist.region}" writes
 
 private structure DomBinding where
   path : List Nat
@@ -1741,7 +1965,9 @@ private def manifest (moduleName : String) (checked : CheckedComponent Γ) : Com
           mounted.select.checkedRegion?.isSome) then
         #["region-checked"]
       else #[]) ++
-      (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) }
+      (if checked.spec.props.isEmpty then #[] else #["immutable-props"]) ++
+      (if checked.spec.routes.isEmpty then #[] else #["routing"]) ++
+      (if checked.spec.persists.isEmpty then #[] else #["persistence"]) }
 
 /-- Lower a checked explicit component to a validated direct-DOM ESM module. -/
 def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Emitted := do
@@ -1782,6 +2008,18 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     keyFunctions := keyFunctions ++
       (← keyEventFunctions checked evaluators runtime eventNames event index keyBodyIndex)
     keyBodyIndex := keyBodyIndex + event.arms.length
+  let mut routeFunctionList : List Function := []
+  for (route, index) in checked.spec.routes.toList.zipIdx do
+    let defaultLiteral ← match routeDefault? checked.spec.values route.field.index with
+      | some literal => pure literal
+      | none => .error {
+          code := "LRX-BE-034"
+          message := "checked route lost its default literal"
+        }
+    routeFunctionList := routeFunctionList ++
+      (← routeFunctions checked evaluators runtime route index defaultLiteral)
+  let hydrateFunctions ← checked.spec.persists.toList.zipIdx.mapM fun (persist, index) =>
+    hydrateFunction checked evaluators runtime persist index
   let derivedInitial ← derivedOrder checked |>.mapM fun id => do
     pure (.assign (.index (.ident state) (uint id)) <|
       evaluatorCall (← evaluator evaluators s!"value:{id}") state valueCount)
@@ -1839,9 +2077,25 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     pure (Expr.ident (← nodeAt dom.nodes slot.path))
   let propInitialValues := propSlots.map fun slot =>
     evaluatorCall slot.evaluator state valueCount
+  /- The sealed route seed (ADR-0063): mount reads the hash once and folds it
+  through the route table into the routed state slot before the derived
+  initials and the DOM mount run, so mounted selections and sweeps read the
+  routed value; an unknown or empty hash keeps the declared initial. -/
+  let mut routeSeed : List Stmt := []
+  for (route, routeIndex) in checked.spec.routes.toList.zipIdx do
+    let hashConst ← Ident.checked s!"route_hash_{routeIndex}"
+    let seedExpr := route.arms.foldr
+      (fun (hashLiteral, literal) acc =>
+        Expr.conditional (.binary .eq (.ident hashConst) (.literal (.string hashLiteral)))
+          (.literal (.string literal)) acc)
+      (stateAt state route.field.index)
+    routeSeed := routeSeed ++ [
+      .const hashConst (call runtime.readHash []),
+      .assign (.index (.ident state) (uint route.field.index)) seedExpr
+    ]
   let mut mountBody : List Stmt := [
     .const state (.array <| .ofList (initialValues checked.spec.values.toList))
-  ] ++ derivedInitial ++ dom.statements ++ [
+  ] ++ routeSeed ++ derivedInitial ++ dom.statements ++ [
     .const refs (.array <| .ofList sinkRefs),
     .const sinkCache (.array <| .ofList sinkInitialValues)
   ]
@@ -2005,6 +2259,23 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
               .array (.ofList (actions.map fun action => .literal (.string action)))
             ]]
             disposers := disposers ++ [.ident off]
+  /- The hashchange listener (ADR-0063): the first listener whose lifetime is
+  not rooted in the mounted subtree, so its removal closure joins the
+  listenerDisposers array explicitly. -/
+  for (_, routeIndex) in checked.spec.routes.toList.zipIdx do
+    let off ← Ident.checked s!"route_off_{routeIndex}"
+    mountBody := mountBody ++ [.const off <| call runtime.listenHash [
+      .ident state, .ident context, .ident (← routeDispatchName routeIndex)
+    ]]
+    disposers := disposers ++ [.ident off]
+  /- Mount hydration (ADR-0063): one ordinary transaction per persisted
+  region, run once after the listeners are wired — the shared commit sweep
+  mounts the parsed rows and settles every count, visibility, and filter
+  slot. -/
+  for (_, persistIndex) in checked.spec.persists.toList.zipIdx do
+    mountBody := mountBody ++ [.expr <| call (← hydrateName persistIndex) [
+      .ident context, .literal .null
+    ]]
   for (_, handle) in dom.regionHandles do
     disposers := disposers ++ [.index (.ident handle) (.literal (.string "dispose"))]
   mountBody := mountBody ++ [
@@ -2047,6 +2318,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     fun region => rowHasReflect region.template
   let usesFocus := checked.spec.regions.toList.any (regionUsesFocus broadcasts)
   let usesFilters := !checked.spec.filters.isEmpty
+  let usesRouting := !checked.spec.routes.isEmpty
+  let usesPersistence := !checked.spec.persists.isEmpty
   let regionFunctionDecls :=
     regionFunctions.flatMap id ++ regionDispatches.filterMap (·.map (·.2))
   let mountParams := #[target] ++
@@ -2076,7 +2349,20 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           (if usesDelegation then
             #[(runtime.listenDelegatedCells, runtime.listenDelegatedCells)]
           else #[]) ++
-          (if usesFocus then #[(runtime.focus, runtime.focus)] else #[]) }
+          (if usesFocus then #[(runtime.focus, runtime.focus)] else #[]) ++
+          /- Both ADR-0063 vocabularies are reachability-gated (the ADR-0048
+          arm shape): a component with no route/persist item emits a
+          byte-identical module and the benchmark bundle never names the
+          exports, so the compactor prunes them before renaming. -/
+          (if usesRouting then
+            #[(runtime.readHash, runtime.readHash),
+              (runtime.listenHash, runtime.listenHash),
+              (runtime.writeHash, runtime.writeHash)]
+          else #[]) ++
+          (if usesPersistence then
+            #[(runtime.storageGet, runtime.storageGet),
+              (runtime.storageSet, runtime.storageSet)]
+          else #[]) }
       ] ++ (if formImportNames.isEmpty then #[] else #[
         { source := "./leanrx_form_events.mjs", names := formImportNames }
       ]) ++ (if checked.spec.regions.isEmpty then #[] else #[
@@ -2087,6 +2373,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       ]) ++ childImports.toArray
       declarations := (evaluators.declarations ++ eventFunctions.map Decl.function ++
         typedEventFunctions.map Decl.function ++ keyFunctions.map Decl.function ++
+        routeFunctionList.map Decl.function ++ hydrateFunctions.map Decl.function ++
         regionFunctionDecls.map Decl.function ++ [
         Decl.function { name := mount, params := mountParams, body := mountBody.toArray }
       ]).toArray

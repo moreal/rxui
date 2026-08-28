@@ -105,6 +105,11 @@ fixtures=(
   Test/fixtures/compile-fail/BroadcastPayloadUnknownField.lean
   Test/fixtures/compile-fail/CountLabelThreshold.lean
   Test/fixtures/compile-fail/CountLabelDynamicBranch.lean
+  Test/fixtures/compile-fail/RouteArmShape.lean
+  Test/fixtures/compile-fail/RouteHashShape.lean
+  Test/fixtures/compile-fail/RouteDefaultUnmapped.lean
+  Test/fixtures/compile-fail/PersistUnknownRegion.lean
+  Test/fixtures/compile-fail/PersistDuplicateKey.lean
 )
 fragments=(
   "Constructor for"
@@ -210,6 +215,11 @@ fragments=(
   "error[LRX-ELAB-115]"
   "error[LRX-ELAB-127]"
   "error[LRX-ELAB-127]"
+  "error[LRX-ELAB-128]"
+  "error[LRX-TYPE-117]"
+  "error[LRX-TYPE-117]"
+  "error[LRX-ELAB-129]"
+  "error[LRX-TYPE-118]"
 )
 
 for index in "${!fixtures[@]}"; do

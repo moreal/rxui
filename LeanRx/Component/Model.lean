@@ -246,6 +246,34 @@ structure RegionFilter (Γ : Schema) where
   arms : List (String × Nat × String)
   span : SourceSpan := .generated
 
+/-- One sealed route view (ADR-0063): a one-to-one correspondence from sealed
+`#/`-shaped hash literals to existing state literals of the routed field — the
+one component state field that already carries a declared ADR-0051 region
+filter. Mount seeds the field through `readHash` (an unknown or empty hash
+falls to the declared default), `hashchange` dispatches the same set-field
+transaction the filter buttons dispatch, and `writeHash` rides the set-field
+commit flip-only behind the field's changed flag. Exactly one arm must map the
+declared default literal, so the unknown-hash fallback is a table entry, not a
+separate path. The typed `Field Γ String` makes a cross-typed selector
+unrepresentable. -/
+structure RouteSpec (Γ : Schema) where
+  field : Field Γ String
+  arms : List (String × String)
+  span : SourceSpan := .generated
+
+/-- One sealed persistence declaration (ADR-0063): one declared keyed region's
+row table persisted under one sealed literal storage key — one key per
+component in stage 1. Mount hydrates through the existing append path from one
+`storageGet` (a missing, empty, or wrong-arity value mounts the region empty,
+fail closed), and one `storageSet` rides the region-touch sweep per
+region-touching transaction; serialization lives in generated code, so the
+host moves strings only. -/
+structure PersistSpec where
+  region : String
+  key : String
+  span : SourceSpan := .generated
+deriving Repr, BEq
+
 structure ComponentSpec (Γ : Schema) where
   name : String
   values : Array (ValueSpec Γ)
@@ -257,6 +285,8 @@ structure ComponentSpec (Γ : Schema) where
   children : Array ChildComponent := #[]
   regions : Array RegionSpec := #[]
   filters : Array (RegionFilter Γ) := #[]
+  routes : Array (RouteSpec Γ) := #[]
+  persists : Array PersistSpec := #[]
   props : Array PropSpec := #[]
   span : SourceSpan := .generated
 
@@ -1627,6 +1657,114 @@ private def validateFilters (spec : ComponentSpec Γ) : Except ComponentError Un
               spans := #[filter.span, region.span]
             }
 
+/-- The declared initial of one `String` source, for the ADR-0063 route
+default rule. -/
+private def stringInitial? : ValueSpec Γ → Option String
+  | .source _ _ _ (.string value) _ => some value
+  | _ => none
+
+/-- Validate the sealed route table (ADR-0063): at most one route item, whose
+field is a `String` source carrying a declared ADR-0051 region filter; the
+arms are a nonempty one-to-one table from distinct `#/`-shaped hash literals
+onto the field's existing state literals — the declared default plus the
+filter table's literals — and exactly one arm maps the declared default, so
+the unknown-hash fallback is a table entry. -/
+private def validateRoutes (spec : ComponentSpec Γ) (sourceCount : Nat) :
+    Except ComponentError Unit := do
+  unless spec.routes.size ≤ 1 do
+    throw {
+      code := "LRX-TYPE-117"
+      message := "a component declares at most one route item"
+      spans := spec.routes.map (·.span)
+    }
+  for route in spec.routes do
+    unless route.field.index < sourceCount do
+      throw {
+        code := "LRX-TYPE-117"
+        message := s!"route item targets derived value {route.field.index}; the routed field is one String state field"
+        spans := #[route.span]
+      }
+    let filterTable ← match spec.filters.toList.find?
+        (·.field.index == route.field.index) with
+      | some filter => pure (filter.arms.map (·.1), filter.span)
+      | none =>
+          throw {
+            code := "LRX-TYPE-117"
+            message := "route item targets a field with no declared region filter; routing seals onto the filter field"
+            spans := #[route.span]
+          }
+    if route.arms.isEmpty then
+      throw {
+        code := "LRX-TYPE-117"
+        message := "route item declares no arm"
+        spans := #[route.span]
+      }
+    for (hash, _) in route.arms do
+      unless hash.startsWith "#/" do
+        throw {
+          code := "LRX-TYPE-117"
+          message := s!"route hash literal {hash} is outside the sealed #/-shaped set"
+          spans := #[route.span]
+        }
+    if duplicate? (route.arms.map (·.1)) then
+      throw {
+        code := "LRX-TYPE-117"
+        message := "route item maps one hash literal twice"
+        spans := #[route.span]
+      }
+    if duplicate? (route.arms.map (·.2)) then
+      throw {
+        code := "LRX-TYPE-117"
+        message := "route item maps one state literal twice; the correspondence is one-to-one"
+        spans := #[route.span]
+      }
+    let default ← match spec.values[route.field.index]?.bind stringInitial? with
+      | some value => pure value
+      | none =>
+          throw {
+            code := "LRX-TYPE-117"
+            message := "route item targets a field without a declared String initial"
+            spans := #[route.span]
+          }
+    let sealedLiterals := default :: filterTable.1
+    for (_, literal) in route.arms do
+      unless sealedLiterals.contains literal do
+        throw {
+          code := "LRX-TYPE-117"
+          message := s!"route state literal {literal} is outside the field's existing state literals (the declared default and the filter table)"
+          spans := #[route.span, filterTable.2]
+        }
+    unless route.arms.any (·.2 == default) do
+      throw {
+        code := "LRX-TYPE-117"
+        message := s!"route item never maps the declared default literal {default}; the unknown-hash fallback is a table entry"
+        spans := #[route.span]
+      }
+
+/-- Validate the sealed persistence table (ADR-0063): at most one persist item
+per component — one sealed literal key — targeting a declared region with a
+nonempty key. -/
+private def validatePersists (spec : ComponentSpec Γ) : Except ComponentError Unit := do
+  unless spec.persists.size ≤ 1 do
+    throw {
+      code := "LRX-TYPE-118"
+      message := "a component declares at most one persist item — one sealed literal storage key"
+      spans := spec.persists.map (·.span)
+    }
+  for persist in spec.persists do
+    if persist.key.isEmpty then
+      throw {
+        code := "LRX-TYPE-118"
+        message := s!"persist item on region {persist.region} declares an empty storage key"
+        spans := #[persist.span]
+      }
+    unless spec.regions.toList.any (·.name == persist.region) do
+      throw {
+        code := "LRX-TYPE-118"
+        message := s!"persist item targets unknown region {persist.region}"
+        spans := #[persist.span]
+      }
+
 /-- Validate the immutable prop table and the view's prop text positions
 (ADR-0042). -/
 private def validateProps (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
@@ -1666,31 +1804,38 @@ def check (spec : ComponentSpec Γ) : Except ComponentError (CheckedComponent Γ
             | .error error => .error error
             | .ok _ => match validateFilters spec with
               | .error error => .error error
-              | .ok _ => match validateProps spec split with
+              | .ok _ => match validateRoutes spec sourceCount with
                 | .error error => .error error
-                | .ok _ => match valueNodes spec.values with
+                | .ok _ => match validatePersists spec with
                   | .error error => .error error
-                  | .ok valueNodes => match sinkNodes spec.values split.textSinks with
+                  | .ok _ => match validateProps spec split with
                     | .error error => .error error
-                    | .ok sinkNodes => match propNodes spec.values split.props with
+                    | .ok _ => match valueNodes spec.values with
                       | .error error => .error error
-                      | .ok propNodes => match attrSelectNodes spec.values split.attrSelects with
+                      | .ok valueNodes => match sinkNodes spec.values split.textSinks with
                         | .error error => .error error
-                        | .ok attrNodes => match filterNodes spec.values spec.filters with
+                        | .ok sinkNodes => match propNodes spec.values split.props with
                           | .error error => .error error
-                          | .ok filterNodes =>
-                              match Graph.plan
-                                  (valueNodes ++ sinkNodes ++ propNodes ++ attrNodes ++
-                                    filterNodes) with
-                              | .error error => .error {
-                                  code := error.code, message := error.message,
-                                  path := error.path, spans := error.spans
-                                }
-                              | .ok graph =>
-                                  .ok ⟨spec, graph, sourceCount,
-                                    summarizeEvents spec.events ++
-                                      summarizeTypedEvents spec.typedEvents ++
-                                      summarizeKeyEvents spec.events spec.keyEvents, split⟩
+                          | .ok propNodes =>
+                              match attrSelectNodes spec.values split.attrSelects with
+                              | .error error => .error error
+                              | .ok attrNodes =>
+                                  match filterNodes spec.values spec.filters with
+                                  | .error error => .error error
+                                  | .ok filterNodes =>
+                                      match Graph.plan
+                                          (valueNodes ++ sinkNodes ++ propNodes ++
+                                            attrNodes ++ filterNodes) with
+                                      | .error error => .error {
+                                          code := error.code, message := error.message,
+                                          path := error.path, spans := error.spans
+                                        }
+                                      | .ok graph =>
+                                          .ok ⟨spec, graph, sourceCount,
+                                            summarizeEvents spec.events ++
+                                              summarizeTypedEvents spec.typedEvents ++
+                                              summarizeKeyEvents spec.events
+                                                spec.keyEvents, split⟩
 
 def validationMessage (spec : ComponentSpec Γ) : String :=
   match spec.check with

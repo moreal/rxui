@@ -157,14 +157,33 @@ browser gates pinning hash seed, hashchange dispatch, flip-only
 
 ## Open questions
 
-1. **The route surface spelling is fixed at the execution round.** The
-   sealed item's concrete syntax (and its error codes) follows the
-   component-command rewrite pattern, but its exact shape is not
-   claimed here.
-2. **The storage key policy is fixed at the execution round.** One
-   sealed literal key per component is the working draft; hydration of
-   a value written by a different row-field arity must fail closed to
-   the empty region.
+1. **Resolved by the ABI 17 execution round: the route surface.** The
+   sealed item is `route field := when "#/hash" "literal" then …` in the
+   component-command rewrite pattern (arm shape `LRX-ELAB-128`, table
+   rules `LRX-TYPE-117`): distinct `#/`-shaped hash literals mapped
+   one-to-one onto the routed field's existing state literals — the
+   declared default plus the ADR-0051 filter table's literals, on a
+   field that must carry a declared filter — with exactly one arm
+   mapping the declared default, so the unknown-or-empty-hash fallback
+   is a table entry rather than a separate path. Two shapes settled
+   during execution: `listenHash` is `(state, context, dispatch)` in the
+   `listen(...)` style because generated code has no closures to hand a
+   bare handler, and the flip-only `writeHash` cache is the routed state
+   slot itself — the commit sweep's `changed` flag is the flip, so no
+   new context slot exists.
+2. **Resolved by the ABI 17 execution round: the storage key policy.**
+   The sealed item is `persist region := "storage-key"` — one sealed
+   literal key per component (`LRX-ELAB-129`/`LRX-TYPE-118`), targeting
+   one declared keyed region. Serialization is generated code's
+   throw-free split/join escape (`%`→`%25` first, then `,`→`%2C` and
+   `;`→`%3B`; fields behind the key slot joined by `,`, rows by `;`), so
+   no decode step can throw; hydration of a missing or empty value
+   mounts the region empty, and any row whose field count differs from
+   the declared arity fails the whole value closed to the empty region.
+   Hydration itself is one ordinary transaction whose writes push the
+   parsed rows through the existing append path, so the shared commit
+   sweep settles rows, counts, visibility, filter, and the normalized
+   write-back together.
 3. **The `FieldPredicate` unification stays open** with its byte-neutral
    scope recorded above: model and validator consolidation plus the
    shared comparison builder, scan loops excluded.
@@ -190,13 +209,33 @@ browser gates pinning hash seed, hashchange dispatch, flip-only
 
 ## Confirmation
 
-This round's claims were confirmed by inspection, not execution: the
-size gate's asset list (`index.html` + `main.mjs` only), the absence of
-any ABI byte in the checked-in benchmark `main.mjs`, the pruner's
+The decision round's claims were confirmed by inspection: the size
+gate's asset list (`index.html` + `main.mjs` only), the absence of any
+ABI byte in the checked-in benchmark `main.mjs`, the pruner's
 prune-before-rename order in `JsCompact.lean`, the ADR-0048 precedent
-record in DOGFOOD.md ("`main.mjs` is byte-identical … manifest differs
-only by `runtimeAbi`"), and the grep-counted duplication figures in the
-Context section. The exports themselves are confirmed only when the ABI
-17 round lands with the gates named in the checklist; until then this
-ADR binds the scope — five exports, two sealed surfaces, three freeze
-conditions — and nothing else.
+record in DOGFOOD.md, and the grep-counted duplication figures in the
+Context section.
+
+The ABI 17 execution round then landed the scope exactly — five
+exports, two sealed surfaces, three freeze conditions — and is
+confirmed by execution: the size gate is green with the benchmark
+`main.mjs` byte-identical (the five host functions are pruned before
+renaming; only the manifest's `runtimeAbi` number changed), and every
+other lab emits byte-identical JavaScript because both vocabularies are
+reachability-gated in the import emission. The 24-literal fan-out
+landed in one commit, `scripts/check_cli.sh`'s doctor line included
+this time. The gates named in the checklist exist: real-DOM unit tests
+for all five exports beside the other DOM-host helpers in
+`counter.spec.mjs` (including the equal-value-hash no-echo pin), five
+compile-fail fixtures for the sealed route/persist surfaces
+(`LRX-ELAB-128`/`129`, `LRX-TYPE-117`/`118`), elaborator-shape
+assertions in `Test/Elab/Component.lean`, generated-artifact pins in
+`toggle_artifacts.mjs` (route seed, dispatch, flip-only write, persist
+sweep, hydrate parse, explicit `route_off_0` in the disposer list), and
+seven Toggle Lab browser gates covering the hash seed, the unknown-hash
+default, hashchange dispatch through the shared set-field commit,
+flip-only `writeHash` with the echo settled at one write, hydration
+round-trip (separators and the escape character included), fail-closed
+wrong-arity hydration with normalized overwrite, and
+one-`storageSet`-per-region-touch with the filter change persisting
+nothing.

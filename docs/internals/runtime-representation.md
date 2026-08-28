@@ -69,7 +69,7 @@ Every emitted scalar module has deterministic adjacent JSON metadata containing
 the compiler version, exact Lean toolchain, module filename, runtime ABI version,
 actual allocated export, ordered source/generated input names and runtime codes,
 result runtime code, and the `scalar` feature marker. The runtime ABI is currently
-version 16. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
+version 17. Toolchain or ABI upgrades must update `LeanRx/Core/Version.lean`, this
 document, manifest goldens, and the full differential/determinism gates together.
 Generated JavaScript remains in the documented trusted computing base; these
 tests are executable evidence, not a formal backend verification claim.
@@ -187,6 +187,26 @@ mounted branch subtree's `autoFocus`-marked input — so focus transfers when a
 user action swaps in an edit affordance, while row mount, reorder, and
 stable-branch updates never touch focus. See
 [ADR-0048](../adr/0048-row-focus-vocabulary.md).
+
+ABI 17 adds the routing and persistence hosts to the DOM host (ADR-0063):
+`readHash()` returns `location.hash` (called once at mount to seed the routed
+state field); `listenHash(state, context, dispatch)` registers one
+`hashchange` listener in the `listen(...)` style — the host builds the closure
+because generated code has none — calling `dispatch(state, context,
+location.hash)` per event and returning a removal closure that joins the
+mount's `listenerDisposers` array explicitly (the first listener whose
+lifetime is not rooted in the mounted subtree); `writeHash(value)` assigns
+`location.hash` (generated code writes it flip-only behind the routed field's
+changed flag, and a WHATWG equal-value assignment fires no `hashchange`, so no
+echo loop exists); and `storageGet(key)`/`storageSet(key, value)` move one
+string through `localStorage` synchronously — serialization lives in generated
+code as a throw-free split/join escape, so the hosts stay dumb and a
+hand-edited stored value fails closed instead of failing the mount. All five
+exports are reachability-gated in the component import emission and are plain
+prunable function declarations with no module-level state and no
+compactor-rejected construct, so a component (and the benchmark bundle) that
+declares no route or persist item emits byte-identical JavaScript. See
+[ADR-0063](../adr/0063-freeze-boundary-routing-persistence.md).
 
 The keyed region host (`leanrx_region.mjs`) exposes `createKeyedRegion(parent,
 mountItem, updateItem, disposeItem, rootItem?)` to generated code and shares

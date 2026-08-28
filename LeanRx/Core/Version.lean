@@ -7,6 +7,6 @@ def version : String := "0.1.0-dev"
 def leanToolchain : String := "leanprover/lean4:v4.33.0"
 
 /-- Major internal JavaScript runtime ABI version. -/
-def runtimeAbi : Nat := 16
+def runtimeAbi : Nat := 17
 
 end LeanRx

@@ -63,6 +63,43 @@ export function focus(node) {
   node.focus();
 }
 
+// The current location hash (ADR-0063). Generated code calls this once at
+// mount to seed the routed state field; an unknown or empty hash falls to the
+// declared default in generated code, not here.
+export function readHash() {
+  return location.hash;
+}
+
+// hashchange listener in the listen(...) style (ADR-0063): the host builds the
+// closure because generated code has none. dispatch receives (state, context,
+// hash) on every hashchange; the removal closure joins the mount's
+// listenerDisposers array explicitly — this is the first listener whose
+// lifetime is not rooted in the mounted subtree.
+export function listenHash(state, context, dispatch) {
+  const handler = () => dispatch(state, context, location.hash);
+  window.addEventListener("hashchange", handler);
+  return () => window.removeEventListener("hashchange", handler);
+}
+
+// Assigns the location hash (ADR-0063). Generated code writes it only when the
+// routed field flipped this commit, and a WHATWG equal-value assignment fires
+// no hashchange, so no echo loop exists.
+export function writeHash(value) {
+  location.hash = value;
+}
+
+// Synchronous localStorage read of one string, or null (ADR-0063).
+// Serialization lives in generated code; the host stays dumb.
+export function storageGet(key) {
+  return localStorage.getItem(key);
+}
+
+// Synchronous localStorage write of one string (ADR-0063). Generated code
+// calls it at most once per region-touching commit sweep.
+export function storageSet(key, value) {
+  localStorage.setItem(key, value);
+}
+
 let nextIdValue = 0;
 
 export function uniqueId(prefix) {

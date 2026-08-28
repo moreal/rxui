@@ -358,6 +358,17 @@ private def verifyToggle
   unless (checked.graph.graph.nodes.map (·.name)).toList.filter
       (fun name => name.startsWith "attr:") == ["attr:0:disabled"] do
     throw <| IO.userError "toggle hidden selection leaked into the planned graph"
+  /- The ADR-0063 route item: the sealed `#/`-shaped hash literal set mapped
+  one-to-one onto the filter field's existing state literals — the declared
+  `"all"` default plus the ADR-0051 filter table — on the filter state slot. -/
+  unless checked.spec.routes.toList.map (fun route => (route.field.index, route.arms)) ==
+      [(1, [("#/", "all"), ("#/active", "active"), ("#/completed", "completed")])] do
+    throw <| IO.userError "toggle route item lost its field or sealed arm table"
+  /- The ADR-0063 persist item: one sealed literal storage key targeting the
+  declared items region. -/
+  unless checked.spec.persists.toList.map (fun persist => (persist.region, persist.key)) ==
+      [("items", "leanrx-toggle-lab.items")] do
+    throw <| IO.userError "toggle persist item lost its region or sealed storage key"
 
 def run : IO Unit := do
   unless CounterSyntax_declarations.map SurfaceDecl.debug == [

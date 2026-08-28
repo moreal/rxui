@@ -256,7 +256,29 @@ now. The arm is unguarded, so Escape commits unconditionally: the draft
 clears, the controlled input follows to `""`, the Add button re-disables
 through its ADR-0057 reflection, and a subsequent Enter hits the skip guard
 as a whole-event no-op. Any other key still returns without touching the
-context. Once more: no host change and no runtime ABI bump. -/
+context. Once more: no host change and no runtime ABI bump.
+
+The ADR-0063 execution round closes the last TodoMVC parity axis — URL
+routing and localStorage persistence — as the one runtime ABI 17 bump: five
+sealed DOM-host exports (`readHash`, `listenHash`, `writeHash`, `storageGet`,
+`storageSet`) under the ADR-0048 pruning condition. `route filter := when
+"#/" "all" then when "#/active" "active" then when "#/completed" "completed"`
+maps the sealed `#/`-shaped hash literal set one-to-one onto the filter
+field's existing state literals: mount seeds the field through one `readHash`
+(an unknown or empty hash keeps the declared `"all"` default), every
+`hashchange` dispatches the same set-field transaction the filter buttons
+dispatch — the whole commit path reused, selection, filter sweep, and count
+labels included — and `writeHash` rides the set-field commit flip-only behind
+the field's changed flag, so an equal-value transaction writes nothing and
+the WHATWG equal-value hash assignment closes the echo loop. `persist items
+:= "leanrx-toggle-lab.items"` seals persistence onto the region row table
+under one sealed literal key: mount hydrates through the existing append path
+from one `storageGet` (a missing, empty, or wrong-arity value fails closed to
+the empty region), one `storageSet` rides the region-touch sweep per
+region-touching transaction — the ADR-0050/0051/0058 shared touched flag —
+and a filter change alone touches nothing and therefore persists nothing.
+Serialization lives in generated code as a throw-free split/join escape; the
+host moves strings only. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -292,6 +314,9 @@ component ToggleLab (schema := ToggleSchema) where {
     then when "Escape" (set draft "");
   filter items by filter := when "active" (done == "false")
     then when "completed" (done == "true");
+  route filter := when "#/" "all" then when "#/active" "active"
+    then when "#/completed" "completed";
+  persist items := "leanrx-toggle-lab.items";
   row items toggle (checked : String) := set done checked;
   row items edit := set mode "edit";
   row items retype (value : String) := set draft value;
