@@ -253,3 +253,27 @@ test("disposing the parent disposes the child, roster, and listeners", async ({ 
   });
   expect(stillAttached).toBe(false);
 });
+
+test("child instrumentation stays reachable through the parent disposer", async ({ page }) => {
+  // ADR-0066: the parent disposer's `children` array republishes each child
+  // mount return in declaration order, and parent disposal freezes the
+  // child's own counters without erasing that reachability.
+  await mountNest(page);
+  await page.getByRole("button", { name: "Pulse" }).click();
+  await expect(page.locator("#pulse-text")).toHaveText("Beats: 1");
+  const before = await page.evaluate(() => {
+    const children = globalThis.nestDispose.children;
+    return { count: children.length, snapshot: children[0].instrumentation() };
+  });
+  expect(before.count).toBe(1);
+  expect(before.snapshot[7].filter((event) => event === "transaction:commit")).toHaveLength(1);
+  await page.evaluate(() => {
+    globalThis.pulseButton = document.querySelector(".pulse button");
+    globalThis.nestDispose();
+  });
+  const after = await page.evaluate(() => {
+    globalThis.pulseButton.dispatchEvent(new Event("click", { bubbles: true }));
+    return globalThis.nestDispose.children[0].instrumentation();
+  });
+  expect(after).toEqual(before.snapshot);
+});

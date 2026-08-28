@@ -2283,7 +2283,15 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     .const disposer <| call runtime.makeDisposer ([
       .ident root, .array (.ofList disposers), .ident tx
     ] ++ (if dom.regionHandles.isEmpty then []
-      else [.array (.ofList (dom.regionHandles.map fun (_, handle) => Expr.ident handle))])),
+      else [.array (.ofList (dom.regionHandles.map fun (_, handle) => Expr.ident handle))]))
+  ] ++ (if dom.childOffs.isEmpty then [] else [
+    /- Child reachability (ADR-0066): the parent disposer republishes each
+    child's mount return in declaration order, so child instrumentation stays
+    reachable after the parent's dispose splices its listener list. The host
+    disposer surface is unchanged; only child-composed modules emit this. -/
+    Stmt.assign (.index (.ident disposer) (.literal (.string "children")))
+      (.array (.ofList (dom.childOffs.map Expr.ident)))
+  ]) ++ [
     .return (.ident disposer)
   ]
   let mount ← Ident.checked "mount"

@@ -3208,3 +3208,76 @@ stays one; row guards stay single-field remove-or-commit; row scope
 still has no `s!`; branch cells stay single-level two-branch with
 exact click/dblclick agreement; child instrumentation stays
 unreachable through the parent disposer.
+
+## Child instrumentation reachability — a decision-and-execution round (ADR-0066)
+
+### Scenario exercised
+
+The oldest carried invariant fell due for a decision: ADR-0039 phase 1
+left "the child's instrumentation is not reachable through the parent
+disposer" as future work, and every round since restated it. The
+survey walked the whole `<Child/>` disposer path in the generated
+artifacts: NestLab turned out to be the *only* child-composing module
+(EchoLab shares the component gates but composes nothing, and no bench
+source has a capitalized child head), the child mount return —
+dispose closure plus all three instrumentation accessors — joins the
+parent's `makeDisposer` listener list and nothing else, and the
+dispose-time splice erases even that. ADR-0066 adopts reachability as
+the one contract: child-composing modules emit
+`disposer["children"] = [child_off_0];` between the disposer
+construction and the return, republishing the child mount returns in
+declaration order. Counter merging and a host-side accessor are
+rejected in the same ADR.
+
+### What was pleasant
+
+The representability question answered itself from the AST: `Expr` has
+no function form, so the aggregating-accessor design was dead on
+arrival without a host change — which the freeze forbids — and the
+one representable spelling (`Stmt.assign` on an index target) was also
+the best design. Because the array element *is* the child's mount
+return, every facet — `instrumentation()`, `regionInstrumentation()`,
+even a future grandchild's `children` — composes transitively with
+zero new vocabulary. The `dom.childOffs.isEmpty` guard made the freeze
+argument structural: one line in NestLab.mjs is the entire generated
+diff in the repository, and every manifest is byte-identical.
+
+### Friction encountered
+
+None mechanical. The one design snag was the affordance question:
+republishing the child disposer also republishes early disposal. The
+ADR-0065 invariant resolved it cleanly — the child's mount return is
+already the child module's public ABI and its `disposed` flag already
+makes calls idempotent, so the parent adds reachability, not
+semantics; an affordance, not a contract.
+
+### Bugs found
+
+None. The survey confirmed disposal chaining itself was always correct
+(the splice calls the child disposer, idempotently), so the gap was
+purely observational — exactly the kind of gap the instrumentation
+surface exists to close.
+
+### Performance observations
+
+Frozen by construction: the benchmark bundle composes no children, so
+the emitted statement never appears in it; the size gate passes against
+the unchanged byte-identity baseline, and BENCHMARK.md numbers stand.
+The new gate costs one browser test: after a Pulse click and a parent
+dispose, `nestDispose.children[0].instrumentation()` returns the same
+ten-slot snapshot before and after a synthetic click on the detached
+child button — reachability plus frozen counters in one assertion.
+
+### Follow-up issue or commit
+
+`feat(component): reach child instrumentation through the parent
+disposer (ADR-0066)` — the backend emission, the artifacts pin, the
+browser gate, the ADR, the DECISIONS.md row, and this record.
+ADR-0039's future-work sentence is discharged; the invariant list
+shrinks by one. Open: transitivity is untested until a lab nests two
+levels (ADR-0066 OQ1), and aggregation stays in the consumer if one
+ever exists (OQ2). The other invariants hold: the key set stays sealed
+at Enter/Escape; the guard literal stays `""`; the count-label literal
+stays one; row guards stay single-field remove-or-commit; row scope
+still has no `s!`; branch cells stay single-level two-branch with
+exact click/dblclick agreement.

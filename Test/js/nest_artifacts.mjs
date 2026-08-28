@@ -82,6 +82,10 @@ for (const required of [
   "  setText(childAt(childAt(row, 0), 0), item[1] + item[2]);",
   "  setText(childAt(childAt(row, 1), 0), item[3]);",
   "makeDisposer(node_0, [child_off_0, off_0, off_1, region_off_0, region_off_0_input, region_off_0_keydown, region_0[\"dispose\"]], tx, [region_0])",
+  // ADR-0066: the parent disposer republishes the child mount returns in
+  // declaration order, so child instrumentation stays reachable after the
+  // parent dispose splices its listener list.
+  "disposer[\"children\"] = [child_off_0];",
 ]) {
   if (!nestSource.includes(required)) {
     throw new Error(`generated Nest Lab is missing ${required}`);
