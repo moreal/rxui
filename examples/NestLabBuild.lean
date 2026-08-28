@@ -18,15 +18,22 @@ private def emitComponent (directory : System.FilePath) (moduleName graphName : 
   IO.FS.writeFile (directory / graphName) (checked.graph.toJson ++ "\n")
 
 def generateInto (directory : System.FilePath) : IO Unit := do
-  match Tick_spec.check, Pulse_spec.check, NestLab_spec.check with
-  | .error error, _, _ =>
+  match Blip_spec.check, Chip_spec.check, Tick_spec.check, Pulse_spec.check,
+      NestLab_spec.check with
+  | .error error, _, _, _, _ =>
+      throw <| IO.userError s!"Blip component invalid: {error.code}"
+  | _, .error error, _, _, _ =>
+      throw <| IO.userError s!"Chip component invalid: {error.code}"
+  | _, _, .error error, _, _ =>
       throw <| IO.userError s!"Tick component invalid: {error.code}"
-  | _, .error error, _ =>
+  | _, _, _, .error error, _ =>
       throw <| IO.userError s!"Pulse component invalid: {error.code}"
-  | _, _, .error error =>
+  | _, _, _, _, .error error =>
       throw <| IO.userError s!"Nest component invalid: {error.code}"
-  | .ok tick, .ok pulse, .ok nest => do
+  | .ok blip, .ok chip, .ok tick, .ok pulse, .ok nest => do
       IO.FS.createDirAll directory
+      emitComponent directory "Blip.mjs" "Blip.graph.json" blip
+      emitComponent directory "Chip.mjs" "Chip.graph.json" chip
       emitComponent directory "Tick.mjs" "Tick.graph.json" tick
       emitComponent directory "Pulse.mjs" "Pulse.graph.json" pulse
       emitComponent directory "NestLab.mjs" "Nest.graph.json" nest

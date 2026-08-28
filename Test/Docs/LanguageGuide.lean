@@ -473,6 +473,21 @@ component PropNestMini (schema := PropNestMiniSchema) where {
   ];
 }
 
+/- The prop-forwarding snippet from guide section 7 (ADR-0068). -/
+abbrev PropForwardMiniSchema : Schema := .field "forwards" Int .empty
+
+def forwards : Field PropForwardMiniSchema Int := .here
+
+component PropForwardMini (schema := PropForwardMiniSchema) where {
+  state forwards : Int := 0;
+  prop heading : String;
+  event host := set forwards (forwards + 1);
+  view := jsx% <main> [
+    <button type="button" onClick={host}> ["Host"],
+    <TitledMini title={heading}/>
+  ];
+}
+
 def run : IO Unit := do
   unless doubled.dependencies.ids == [0] && countText.dependencies.ids == [0] do
     throw <| IO.userError "language-guide expression dependencies changed"
@@ -714,9 +729,16 @@ def run : IO Unit := do
   match TitledMini_check, PropNestMini_check with
   | .ok titled, .ok host =>
       unless titled.spec.propNames == ["title"] &&
-          host.view.childRefs.map (·.props) == [[("title", "Hello")]] do
+          host.view.childRefs.map (·.props) == [[("title", .lit "Hello")]] do
         throw <| IO.userError "language-guide prop snippets lost their bindings"
   | .error error, _ | _, .error error =>
       throw <| IO.userError s!"language-guide prop component rejected: {error.render}"
+  match PropForwardMini_check with
+  | .ok forwarding =>
+      unless forwarding.spec.propNames == ["heading"] &&
+          forwarding.view.childRefs.map (·.props) == [[("title", .forward 0)]] do
+        throw <| IO.userError "language-guide forwarding snippet lost its forward"
+  | .error error =>
+      throw <| IO.userError s!"language-guide forwarding component rejected: {error.render}"
 
 end LeanRxTest.Docs.LanguageGuide

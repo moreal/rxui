@@ -51,28 +51,61 @@ const tickManifest = JSON.parse(
 if (
   tickManifest.module !== "Tick.mjs" ||
   JSON.stringify(tickManifest.hostImports) !==
-    JSON.stringify(["./leanrx_dom.mjs"]) ||
+    JSON.stringify(["./leanrx_dom.mjs", "./Blip.mjs", "./Chip.mjs"]) ||
   JSON.stringify(tickManifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
-    "immutable-props",
+    "child-components", "immutable-props",
   ])
 ) {
   throw new Error("generated Tick manifest is invalid");
 }
 
+const blipManifest = JSON.parse(
+  await readFile(path.join(directory, "Blip.mjs.manifest.json"), "utf8"),
+);
+if (
+  blipManifest.module !== "Blip.mjs" ||
+  JSON.stringify(blipManifest.hostImports) !==
+    JSON.stringify(["./leanrx_dom.mjs"]) ||
+  JSON.stringify(blipManifest.features) !== JSON.stringify([
+    "scalar", "events", "transactions", "instrumentation", "trace",
+    "immutable-props",
+  ])
+) {
+  throw new Error("generated Blip manifest is invalid");
+}
+
+const chipManifest = JSON.parse(
+  await readFile(path.join(directory, "Chip.mjs.manifest.json"), "utf8"),
+);
+if (
+  chipManifest.module !== "Chip.mjs" ||
+  JSON.stringify(chipManifest.hostImports) !==
+    JSON.stringify(["./leanrx_dom.mjs"]) ||
+  JSON.stringify(chipManifest.features) !== JSON.stringify([
+    "scalar", "events", "transactions", "instrumentation", "trace",
+    "immutable-props",
+  ])
+) {
+  throw new Error("generated Chip manifest is invalid");
+}
+
 const nestSource = await readFile(path.join(directory, "NestLab.mjs"), "utf8");
 const pulseSource = await readFile(path.join(directory, "Pulse.mjs"), "utf8");
 const tickSource = await readFile(path.join(directory, "Tick.mjs"), "utf8");
+const blipSource = await readFile(path.join(directory, "Blip.mjs"), "utf8");
+const chipSource = await readFile(path.join(directory, "Chip.mjs"), "utf8");
 for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
   if (nestSource.includes(banned) || pulseSource.includes(banned) ||
-      tickSource.includes(banned)) {
+      tickSource.includes(banned) || blipSource.includes(banned) ||
+      chipSource.includes(banned)) {
     throw new Error(`generated Nest Lab contains ${banned}`);
   }
 }
 for (const required of [
   "import { mount as $lrx_child_0 } from \"./Pulse.mjs\";",
   "import { createKeyedRegion } from \"./leanrx_region.mjs\";",
-  "const child_off_0 = $lrx_child_0(node_0, [\"Pulse child\"]);",
+  "const child_off_0 = $lrx_child_1(node_0, [\"Pulse child\"]);",
   "const region_0 = createKeyedRegion(node_9, $lrx_region_0_row, $lrx_region_0_update, $lrx_region_0_dispose);",
   // ADR-0046: one structural delegated listener per bound event kind, each
   // with its own per-cell action array, sharing one dispatch function.
@@ -116,7 +149,10 @@ for (const required of [
   // return on its own disposer, so `children[0].children[0]` reaches the
   // grandchild from the root disposer with no new vocabulary.
   "import { mount as $lrx_child_0 } from \"./Tick.mjs\";",
-  "const child_off_0 = $lrx_child_0(node_0, [\"Tick child\"]);",
+  // ADR-0068: `label={title}` forwards the parent's own immutable prop —
+  // the nested mount call reads the parent's positional mount argument
+  // instead of a sealed literal, still a mount-time constant.
+  "const child_off_0 = $lrx_child_0(node_0, [props[0]]);",
   "disposer[\"children\"] = [child_off_0];",
 ]) {
   if (!pulseSource.includes(required)) {
@@ -126,13 +162,47 @@ for (const required of [
 for (const required of [
   "function mount(target, props)",
   "createText(props[0])",
+  // ADR-0069: re-forwarding is transitive with no new vocabulary — the
+  // module that received its prop by forwarding forwards it again through
+  // exactly the ADR-0068 call shape, reading its own positional mount
+  // argument. ADR-0070: the same received prop fans out into two leaves —
+  // one aliased import, one forwarded call, and one disposer entry per
+  // child, all in declaration order. ADR-0071: composing the same child
+  // module twice reuses the one aliased import while each reference keeps
+  // its own mount call, its own prop list (one forward, one literal), and
+  // its own disposer entry.
+  "import { mount as $lrx_child_0 } from \"./Blip.mjs\";",
+  "import { mount as $lrx_child_1 } from \"./Chip.mjs\";",
+  "const child_off_0 = $lrx_child_0(node_0, [props[0]]);",
+  "const child_off_1 = $lrx_child_1(node_0, [props[0]]);",
+  "const child_off_2 = $lrx_child_1(node_0, [\"fixed chip\"]);",
+  "disposer[\"children\"] = [child_off_0, child_off_1, child_off_2];",
 ]) {
   if (!tickSource.includes(required)) {
     throw new Error(`generated Tick is missing ${required}`);
   }
 }
-if (tickSource.includes("$lrx_child") || tickSource.includes("Tick.mjs")) {
-  throw new Error("generated Tick module unexpectedly nests children");
+// ADR-0071: the child table dedups by module name, so the second Chip
+// reference never allocates a third aliased import.
+if (tickSource.includes("$lrx_child_2")) {
+  throw new Error("generated Tick duplicated an aliased child import");
+}
+for (const required of [
+  "function mount(target, props)",
+  "createText(props[0])",
+]) {
+  if (!blipSource.includes(required)) {
+    throw new Error(`generated Blip is missing ${required}`);
+  }
+  if (!chipSource.includes(required)) {
+    throw new Error(`generated Chip is missing ${required}`);
+  }
+}
+if (blipSource.includes("$lrx_child") || blipSource.includes("Blip.mjs")) {
+  throw new Error("generated Blip module unexpectedly nests children");
+}
+if (chipSource.includes("$lrx_child") || chipSource.includes("Chip.mjs")) {
+  throw new Error("generated Chip module unexpectedly nests children");
 }
 
 const generated = await import(pathToFileURL(path.join(directory, "NestLab.mjs")).href);

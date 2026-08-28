@@ -127,13 +127,66 @@ private partial def rewriteEventRefs (events : List String) (stx : Syntax) : Syn
 private def sepByElems (stx : Syntax) : Array Syntax :=
   (Array.range ((stx.getNumArgs + 1) / 2)).map fun index => stx[2 * index]
 
+private def literalPropAttr? (props : List String)
+    (attr : TSyntax `leanrxJsxAttr) : Bool :=
+  match attr with
+  | `(leanrxJsxAttr| $_:ident = $_:str) => true
+  | `(leanrxJsxAttr| $_:ident = propRef% $_:num) => true
+  | `(leanrxJsxAttr| $_:ident = { $value:term }) =>
+      value.raw.isIdent && props.contains value.raw.getId.eraseMacroScopes.toString
+  | _ => false
+
+/-- The head identifier of one child-less JSX element whose attributes are all
+`name="text"`, `name={parentProp}` for a declared immutable prop of this
+component, or the rewritten `name = propRef% index` — the only shapes that can
+lower to a static child component reference, without (ADR-0039) or with
+(ADR-0042) immutable props, literal or forwarded (ADR-0068). -/
+private def childElementHead? (props : List String) (stx : Syntax) :
+    Option (TSyntax `ident) :=
+  let element : TSyntax `leanrxJsxElement := ⟨stx⟩
+  match element with
+  | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* />) =>
+      if attrs.all (literalPropAttr? props) then some tag else none
+  | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* > [$children:leanrxJsxChild,*]) =>
+      if attrs.all (literalPropAttr? props) && children.getElems.isEmpty then some tag else none
+  | _ => none
+
+/-- Rewrite one child-element attribute `name={parentProp}` to the internal
+`name = propRef% index` shape when the value identifier names a declared
+immutable prop of this component (ADR-0068); the index is the parent's prop
+declaration index, resolved here where the inventory exists. -/
+private def rewriteForwardAttr (props : List String) (stx : Syntax) : Syntax :=
+  match stx with
+  | .node info kind args =>
+      if kind == ``LeanRxDsl.leanrxJsxAttrDynamic && args.size == 5 &&
+          args[3]!.isIdent then
+        match props.idxOf? (args[3]!.getId.eraseMacroScopes.toString) with
+        | some index =>
+            let ref := args[3]!.getHeadInfo
+            .node info ``LeanRxDsl.leanrxJsxAttrPropRef
+              #[args[0]!, args[1]!, .atom ref "propRef%",
+                Syntax.mkNumLit (toString index) (info := ref)]
+        | none => stx
+      else stx
+  | _ => stx
+
+private partial def rewriteForwardAttrs (props : List String) (stx : Syntax) : Syntax :=
+  match rewriteForwardAttr props stx with
+  | .node info kind args => .node info kind (args.map (rewriteForwardAttrs props))
+  | other => other
+
 /-- Rewrite `{propName}` children of an inline view to the internal
 `propText% index` child when the identifier names a declared immutable prop
-(ADR-0042). -/
+(ADR-0042), and `name={propName}` attributes of capitalized child elements to
+the internal `name = propRef% index` forwarding shape (ADR-0068). The attr
+rewrite is scoped to child-shaped component heads so a controlled input's
+`value={field}` binding can never be claimed by a prop of the same name. -/
 private partial def rewritePropRefs (props : List String) (stx : Syntax) : Syntax :=
   match stx with
   | .node info kind args =>
-      if kind == ``LeanRxDsl.leanrxJsxChildDynamic && args.size == 3 &&
+      if (childElementHead? props stx |>.filter componentHead?).isSome then
+        rewriteForwardAttrs props stx
+      else if kind == ``LeanRxDsl.leanrxJsxChildDynamic && args.size == 3 &&
           args[1]!.isIdent then
         match props.idxOf? (args[1]!.getId.eraseMacroScopes.toString) with
         | some index =>
@@ -1106,32 +1159,18 @@ private def elabRegionItem (item : Syntax) (itemSpan : TSyntax `term)
       $extraTerms,*]
     $itemSpan)
 
-private def literalPropAttr? (attr : TSyntax `leanrxJsxAttr) : Bool :=
-  match attr with
-  | `(leanrxJsxAttr| $_:ident = $_:str) => true
-  | _ => false
-
-/-- The head identifier of one child-less JSX element whose attributes are all
-`name="text"` — the only shapes that can lower to a static child component
-reference, without (ADR-0039) or with (ADR-0042) immutable props. -/
-private def childElementHead? (stx : Syntax) : Option (TSyntax `ident) :=
-  let element : TSyntax `leanrxJsxElement := ⟨stx⟩
-  match element with
-  | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* />) =>
-      if attrs.all literalPropAttr? then some tag else none
-  | `(leanrxJsxElement| <$tag:ident $attrs:leanrxJsxAttr* > [$children:leanrxJsxChild,*]) =>
-      if attrs.all literalPropAttr? && children.getElems.isEmpty then some tag else none
-  | _ => none
-
 /-- Collect every capitalized head that the inline view could lower to a
-`View.child` reference, in first-occurrence order. -/
-private partial def collectComponentHeads (stx : Syntax)
+`View.child` reference, in first-occurrence order; `props` is the declared
+immutable prop inventory that admits `name={parentProp}` forwarding attrs
+(ADR-0068). -/
+private partial def collectComponentHeads (props : List String) (stx : Syntax)
     (found : Array (TSyntax `ident) := #[]) : Array (TSyntax `ident) :=
-  let found := match childElementHead? stx with
+  let found := match childElementHead? props stx with
     | some tag => if componentHead? tag then found.push tag else found
     | none => found
   match stx with
-  | .node _ _ args => args.foldl (init := found) fun acc arg => collectComponentHeads arg acc
+  | .node _ _ args => args.foldl (init := found) fun acc arg =>
+      collectComponentHeads props arg acc
   | _ => found
 
 /- The single command elaborator now dispatches nine item kinds; compiling
@@ -1435,7 +1474,7 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
             /- The child table mirrors the jsx lowering: an attr-less capitalized
             head becomes a `View.child` reference exactly when `{name}_spec` is
             in scope, so collect those heads into `ComponentSpec.children`. -/
-            for tag in collectComponentHeads value.raw do
+            for tag in collectComponentHeads declaredProps value.raw do
               if ← liftTermElabM (resolvesToComponentSpec tag) then
                 let shortName := componentShortName tag
                 unless childNames.contains shortName do

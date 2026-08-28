@@ -69,6 +69,10 @@
 | [0065](docs/adr/0065-affordance-contract-alignment.md) | Accepted | Reject the affordance-contract alignment check — affordance predicates are presentation policy and the dispatch layer stays the one contract | 2026-08-28 |
 | [0066](docs/adr/0066-child-instrumentation-reachability.md) | Accepted | Reach child instrumentation through the parent disposer's `children` array — republish child mount returns in generated code; reject counter merging and host accessors | 2026-08-28 |
 | [0067](docs/adr/0067-transitive-child-composition.md) | Accepted | Transitive child composition needs no new vocabulary — the ADR-0066 republication applies per level and `children[i].children[j]` is the composed surface, pinned by the two-level NestLab | 2026-08-28 |
+| [0068](docs/adr/0068-parent-prop-forwarding.md) | Accepted | A child prop value may be exactly one declared immutable prop of the parent — `label={title}` lowers to a `ChildProp.forward` index and mounts as `props[i]`, still a mount-time constant; everything else stays rejected | 2026-08-28 |
+| [0069](docs/adr/0069-transitive-prop-reforwarding.md) | Accepted | Transitive prop re-forwarding needs no new vocabulary — the forwarding rewrite never asks where the parent's value came from, so a chain is per-level ADR-0068 links, pinned by the three-level NestLab | 2026-08-28 |
+| [0070](docs/adr/0070-fanout-prop-reforwarding.md) | Accepted | Fan-out prop re-forwarding needs no new vocabulary — the child table, aliased imports, and `children` republication all scale by declaration order, so two forwards of one received prop are independent ADR-0068 links, pinned by the `Chip` sibling leaf | 2026-08-28 |
+| [0071](docs/adr/0071-repeated-child-composition.md) | Accepted | Repeated composition of the same child needs no new vocabulary — the table dedups by name (one aliased import) while every reference keeps its own `ChildProp` list and `child_off_{n}`, pinned by the second `Chip` instance mixing a forward with a literal | 2026-08-28 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

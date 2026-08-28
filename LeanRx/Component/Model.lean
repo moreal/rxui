@@ -985,6 +985,16 @@ private def validateChildComponents (spec : ComponentSpec Γ)
         message := s!"view references unknown child component {reference.name}"
         spans := #[reference.span]
       }
+    /- A forwarded child prop reads one of this component's own immutable
+    props at mount (ADR-0068); the declaration index must exist. -/
+    for (bound, value) in reference.props do
+      if let .forward field := value then
+        unless field < spec.props.size do
+          throw {
+            code := "LRX-VIEW-044"
+            message := s!"child prop {bound} forwards parent prop index {field}, but only {spec.props.size} immutable props are declared"
+            spans := #[reference.span]
+          }
 
 /- Row event bindings bound anywhere inside one row-template subtree; a
 branch cell contributes the bindings of both of its sealed subtrees. -/

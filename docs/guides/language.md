@@ -863,6 +863,29 @@ component TitledMini (schema := TitledMiniSchema) where {
 }
 ```
 
+A parent that itself declares immutable props may forward one into a child
+prop (ADR-0068): `<TitledMini title={heading}/>` passes the parent's own
+`heading` prop — the value the parent received at mount, still a mount-time
+constant — and the generated call reads the parent's positional mount
+argument (`$lrx_child_0(node, [props[0]])`). The forwarded value is exactly
+one declared prop identifier: concatenation, interpolation, `rx%` staging,
+and state or derived references are not forwardable (reactive child props
+would contradict the immutable-prop contract), a root component without
+props has nothing to forward, and forwarding into a head without a checked
+spec reports `LRX-ELAB-130`:
+
+```lean
+component PropForwardMini (schema := PropForwardMiniSchema) where {
+  state forwards : Int := 0;
+  prop heading : String;
+  event host := set forwards (forwards + 1);
+  view := jsx% <main> [
+    <button type="button" onClick={host}> ["Host"],
+    <TitledMini title={heading}/>
+  ];
+}
+```
+
 ```lean
 component CounterExplicitSyntax (schema := CounterSchema) where {
   state count := ValueSpec.state count (.int 1);

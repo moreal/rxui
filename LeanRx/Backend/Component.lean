@@ -1307,7 +1307,8 @@ mutual
     | .cons (.child childName propValues) tail, state => do
         /- The child's `mount(parent)` appends its root right here, so document
         order is preserved without a wrapper element (ADR-0039); immutable prop
-        values ride the call as one positional array (ADR-0042). -/
+        values ride the call as one positional array (ADR-0042), a forwarded
+        value reading the parent's own positional mount argument (ADR-0068). -/
         let mountName ← match childMounts.find? (·.1 == childName) with
           | some entry => pure entry.2
           | none => .error {
@@ -1318,7 +1319,9 @@ mutual
           s!"child_off_{state.childOffs.length}"
         let state := { state with allocator, childOffs := state.childOffs ++ [off] }
         let args := [Expr.ident parent] ++ (if propValues.isEmpty then []
-          else [Expr.array (.ofList (propValues.map fun value => .literal (.string value)))])
+          else [Expr.array (.ofList (propValues.map fun value => match value with
+            | .lit text => .literal (.string text)
+            | .forward field => .index (.ident propsName) (uint field)))])
         let state := appendStatement state <| .const off <| call mountName args
         mountChildren runtime stateName propsName valueCount sinks childMounts
           regionMounts parent path (index + 1) tail state

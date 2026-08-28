@@ -92,6 +92,11 @@ lowering. Every other dynamic `checked` value keeps its ADR-0038 controlled
 reflection meaning. -/
 scoped syntax (name := leanrxJsxAttrRegionChecked)
   "regionChecked%" str (num str)? : leanrxJsxAttr
+/- Internal target of the component command's prop-forwarding rewrite
+(ADR-0068); a child element attribute `name={parentProp}` whose value is one
+of the parent's declared immutable props becomes `name = propRef% index`
+before lowering, carrying the parent's prop declaration index. -/
+scoped syntax (name := leanrxJsxAttrPropRef) ident "=" "propRef%" num : leanrxJsxAttr
 
 declare_syntax_cat leanrxJsxChild
 declare_syntax_cat leanrxJsxElement
@@ -268,32 +273,40 @@ elab "leanrx_jsx_component% " name:ident marker:str : term <= expectedType => do
     Term.elabTerm name expectedType
 
 /-- A capitalized self-closing element whose attributes are all `name="text"`
-nests the checked component `{name}_spec` with immutable prop values when one
-is in scope (ADR-0042); the bindings must match the child's declared prop names
-and order exactly. Without a checked spec the element stays an ordinary typed
-component call. -/
-elab "leanrx_jsx_component_props% " name:ident marker:str pairs:str* : term <= expectedType => do
+or `name = propRef% index` nests the checked component `{name}_spec` with
+immutable prop values when one is in scope (ADR-0042); the bindings must match
+the child's declared prop names and order exactly. A `propRef%` value forwards
+one of the parent's own immutable props by declaration index (ADR-0068) —
+still a mount-time constant — and has no typed-application meaning, so it
+requires the checked spec. Without one, literal bindings stay an ordinary
+typed component call. -/
+elab "leanrx_jsx_component_props% " name:ident marker:str pairs:(str <|> num)* : term <= expectedType => do
   let bindings := (List.range (pairs.size / 2)).map fun index =>
-    ((pairs[2 * index]!).getString, (pairs[2 * index + 1]!).getString)
+    ((pairs[2 * index]!).raw, (pairs[2 * index + 1]!).raw)
+  let boundNames := bindings.map fun (bound, _) => (bound.isStrLit?).getD ""
   if ← resolvesToComponentSpec name then
     let declared ← componentPropNames name
-    unless bindings.map (·.1) == declared do
+    unless boundNames == declared do
       throwErrorAt name
-        s!"error[LRX-ELAB-112]: child component {componentShortName name} declares immutable props ({renderNames declared}); got ({renderNames (bindings.map (·.1))}) — bindings must match the declaration names and order"
+        s!"error[LRX-ELAB-112]: child component {componentShortName name} declares immutable props ({renderNames declared}); got ({renderNames boundNames}) — bindings must match the declaration names and order"
     let nameLit := Syntax.mkStrLit (componentShortName name)
     let pairTerms ← bindings.mapM fun (bound, value) => do
-      let boundLit := Syntax.mkStrLit bound
-      let valueLit := Syntax.mkStrLit value
-      `(($boundLit, $valueLit))
+      let boundLit : TSyntax `str := ⟨bound⟩
+      if value.isStrLit?.isSome then
+        `(($boundLit, LeanRx.ChildProp.lit $(⟨value⟩)))
+      else
+        `(($boundLit, LeanRx.ChildProp.forward $(⟨value⟩)))
     Term.elabTerm (← `(LeanRx.View.child $nameLit (leanrx_source_span% $marker)
       (props := [$(pairTerms.toArray),*]))) expectedType
   else
     let mut result : TSyntax `term := ⟨name.raw⟩
-    for (bound, value) in bindings do
-      let boundIdent := mkIdentFrom name (Name.mkSimple bound)
-      let boundLit := Syntax.mkStrLit bound
-      let valueLit := Syntax.mkStrLit value
-      result ← `($result ($boundIdent:ident := leanrx_jsx_prop% $boundLit $valueLit))
+    for ((bound, value), boundName) in bindings.zip boundNames do
+      if value.isStrLit?.isNone then
+        throwErrorAt name
+          s!"error[LRX-ELAB-130]: {componentShortName name} does not resolve to a checked component spec; forwarding a parent prop with {boundName}=\{…} nests checked child components only"
+      let boundIdent := mkIdentFrom name (Name.mkSimple boundName)
+      let boundLit : TSyntax `str := ⟨bound⟩
+      result ← `($result ($boundIdent:ident := leanrx_jsx_prop% $boundLit $(⟨value⟩)))
     Term.elabTerm result expectedType
 
 private def componentCall (tag : TSyntax `ident) (attrs : Array Syntax) :
@@ -319,17 +332,22 @@ macro_rules
       `(LeanRx.View.scalarText $name $value)
   | `(leanrx_jsx_child% $element:leanrxJsxElement) => `(leanrx_jsx_typed% $element)
 
-/-- The `name="text"` pairs of one attribute array, when every attribute has
-that shape — the only shape that can carry immutable child props (ADR-0042). -/
+/-- The `name="text"` and rewritten `name = propRef% index` pairs of one
+attribute array, when every attribute has one of those shapes — the only
+shapes that can carry immutable child props: literals (ADR-0042) and
+forwarded parent props (ADR-0068). -/
 private def literalPropPairs (attrs : Array Syntax) :
-    Option (Array (TSyntax `str)) := Id.run do
-  let mut pairs : Array (TSyntax `str) := #[]
+    Option (Array (TSyntax [`str, `num])) := Id.run do
+  let mut pairs : Array (TSyntax [`str, `num]) := #[]
   for attr in attrs do
     let attrStx : TSyntax `leanrxJsxAttr := ⟨attr⟩
     match attrStx with
     | `(leanrxJsxAttr| $name:ident = $value:str) =>
         pairs := pairs.push ⟨Syntax.mkStrLit name.getId.toString (info := name.raw.getHeadInfo)⟩
-        pairs := pairs.push value
+        pairs := pairs.push ⟨value.raw⟩
+    | `(leanrxJsxAttr| $name:ident = propRef% $index:num) =>
+        pairs := pairs.push ⟨Syntax.mkStrLit name.getId.toString (info := name.raw.getHeadInfo)⟩
+        pairs := pairs.push ⟨index.raw⟩
     | _ => return none
   return some pairs
 

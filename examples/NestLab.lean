@@ -8,11 +8,36 @@ view resolves against the checked `Pulse_spec` in scope and lowers to a
 `mount(target, props)` call, so the generated `NestLab.mjs` imports `mount`
 from `./Pulse.mjs`, mounts the child in document order without a wrapper
 element, and folds the child's disposer into its own. Composition is
-transitive (ADR-0067): `Pulse` itself composes `<Tick label="…"/>` through
+transitive (ADR-0067): `Pulse` itself composes `<Tick label={title}/>` through
 the same child table, so the generated `Pulse.mjs` imports `mount` from
 `./Tick.mjs` and republishes the grandchild's mount return on its own
 disposer's `children` array (ADR-0066), making the grandchild's
-instrumentation reachable as `children[0].children[0]` from the root. The `roster` region is a
+instrumentation reachable as `children[0].children[0]` from the root. The
+`label={title}` attribute forwards Pulse's own immutable `title` prop into
+the grandchild's prop (ADR-0068): the value stays a mount-time constant, the
+generated call reads the parent's positional mount argument —
+`$lrx_child_0(node_0, [props[0]])` — and the grandchild therefore renders the
+root-supplied literal two levels down. Re-forwarding is transitive
+(ADR-0069): `Tick` forwards the `label` it received the same way into the
+leaf `Blip` through `<Blip note={label}/>` — each level reads its own
+positional prop, the forwarding rewrite never asks where the parent's value
+came from, so the great-grandchild renders the root-supplied literal three
+levels down and its instrumentation is reachable as
+`children[0].children[0].children[0]`. Re-forwarding also fans out
+(ADR-0070): `Tick` forwards the same received `label` into a second leaf
+through `<Chip tag={label}/>`, so the child table, the aliased imports, and
+the disposer's `children` array each scale by declaration order — both leaves
+render the root-supplied literal and the sibling is reachable as
+`children[0].children[0].children[1]`. Repeated composition of the same
+child module is plain composition too (ADR-0071): `Tick` composes `Chip` a
+second time through `<Chip tag="fixed chip"/>` — the child table stays
+deduplicated by name (one aliased import), while every reference keeps its
+own `ChildProp` list and its own `child_off_{n}`, so the forwarded and the
+literal instance mount through one import with fully independent props and
+state, the third instance is reachable as
+`children[0].children[0].children[2]`, and the leaf template uses classes
+(`.chip-tag`/`.chip-text`) rather than ids so two instances never collide
+on a duplicate id. The `roster` region is a
 keyed list built entirely by the generic backend: `append roster (…)` pushes
 rows with region-owned monotone keys, the sealed row template renders the
 concatenation `{label ++ marks}` and selects the row class from the `marks`
@@ -30,11 +55,41 @@ namespace LeanRxExamples.NestLab
 
 open LeanRx
 
+abbrev BlipSchema : Schema := .field "blips" Int .empty
+
+def blips : Field BlipSchema Int := .here
+
 abbrev TickSchema : Schema := .field "ticks" Int .empty
 
 def ticks : Field TickSchema Int := .here
 
 open scoped LeanRxDsl
+
+component Blip (schema := BlipSchema) where {
+  state blips : Int := 0;
+  prop note : String;
+  event blip := set blips (blips + 1);
+  view := jsx% <div class="blip"> [
+    <span id="blip-note"> [{note}],
+    <button type="button" onClick={blip}> ["Blip"],
+    <p id="blip-text"> [{"blipText": rx% s!"Blips: {blips}"}]
+  ];
+}
+
+abbrev ChipSchema : Schema := .field "chips" Int .empty
+
+def chips : Field ChipSchema Int := .here
+
+component Chip (schema := ChipSchema) where {
+  state chips : Int := 0;
+  prop tag : String;
+  event chip := set chips (chips + 1);
+  view := jsx% <div class="chip"> [
+    <span class="chip-tag"> [{tag}],
+    <button type="button" onClick={chip}> ["Chip"],
+    <p class="chip-text"> [{"chipText": rx% s!"Chips: {chips}"}]
+  ];
+}
 
 component Tick (schema := TickSchema) where {
   state ticks : Int := 0;
@@ -43,7 +98,10 @@ component Tick (schema := TickSchema) where {
   view := jsx% <div class="tick"> [
     <h3 id="tick-label"> [{label}],
     <button type="button" onClick={tick}> ["Tick"],
-    <p id="tick-text"> [{"tickText": rx% s!"Ticks: {ticks}"}]
+    <p id="tick-text"> [{"tickText": rx% s!"Ticks: {ticks}"}],
+    <Blip note={label}/>,
+    <Chip tag={label}/>,
+    <Chip tag="fixed chip"/>
   ];
 }
 
@@ -59,7 +117,7 @@ component Pulse (schema := PulseSchema) where {
     <h2 id="pulse-title"> [{title}],
     <button type="button" onClick={pulse}> ["Pulse"],
     <p id="pulse-text"> [{"pulseText": rx% s!"Beats: {beats}"}],
-    <Tick label="Tick child"/>
+    <Tick label={title}/>
   ];
 }
 

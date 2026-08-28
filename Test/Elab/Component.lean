@@ -67,7 +67,7 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
     throw <| IO.userError "child component table lost the module specifier convention"
   unless checked.view.childRefs.map (fun ref => (ref.name, ref.path)) == [("Pulse", [5])] do
     throw <| IO.userError "view split lost the mounted child reference"
-  unless checked.view.childRefs.map (·.props) == [[("title", "Pulse child")]] do
+  unless checked.view.childRefs.map (·.props) == [[("title", .lit "Pulse child")]] do
     throw <| IO.userError "view split lost the immutable child prop bindings"
   unless checked.spec.regions.toList.map (·.name) == ["roster"] do
     throw <| IO.userError "region table lost the roster declaration"
@@ -416,8 +416,11 @@ def run : IO Unit := do
       unless checked.view.childRefs.map (fun ref => (ref.name, ref.path)) ==
           [("Tick", [3])] do
         throw <| IO.userError "intermediate child component lost its grandchild reference"
-      unless checked.view.childRefs.map (·.props) == [[("label", "Tick child")]] do
-        throw <| IO.userError "intermediate child component lost its grandchild prop values"
+      /- ADR-0068: `label={title}` forwards the parent's own immutable prop
+      by declaration index; the reference carries the forward, not a
+      literal. -/
+      unless checked.view.childRefs.map (·.props) == [[("label", .forward 0)]] do
+        throw <| IO.userError "intermediate child component lost its grandchild prop forward"
       unless checked.spec.propNames == ["title"] do
         throw <| IO.userError "child component lost its immutable prop table"
       unless checked.view.propTexts.map (fun ref => (ref.path, ref.field)) ==
@@ -426,12 +429,53 @@ def run : IO Unit := do
   match LeanRxExamples.NestLab.Tick_check with
   | .error error => throw <| IO.userError s!"grandchild component rejected: {error.code}"
   | .ok checked =>
-      unless checked.spec.children.isEmpty && checked.view.childRefs.isEmpty do
-        throw <| IO.userError "leaf grandchild component unexpectedly nests children"
+      /- ADR-0069: the grandchild re-forwards the prop it received — the
+      forwarding rewrite reads the declared prop inventory only, never the
+      source of the parent's value, so the reference shape is identical to
+      the ADR-0068 first-level forward. ADR-0070: the same received prop
+      fans out into a second leaf — the child table and references scale by
+      declaration order, each entry carrying its own `.forward` index.
+      ADR-0071: composing the same child module twice dedups the table by
+      name only — `childRefs` keeps every occurrence, each reference
+      carrying its own independent `ChildProp` list (one forward, one
+      literal). -/
+      unless checked.spec.children.toList.map (·.name) == ["Blip", "Chip"] do
+        throw <| IO.userError "grandchild component lost its child table"
+      unless checked.spec.children.toList.map (·.moduleSpecifier) ==
+          ["./Blip.mjs", "./Chip.mjs"] do
+        throw <| IO.userError "grandchild component lost its child module specifier"
+      unless checked.view.childRefs.map (fun ref => (ref.name, ref.path)) ==
+          [("Blip", [3]), ("Chip", [4]), ("Chip", [5])] do
+        throw <| IO.userError "grandchild component lost its great-grandchild reference"
+      unless checked.view.childRefs.map (·.props) ==
+          [[("note", .forward 0)], [("tag", .forward 0)], [("tag", .lit "fixed chip")]] do
+        throw <| IO.userError "grandchild component lost its great-grandchild prop forward"
       unless checked.spec.propNames == ["label"] do
         throw <| IO.userError "grandchild component lost its immutable prop table"
       unless checked.view.propTexts.map (fun ref => (ref.path, ref.field)) ==
           [([0, 0], 0)] do
         throw <| IO.userError "grandchild view lost its immutable prop text position"
+  match LeanRxExamples.NestLab.Blip_check with
+  | .error error => throw <| IO.userError s!"great-grandchild component rejected: {error.code}"
+  | .ok checked =>
+      unless checked.spec.children.isEmpty && checked.view.childRefs.isEmpty do
+        throw <| IO.userError "leaf great-grandchild component unexpectedly nests children"
+      unless checked.spec.propNames == ["note"] do
+        throw <| IO.userError "great-grandchild component lost its immutable prop table"
+      unless checked.view.propTexts.map (fun ref => (ref.path, ref.field)) ==
+          [([0, 0], 0)] do
+        throw <| IO.userError "great-grandchild view lost its immutable prop text position"
+  match LeanRxExamples.NestLab.Chip_check with
+  | .error error => throw <| IO.userError s!"fan-out leaf component rejected: {error.code}"
+  | .ok checked =>
+      /- ADR-0070: the second fan-out leaf is a plain leaf — no nesting, one
+      immutable prop rendered at the same structural position as Blip's. -/
+      unless checked.spec.children.isEmpty && checked.view.childRefs.isEmpty do
+        throw <| IO.userError "fan-out leaf component unexpectedly nests children"
+      unless checked.spec.propNames == ["tag"] do
+        throw <| IO.userError "fan-out leaf component lost its immutable prop table"
+      unless checked.view.propTexts.map (fun ref => (ref.path, ref.field)) ==
+          [([0, 0], 0)] do
+        throw <| IO.userError "fan-out leaf view lost its immutable prop text position"
 
 end LeanRxTest.Elab.Component

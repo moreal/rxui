@@ -583,10 +583,20 @@ structure RegionSpec where
   events : Array RowEventSpec
   span : SourceSpan := .generated
 
+/-- One immutable prop value carried by a static child reference: a string
+literal fixed at elaboration (ADR-0042), or a forward of one of the parent's
+own immutable props by declaration index — the value the parent itself
+received at mount, still a mount-time constant (ADR-0068). -/
+inductive ChildProp where
+  | lit (value : String)
+  | forward (field : Nat)
+deriving Repr, BEq
+
 /- Explicit safe M4 view. Interpolation is text-only; raw HTML has no
 constructor. A `child` position statically nests another checked component by
 name (ADR-0039), optionally passing immutable props as name/value pairs in the
-child's declaration order (ADR-0042). A `region` position mounts a declared
+child's declaration order (ADR-0042) — each value a literal or a forwarded
+parent prop (ADR-0068). A `region` position mounts a declared
 keyed region (ADR-0041), `regionCount` renders one sealed row aggregate — the
 row count of a declared region, or the count of rows whose projected field
 equals one string literal (ADR-0050); with a `label` it instead renders one of
@@ -603,7 +613,7 @@ mutual
     | scalarText (name : String) (value : RxExpr Γ deps String)
         (span : SourceSpan := .generated)
     | child (name : String) (span : SourceSpan := .generated)
-        (props : List (String × String) := [])
+        (props : List (String × ChildProp) := [])
     | region (name : String) (span : SourceSpan := .generated)
     | regionCount (region : String) (predicate : Option (Nat × String) := none)
         (span : SourceSpan := .generated)
@@ -671,7 +681,7 @@ mutual
     | element (tag : HtmlTag) (attrs : List StaticAttr) (children : MountChildren)
     | text (value : String)
     | dynamicText
-    | child (name : String) (propValues : List String := [])
+    | child (name : String) (propValues : List ChildProp := [])
     | region (name : String)
     | countText (label : Option (String × String) := none)
     | propText (field : Nat)
@@ -705,7 +715,7 @@ structure MountedChild where
   path : List Nat
   name : String
   span : SourceSpan
-  props : List (String × String) := []
+  props : List (String × ChildProp) := []
 deriving Repr, BEq
 
 structure MountedRegion where

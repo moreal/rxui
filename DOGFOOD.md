@@ -3352,3 +3352,307 @@ the key set stays sealed at Enter/Escape; the guard literal stays
 `""`; the count-label literal stays one; row guards stay single-field
 remove-or-commit; row scope still has no `s!`; branch cells stay
 single-level two-branch with exact click/dblclick agreement.
+
+## Parent prop forwarding — the ChildProp round (ADR-0068)
+
+### Scenario exercised
+
+Close ADR-0067 OQ1 by execution: let a parent pass its own immutable
+prop into a child's prop as a mount-time constant. `Pulse` now writes
+`<Tick label={title}/>` instead of a fresh literal, so the NestLab
+witness threads one root-supplied constant two levels down: `NestLab`
+passes `title="Pulse child"` to `Pulse`, `Pulse` forwards it as the
+grandchild's `label`, and `#tick-label` renders the root's literal.
+The generated `Pulse.mjs` mounts the grandchild with
+`$lrx_child_0(node_0, [props[0]])` — the parent's own positional
+mount argument riding the nested mount call.
+
+### What was pleasant
+
+The survey (the round's first half) found every stage one small
+extension away, because the ADR-0042 machinery already did the hard
+parts positionally: `rewritePropRefs` already resolved declared prop
+identifiers to indices for text children, the backend already read
+`props[field]` for prop texts and already threaded the props
+identifier through `mountChildren`, and `JsAst` already had
+`Expr.index`. The one representational decision — `View.child`'s
+`List (String × String)` cannot carry an identifier reference — had
+an obvious sum-type answer (`ChildProp.lit`/`ChildProp.forward`), and
+Lean's positional-pattern convention meant the arity-preserving type
+change rippled into exactly the consumers the compiler listed.
+
+### Friction encountered
+
+Two rewrite-ordering seams needed care. `collectComponentHeads` runs
+on the pre-rewrite syntax while jsx% lowering sees the post-rewrite
+tree, so the child-element predicate must accept both the surface
+`name={ident}` form and the internal `propRef%` form — otherwise the
+child table and the lowering disagree and the backend imports a ghost
+module or misses a real one. And the attr rewrite must be scoped to
+capitalized child-shaped heads: a bare `ident={ident}` rewrite would
+let a parent prop named like a schema field claim a controlled
+input's `value={field}` binding. Also two escapes bit once each:
+Lean's interpolation escapes `{` as `\{` (not `{{`), and the new
+inductive's generated `injEq` lemmas had to be registered in the
+axiom-manifest audit before the build went green.
+
+### Bugs found
+
+None in the pipeline. The `(str <|> num)*` elaborator-header
+alternative and the mixed `TSyntax [`str, `num]` splice both worked
+on the first compile, which was the round's parser-combinator gamble.
+
+### Performance observations
+
+Frozen by construction: the benchmark bundle composes no children and
+forwards nothing, so every module outside the nest bundle is
+byte-identical and the size-gate baseline stands. Inside the bundle
+the delta is one call-site shape (`["Tick child"]` → `[props[0]]`)
+plus the graph-span shifts of the edited example. The browser gate
+costs nothing new — the existing document-order test now asserts the
+forwarded literal.
+
+### Follow-up issue or commit
+
+`feat(component): forward a parent's immutable prop into a child prop
+(ADR-0068)` — the `ChildProp` sum, the propRef% rewrite and
+`(str <|> num)*` elaborator, the `props[i]` emission, `LRX-VIEW-044`
+and `LRX-ELAB-130` with their fixtures, the NestLab witness update,
+the guide section with the compiled `PropForwardMini` snippet, the
+ADR, the DECISIONS.md row, and this record. ADR-0067 OQ1 is
+discharged; the remaining boundary is reactivity (signals do not
+cross mounts — that would need a new contract, not a `ChildProp`
+relaxation) and three-level re-forwarding has no pinned witness. The
+other invariants hold: the key set stays sealed at Enter/Escape; the
+guard literal stays `""`; the count-label literal stays one; row
+guards stay single-field remove-or-commit; row scope still has no
+`s!`; branch cells stay single-level two-branch with exact
+click/dblclick agreement.
+
+## Transitive prop re-forwarding — the three-level round (ADR-0069)
+
+### Scenario exercised
+
+Closing ADR-0068 OQ2: does a prop forwarded *into* a component
+forward *out* of it again, or does the chain break at the second
+link? The round extended the NestLab chain by one level — a new leaf
+`Blip` (one `note` prop, one state, one event, declared before `Tick`
+per the leaf-first elaboration order) composed by `Tick` as
+`<Blip note={label}/>`, where `label` is the prop `Tick` itself
+receives from `Pulse` by forwarding, which `Pulse` in turn receives
+from `NestLab` as the literal `"Pulse child"`. The gates pin the
+generated call shape (`$lrx_child_0(node_0, [props[0]])` in
+`Tick.mjs`, byte-identical to `Pulse.mjs`'s first-level forward), the
+three-level literal flow (`#blip-note` reads the root-supplied
+string), and `children[0].children[0].children[0]` reachability with
+the dispose-freeze contract.
+
+### What was pleasant
+
+The survey took one function read. `rewriteForwardAttr` resolves the
+attr value against `props.idxOf?` on the component's declared prop
+inventory and nothing else — there is no code path that could
+distinguish a literal-fed prop from a forward-fed one, so
+transitivity was true by construction and the round was witness-only:
+zero compiler lines changed, and `lake build` went green on the first
+try after the one whitelist correction below. The manifest diff was
+itself a re-witness: `Tick.mjs.manifest` gained exactly the
+`child-components` feature and `./Blip.mjs` import that `Pulse`'s
+gained at ADR-0067, confirming "module that composes a child" is one
+shape regardless of chain position.
+
+### Friction encountered
+
+The closed element whitelist: the leaf's heading was first written
+`<h4>`, which `LRX-VIEW-007` rejects (the whitelist stops at `h3`).
+Extending `HtmlTag` for a witness would have been vocabulary creep in
+a round whose decision is "no new vocabulary", so the leaf uses
+`<span id="blip-note">`. Every touched gate was mechanical: the elab
+pin for `Tick` flips from leaf-shape to composer-shape, the leaf
+no-nesting pin moves to `Blip`, the browser spec adds the
+great-grandchild reachability test as a one-level-deeper copy of the
+ADR-0067 test, and `check_component_codegen.sh` gains one
+`node --check`.
+
+### Bugs found
+
+None. Fourteen browser tests green including the new three-level
+gate; the leaf's transaction commits in its own state array and the
+re-forwarding intermediate's trace stays commit-free, so state
+isolation composes with the chain.
+
+### Performance observations
+
+Frozen by construction: the benchmark bundle composes no children, so
+every module outside the nest bundle is byte-identical and the
+size-gate baseline stands. Inside the bundle the delta is one new
+leaf module plus the graph-span shifts of the edited example.
+
+### Follow-up issue or commit
+
+`feat(examples): pin transitive prop re-forwarding through the
+three-level NestLab (ADR-0069)` — the `Blip` leaf, the `Tick`
+re-forward, the build entry, the elab/artifact/browser gates, the
+ADR, the DECISIONS.md row, and this record. ADR-0068 OQ2 is
+discharged; depth is now argued inductively (every link is locally
+the witnessed ADR-0068 shape), so no deeper lab is warranted. The
+remaining prop boundary is reactivity alone, and fan-out
+re-forwarding (two forwards from one receiving component) is the one
+unwitnessed composition. The other invariants hold: the key set stays
+sealed at Enter/Escape; the guard literal stays `""`; the count-label
+literal stays one; row guards stay single-field remove-or-commit; row
+scope still has no `s!`; branch cells stay single-level two-branch
+with exact click/dblclick agreement.
+
+## Fan-out prop re-forwarding — the sibling-leaf round (ADR-0070)
+
+### Scenario exercised
+
+Closing ADR-0069 OQ2: does one receiving component forward the same
+received prop into two children, or does something in the pipeline
+assume one child per composer? The gap was doubled — multi-static-
+child composition itself was unwitnessed (every composer in the tree
+had exactly one child), so the round pinned fan-out composition and
+fan-out re-forwarding with one witness: a second leaf `Chip` (one
+`tag` prop, one state, one event, declared next to `Blip`) composed
+by `Tick` as `<Blip note={label}/>, <Chip tag={label}/>`. The gates
+pin the scaled shapes: child table `["Blip", "Chip"]`, two aliased
+imports and two `[props[0]]` calls in `Tick.mjs`,
+`disposer["children"] = [child_off_0, child_off_1]`, both leaves
+rendering the root-supplied literal three levels down, and
+`children[0].children[0].children[1]` reachability with the
+dispose-freeze and sibling-independence contracts.
+
+### What was pleasant
+
+The survey was three reads with one answer each: the elaborator
+collects child heads in first-occurrence order into an array, the
+backend allocates imports and `child_off_{n}` per entry from that
+array, and the ADR-0066 republication emits the whole `childOffs`
+list. Nothing anywhere assumes length one, so the round was again
+witness-only — zero compiler lines, and every gate went green on the
+first build. Each `View.child` reference carries its own `ChildProp`
+list, so the two `.forward 0` entries were independent by
+construction and the "same received prop, twice" case needed no
+special pleading.
+
+### Friction encountered
+
+None new. The `h4` whitelist lesson from ADR-0069 was applied
+preemptively (`Chip` renders `<span id="chip-tag">`), and the
+five-way `match` in `NestLabBuild` is at the edge of pattern-match
+legibility — a sixth module would want a list-driven emit loop. The
+one non-obvious gate edit was retroactive: the ADR-0069 three-level
+reachability test pinned `tick.children.length` to 1, which the
+fan-out flips to 2 — a reminder that reachability pins encode the
+whole sibling row, not just the indexed child.
+
+### Bugs found
+
+None. Fifteen browser tests green including the new fan-out gate; the
+sibling leaf's transaction commits in its own state array while both
+the first leaf and the re-forwarding parent stay commit-free, so
+state isolation holds across the fan-out width as well as the chain
+depth.
+
+### Performance observations
+
+Frozen by construction: the benchmark bundle composes no children, so
+every module outside the nest bundle is byte-identical and the
+size-gate baseline stands. Inside the bundle the delta is one new
+leaf module plus the graph-span shifts of the edited example.
+
+### Follow-up issue or commit
+
+`feat(examples): pin fan-out prop re-forwarding through the Chip
+sibling leaf (ADR-0070)` — the `Chip` leaf, the `Tick` fan-out, the
+build entry, the elab/artifact/browser gates, the ADR, the
+DECISIONS.md row, and this record. ADR-0069 OQ2 is discharged; width
+now composes with depth (n children are n independent table entries),
+so arbitrary static trees of constant forwards are covered and no
+wider lab is warranted. The remaining prop boundary is reactivity
+alone, and the one unwitnessed composition shape is repeated
+composition of the *same* child (two references to one deduplicated
+table entry). The other invariants hold: the key set stays sealed at
+Enter/Escape; the guard literal stays `""`; the count-label literal
+stays one; row guards stay single-field remove-or-commit; row scope
+still has no `s!`; branch cells stay single-level two-branch with
+exact click/dblclick agreement.
+
+## Repeated child composition — the second-instance round (ADR-0071)
+
+### Scenario exercised
+
+Closed ADR-0070 OQ2: one parent composing the same child module
+twice. `Tick` gained a second `Chip` reference with a deliberately
+different prop shape — `<Chip tag={label}/>, <Chip tag="fixed
+chip"/>` — so one witness pins both halves of the dedup split: the
+child table (and the aliased import, and the manifest specifier)
+dedups by name, while every reference keeps its own `ChildProp` list
+and its own `child_off_{n}`. The survey confirmed the split by
+construction — `childNames.contains` guards only the table entry,
+`mountChildren` resolves every reference through `childMounts.find?`
+and allocates offsets by `childOffs.length` — so the round is
+witness-only: the elab pin fixes the three-reference shape with mixed
+forward/literal props, the artifact gate pins one `./Chip.mjs` import
+(`$lrx_child_2` pinned absent) called twice with `[props[0]]` and
+`["fixed chip"]`, and the browser gate pins the two instances
+rendering different texts, `children[2]` reachability, per-instance
+commit counts (1 vs 2), and the root-disposal freeze across all
+three leaves.
+
+### What was pleasant
+
+Nothing in the pipeline had a length-one or one-to-one assumption to
+unwind — the same declaration-order collection that scaled fan-out
+scaled multiplicity, and the generated `Tick.mjs` came out exactly as
+predicted on the first build: two imports, three calls, three
+disposer entries. The mixed forward/literal witness cost nothing
+extra: each reference's prop array is emitted independently, so the
+independence pin is just two adjacent generated lines.
+
+### Friction encountered
+
+The anticipated hazard was real: the `Chip` template carried static
+ids, which two instances would duplicate — axe would flag
+`duplicate-id` and every `#chip-*` selector would silently resolve to
+the first instance. Switching the leaf template to classes
+(`.chip-tag`/`.chip-text`) and the spec selectors to list-form
+`toHaveText` assertions was mechanical, but it is a template-author
+lesson worth stating: a component meant for composition should not
+mint static ids. Playwright's strict mode also forced the button
+locators through `.first()`/`.nth(1)` once two "Chip" buttons
+existed — the strictness caught exactly the ambiguity the id switch
+was about.
+
+### Bugs found
+
+None. Fifteen browser tests green with the widened gate; the
+repeated instance commits in its own state array while the forwarded
+instance, the first leaf, and the re-forwarding parent all stay at
+their own counts, so instance identity is positional, not nominal.
+
+### Performance observations
+
+Frozen by construction: the benchmark bundle composes no children, so
+every module outside the nest bundle is byte-identical and the
+size-gate baseline stands. Inside the bundle no module was added and
+no manifest changed — the delta is three generated lines in
+`Tick.mjs` plus the graph-span shifts of the edited example.
+
+### Follow-up issue or commit
+
+`feat(examples): pin repeated child composition through the second
+Chip instance (ADR-0071)` — the second `Tick` reference, the
+class-for-id template switch, the elab/artifact/browser gates, the
+ADR, the DECISIONS.md row, and this record. ADR-0070 OQ2 is
+discharged; static-child composition is now covered in depth
+(ADR-0069), width (ADR-0070), and multiplicity (ADR-0071), so no
+further static-composition lab is warranted. The remaining prop
+boundary is reactivity alone (carried since ADR-0068 OQ1). The other
+invariants hold: the key set stays sealed at Enter/Escape; the guard
+literal stays `""`; the count-label literal stays one; row guards
+stay single-field remove-or-commit; row scope still has no `s!`;
+branch cells stay single-level two-branch with exact click/dblclick
+agreement.
+

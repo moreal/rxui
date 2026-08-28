@@ -424,6 +424,8 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.AnyTypedEvent.string.injEq, #[``propext]),
     (`LeanRx.BroadcastEventSpec.mk.injEq, #[``propext]),
     (`LeanRx.ChildComponent.mk.injEq, #[``propext]),
+    (`LeanRx.ChildProp.lit.injEq, #[``propext]),
+    (`LeanRx.ChildProp.forward.injEq, #[``propext]),
     (`LeanRx.EventBinding.mk.injEq, #[``propext]),
     (`LeanRx.EventGuard.mk.injEq, #[``propext]),
     (`LeanRx.EventSpec.mk.injEq, #[``propext]),

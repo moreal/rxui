@@ -110,6 +110,7 @@ fixtures=(
   Test/fixtures/compile-fail/RouteDefaultUnmapped.lean
   Test/fixtures/compile-fail/PersistUnknownRegion.lean
   Test/fixtures/compile-fail/PersistDuplicateKey.lean
+  Test/fixtures/compile-fail/ForwardWithoutSpec.lean
 )
 fragments=(
   "Constructor for"
@@ -220,6 +221,7 @@ fragments=(
   "error[LRX-TYPE-117]"
   "error[LRX-ELAB-129]"
   "error[LRX-TYPE-118]"
+  "error[LRX-ELAB-130]"
 )
 
 for index in "${!fixtures[@]}"; do

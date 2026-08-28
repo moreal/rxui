@@ -86,6 +86,12 @@ def run : IO Unit := do
         view := View.node .main [View.child "Ghost"]
         children := #[{ name := "Ghost", moduleSpecifier := "../Ghost.mjs" }] }
   expectError "LRX-VIEW-024" badSpecifier.check
+  let forwardOutOfRange : ComponentSpec CounterSchema :=
+    { spec with
+        view := View.node .main
+          [View.child "Ghost" (props := [("label", .forward 0)])]
+        children := #[{ name := "Ghost", moduleSpecifier := "./Ghost.mjs" }] }
+  expectError "LRX-VIEW-044" forwardOutOfRange.check
   let duplicateProps : ComponentSpec CounterSchema :=
     { spec with view := (View.node .input []
         (props := [.value countText, .value doubledText])) }
