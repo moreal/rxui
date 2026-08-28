@@ -235,7 +235,28 @@ clearCompleted updates the number and the label in the same commit. An
 equal-selection commit is evaluate-only, and a filter change alone still
 recomputes nothing. The comparison literal is sealed at one, the branches
 are static string literals, and every other conditional text stays
-rejected. Once more: no host change and no runtime ABI bump. -/
+rejected. Once more: no host change and no runtime ABI bump.
+
+Two contracts the vocabulary already carries run here without any grammar
+change — a lexicon-invariant execution round, not an ADR. First, TodoMVC's
+main/footer hide-when-empty parity: the toggle-all checkbox takes
+`hidden={count items == 0}` beside its `checked` selection (two selections
+of *different* attributes on one element — the ADR-0045 duplicate detection
+keys on the attribute name, so they share the element and the attr sweep
+without conflict), and the items-left line plus the three filter buttons
+move into a `<footer hidden={count items == 0}>` — the ADR-0058 emptiness
+subject reused verbatim on two more slots. Both mount hidden, the first
+append reveals them in the same commit as the list wrapper (one evaluation
+and one write per attr slot), removing the last row re-hides them, and an
+ADR-0051 filter hiding every displayed row leaves them visible — structural
+emptiness, not filtered emptiness. Second, the new-todo Escape revert:
+`confirmAdd` gains the `when "Escape" (set draft "")` arm — the sealed
+Enter/Escape component key set held Escape spellable but unexecuted until
+now. The arm is unguarded, so Escape commits unconditionally: the draft
+clears, the controlled input follows to `""`, the Add button re-disables
+through its ADR-0057 reflection, and a subsequent Enter hits the skip guard
+as a whole-event no-op. Any other key still returns without touching the
+context. Once more: no host change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -267,7 +288,8 @@ component ToggleLab (schema := ToggleSchema) where {
   event toggleAll (checked : Bool) := update items (set done checked);
   event confirmAdd (pressed : String) :=
     when "Enter" (if trim draft == "" then skip
-      else (append items (trim draft, trim draft, "false", "view"), set draft ""));
+      else (append items (trim draft, trim draft, "false", "view"), set draft ""))
+    then when "Escape" (set draft "");
   filter items by filter := when "active" (done == "false")
     then when "completed" (done == "true");
   row items toggle (checked : String) := set done checked;
@@ -305,18 +327,21 @@ component ToggleLab (schema := ToggleSchema) where {
     <button type="button" onClick={completeAll}> ["Complete all"],
     <button type="button" onClick={clearCompleted}
       hidden={count items (done == "true") == 0}> ["Clear completed"],
-    <button type="button" onClick={showAll}> ["Show all"],
-    <button type="button" onClick={showActive}> ["Show active"],
-    <button type="button" onClick={showCompleted}> ["Show completed"],
     <p id="toggle-text"> [{"itemText": rx% s!"Items added: {added}"}],
-    <p id="items-left"> [
-      <strong> [{count items (done == "false")}],
-      {if count items (done == "false") == 1 then " item left" else " items left"},
-      " of ", {count items}
-    ],
     <ul id="items" ariaLabel="Items" hidden={count items == 0}> [<region items/>],
     <input id="toggle-all" type="checkbox" ariaLabel="Toggle all"
-      checked={count items (done == "false") == 0} onCheckedChange={toggleAll}/>
+      checked={count items (done == "false") == 0} hidden={count items == 0}
+      onCheckedChange={toggleAll}/>,
+    <footer id="footer" hidden={count items == 0}> [
+      <p id="items-left"> [
+        <strong> [{count items (done == "false")}],
+        {if count items (done == "false") == 1 then " item left" else " items left"},
+        " of ", {count items}
+      ],
+      <button type="button" onClick={showAll}> ["Show all"],
+      <button type="button" onClick={showActive}> ["Show active"],
+      <button type="button" onClick={showCompleted}> ["Show completed"]
+    ]
   ];
 }
 
