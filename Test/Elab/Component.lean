@@ -335,12 +335,14 @@ private def verifyToggle
         ("hidden", none, none, false, [7]),
         ("checked", none, none, false, [8]),
         ("hidden", none, none, false, [8]),
-        ("hidden", none, none, false, [9])] do
+        ("hidden", none, none, false, [9]),
+        ("hidden", none, none, false, [10])] do
     throw <| IO.userError "toggle Add affordance lost its trimmed disabled selection"
   unless checked.view.attrSelects.map (·.select.debug) ==
       ["select:disabled:trim:2", "select:hidden:items:2:true",
         "select:hidden:items", "select:checked:items:2:false",
-        "select:hidden:items", "select:hidden:items"] do
+        "select:hidden:items", "select:hidden:items",
+        "select:hidden:items:3:edit"] do
     throw <| IO.userError "toggle Add affordance lost its trimmed debug marker"
   unless checked.view.attrSelects.map (fun mounted =>
       (mounted.select.regionSubject?, mounted.select.regionPredicate?,
@@ -350,7 +352,8 @@ private def verifyToggle
         (some "items", none, some "items", none),
         (some "items", some (2, "false"), none, some "items"),
         (some "items", none, some "items", none),
-        (some "items", none, some "items", none)] do
+        (some "items", none, some "items", none),
+        (some "items", some (3, "edit"), some "items", none)] do
     throw <| IO.userError "toggle list wrapper lost its empty-region visibility subject"
   /- The ADR-0061 toggle-all rebinding: the checkbox's change binding is the
   ADR-0038 `onCheckedChange` surface naming the payload broadcast — the

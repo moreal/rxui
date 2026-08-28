@@ -623,6 +623,27 @@ DOM: renaming a row no longer walks every row root to rewrite `hidden` with
 the value already there, and no longer runs a predicate scan whose field the
 rename cannot touch, but a row total it skips was an `O(1)` comparison.
 
+The write half of that comparison is per row *event* inside the region's own
+dispatch function (ADR-0084). `listenDelegatedCells` calls one dispatch per
+region, and its `action` argument names the row event that ran — exactly one
+action branch executes per call — so there, and only there, a sweep whose
+read set only *some* of the region's row events can write is guarded on
+
+```js
+    const region_drain_0_0 = regions[0][3] || regions[0][4]["length"] !== 0 && action === "toggle";
+```
+
+instead of the region-wide touched flag. An empty event set is still the
+structural bit and the whole event set is still the touched flag, so the
+extra constants appear only where the row events genuinely disagree, and
+every other transaction function keeps the region-wide flags (its pending
+slot is provably empty, so there the two are one value anyway). Concretely:
+a `row items retype (value : String) := set draft value` beside a
+`row items toggle (checked : String) := set done checked` means a keystroke
+inside a row editor re-evaluates no count, no `hidden`/`checked` selection
+and no filter table — only a `persist` write-back, which reads every field
+and can never narrow, still walks the table.
+
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
 **union** of every filter table over that field, not the first-declared

@@ -4664,3 +4664,107 @@ language-guide table, the ADR, and this record. Open: the write set is the
 union over all of a region's row events, so a `retype` still wakes the
 `done` scans some *other* row event writes; and the sweep still has no
 per-row cache.
+
+## A drain wakes only what its own row event can move (ADR-0084)
+
+### What was built
+
+ADR-0083 left the write set as the union over *all* of a region's row
+events, so a Toggle Lab keystroke inside a row editor still ran both `done`
+predicate counts, both `done` predicate selections and the O(N) filter
+sweep, because some *other* row event writes `done`. This round closes
+that.
+
+The round was scoped as "parameterize the drain write set by the stages
+each transaction function runs", and the survey's first job was to check
+that premise against the emission. It does not hold. `listenDelegatedCells`
+resolves a row action by structure and calls **one** dispatch function per
+region: Toggle Lab's five row events are five `action === "…"` branches
+inside `$lrx_region_0_dispatch`, sharing one inlined commit. So a
+per-function write set splits that module's sixteen transaction functions
+into the dispatch (the region-wide union — ADR-0083 unchanged) and the
+other fifteen (∅ for every region). And ∅ buys nothing: a function with no
+drain path has a provably empty pending slot, so `region_touched_{i}` and
+`region_structural_{i}` are already the same value there. The rewrite would
+have deleted a dead disjunct and moved no evaluation counter at all.
+
+What is worth something sits one level below the function. Inside the
+dispatch the row event that ran is a *value* — the `action` parameter — and
+exactly one action branch executes per call, so
+
+```js
+regions[i][3] || regions[i][4]["length"] !== 0 && action === "toggle"
+```
+
+is not an approximation of "a drain these sweeps could see happened"; it is
+that predicate. No region-record slot, no accumulator, no statement added to
+any write path: one more `const` in the commit prologue, beside the two
+ADR-0082/0083 already emits. A class is emitted only where the events that
+can move a sweep are a proper nonempty subset of the region's drain paths,
+so Twin Lab and Mix Lab — one drain event each on the regions that sweep —
+came out byte-identical, and Toggle Lab's module moved by +100 bytes (the
+editing hint below adds +9922 more, which is a lab edit and not the rule).
+
+Toggle Lab gained an editing hint, `hidden={count items (mode == "edit") ==
+0}`, so `items` carries a second class and the emitted disjunction is more
+than one action long: `{toggle}` for the five `done` sweeps and
+`{edit, commit, keys}` for the hint, with `retype` in neither.
+
+### Friction encountered
+
+Two of the round's own scoping notes were wrong in the same way, and both
+were only visible by reading the generated module rather than the backend:
+the row dispatch is not per event, and the flag constants are therefore not
+the granularity that matters. Predicting the split from the spec (as
+ADR-0083's round did successfully) would have produced a correct patch that
+changed no behaviour whatsoever.
+
+The A/B harness needed the same hand-edited-module trick as the previous
+two rounds — expose `context` and the dispatch on `globalThis`, push rows
+straight into the row array, reconcile with one real dispatch — plus one
+new one: `performance.now()` is clamped to 0.1 ms in Chromium, so a median
+over per-commit samples quantizes to two or three distinct values and hides
+a 20% difference. Timing the whole 400-dispatch run and dividing resolved
+it.
+
+### Bugs found
+
+None. Every prediction from the spec matched the emitted output: Twin Lab
+and Mix Lab byte-identical, Toggle Lab's two classes exactly as computed by
+hand from the row events and the sweep read sets.
+
+### Performance observations
+
+The trap ADR-0083 named applies again and the round measured it before
+committing to the change. The persistence write-back reads every field, so
+it can never narrow and it is O(N) on every keystroke; the key→position
+scan is O(N) too. Median ms per commit in Chromium over five runs, on two
+hand-edited copies of the generated module differing only in which flag the
+narrowed blocks read:
+
+| rows | `retype`: region-wide | per event | `toggle`: region-wide | per event |
+| ---: | ---: | ---: | ---: | ---: |
+| 100 | 0.0752 | 0.0623 | 0.0745 | 0.0725 |
+| 1000 | 0.619 | 0.516 | 0.658 | 0.655 |
+| 5000 | 3.416 | 2.556 | 3.406 | 3.381 |
+| 10000 | 7.743 | 5.188 | 7.728 | 7.563 |
+
+`toggle` is the control — it is in the `done` class, so both columns agree
+inside the noise. `retype` drops 17% at 100 and 1000 rows and 33% at 10k.
+Unlike ADR-0083's Mix column the dividend here is collectible, because what
+narrows is four predicate scans *and* the filter sweep's N
+`childAt`/`setProperty` pairs; what remains is the serialization and the key
+scan. The benchmark artifacts are byte-identical and BENCHMARK.md stands.
+
+### Follow-up issue or commit
+
+`feat(component): wake a region's sweeps from the row event that drained
+them (ADR-0084)` — `regionEventWrites`/`wakeActions`/`sweepWake`, the
+`WakeFlag` the run-merging emission now carries as an identifier, the
+`dispatch?` parameter on the transaction shell, Toggle Lab's editing hint,
+the artifact-gate pins for both classes, the four-case browser witness, the
+language guide, the ADR, and this record. Open: the persistence write-back
+is now the O(N) floor on a keystroke and narrowing it needs a per-row
+serialization cache (the first region-record change this line would want);
+the key→position scan is still O(N) per dispatch; and the sweeps still have
+no per-row cache.

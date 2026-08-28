@@ -117,8 +117,8 @@ for (const required of [
   // (node_16) wrapping the items-left line and the filter buttons closes
   // the block with the same subject. All three emptiness slots mount the
   // literal true.
-  "  const attrRefs = [node_4, node_10, node_14, node_15, node_15, node_16];",
-  "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\", true, true, true, true, true];",
+  "  const attrRefs = [node_4, node_10, node_14, node_15, node_15, node_16, node_29];",
+  "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\", true, true, true, true, true, true];",
   "  setProperty(attrRefs[0], \"disabled\", attrCache[0]);",
   "  setProperty(attrRefs[1], \"hidden\", attrCache[1]);",
   "  setProperty(attrRefs[2], \"hidden\", attrCache[2]);",
@@ -266,6 +266,23 @@ for (const required of [
   "        setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", state[1] === \"active\" ? filter_row_0[3] !== \"false\" : state[1] === \"completed\" ? filter_row_0[3] !== \"true\" : false);",
   "      tx[7][\"push\"](\"filter:items:evaluated\");",
   "      tx[7][\"push\"](\"dom:filter:items:write\");",
+  // ADR-0084 splits the drain wake by row event inside the region's own
+  // dispatch function, which is the only transaction function that can tell
+  // one drain path from another: its `action` argument names the row event
+  // that ran, and exactly one action branch runs per call, so
+  // `pending !== 0 && action === …` is precisely "a drain that could move
+  // these sweeps happened". `toggle` writes `done`, which the two predicate
+  // counts, the two predicate selections and the filter table read; `edit`,
+  // `commit` and `keys` write `mode`, which the editing hint reads; `retype`
+  // writes `draft`, which nothing but the persistence write-back reads — so
+  // a keystroke inside a row editor lands in neither class.
+  "    const region_touched_0 = regions[0][3] || regions[0][4][\"length\"] !== 0;\n    const region_structural_0 = regions[0][3];\n    const region_drain_0_0 = regions[0][3] || regions[0][4][\"length\"] !== 0 && action === \"toggle\";\n    const region_drain_0_1 = regions[0][3] || regions[0][4][\"length\"] !== 0 && (action === \"edit\" || action === \"commit\" || action === \"keys\");\n    if (region_drain_0_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:items:0:evaluated\");",
+  "    if (region_drain_0_1) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:6:hidden:evaluated\");\n      const hidden_scan_0_6 = [0];\n      for (const hidden_row_0_6 of regions[0][1]) {\n        if (hidden_row_0_6[4] === \"edit\") {",
+  "    if (region_drain_0_0 || changed[1]) {",
+  // The persistence write-back reads every field, so no class can narrow it:
+  // it keeps the region-wide touched flag even in the dispatch function.
+  "      regions[0][4] = [];\n    }\n    if (region_drain_0_0 || changed[1]) {",
+  "    if (region_touched_0) {\n      const persist_rows_0 = [];",
 ]) {
   if (!source.includes(required)) {
     throw new Error(`generated Toggle Lab is missing ${required}`);

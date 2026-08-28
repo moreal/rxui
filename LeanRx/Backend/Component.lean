@@ -234,18 +234,27 @@ event (ADR-0043) or a component-event broadcast into it (ADR-0050). -/
 private def regionRowsMutate (broadcasts : List String) (region : RegionSpec) : Bool :=
   regionHasUpdates region || broadcasts.contains region.name
 
-/-- The row fields one region's pending drain can write (ADR-0082): the
-assignment targets of every declared `row` update stage, the ADR-0052 key
-arms included. A `remove` action — and an ADR-0053 guard hit — raises the
-dirty flag instead of queueing a position, and so does a broadcast
-(ADR-0050), so neither is a drain path. The list is empty exactly when the
-record's pending slot can never receive a position. -/
+/-- The row fields one region's pending drain can write, split by the row
+event that writes them (ADR-0084): each declared `row` update stage's
+assignment targets, the ADR-0052 key arms unioned under their event, paired
+with the action literal `listenDelegatedCells` dispatches that event under.
+A `remove` action — and an ADR-0053 guard hit — raises the dirty flag
+instead of queueing a position, and so does a broadcast (ADR-0050), so
+neither is a drain path. An event that assigns nothing is dropped: it queues
+a position whose `updateAt` rewrites the row it read. The list is empty
+exactly when the record's pending slot can never receive a position. -/
+private def regionEventWrites (region : RegionSpec) : List (String × List Nat) :=
+  region.events.toList.filterMap fun event =>
+    let writes := match event.action with
+      | .remove => []
+      | .update stage => stage.assignments.map (·.1)
+      | .keySelect arms => arms.flatMap fun arm => arm.2.assignments.map (·.1)
+    if writes.isEmpty then none else some (event.name, writes)
+
+/-- The row fields one region's pending drain can write (ADR-0082): the union
+over every declared `row` update stage. -/
 private def regionDrainWrites (region : RegionSpec) : List Nat :=
-  region.events.toList.flatMap fun event =>
-    match event.action with
-    | .remove => []
-    | .update stage => stage.assignments.map (·.1)
-    | .keySelect arms => arms.flatMap fun arm => arm.2.assignments.map (·.1)
+  (regionEventWrites region).flatMap (·.2)
 
 /-- The row fields one sealed filter table reads (ADR-0082): every arm
 predicate's subject, which is the whole of what the emitted `hidden`
@@ -271,21 +280,67 @@ private def attrSelectReadFields (select : AttrSelect Γ) : List Nat :=
   | none => []
   | some (field, _) => [field]
 
-/-- Whether one region sweep may skip the pending-drain wake — ADR-0082's
-rule, per sweep since ADR-0083: the region has a drain path, and no field
-that path writes is in this sweep's read set, so a drain-only transaction
-provably leaves the value the sweep computes where the last one put it. A
-region with no drain path has a provably empty pending slot, so `touched`
-and `structural` are the same predicate there and every sweep keeps the
-uniform flag. -/
-private def sweepNarrows (drainWrites reads : List Nat) : Bool :=
-  !drainWrites.isEmpty && !reads.any drainWrites.contains
+/-- The row events whose drain can move one sweep (ADR-0084): those whose
+write set meets the sweep's read set. Empty is ADR-0082's narrowing — no
+drain path can move this sweep, so it reads the structural bit; the whole
+list is the region-wide touched flag. Anything between is one event class,
+and only the region's own dispatch function can tell the classes apart. -/
+private def wakeActions (eventWrites : List (String × List Nat)) (reads : List Nat) :
+    List String :=
+  (eventWrites.filter fun entry => entry.2.any reads.contains).map (·.1)
+
+/-- The wake flag one region sweep reads (ADR-0083/0084): the region-wide
+touched flag, the structural bit alone, or the drain class the dispatch
+function can name by its action argument. -/
+private inductive WakeFlag where
+  | touched
+  | structural
+  | drain (classIndex : Nat)
+deriving BEq
+
+/-- The distinct drain classes of one region, in sweep emission order, with
+duplicates dropped so two sweeps that wake on the same events share a flag. -/
+private def dedupClasses (values : List (List String)) : List (List String) :=
+  (values.foldl (fun acc value => if acc.contains value then acc else value :: acc) []).reverse
+
+private def classIndex? (classes : List (List String)) (actions : List String) : Option Nat :=
+  (classes.zipIdx.find? fun entry => entry.1 == actions).map (·.2)
+
+/-- Which flag one sweep reads. A region with no drain path has a provably
+empty pending slot, so `touched` and `structural` are the same predicate
+there and every sweep keeps the uniform flag (ADR-0083). A sweep no drain
+path can move takes the structural bit. Otherwise the sweep takes the
+region-wide touched flag, unless this function is the region's own dispatch
+and the events that can move the sweep are a proper subset of the region's
+drain paths — then it takes that class's flag (ADR-0084). -/
+private def sweepWake (eventWrites : List (String × List Nat))
+    (classes : List (List String)) (reads : List Nat) : WakeFlag :=
+  if eventWrites.isEmpty then .touched
+  else
+    let actions := wakeActions eventWrites reads
+    if actions.isEmpty then .structural
+    else match classIndex? classes actions with
+      | some index => .drain index
+      | none => .touched
+
+private def wakeIdent (regionIndex : Nat) : WakeFlag → Except Error Ident
+  | .touched => Ident.checked s!"region_touched_{regionIndex}"
+  | .structural => Ident.checked s!"region_structural_{regionIndex}"
+  | .drain index => Ident.checked s!"region_drain_{regionIndex}_{index}"
+
+/-- The dispatch function's test for "this call ran one of these row events",
+left-nested so the printed disjunction carries no parentheses. -/
+private def anyAction (action : Ident) : List String → Expr
+  | [] => .literal (.boolean false)
+  | name :: rest =>
+      let equals := fun value => Expr.binary .eq (.ident action) (.literal (.string value))
+      rest.foldl (fun acc value => .binary .or acc (equals value)) (equals name)
 
 /-- Fuse adjacent sweeps of one kind that read the same wake flag into one
 guarded block (ADR-0083), so a region whose sweeps agree emits exactly the
 single block it did before the flag became per sweep. -/
-private def mergeWakeRuns (runs : List (Bool × List Stmt)) :
-    List (Bool × List Stmt) :=
+private def mergeWakeRuns (runs : List (Ident × List Stmt)) :
+    List (Ident × List Stmt) :=
   (runs.foldl (fun acc run =>
     match acc with
     | (flag, stmts) :: rest =>
@@ -294,10 +349,9 @@ private def mergeWakeRuns (runs : List (Bool × List Stmt)) :
 
 /-- Emit one region's sweeps of one kind, each guarded on the flag its own
 read set selects, adjacent agreeing sweeps sharing one block (ADR-0083). -/
-private def wakeGuarded (touched structural : Ident)
-    (runs : List (Bool × List Stmt)) : List Stmt :=
-  (mergeWakeRuns runs).map fun (narrowed, stmts) =>
-    .ifThen (.ident (if narrowed then structural else touched)) (.ofList stmts)
+private def wakeGuarded (runs : List (Ident × List Stmt)) : List Stmt :=
+  (mergeWakeRuns runs).map fun (flag, stmts) =>
+    .ifThen (.ident flag) (.ofList stmts)
 
 /-- Whether one region's sealed template composes a row-scoped child
 component (ADR-0075). -/
@@ -632,10 +686,18 @@ private def propLabel (index : Nat) (prop : MountedProp Γ) : String :=
 
 /-- Shared transaction shell for every generated dispatch function: begin
 bookkeeping, the provided write statements, and the commit sweep over derived
-values, text sinks, and reflected properties. -/
+values, text sinks, and reflected properties.
+
+`dispatch?` is the region index whose row events this function dispatches
+(ADR-0084). Only that function can tell one drain path from another — its
+`action` parameter names the row event that ran — so only there does a
+region's wake flag split by event class; every other transaction function
+keeps the region-wide flags, and for them the split would be vacuous anyway
+because their pending slot is provably empty. -/
 private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalState)
     (runtime : RuntimeNames) (name : Ident) (params : Array Ident) (label : String)
-    (writes : List Stmt) (skipIf? : Option Expr := none) : Except Error Function := do
+    (writes : List Stmt) (skipIf? : Option Expr := none)
+    (dispatch? : Option Nat := none) : Except Error Function := do
   let setText := runtime.setText
   let context ← Ident.checked "context"
   let state ← Ident.checked "state"
@@ -811,27 +873,40 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     let hiddens := checked.view.attrSelects.zipIdx.filter
       fun (mounted, _) => mounted.select.regionSubject? == some region.name
     let persist? := checked.spec.persists.toList.find? (·.region == region.name)
-    let touched ← Ident.checked s!"region_touched_{regionIndex}"
-    let structural ← Ident.checked s!"region_structural_{regionIndex}"
-    /- The ADR-0083 per-sweep wake: every sweep over this region is guarded
-    on the flag its own read set selects. A sweep whose read set is disjoint
-    from what this region's drain paths write cannot move on a drain, so it
-    reads the structural bit; every other sweep keeps the touched flag. The
+    /- The ADR-0083 per-sweep wake, per row event since ADR-0084: every
+    sweep over this region is guarded on the flag its own read set selects.
+    A sweep whose read set is disjoint from what this region's drain paths
+    write cannot move on a drain, so it reads the structural bit; a sweep
+    every drain path can move keeps the region-wide touched flag; and inside
+    the region's own dispatch function a sweep only *some* of its row events
+    can move reads that class's flag, which the `action` argument names. The
     persistence write-back reads every field, so it never narrows — that
-    falls out of `sweepNarrows` rather than being spelled here. -/
-    let drainWrites := regionDrainWrites region
-    let countNarrows := counts.map fun count =>
-      sweepNarrows drainWrites (countReadFields count)
-    let hiddenNarrows := hiddens.map fun (mounted, _) =>
-      sweepNarrows drainWrites (attrSelectReadFields mounted.select)
-    let filterNarrows := filter?.toList.map fun filter =>
-      sweepNarrows drainWrites (filterSubjectFields filter)
-    let persistNarrows := persist?.toList.map fun _ =>
-      sweepNarrows drainWrites (List.range region.fields.size)
-    let wakes := countNarrows ++ hiddenNarrows ++ filterNarrows ++ persistNarrows
-    if wakes.contains false then
-      /- The touched flag serves every sweep a drain can move: the count
-      sweep (ADR-0050), the filter sweep (ADR-0051), the empty-region
+    falls out of `sweepWake` rather than being spelled here. -/
+    let eventWrites := regionEventWrites region
+    let sweepReads : List (List Nat) :=
+      counts.map countReadFields
+        ++ hiddens.map (fun entry => attrSelectReadFields entry.1.select)
+        ++ filter?.toList.map filterSubjectFields
+        ++ persist?.toList.map (fun _ => List.range region.fields.size)
+    let classes : List (List String) :=
+      if dispatch? == some regionIndex then
+        dedupClasses ((sweepReads.map (wakeActions eventWrites)).filter fun actions =>
+          !actions.isEmpty && actions.length != eventWrites.length)
+      else []
+    let countWakes := counts.map fun count =>
+      sweepWake eventWrites classes (countReadFields count)
+    let hiddenWakes := hiddens.map fun (mounted, _) =>
+      sweepWake eventWrites classes (attrSelectReadFields mounted.select)
+    let filterWakes := filter?.toList.map fun filter =>
+      sweepWake eventWrites classes (filterSubjectFields filter)
+    let persistWakes := persist?.toList.map fun _ =>
+      sweepWake eventWrites classes (List.range region.fields.size)
+    let wakes := countWakes ++ hiddenWakes ++ filterWakes ++ persistWakes
+    let touched ← wakeIdent regionIndex .touched
+    let structural ← wakeIdent regionIndex .structural
+    if wakes.contains .touched then
+      /- The touched flag serves every sweep every drain path can move: the
+      count sweep (ADR-0050), the filter sweep (ADR-0051), the empty-region
       visibility sweep (ADR-0058), and the persistence sweep (ADR-0063). It
       is read before the reconcile and drain below consume the dirty flag
       and the pending positions. -/
@@ -841,15 +916,33 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             (.index (regionEntry regions regionIndex 4) (.literal (.string "length")))
             (uint 0))))
       ]
-    if wakes.contains true then
+    if wakes.contains .structural then
       /- Read before the reconcile below clears the dirty bit, exactly as the
       touched flag is (ADR-0082). -/
       commitBody := commitBody ++ [
         .const structural (regionEntry regions regionIndex 3)
       ]
+    for (actions, classIndex) in classes.zipIdx do
+      if wakes.contains (.drain classIndex) then
+        /- One drain class (ADR-0084): the region was structurally dirty, or
+        this dispatch queued a position *and* the action it ran is one of the
+        row events whose stage writes a field the class reads. Exactly one
+        action branch runs per dispatch, so the conjunction is the precise
+        "a drain that could move these sweeps happened", not an
+        approximation of it. -/
+        let action ← Ident.checked "action"
+        let flag ← wakeIdent regionIndex (.drain classIndex)
+        commitBody := commitBody ++ [
+          .const flag (.binary .or (regionEntry regions regionIndex 3)
+            (.binary .and
+              (.unary .not (.binary .eq
+                (.index (regionEntry regions regionIndex 4) (.literal (.string "length")))
+                (uint 0)))
+              (anyAction action actions)))
+        ]
     unless counts.isEmpty do
-      let mut countRuns : List (Bool × List Stmt) := []
-      for ((count, slot), narrowed) in counts.zipIdx.zip countNarrows do
+      let mut countRuns : List (Ident × List Stmt) := []
+      for ((count, slot), wake) in counts.zipIdx.zip countWakes do
         let next ← Ident.checked s!"count_next_{regionIndex}_{slot}"
         let differs ← Ident.checked s!"count_changed_{regionIndex}_{slot}"
         let label := s!"count:{region.name}:{slot}"
@@ -881,7 +974,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
               pure (Expr.ident selected, [Stmt.const selected <|
                 .conditional (.binary .eq (.ident next) (uint 1))
                   (.literal (.string one)) (.literal (.string other))])
-        countRuns := countRuns ++ [(narrowed, [
+        let flag ← wakeIdent regionIndex wake
+        countRuns := countRuns ++ [(flag, [
           incrementAt tx 5,
           pushTrace tx s!"{label}:evaluated"
         ] ++ computeStmts ++ selectStmts ++ [
@@ -896,7 +990,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             pushTrace tx s!"dom:{label}:write"
           ]
         ])]
-      commitBody := commitBody ++ wakeGuarded touched structural countRuns
+      commitBody := commitBody ++ wakeGuarded countRuns
     /- Sealed region-count subjects (ADR-0058/0059/0060): whenever this
     region woke the flag the selection's own read set selects (ADR-0083),
     the `hiddenIfEmpty` or `checkedIfEmpty` selection re-evaluates its row
@@ -909,8 +1003,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     displayed rows, so an ADR-0051 filter hiding every row leaves the
     section visible — and the toggle-all box unmoved — either way. -/
     unless hiddens.isEmpty do
-      let mut hiddenRuns : List (Bool × List Stmt) := []
-      for ((mounted, attrIndex), narrowed) in hiddens.zip hiddenNarrows do
+      let mut hiddenRuns : List (Ident × List Stmt) := []
+      for ((mounted, attrIndex), wake) in hiddens.zip hiddenWakes do
         let next ← attrNextName attrIndex
         let differs ← attrChangedName attrIndex
         let label := attrLabel attrIndex mounted
@@ -934,7 +1028,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
                 ]),
                 .const next (.binary .eq (.index (.ident scan) (uint 0)) (uint 0))
               ]
-        hiddenRuns := hiddenRuns ++ [(narrowed, [
+        let flag ← wakeIdent regionIndex wake
+        hiddenRuns := hiddenRuns ++ [(flag, [
           incrementAt tx 8,
           pushTrace tx s!"{label}:evaluated"
         ] ++ computeStmts ++ [
@@ -947,7 +1042,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             pushTrace tx s!"dom:{label}:write"
           ]
         ])]
-      commitBody := commitBody ++ wakeGuarded touched structural hiddenRuns
+      commitBody := commitBody ++ wakeGuarded hiddenRuns
     /- The keyed region reconciles the whole target on commit; the dirty flag
     keeps clean regions out of the sweep entirely (ADR-0041). A structurally
     dirty reconcile re-runs every retained row, so it drops pending update
@@ -994,6 +1089,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     region owns its whole container and rows precede the anchor marker in
     `items` order; the container element rides the record's filter slot. -/
     if let some filter := filter? then
+      let filterFlag ← wakeIdent regionIndex (filterWakes.head?.getD .touched)
       let filterSlot := 5 + (if counts.isEmpty then 0 else 2)
       let scan ← Ident.checked s!"filter_scan_{regionIndex}"
       let filterRow ← Ident.checked s!"filter_row_{regionIndex}"
@@ -1005,9 +1101,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             acc)
         (Expr.literal (.boolean false))
       commitBody := commitBody ++ [.ifThen
-        (.binary .or
-          (.ident (if filterNarrows.contains true then structural else touched))
-          (arrayAt changed filter.field.index)) <| .ofList [
+        (.binary .or (.ident filterFlag) (arrayAt changed filter.field.index)) <| .ofList [
           incrementAt tx 8,
           pushTrace tx s!"filter:{region.name}:evaluated",
           .const scan (.array (.ofList [uint 0])),
@@ -1032,11 +1126,10 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     write per region-touching transaction; a filter change alone touches
     nothing and therefore persists nothing. -/
     if let some persist := persist? then
+      let persistFlag ← wakeIdent regionIndex (persistWakes.head?.getD .touched)
       let rows ← Ident.checked s!"persist_rows_{regionIndex}"
       let row ← Ident.checked s!"persist_row_{regionIndex}"
-      commitBody := commitBody ++ [.ifThen
-        (.ident (if persistNarrows.contains true then structural else touched)) <|
-        .ofList [
+      commitBody := commitBody ++ [.ifThen (.ident persistFlag) <| .ofList [
         .const rows (.array .nil),
         .forOf row (regionEntry regions regionIndex 1) (.ofList [
           .expr <| .call (.index (.ident rows) (.literal (.string "push")))
@@ -2064,7 +2157,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
         ]
   transactionShell checked evaluators runtime name
     #[hostState, context, action, key, value, checkedFlag, eventKey]
-    s!"region:{region.name}" writes
+    s!"region:{region.name}" writes (dispatch? := some regionIndex)
 
 private def manifest (moduleName : String) (checked : CheckedComponent Γ) : ComponentManifest :=
   let broadcasts := broadcastRegionNames checked.spec

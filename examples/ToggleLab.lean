@@ -278,7 +278,24 @@ the empty region), one `storageSet` rides the region-touch sweep per
 region-touching transaction — the ADR-0050/0051/0058 shared touched flag —
 and a filter change alone touches nothing and therefore persists nothing.
 Serialization lives in generated code as a throw-free split/join escape; the
-host moves strings only. -/
+host moves strings only.
+The ADR-0084 per-event drain wake is the last thing this component's row
+vocabulary is here to witness. Five row events write four different field
+sets, and the sweeps over `items` read three of them: the two `done`
+predicate counts, the two `done` predicate selections and the filter table
+can only move when `toggle` runs; the editing hint —
+`hidden={count items (mode == "edit") == 0}`, an ordinary ADR-0059
+predicate-count selection whose subject happens to be `mode` — can only
+move when `edit`, `commit` or `keys` runs; the row total and the three
+emptiness subjects can move on no drain at all; and the persistence
+write-back reads every field, so nothing narrows it. Inside
+`$lrx_region_0_dispatch` — the one function that knows which row event
+ran, because `listenDelegatedCells` hands it the action — those become two
+`region_drain_0_{c}` constants beside the ADR-0082/0083 pair, and a
+`retype` keystroke lands in neither class: it drains its one retained row,
+re-serializes the table, and re-evaluates nothing else at all. Every other
+transaction function keeps the region-wide flags, because none of them can
+queue a position at all. Still no host change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
@@ -366,6 +383,9 @@ component ToggleLab (schema := ToggleSchema) where {
       <button type="button" onClick={showAll}> ["Show all"],
       <button type="button" onClick={showActive}> ["Show active"],
       <button type="button" onClick={showCompleted}> ["Show completed"]
+    ],
+    <p id="edit-hint" hidden={count items (mode == "edit") == 0}> [
+      "Editing: Enter saves, Escape reverts"
     ]
   ];
 }

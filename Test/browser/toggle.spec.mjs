@@ -1731,3 +1731,114 @@ test("disposal removes the region, listeners, and rows idempotently", async ({ p
   });
   expect(stillAttached).toBe(false);
 });
+
+test("each row event wakes only the sweeps its own stage can move (ADR-0084)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  // Every sweep this region carries, by the flag ADR-0084 assigns it inside
+  // the region's own dispatch function: the two `done` predicate counts, the
+  // two `done` predicate selections and the filter table read the `toggle`
+  // class; the editing hint reads the `edit`/`commit`/`keys` class; the row
+  // total and the three emptiness subjects stay behind the structural bit;
+  // the persistence write-back reads every field and can never narrow.
+  const reads = (tx) => ({
+    doneCount: tx[7].filter((entry) => entry === "count:items:0:evaluated").length,
+    doneLabel: tx[7].filter((entry) => entry === "count:items:1:evaluated").length,
+    total: tx[7].filter((entry) => entry === "count:items:2:evaluated").length,
+    clearHidden: tx[7].filter((entry) => entry === "attr:1:hidden:evaluated").length,
+    toggleAll: tx[7].filter((entry) => entry === "attr:3:checked:evaluated").length,
+    hint: tx[7].filter((entry) => entry === "attr:6:hidden:evaluated").length,
+    filter: tx[7].filter((entry) => entry === "filter:items:evaluated").length,
+    stored: tx[7].filter((entry) => entry === "storage:items:write").length,
+    drained: tx[7].filter((entry) => entry === "region:items:updateAt").length,
+    sinkEvaluations: tx[5],
+    attrEvaluations: tx[8],
+  });
+  const instrumentation = () =>
+    page.evaluate(() => globalThis.toggleDispose.instrumentation());
+
+  // `edit` writes `mode`: the editing hint's scan is the one row walk it
+  // wakes. The `done` sweeps and the filter table cannot move on it.
+  const beforeEdit = reads(await instrumentation());
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  const editor = page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" });
+  await expect(editor).toBeFocused();
+  await expect(page.locator("#edit-hint")).toBeVisible();
+  const afterEdit = reads(await instrumentation());
+  expect(afterEdit.hint).toBe(beforeEdit.hint + 1);
+  expect(afterEdit.doneCount).toBe(beforeEdit.doneCount);
+  expect(afterEdit.doneLabel).toBe(beforeEdit.doneLabel);
+  expect(afterEdit.clearHidden).toBe(beforeEdit.clearHidden);
+  expect(afterEdit.toggleAll).toBe(beforeEdit.toggleAll);
+  expect(afterEdit.filter).toBe(beforeEdit.filter);
+  expect(afterEdit.total).toBe(beforeEdit.total);
+  expect(afterEdit.drained).toBe(beforeEdit.drained + 1);
+  expect(afterEdit.stored).toBe(beforeEdit.stored + 1);
+
+  // `retype` writes `draft`, which nothing but the persistence write-back
+  // reads: one keystroke drains one row, re-serializes the table, and
+  // re-evaluates nothing at all — not one count, not one selection, not the
+  // filter sweep. The keydown beside it matches no arm, so it queues
+  // nothing and wakes nothing either.
+  const beforeType = reads(await instrumentation());
+  await editor.pressSequentially("!");
+  await expect(editor).toHaveValue("Item 0!");
+  const afterType = reads(await instrumentation());
+  expect(afterType.doneCount).toBe(beforeType.doneCount);
+  expect(afterType.doneLabel).toBe(beforeType.doneLabel);
+  expect(afterType.total).toBe(beforeType.total);
+  expect(afterType.clearHidden).toBe(beforeType.clearHidden);
+  expect(afterType.toggleAll).toBe(beforeType.toggleAll);
+  expect(afterType.hint).toBe(beforeType.hint);
+  expect(afterType.filter).toBe(beforeType.filter);
+  expect(afterType.sinkEvaluations).toBe(beforeType.sinkEvaluations);
+  expect(afterType.attrEvaluations).toBe(beforeType.attrEvaluations);
+  // The drain itself still happened, and persistence still paid for it.
+  expect(afterType.drained).toBe(beforeType.drained + 1);
+  expect(afterType.stored).toBe(beforeType.stored + 1);
+  // Both row roots keep the `hidden` byte the last sweep that ran wrote.
+  expect(await page.locator("#items > li").nth(0).evaluate((row) => row.hidden)).toBe(false);
+  expect(await page.locator("#items > li").nth(1).evaluate((row) => row.hidden)).toBe(false);
+
+  // `keys` Escape writes `draft` and `mode`: the hint's class wakes, the
+  // `done` class still does not.
+  const beforeEscape = reads(await instrumentation());
+  await editor.press("Escape");
+  await expect(page.locator("#items > li").nth(0).locator(".item-label"))
+    .toHaveText("Item 0");
+  const afterEscape = reads(await instrumentation());
+  expect(afterEscape.hint).toBe(beforeEscape.hint + 1);
+  expect(afterEscape.doneCount).toBe(beforeEscape.doneCount);
+  expect(afterEscape.filter).toBe(beforeEscape.filter);
+
+  // `toggle` writes `done`: the mirror image — every `done` sweep and the
+  // filter table run, the editing hint does not, and the row total stays
+  // behind the structural bit.
+  const beforeToggle = reads(await instrumentation());
+  await page.locator("#items > li").nth(1)
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  const afterToggle = reads(await instrumentation());
+  expect(afterToggle.doneCount).toBe(beforeToggle.doneCount + 1);
+  expect(afterToggle.doneLabel).toBe(beforeToggle.doneLabel + 1);
+  expect(afterToggle.clearHidden).toBe(beforeToggle.clearHidden + 1);
+  expect(afterToggle.toggleAll).toBe(beforeToggle.toggleAll + 1);
+  expect(afterToggle.filter).toBe(beforeToggle.filter + 1);
+  expect(afterToggle.hint).toBe(beforeToggle.hint);
+  expect(afterToggle.total).toBe(beforeToggle.total);
+  expect(afterToggle.drained).toBe(beforeToggle.drained + 1);
+
+  // An append is structural: every sweep the region carries runs, whichever
+  // flag it reads.
+  const beforeAppend = reads(await instrumentation());
+  await add.click();
+  await expect(page.locator("#items > li")).toHaveCount(3);
+  const afterAppend = reads(await instrumentation());
+  expect(afterAppend.total).toBe(beforeAppend.total + 1);
+  expect(afterAppend.doneCount).toBe(beforeAppend.doneCount + 1);
+  expect(afterAppend.hint).toBe(beforeAppend.hint + 1);
+  expect(afterAppend.filter).toBe(beforeAppend.filter + 1);
+  expect(afterAppend.drained).toBe(beforeAppend.drained);
+});
