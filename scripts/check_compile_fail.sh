@@ -103,6 +103,8 @@ fixtures=(
   Test/fixtures/compile-fail/BroadcastPayloadString.lean
   Test/fixtures/compile-fail/BroadcastPayloadComposed.lean
   Test/fixtures/compile-fail/BroadcastPayloadUnknownField.lean
+  Test/fixtures/compile-fail/CountLabelThreshold.lean
+  Test/fixtures/compile-fail/CountLabelDynamicBranch.lean
 )
 fragments=(
   "Constructor for"
@@ -206,6 +208,8 @@ fragments=(
   "error[LRX-ELAB-126]"
   "error[LRX-ELAB-126]"
   "error[LRX-ELAB-115]"
+  "error[LRX-ELAB-127]"
+  "error[LRX-ELAB-127]"
 )
 
 for index in "${!fixtures[@]}"; do

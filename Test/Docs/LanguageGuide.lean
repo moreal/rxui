@@ -244,7 +244,9 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
     <button type="button" onClick={completeAll}> ["Complete all"],
     <button type="button" onClick={clearCompleted}
       hidden={count roster (done == "true") == 0}> ["Clear completed"],
-    <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
+    <p> [<strong> [{count roster (done == "false")}],
+      {if count roster (done == "false") == 1 then " item left" else " items left"},
+      " of ", {count roster}],
     <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>],
     <input type="checkbox" ariaLabel="Toggle all"
       checked={count roster (done == "false") == 0} onCheckedChange={toggleAll}/>
@@ -518,8 +520,10 @@ def run : IO Unit := do
   match CountedRosterMini_check with
   | .ok counting =>
       unless counting.view.regionCounts.map
-          (fun count => (count.region, count.predicate)) ==
-          [("roster", some (1, "false")), ("roster", none)] do
+          (fun count => (count.region, count.predicate, count.label)) ==
+          [("roster", some (1, "false"), none),
+            ("roster", some (1, "false"), some (" item left", " items left")),
+            ("roster", none, none)] do
         throw <| IO.userError "language-guide count snippet lost its count positions"
       unless counting.spec.events.toList.map
           (fun event => (event.name,

@@ -431,6 +431,7 @@ elab "#leanrx_environment_audit" : command => do
     (`LeanRx.MountedEvent.mk.injEq, #[``propext]),
     (`LeanRx.MountedProp.mk.injEq, #[``propext]),
     (`LeanRx.MountNode.child.injEq, #[``propext]),
+    (`LeanRx.MountNode.countText.injEq, #[``propext]),
     (`LeanRx.MountNode.element.injEq, #[``propext]),
     (`LeanRx.MountNode.text.injEq, #[``propext]),
     (`LeanRx.PropBinding.checked.injEq, #[``propext]),

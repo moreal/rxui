@@ -857,7 +857,8 @@ def run : IO Unit := do
   expectError "LRX-TYPE-112" removeIfOutOfBounds.check
   let countingView : View CounterSchema := View.node .main [
     View.node .ul [View.region "r"],
-    View.node .p [View.regionCount "r" (some (0, "done")), View.regionCount "r" none]
+    View.node .p [View.regionCount "r" (some (0, "done")), View.regionCount "r" none,
+      View.regionCount "r" (some (0, "done")) .generated (some (" one", " many"))]
   ]
   let countingRegion : ComponentSpec CounterSchema :=
     { goodRegion with view := countingView }
@@ -866,8 +867,9 @@ def run : IO Unit := do
       throw <| IO.userError s!"forged region counts rejected: {error.code}"
   | .ok checked =>
       unless checked.view.regionCounts.map
-          (fun count => (count.region, count.predicate, count.path)) ==
-          [("r", some (0, "done"), [1, 0]), ("r", none, [1, 1])] do
+          (fun count => (count.region, count.predicate, count.label, count.path)) ==
+          [("r", some (0, "done"), none, [1, 0]), ("r", none, none, [1, 1]),
+            ("r", some (0, "done"), some (" one", " many"), [1, 2])] do
         throw <| IO.userError "forged region counts lost their mounted positions"
   let countUnknownRegion : ComponentSpec CounterSchema :=
     { goodRegion with view := View.node .main [
@@ -879,6 +881,20 @@ def run : IO Unit := do
         View.node .ul [View.region "r"],
         View.node .p [View.regionCount "r" (some (1, "x"))]] }
   expectError "LRX-VIEW-038" countPredicateOutOfBounds.check
+  /- The ADR-0062 label count carries the same ADR-0050 obligations: an
+  unknown region and an out-of-bounds predicate field reject identically
+  with the label present. -/
+  let labelUnknownRegion : ComponentSpec CounterSchema :=
+    { goodRegion with view := View.node .main [
+        View.node .ul [View.region "r"],
+        View.node .p [View.regionCount "ghost" none .generated (some ("a", "b"))]] }
+  expectError "LRX-VIEW-038" labelUnknownRegion.check
+  let labelPredicateOutOfBounds : ComponentSpec CounterSchema :=
+    { goodRegion with view := View.node .main [
+        View.node .ul [View.region "r"],
+        View.node .p [View.regionCount "r" (some (1, "x")) .generated
+          (some ("a", "b"))]] }
+  expectError "LRX-VIEW-038" labelPredicateOutOfBounds.check
   /- ADR-0051 sealed region filter views, exercised through forged
   specifications: the good filter checks, keeps its arm table, and joins the
   planned graph as a sink node; LRX-TYPE-113 rejects the unknown region, the

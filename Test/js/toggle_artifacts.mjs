@@ -31,7 +31,7 @@ if (
     "attr-selections", "keyed-regions",
     "typed-row-events", "row-key-branches", "row-guards", "row-trim",
     "row-branches", "row-reflects", "row-focus", "row-aggregates",
-    "region-broadcasts", "payload-broadcasts", "region-filters",
+    "count-labels", "region-broadcasts", "payload-broadcasts", "region-filters",
     "region-visibility", "predicate-visibility", "region-checked",
   ])
 ) {
@@ -89,16 +89,16 @@ for (const required of [
   // re-evaluates it behind the draft's changed flag with the shared
   // evaluate-compare-write shape and the tx[8]/tx[9] counters. The ADR-0058
   // empty-region visibility rides the same attr slots: the items list
-  // wrapper (node_25, also the region container) mounts hidden — regions
+  // wrapper (node_26, also the region container) mounts hidden — regions
   // mount empty by construction, so the initial cache value is the literal
   // true — through the same setProperty export. The ADR-0059 predicate
   // hidden selection sits between them: the Clear completed button
   // (node_10) mounts hidden through the same slots and the same literal
   // true — an empty region satisfies no predicate. The ADR-0060 toggle-all
-  // checked selection (node_26) closes the block: the box mounts vacuously
+  // checked selection (node_27) closes the block: the box mounts vacuously
   // checked — the same literal true read the other way, no row fails the
   // predicate — through the same setProperty export.
-  "  const attrRefs = [node_4, node_10, node_25, node_26];",
+  "  const attrRefs = [node_4, node_10, node_26, node_27];",
   "  const attrCache = [state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\", true, true, true];",
   "  setProperty(attrRefs[0], \"disabled\", attrCache[0]);",
   "  setProperty(attrRefs[1], \"hidden\", attrCache[1]);",
@@ -118,11 +118,11 @@ for (const required of [
   "  const context = [state, refs, tx, oldSources, changed, sinkCache, propRefs, propCache, attrRefs, attrCache, regions];",
   // One structural delegated listener per bound kind, in registration order,
   // each with its own static per-cell action array (ADR-0041/0046/0049).
-  "const region_off_0 = listenDelegatedCells(node_25, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
-  "const region_off_0_dblclick = listenDelegatedCells(node_25, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
-  "const region_off_0_input = listenDelegatedCells(node_25, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
-  "const region_off_0_keydown = listenDelegatedCells(node_25, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"keys\", \"\", \"\"]);",
-  "const region_off_0_change = listenDelegatedCells(node_25, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
+  "const region_off_0 = listenDelegatedCells(node_26, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"commit\", \"remove\"]);",
+  "const region_off_0_dblclick = listenDelegatedCells(node_26, \"dblclick\", state, context, $lrx_region_0_dispatch, [\"\", \"edit\", \"\", \"\"]);",
+  "const region_off_0_input = listenDelegatedCells(node_26, \"input\", state, context, $lrx_region_0_dispatch, [\"\", \"retype\", \"\", \"\"]);",
+  "const region_off_0_keydown = listenDelegatedCells(node_26, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"keys\", \"\", \"\"]);",
+  "const region_off_0_change = listenDelegatedCells(node_26, \"change\", state, context, $lrx_region_0_dispatch, [\"toggle\", \"\", \"\", \"\"]);",
   // The ADR-0052 key-branched selection: one eventKey equality per arm
   // inside the existing action match — a matched key runs the ADR-0043
   // scan-evaluate-assign-queue sequence, a non-matching key falls through
@@ -156,7 +156,7 @@ for (const required of [
   // existing listenChecked form-event export handing the delegated checked
   // boolean to the payload broadcast dispatch — the ADR-0060 payload-less
   // listen mount is replaced, and still no new host export.
-  "  const off_9 = listenChecked(node_26, \"change\", state, context, $lrx_typed_event_1);",
+  "  const off_9 = listenChecked(node_27, \"change\", state, context, $lrx_typed_event_1);",
   // The ADR-0061 payload broadcast body: the Bool payload lowers to the
   // "true"/"false" strings exactly as the ADR-0049 row payload does, and
   // the write body is the shared ADR-0050 broadcast's — every row's done
@@ -168,17 +168,29 @@ for (const required of [
   // The ADR-0050 region record carries the count refs and numeric cache in
   // two region-local slots behind the pending slot, and the ADR-0051 filter
   // slot holds the container element behind them.
-  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_24], [0, 0], node_25]];",
+  // The ADR-0062 label count joins the count slots: its ref sits between
+  // the predicate count and the total in view order, and its cache slot
+  // mounts as the else string — the mounted DOM text of the empty region.
+  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_23, count_text_25], [0, \" items left\", 0], node_26]];",
   // The broadcast writes every row from the sealed row expression and raises
   // the dirty flag; the predicate removal keeps the non-matching rows.
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n  }\n  regions[0][3] = true;",
   "  const kept_0 = [];",
   "  regions[0][1] = kept_0;",
   // The count sweep reads the touched flag before the reconcile consumes
-  // it, recomputes both count forms, and writes through setText.
+  // it, recomputes both count forms, and writes through setText. The
+  // ADR-0062 label count rides the same loop: the recomputed predicate
+  // count selects one of the two static strings against the one literal,
+  // and the selected string takes the cache compare and the setText write.
   "    const region_touched_0 = regions[0][3] || regions[0][4][\"length\"] !== 0;",
-  "      const count_next_0_1 = regions[0][1][\"length\"];",
+  "      const count_next_0_2 = regions[0][1][\"length\"];",
   "        setText(regions[0][5][0], count_next_0_0);",
+  "      const count_label_0_1 = count_next_0_1 === 1 ? \" item left\" : \" items left\";",
+  "      const count_changed_0_1 = regions[0][6][1] !== count_label_0_1;",
+  "        setText(regions[0][5][1], count_label_0_1);",
+  // The label mounts as the else string: an empty region counts zero and
+  // zero differs from one — the plural branch is the mount text.
+  "  const count_text_23 = createText(\" items left\");",
   // The ADR-0051 filter sweep runs after the reconcile and drain whenever
   // the region was touched or the filter field changed, writing each row
   // root's hidden property from the sealed state-to-predicate table by

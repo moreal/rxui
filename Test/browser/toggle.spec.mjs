@@ -220,23 +220,24 @@ test("appending rows leaves earlier toggles in place and mounts fresh rows unche
 
 test("the sealed counts track appends and per-row toggles (ADR-0050)", async ({ page }) => {
   await mountToggle(page);
-  // Both count forms mount at "0": regions mount empty by construction.
-  await expect(page.locator("#items-left")).toHaveText("0 left of 0");
+  // Both count forms mount at "0" and the ADR-0062 label at its plural
+  // branch: regions mount empty by construction.
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 0");
   const add = page.getByRole("button", { name: "Add item" });
   await add.click();
   await add.click();
   await add.click();
   await expect(page.locator("#items-left strong")).toHaveText("3");
-  await expect(page.locator("#items-left")).toHaveText("3 left of 3");
+  await expect(page.locator("#items-left")).toHaveText("3 items left of 3");
   // A single delegated toggle drains through updateAt (pending, not dirty);
   // the count sweep still sees the touched region and recomputes both forms.
   await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).check();
-  await expect(page.locator("#items-left")).toHaveText("2 left of 3");
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 3");
   await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).uncheck();
-  await expect(page.locator("#items-left")).toHaveText("3 left of 3");
+  await expect(page.locator("#items-left")).toHaveText("3 items left of 3");
   // Removing a row updates both the predicate count and the total.
   await page.locator("#items > li").nth(0).getByRole("button", { name: "Remove item" }).click();
-  await expect(page.locator("#items-left")).toHaveText("2 left of 2");
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
 });
 
 test("completing all broadcasts the sealed row expression with row identity preserved (ADR-0050)", async ({ page }) => {
@@ -257,7 +258,7 @@ test("completing all broadcasts the sealed row expression with row identity pres
     await expect(row).toHaveClass("item-row done");
     await expect(row.getByRole("checkbox", { name: "Toggle item" })).toBeChecked();
   }
-  await expect(page.locator("#items-left")).toHaveText("0 left of 3");
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 3");
   const retained = await page.evaluate(() =>
     globalThis.firstRow === document.querySelector("#items > li"),
   );
@@ -288,7 +289,7 @@ test("clearing completed disposes exactly the done rows (ADR-0050)", async ({ pa
   // from the literal; the survivor keeps its DOM node.
   await expect(page.locator("#items > li")).toHaveCount(1);
   await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
-  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
   const retained = await page.evaluate(() =>
     globalThis.middleRow === document.querySelector("#items > li"),
   );
@@ -305,7 +306,7 @@ test("clearing completed disposes exactly the done rows (ADR-0050)", async ({ pa
   await page.getByRole("button", { name: "Clear completed", includeHidden: true })
     .dispatchEvent("click");
   await expect(page.locator("#items > li")).toHaveCount(1);
-  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
 });
 
 test("dblclick outside the label cell dispatches nothing", async ({ page }) => {
@@ -339,7 +340,7 @@ test("the filter view hides exactly the non-matching rows with identity and metr
   await expect(page.locator("#items > li").nth(2)).toBeVisible();
   // items-left counts the full row table: the displayed set follows the
   // filter while the counts stay filter-independent (ADR-0050/0051).
-  await expect(page.locator("#items-left")).toHaveText("2 left of 3");
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 3");
   expect(await regionMetrics(page)).toEqual(before);
   const retained = await page.evaluate(() =>
     globalThis.firstRow === document.querySelector("#items > li"),
@@ -378,7 +379,7 @@ test("a row update that changes the predicated field re-applies the filter live 
   await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).check();
   await expect(page.locator("#items > li").nth(1)).toBeHidden();
   await expect(page.locator("#items > li").nth(0)).toBeVisible();
-  await expect(page.locator("#items-left")).toHaveText("1 left of 2");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 2");
   // Under the completed filter the same row is the visible one; unchecking
   // it hides it again from the completed set.
   await page.getByRole("button", { name: "Show completed" }).click();
@@ -386,7 +387,7 @@ test("a row update that changes the predicated field re-applies the filter live 
   await expect(page.locator("#items > li").nth(0)).toBeHidden();
   await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).uncheck();
   await expect(page.locator("#items > li").nth(1)).toBeHidden();
-  await expect(page.locator("#items-left")).toHaveText("2 left of 2");
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
 });
 
 test("appended rows take their visibility inside the appending commit (ADR-0051)", async ({ page }) => {
@@ -398,12 +399,12 @@ test("appended rows take their visibility inside the appending commit (ADR-0051)
   // hidden by the same commit's filter sweep — it never flashes visible.
   await expect(page.locator("#items > li")).toHaveCount(1);
   await expect(page.locator("#items > li").nth(0)).toBeHidden();
-  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
   // The broadcast moves every row into the completed set: the dirty
   // reconcile and the filter sweep compose in one transaction.
   await page.getByRole("button", { name: "Complete all" }).click();
   await expect(page.locator("#items > li").nth(0)).toBeVisible();
-  await expect(page.locator("#items-left")).toHaveText("0 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 1");
 });
 
 test("broadcasts and removals compose with an active filter (ADR-0051)", async ({ page }) => {
@@ -420,7 +421,7 @@ test("broadcasts and removals compose with an active filter (ADR-0051)", async (
   for (const row of await page.locator("#items > li").all()) {
     await expect(row).toBeHidden();
   }
-  await expect(page.locator("#items-left")).toHaveText("0 left of 3");
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 3");
   await page.getByRole("button", { name: "Show completed" }).click();
   for (const row of await page.locator("#items > li").all()) {
     await expect(row).toBeVisible();
@@ -429,7 +430,7 @@ test("broadcasts and removals compose with an active filter (ADR-0051)", async (
   // nothing left to hide.
   await page.getByRole("button", { name: "Clear completed" }).click();
   await expect(page.locator("#items > li")).toHaveCount(0);
-  await expect(page.locator("#items-left")).toHaveText("0 left of 0");
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 0");
 });
 
 test("Enter commits the draft through the key-branched row event (ADR-0052)", async ({ page }) => {
@@ -527,7 +528,7 @@ test("Enter on an empty draft removes the row through the remove-if guard (ADR-0
   await editor.press("Enter");
   await expect(page.locator("#items > li")).toHaveCount(1);
   await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
-  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
   // The survivor keeps its DOM node — row identity preserved through the
   // disposal of its sibling.
   const retained = await page.evaluate(() =>
@@ -600,7 +601,7 @@ test("Enter on a whitespace-only draft removes the row through the trimmed guard
   await editor.press("Enter");
   await expect(page.locator("#items > li")).toHaveCount(1);
   await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
-  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
   const retained = await page.evaluate(() =>
     globalThis.secondRow === document.querySelector("#items > li"),
   );
@@ -657,7 +658,7 @@ test("Add on a whitespace-only draft is a whole-event no-op (ADR-0055/0057)", as
   await addTodo.evaluate((button) =>
     button.dispatchEvent(new MouseEvent("click", { bubbles: true })));
   await expect(page.locator("#items > li")).toHaveCount(1);
-  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
   // The draft is not written either — the guard hit is a no-op, not a
   // reset: the controlled input keeps the whitespace text.
   await expect(draft).toHaveValue(" \t ");
@@ -679,7 +680,7 @@ test("Add on a valid draft appends the trimmed label and resets the draft (ADR-0
   // input.
   await page.getByRole("button", { name: "Add todo" }).click();
   await expect(page.locator("#items > li .item-label")).toHaveText(["buy milk"]);
-  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
   await expect(draft).toHaveValue("");
   const after = await regionMetrics(page);
   // [mounts, updates, moves, disposals]: the append is one row mount, and
@@ -709,7 +710,7 @@ test("Enter on a whitespace-only draft is a whole-event no-op (ADR-0056)", async
   // region touch — exactly the button path's guard hit.
   await draft.press("Enter");
   await expect(page.locator("#items > li")).toHaveCount(1);
-  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
   await expect(draft).toHaveValue(" \t ");
   const afterTx = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
   expect(afterTx).toEqual(beforeTx);
@@ -727,7 +728,7 @@ test("Enter on a valid draft runs the Add button's guarded add (ADR-0056)", asyn
   // reflection — traced under the arm's own event:confirmAdd:Enter label.
   await draft.press("Enter");
   await expect(page.locator("#items > li .item-label")).toHaveText(["buy milk"]);
-  await expect(page.locator("#items-left")).toHaveText("1 left of 1");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
   await expect(draft).toHaveValue("");
   const after = await regionMetrics(page);
   expect(after[0]).toBe(before[0] + 1);
@@ -907,7 +908,7 @@ test("a filter hiding every row leaves the wrapper visible (ADR-0058)", async ({
   expect(await wrapper.evaluate((element) => element.hidden)).toBe(false);
   expect(await wrapper.evaluate(
     (element) => getComputedStyle(element).display)).not.toBe("none");
-  await expect(page.locator("#items-left")).toHaveText("2 left of 2");
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
   await page.getByRole("button", { name: "Show all" }).click();
   await expect(page.locator("#items > li:visible")).toHaveCount(2);
   // A filter change alone never touches the region, so the hidden
@@ -1123,7 +1124,7 @@ test("a filter change never re-evaluates the box and its change broadcasts the p
   await expect(box).toBeChecked();
   await expect(page.locator("#items > li")
     .getByRole("checkbox", { name: "Toggle item", checked: true })).toHaveCount(2);
-  await expect(page.locator("#items-left")).toHaveText("0 left of 2");
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 2");
   // The uncheck path is closed (ADR-0061, replacing the ADR-0060 cache-DOM
   // divergence): unchecking the box broadcasts the "false" payload, every
   // row reverts to not-done, and the sweep's evaluate-compare-write agrees
@@ -1139,7 +1140,7 @@ test("a filter change never re-evaluates the box and its change broadcasts the p
     .getByRole("checkbox", { name: "Toggle item", checked: true })).toHaveCount(0);
   await expect(page.locator("#items > li")
     .getByRole("checkbox", { name: "Toggle item" })).toHaveCount(2);
-  await expect(page.locator("#items-left")).toHaveText("2 left of 2");
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
   await expect(page.locator("#items > li").first()).toHaveClass("item-row");
 });
 
@@ -1152,7 +1153,7 @@ test("one payload broadcast's region touch updates the counts and every selectio
   await add.click();
   await page.locator("#items > li").first()
     .getByRole("checkbox", { name: "Toggle item" }).check();
-  await expect(page.locator("#items-left")).toHaveText("1 left of 2");
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 2");
   await expect(clear).toBeVisible();
   await expect(box).not.toBeChecked();
   await page.evaluate(() => {
@@ -1166,7 +1167,7 @@ test("one payload broadcast's region touch updates the counts and every selectio
   // equal-value), the list hidden (rows remain — no write), and the
   // toggle-all checked (flips to true) together.
   await box.check();
-  await expect(page.locator("#items-left")).toHaveText("0 left of 2");
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 2");
   await expect(clear).toBeVisible();
   await expect(page.locator("#items")).toBeVisible();
   await expect(box).toBeChecked();
@@ -1221,7 +1222,7 @@ test("an equal-payload broadcast is an evaluate-only sweep and an empty-region b
   // and the checked slot all compare equal and write nothing.
   const before = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
   await fireChange(true);
-  await expect(page.locator("#items-left")).toHaveText("0 left of 2");
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 2");
   await expect(box).toBeChecked();
   const after = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
   expect(count(after, "region:items:broadcast"))
@@ -1258,6 +1259,87 @@ test("an equal-payload broadcast is an evaluate-only sweep and an empty-region b
   expect(count(afterEmpty, "dom:attr:2:hidden:write"))
     .toBe(count(beforeEmpty, "dom:attr:2:hidden:write"));
   expect(await box.evaluate((element) => element.checked)).toBe(false);
+});
+
+test("the count label flips between singular and plural on the count sweep (ADR-0062)", async ({ page }) => {
+  await mountToggle(page);
+  const count = (tx, label) => tx[7].filter((entry) => entry === label).length;
+  const instrumentation = () =>
+    page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  // The label mounts as the plural branch: an empty region counts zero
+  // not-done rows, and zero differs from the one literal, so the line
+  // reads the else string before any transaction runs.
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 0");
+  const add = page.getByRole("button", { name: "Add item" });
+  // The first append flips the label to singular in exactly one evaluation
+  // and one write: the recomputed predicate count equals the one literal,
+  // the selected string differs from the cached plural, and the same
+  // commit updates the numbers beside it.
+  const beforeFirst = await instrumentation();
+  await add.click();
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
+  const afterFirst = await instrumentation();
+  expect(count(afterFirst, "count:items:1:evaluated"))
+    .toBe(count(beforeFirst, "count:items:1:evaluated") + 1);
+  expect(count(afterFirst, "dom:count:items:1:write"))
+    .toBe(count(beforeFirst, "dom:count:items:1:write") + 1);
+  // The second append flips it back to plural — another single write.
+  await add.click();
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
+  const afterSecond = await instrumentation();
+  expect(count(afterSecond, "count:items:1:evaluated"))
+    .toBe(count(afterFirst, "count:items:1:evaluated") + 1);
+  expect(count(afterSecond, "dom:count:items:1:write"))
+    .toBe(count(afterFirst, "dom:count:items:1:write") + 1);
+  // An equal-selection commit is evaluate-only: toggling one of three rows
+  // moves the predicate count from three to two — both plural — so the
+  // label slot evaluates without writing while the numbers beside it
+  // update in the same commit.
+  await add.click();
+  await expect(page.locator("#items-left")).toHaveText("3 items left of 3");
+  const beforeEqual = await instrumentation();
+  await page.locator("#items > li").nth(0)
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 3");
+  const afterEqual = await instrumentation();
+  expect(count(afterEqual, "count:items:1:evaluated"))
+    .toBe(count(beforeEqual, "count:items:1:evaluated") + 1);
+  expect(count(afterEqual, "dom:count:items:1:write"))
+    .toBe(count(beforeEqual, "dom:count:items:1:write"));
+  // A filter change alone touches no region: the label slot does not even
+  // evaluate — the ADR-0051 non-touch pinned at the label position.
+  const beforeFilter = await instrumentation();
+  await page.getByRole("button", { name: "Show active" }).click();
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 3");
+  const afterFilter = await instrumentation();
+  expect(count(afterFilter, "count:items:1:evaluated"))
+    .toBe(count(beforeFilter, "count:items:1:evaluated"));
+  await page.getByRole("button", { name: "Show all" }).click();
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("the count label follows every region mutation in the same commit (ADR-0062)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  // The toggle-all payload broadcast, the per-row toggle, clearCompleted,
+  // and the ✕ removal all run the label through the same region-touch
+  // sweep as the count numbers: number and label agree after every commit.
+  const box = page.getByRole("checkbox", { name: "Toggle all" });
+  await box.check();
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 2");
+  await box.uncheck();
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
+  await page.locator("#items > li").nth(0)
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 2");
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
+  await page.locator("#items > li").nth(0)
+    .getByRole("button", { name: "Remove item" }).click();
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 0");
 });
 
 test("disposal removes the region, listeners, and rows idempotently", async ({ page }) => {

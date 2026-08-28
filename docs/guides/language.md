@@ -391,7 +391,20 @@ empty) and recomputed by the commit sweep whenever the region was touched,
 so they track appends, per-row updates, broadcasts, and removals alike. The
 predicate is the same single-field `String` equality every sealed selection
 uses, so keep the counted field canonical (`done == "false"` counts the
-active rows). Two component event steps mutate every row at once:
+active rows). A count may instead drive a sealed label selection (ADR-0062):
+`{if count region == 1 then "one" else "other"}` — either count subject
+compared against the one literal — renders one of two static strings, so
+TodoMVC's "1 item left" grammar is a text position beside the number. The
+label mounts as its `else` string (an empty region counts zero, and zero
+differs from one), joins the count inventory as one more slot recomputed by
+the same region-touch sweep with the same per-slot scan (no scan sharing),
+and writes the selected string through the same `setText` export only on a
+flip — an equal-selection commit is evaluate-only, and a filter change
+alone recomputes nothing. The surface is sealed: the comparison literal is
+one and the branches are two static string literals (`LRX-ELAB-127` on any
+other threshold or a dynamic branch); every other conditional text stays
+rejected (`LRX-VIEW-012`). Two component event steps mutate every row at
+once:
 `update region (set field (expr), …)` is the region broadcast — the
 right-hand sides are sealed row expressions evaluated simultaneously against
 each row's current tuple, and the keyed reconcile re-renders every retained
@@ -422,7 +435,9 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
     <button type="button" onClick={completeAll}> ["Complete all"],
     <button type="button" onClick={clearCompleted}
       hidden={count roster (done == "true") == 0}> ["Clear completed"],
-    <p> [<strong> [{count roster (done == "false")}], " left of ", {count roster}],
+    <p> [<strong> [{count roster (done == "false")}],
+      {if count roster (done == "false") == 1 then " item left" else " items left"},
+      " of ", {count roster}],
     <ul ariaLabel="Items" hidden={count roster == 0}> [<region roster/>],
     <input type="checkbox" ariaLabel="Toggle all"
       checked={count roster (done == "false") == 0} onCheckedChange={toggleAll}/>

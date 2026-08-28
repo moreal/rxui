@@ -220,9 +220,11 @@ private def verifyToggle
       unless event.update.regionRemoveIfTargets == [("items", 2)] do
         throw <| IO.userError "toggle removal lost its target or predicate field"
   unless checked.view.regionCounts.map
-      (fun count => (count.region, count.predicate)) ==
-      [("items", some (2, "false")), ("items", none)] do
-    throw <| IO.userError "toggle count positions lost their region or predicates"
+      (fun count => (count.region, count.predicate, count.label)) ==
+      [("items", some (2, "false"), none),
+        ("items", some (2, "false"), some (" item left", " items left")),
+        ("items", none, none)] do
+    throw <| IO.userError "toggle count positions lost their region, predicates, or label"
   /- The ADR-0051 filter view: the `by` state field and the `when` arm table
   lower against the region field inventory — `"all"` carries no arm by
   design, so it is absent from the table. -/
