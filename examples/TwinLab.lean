@@ -4,9 +4,9 @@ import LeanRx
 *two* keyed regions each carry an ADR-0051 filter view, and what happens
 when two of those filters are driven by the *same* state field.
 
-The lab is deliberately narrow — three regions, no child components, no
-persistence — so the generated module is a direct reading of the
-per-region filter contract:
+The lab is deliberately narrow — three regions, no child components, one
+persisted region out of the three — so the generated module is a direct
+reading of the per-region filter contract:
 
 - `left` carries a count cell, so its record is `[handle, rows, nextKey,
   dirty, pending, countRefs, countCache, container]` and its filter
@@ -69,6 +69,28 @@ ADR-0080 closes the two axes ADR-0079 left open on top of that shape:
   the sweep wake together by construction; `left` and `solo` stay asleep
   even though `left` shares the filter field.
 
+ADR-0081 closes the last combination on top of that shape:
+`persist right := "leanrx-twin-lab.right"` persists *one* of the two
+regions the routed field drives. The two write paths never meet: the
+`storageSet` rides `region_touched_1` alone, while the canonical hash
+write rides `changed[mode]` inside the commit prologue, ahead of every
+region block. So a `mode` flip runs both twin sweeps and one
+`route:mode:write` and persists nothing, while a `right` row toggle
+persists once and writes no hash — and mount does both in order, seeding
+`mode` from the hash before the DOM exists and hydrating `right`'s rows
+after the listeners are wired, so the hydrate transaction's own sweep
+applies the routed literal to the rows it just mounted. `left` and
+`solo` remain unpersisted, so the persist feature is no more
+component-wide than the filter or count features are: `right`'s record
+is still the same six slots with its container at 5, because persistence
+adds no region-record slot at all.
+
+The one-route cap the component rests on is not scaffolding: two route
+items compile, but their two `writeHash` blocks race for one
+`location.hash` inside a commit and one `hashchange` wakes both
+dispatches, the second reading the hash the first just rewrote
+(ADR-0081).
+
 No host change; runtime ABI stays 17. -/
 
 namespace LeanRxExamples.TwinLab
@@ -115,6 +137,7 @@ component TwinLab (schema := TwinSchema) where {
   filter solo by tone := when "on" (flag == "true");
   route mode := when "#/" "all" then when "#/on" "on"
     then when "#/off" "off" then when "#/mixed" "mixed";
+  persist right := "leanrx-twin-lab.right";
   row right toggle (checked : String) := set flag checked;
   region left (label, flag) := jsx% <li class="twin-row"> [
     <span class="twin-label"> [{label}],

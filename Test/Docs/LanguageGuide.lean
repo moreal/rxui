@@ -304,6 +304,7 @@ component TwinFilterMini (schema := TwinFilterMiniSchema) where {
   filter solo by twinTone := when "on" (flag == "true");
   route twinMode := when "#/" "all" then when "#/on" "on"
     then when "#/mixed" "mixed";
+  persist right := "leanrx-guide.twin-right";
   region left (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
   region right (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
   region solo (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
@@ -684,6 +685,16 @@ def run : IO Unit := do
           [(0, [("#/", "all"), ("#/on", "on"), ("#/mixed", "mixed")])] do
         throw <| IO.userError
           "language-guide twin route snippet lost its union literal arm"
+      -- ADR-0081: exactly one of the two regions the routed field drives is
+      -- persisted. The persistence sweep rides that region's touched flag and
+      -- the hash write rides the field's changed bit, so the combination is
+      -- independent by construction — and only one route item is legal.
+      unless twinned.spec.persists.toList.map (fun item => (item.region, item.key)) ==
+          [("right", "leanrx-guide.twin-right")] do
+        throw <| IO.userError
+          "language-guide twin snippet lost its single persisted region"
+      unless twinned.spec.routes.size == 1 do
+        throw <| IO.userError "language-guide twin snippet gained a second route item"
   | .error error =>
       throw <| IO.userError
         s!"language-guide twin filter component rejected: {error.render}"

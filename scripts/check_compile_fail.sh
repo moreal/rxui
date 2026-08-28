@@ -126,6 +126,11 @@ fixtures=(
   Test/fixtures/compile-fail/RowChildBroadcastField.lean
   Test/fixtures/compile-fail/FilterRegionTwice.lean
   Test/fixtures/compile-fail/RouteLiteralOutsideFilterUnion.lean
+  Test/fixtures/compile-fail/RouteTwice.lean
+  Test/fixtures/compile-fail/RouteDerivedField.lean
+  Test/fixtures/compile-fail/RouteUnfilteredField.lean
+  Test/fixtures/compile-fail/RouteDuplicateHash.lean
+  Test/fixtures/compile-fail/RouteDuplicateLiteral.lean
 )
 fragments=(
   "Constructor for"
@@ -252,6 +257,13 @@ fragments=(
   "error[LRX-VIEW-045]"
   "error[LRX-TYPE-113]"
   "error[LRX-TYPE-117]"
+  # ADR-0081: one witness per LRX-TYPE-117 branch, pinned on the message
+  # rather than the shared code so the branches cannot collapse into one.
+  "a component declares at most one route item"
+  "route item targets derived value"
+  "routing seals onto the filter field"
+  "route item maps one hash literal twice"
+  "the correspondence is one-to-one"
 )
 
 for index in "${!fixtures[@]}"; do
@@ -307,6 +319,17 @@ if [[ "$union_output" != *"RouteLiteralOutsideFilterUnion.lean:19:3"* ||
       "$union_output" != *"RouteLiteralOutsideFilterUnion.lean:20:3"* ]]; then
   echo "route literal diagnostic lost one of the two filter declarations" >&2
   echo "$union_output" >&2
+  exit 1
+fi
+
+twice_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/RouteTwice.lean 2>&1 || true)"
+# ADR-0081: the cap is a claim about the pair, so its diagnostic names *both*
+# route declarations (lines 25 and 26), the way the ADR-0080 union one names
+# both filter tables.
+if [[ "$twice_output" != *"RouteTwice.lean:25:3"* ||
+      "$twice_output" != *"RouteTwice.lean:26:3"* ]]; then
+  echo "route cap diagnostic lost one of the two route declarations" >&2
+  echo "$twice_output" >&2
   exit 1
 fi
 

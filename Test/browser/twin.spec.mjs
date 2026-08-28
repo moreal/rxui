@@ -445,3 +445,101 @@ test("flipping back restores every region without remounting a row", async ({ pa
   expect(after.identical).toBe(true);
   expect(after.rows).toBe(6);
 });
+
+test("a route flip persists nothing and a row touch writes no hash", async ({ page }) => {
+  await mountTwin(page);
+  await seedBoth(page);
+  // `right` is the persisted region, so the two seed events have already
+  // written it once each; `left` and `solo` own no key at all.
+  const seeded = await page.evaluate(() => ({
+    right: localStorage.getItem("leanrx-twin-lab.right"),
+    left: localStorage.getItem("leanrx-twin-lab.left"),
+    solo: localStorage.getItem("leanrx-twin-lab.solo"),
+  }));
+  expect(seeded.right).toBe("R0,true;R1,false");
+  expect(seeded.left).toBeNull();
+  expect(seeded.solo).toBeNull();
+  const before = await markTrace(page);
+  // ADR-0081: the routed field drives two regions and *one* of them persists.
+  // The persistence sweep is guarded on `region_touched_1` alone, so a flip
+  // of the field both twins filter on cannot reach it — two sweeps run, the
+  // hash is rewritten, and the stored string is untouched.
+  await page.getByRole("button", { name: "Show on" }).click();
+  await expect(page.locator("#right > li").nth(0)).toBeHidden();
+  await expect(page).toHaveURL(/#\/on$/);
+  await expect
+    .poll(() => page.evaluate(() => globalThis.twinDispose.instrumentation()[1]))
+    .toBe(before.commits + 2);
+  const flipped = await readTrace(page);
+  expect(occurrences(flipped.slice, "route:mode:write")).toBe(1);
+  expect(occurrences(flipped.slice, "filter:left:evaluated")).toBe(1);
+  expect(occurrences(flipped.slice, "filter:right:evaluated")).toBe(1);
+  expect(occurrences(flipped.slice, "storage:right:write")).toBe(0);
+  expect(await page.evaluate(
+    () => localStorage.getItem("leanrx-twin-lab.right"),
+  )).toBe("R0,true;R1,false");
+  // The other direction: a row touch in the persisted region rides its own
+  // touched flag into one storageSet and changes no state field, so the
+  // route write block never opens and the URL stays where the flip left it.
+  const beforeToggle = await markTrace(page);
+  await page.locator("#right > li").nth(1)
+    .getByRole("checkbox", { name: "Flag right" }).check();
+  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  const toggled = await readTrace(page);
+  expect(toggled.commits).toBe(beforeToggle.commits + 1);
+  expect(occurrences(toggled.slice, "storage:right:write")).toBe(1);
+  expect(occurrences(toggled.slice, "route:mode:write")).toBe(0);
+  expect(occurrences(toggled.slice, "filter:right:evaluated")).toBe(1);
+  expect(occurrences(toggled.slice, "filter:left:evaluated")).toBe(0);
+  // The write-back carries the drained row, and rides the same touched flag
+  // the drain and the sweep do — one commit, one serialization.
+  expect(await page.evaluate(
+    () => localStorage.getItem("leanrx-twin-lab.right"),
+  )).toBe("R0,true;R1,true");
+  await expect(page).toHaveURL(/#\/on$/);
+});
+
+test("a routed literal filters the rows its own hydration mounted", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    localStorage.setItem("leanrx-twin-lab.right", "R0,true;R1,false");
+    location.hash = "#/mixed";
+    const { mount } = await import("/TwinLab.mjs");
+    globalThis.twinDispose = mount(document.getElementById("app"));
+  });
+  // ADR-0081: mount seeds `mode` from the hash before the DOM exists and runs
+  // the hydrate transaction after the listeners are wired, so the hydrate
+  // commit's own sweep applies the routed literal to the rows it just
+  // mounted — no second commit, and no hash write, because the routed field
+  // never changed inside that transaction.
+  await expect(page.locator("#right .twin-label")).toHaveText(["R0", "R1"]);
+  await expect(page.locator("#right > li").nth(0)).toBeVisible();
+  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  // Persistence is per region, exactly as filters and counts are: the two
+  // unpersisted regions mount empty even though one of them shares the
+  // routed field.
+  await expect(page.locator("#left > li")).toHaveCount(0);
+  await expect(page.locator("#solo > li")).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/mixed$/);
+  const hydrated = await page.evaluate(() => ({
+    commits: globalThis.twinDispose.instrumentation()[1],
+    trace: globalThis.twinDispose.instrumentation()[7],
+    stored: localStorage.getItem("leanrx-twin-lab.right"),
+  }));
+  expect(hydrated.commits).toBe(1);
+  for (const event of [
+    "event:hydrate:right", "region:right:hydrate",
+    "filter:right:evaluated", "storage:right:write",
+  ]) {
+    expect(hydrated.trace).toContain(event);
+  }
+  expect(hydrated.trace).not.toContain("route:mode:write");
+  expect(hydrated.trace.indexOf("region:right:hydrate"))
+    .toBeLessThan(hydrated.trace.indexOf("filter:right:evaluated"));
+  // `left` shares the routed field but owns no rows to sweep, and `solo`
+  // reads a different field entirely.
+  expect(hydrated.trace).not.toContain("storage:left:write");
+  expect(hydrated.stored).toBe("R0,true;R1,false");
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});

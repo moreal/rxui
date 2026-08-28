@@ -26,7 +26,7 @@ if (
   JSON.stringify(twinManifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
     "keyed-regions", "typed-row-events", "row-reflects", "row-aggregates",
-    "region-filters", "routing",
+    "region-filters", "routing", "persistence",
   ])
 ) {
   throw new Error("generated Twin Lab manifest is invalid");
@@ -45,6 +45,9 @@ for (const required of [
   // count so its record is eight slots wide with the container at 7, while
   // `right` and `solo` carry none so the same container rides slot 5 of a
   // six-slot record. Nothing about the filter feature is component-wide.
+  // ADR-0081: `right` is now persisted, and this line is the proof that
+  // persistence adds no region-record slot — the six-slot record and the
+  // container at 5 are byte-for-byte what ADR-0080 pinned.
   "const regions = [[region_0, [], 0, false, [], [count_text_22], [0], node_24], [region_1, [], 0, false, [], node_25], [region_2, [], 0, false, [], node_26]];",
   // Each region's touched flag is its own, read before the reconcile
   // consumes the dirty bit and the pending positions.
@@ -98,6 +101,22 @@ for (const required of [
   // next statement is that region's own filter sweep, both woken by the one
   // `region_touched_1` flag the drain's pending array feeds.
   "    if (regions[1][4][\"length\"] !== 0) {\n      for (const pending_row of regions[1][4]) {\n        regions[1][0][\"updateAt\"](pending_row, regions[1][1][pending_row], null);\n        tx[7][\"push\"](\"region:right:updateAt\");\n      }\n      regions[1][4] = [];\n    }\n    if (region_touched_1 || changed[1]) {",
+  // ADR-0081 — a routed field driving two regions of which one persists.
+  // The two write paths are guarded on different things by construction:
+  // the persistence sweep rides `region_touched_1` *alone*, with no
+  // `changed[1]` disjunct, so a route flip can never provoke a storageSet.
+  "    if (region_touched_1) {\n      const persist_rows_1 = [];",
+  "      storageSet(\"leanrx-twin-lab.right\", persist_rows_1[\"join\"](\";\"));\n      tx[7][\"push\"](\"storage:right:write\");",
+  // ...while the canonical hash write rides `changed[1]` in the commit
+  // prologue, ahead of *every* region block — the first `region_touched_`
+  // binding in the commit is the statement that follows it.
+  "      tx[7][\"push\"](\"route:mode:write\");\n    }\n    const region_touched_0 = regions[0][3]",
+  // Mount seeds the routed field from the hash before the DOM exists and
+  // hydrates the persisted region after the listeners are wired, so the
+  // hydrate transaction's own sweep applies the routed literal to the rows
+  // it just mounted.
+  "  const route_off_0 = listenHash(state, context, $lrx_route_0);\n  $lrx_hydrate_0(context, null);",
+  "  const stored_value = storageGet(\"leanrx-twin-lab.right\");",
 ]) {
   if (!twinSource.includes(required)) {
     throw new Error(`generated Twin Lab is missing ${required}`);
@@ -114,6 +133,15 @@ for (const banned of [
   // per-region hash write may either.
   "filter_row_0[2] !== \"true\" : state[1] === \"mixed\"",
   "$lrx_route_1",
+  // ADR-0081: one persist item, on `right` alone — the other two regions of
+  // the same component emit no serialization at all, and the persistence
+  // sweep never acquires the filter sweep's field disjunct.
+  "storage:left:write",
+  "storage:solo:write",
+  "persist_rows_0",
+  "persist_rows_2",
+  "$lrx_hydrate_1",
+  "if (region_touched_1 || changed[1]) {\n      const persist_rows_1",
 ]) {
   if (twinSource.includes(banned)) {
     throw new Error(`generated Twin Lab unexpectedly emits ${banned}`);

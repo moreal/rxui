@@ -605,7 +605,11 @@ sweeps are guarded on, and a literal one table omits is simply that
 region's fall-through to show-all — so a first-match reading would make a
 `LRX-TYPE-117` rejection depend on declaration order. `writeHash` still
 rides the routed field's own changed flag once per commit, however many
-regions filter on it.
+regions filter on it. One of the regions a routed field drives may also
+carry a `persist` item without the two interacting (ADR-0081): the
+persistence sweep is guarded on that region's touched flag alone, so a
+route flip runs both sweeps and writes nothing to storage, and a row
+touch writes storage and no hash.
 
 ```lean
 component TwinFilterMini (schema := TwinFilterMiniSchema) where {
@@ -619,6 +623,7 @@ component TwinFilterMini (schema := TwinFilterMiniSchema) where {
   filter solo by twinTone := when "on" (flag == "true");
   route twinMode := when "#/" "all" then when "#/on" "on"
     then when "#/mixed" "mixed";
+  persist right := "leanrx-guide.twin-right";
   region left (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
   region right (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
   region solo (label, flag) := jsx% <li> [<span> [{label}], <span> [{flag}]];
@@ -651,7 +656,24 @@ rules — at most one route item per component, a `String` state field
 carrying at least one declared filter, a nonempty one-to-one table of
 distinct `#/`-shaped hash literals over the field's existing state literals
 (the declared default and every filter table over the field), exactly one
-arm on the declared default — are `LRX-TYPE-117`:
+arm on the declared default — are `LRX-TYPE-117`.
+
+The one-route cap is the sharpest of those, and it is a property of the
+hash rather than of the emission (ADR-0081). Two route items generate
+cleanly — arms, dispatch chain, mount seed, and hash write are all indexed
+by route — but `location.hash` is one string with one writer, and a route
+table is a *total* function from that string onto its field's literals, so
+two tables are two total functions over one string and the loser is not
+merely ignored: an unknown hash falls to a route's default arm, so
+whatever the other route wrote resets this route's field. Concretely, two
+`if (changed[field])` write blocks race inside one commit and the last one
+wins, and one `hashchange` wakes both dispatches in registration order
+with the second reading the hash the first just rewrote. A single click
+that means to change one field ends with both fields back at their
+declared defaults. Lifting the cap would need either disjoint hash
+sub-namespaces with partial tables — changing the unknown-hash fallback
+every route rests on — or one table over the tuple of routed fields, which
+is a single route item over a wider field:
 
 ```lean
 component RoutedRosterMini (schema := RoutedRosterMiniSchema) where {

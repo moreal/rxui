@@ -4344,3 +4344,117 @@ drain pins, three new browser tests plus four restated ones, the
 compiled language-guide snippet and guide text, the ADR, and this
 record. Open: a persisted region under a route, and whether a row write
 that provably cannot change a selection should still wake the sweep.
+
+## One hash, one writer — the route-cap seal (ADR-0081)
+
+### What was built
+
+The round's subject was a guard nobody had ever justified:
+`validateRoutes` opens with `spec.routes.size ≤ 1`, while every piece of
+the route emission underneath it is indexed by `routeIndex`. That reads
+like a cap that outlived the one-route scaffolding it shipped with, so
+the survey removed it, compiled a two-route component, and ran the
+result in Chromium rather than reasoning about it.
+
+Two routes generate cleanly. Two seed folds, two dispatch functions, two
+`listenHash` registrations, two write blocks — all indexed, all naming
+their own field's slot. Mount is not where they meet: the seeds write
+distinct slots and fall back to their own field's initial, so they are
+order-independent. The collision is entirely in the write direction, and
+it has two halves. The two `if (changed[field])` blocks sit in the same
+commit prologue, so a transaction writing both fields opens both and the
+*last* `writeHash` wins. Then one `hashchange` wakes both dispatches —
+and because dispatch 0's commit assigns `location.hash` synchronously,
+dispatch 1 within that same event reads the hash dispatch 0 just wrote,
+not the one the event announced.
+
+What turns that into data loss is the ADR-0063 fallback. A route table is
+a *total* function from the hash space: a hash it does not name falls to
+its declared-default arm. Each route claims the whole space, so anything
+the other route writes is "unknown" to it and resets its field. Mounted
+at `#/`, one click on `set mode "on" then set tone "hot"` produced seven
+commits and ended with both fields back at their declared defaults and
+the URL back at `#/`. So the cap stays, restated as a claim about the
+browser rather than about the route table: `location.hash` is one string
+with one writer.
+
+The two shapes a future lift would have to take went into the ADR rather
+than into code — disjoint sub-namespaces with *partial* tables (which
+replaces the unknown-hash fallback every route rests on), or one table
+over the tuple of routed fields (which is the cap again with a wider
+field, and the only additive one).
+
+Alongside that, the `LRX-TYPE-117` branch accounting was closed. Five new
+fixtures — `RouteTwice`, `RouteDerivedField`, `RouteUnfilteredField`,
+`RouteDuplicateHash`, `RouteDuplicateLiteral` — each matched on its *own
+message* rather than the shared code, so the branches cannot collapse
+into one another. The empty-arm branch is unwritable in the surface DSL
+(`sepBy1`), so it is witnessed by a hand-built spec in
+`Test/Component/Model.lean`, the way the sibling `LRX-TYPE-115` key-arm
+guard already is.
+
+Finally, ADR-0080's first open question: `persist right :=
+"leanrx-twin-lab.right"` makes Twin Lab a routed field driving two
+regions of which exactly one persists.
+
+### Friction encountered
+
+Almost none, and the one thing worth recording is a non-finding. The
+worry going in was that persistence would widen `right`'s region record
+and break the ADR-0079 slot-asymmetry gates that Twin Lab exists to hold
+— `left` at eight slots with its container at 7 against `right` and
+`solo` at six with the container at 5. Reading `regionRecords` first
+settled it in a minute: the record is `[handle, rows, nextKey, dirty,
+pending]` plus count slots plus the filter container plus the child
+inventory, and persistence contributes to none of them. The generated
+line is byte-identical to what ADR-0080 pinned, and the artifact gate now
+says so in a comment so the next reader does not have to re-check.
+
+The survey harness was throwaway on purpose: a scratch component emitted
+through `#eval` into a temp directory, served by a twenty-line static
+server, driven by Playwright. It never touched the repo's test surface,
+and the cap was restored before anything else was written.
+
+### Bugs found
+
+None — which is the answer the round wanted. The cap was doing real work
+all along; the finding is that it had no witness and no recorded reason,
+and now has both. One branch turned out to be *dead* rather than merely
+unwitnessed: `route item targets a field without a declared String
+initial` cannot fire, because `Field Γ String` fixes the schema
+position's type, `validateValues` forces the value there to name the same
+field, and `ScalarLiteral String` has one constructor — so a source at
+the routed index always carries a `.string` initial, and a non-source is
+caught by the derived-target branch above it. It stays as the `match`'s
+total-function fallback, documented rather than witnessed.
+
+The OQ1 combination held in both directions. A `mode` flip runs both twin
+sweeps, writes the hash once, and emits no `storage:right:write`, leaving
+the stored string byte-equal; a `right` row toggle emits exactly one
+`storage:right:write` carrying the drained row and no `route:mode:write`,
+leaving the URL where the flip put it. Mounting with a seeded hash *and*
+a stored row table settles both in the one hydrate commit: the routed
+literal — the union-only `"mixed"` — is applied by that commit's own
+sweep to the rows it just mounted, with no hash write, while the two
+unpersisted regions mount empty though one of them shares the routed
+field.
+
+### Performance observations
+
+Validation-only plus one example module. Every generated artifact outside
+Twin Lab is byte-identical, so the benchmark size gate and BENCHMARK.md
+stand without re-measurement. Inside Twin Lab, persistence costs one
+hydrate function, one serialization loop behind `region_touched_1`, and
+two host imports — nothing per route, nothing per filtered region, and no
+region-record slot.
+
+### Follow-up issue or commit
+
+`feat(component): seal the one-route cap and witness every route branch
+(ADR-0081)` — the five compile-fail fixtures and their harness rows, the
+two-span check on the cap's diagnostic, the spec-level empty-arm witness,
+Twin Lab's `persist right` with its artifact-gate pins and two browser
+tests, the language-guide snippet and prose, the ADR, and this record.
+Open: a tuple route as the additive way to route more than one field, and
+whether a row write that provably cannot change a selection should still
+wake the sweep.

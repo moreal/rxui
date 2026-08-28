@@ -1171,6 +1171,34 @@ def run : IO Unit := do
   let duplicatePropNames : ComponentSpec CounterSchema :=
     { spec with props := #[{ name := "t" }, { name := "t" }] }
   expectError "LRX-VIEW-030" duplicatePropNames.check
+  /- ADR-0081: the sealed route table's empty-arm guard. `sepBy1` makes an
+  armless item unwritable in the surface DSL — as it does for the three
+  sibling "declares no arm" guards — so the branch is reachable only from a
+  hand-built spec, and it is witnessed here rather than by a compile-fail
+  fixture. The `LRX-TYPE-115` key-arm guard above has the same standing. -/
+  let routedSchema : Schema := .field "mode" String .empty
+  let routedSpec : ComponentSpec routedSchema :=
+    { name := "Routed"
+      values := #[ValueSpec.state (.here : Field routedSchema String) (.string "all")]
+      events := #[]
+      regions := #[{
+        name := "roster"
+        fields := #["label"]
+        template := RowNode.node .li [RowNode.fieldText 0]
+        events := #[]
+      }]
+      filters := #[{
+        region := "roster"
+        field := (.here : Field routedSchema String)
+        arms := [("on", FieldPredicate.ofField 0 "x")]
+      }]
+      view := View.node .main [View.node .ul [View.region "roster"]] }
+  match routedSpec.check with
+  | .error error =>
+      throw <| IO.userError s!"forged filtered region rejected: {error.code}"
+  | .ok _ => pure ()
+  expectError "LRX-TYPE-117" ({ routedSpec with
+    routes := #[{ field := (.here : Field routedSchema String), arms := [] }] }).check
   let cycle : ComponentSpec (.field "a" Int <| .field "b" Int .empty) :=
     { name := "Cycle"
       values := #[
