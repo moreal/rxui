@@ -5,3 +5,4 @@
 /test-results/
 /.tmp/
 *.log
+/.claude/
