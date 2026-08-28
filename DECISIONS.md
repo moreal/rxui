@@ -66,6 +66,7 @@
 | [0062](docs/adr/0062-count-label-selection.md) | Accepted | Select between two static strings from a region count against the one literal — items-left singular/plural | 2026-08-28 |
 | [0063](docs/adr/0063-freeze-boundary-routing-persistence.md) | Accepted | Take the parity axis: routing and persistence host exports as one ABI 17 round under the pruning-sealed freeze boundary; defer the field-predicate unification | 2026-08-28 |
 | [0064](docs/adr/0064-field-predicate-unification.md) | Accepted | Unify the single-field-literal equality behind one sealed FieldPredicate, one shared comparison builder, and one bounds rule — byte-neutral under the freeze | 2026-08-28 |
+| [0065](docs/adr/0065-affordance-contract-alignment.md) | Accepted | Reject the affordance-contract alignment check — affordance predicates are presentation policy and the dispatch layer stays the one contract | 2026-08-28 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration

@@ -3140,3 +3140,71 @@ count-label literal stays one; row guards stay single-field
 remove-or-commit; row scope still has no `s!`; branch cells stay
 single-level two-branch with exact click/dblclick agreement; child
 instrumentation stays unreachable through the parent disposer.
+
+## Affordance-contract alignment — a decision round (ADR-0065)
+
+### Scenario exercised
+
+A decision round on the checkability axis: the "affordance is not the
+contract" open question ADR-0059 OQ1 and ADR-0061 OQ1 have carried
+since the Add-button round. The survey covered every
+affordance-contract pair Toggle Lab can spell — the hidden
+clear-completed button against the ADR-0050 predicate removal, the
+checked toggle-all reflection against the ADR-0061 payload broadcast,
+the disabled Add button against the ADR-0055 skip guard — asking for
+each how the two predicates sit in the sealed model, which layer could
+compare them, and whether legal programs would be rejected. ADR-0065
+records the answer: rejected, as an error and as a warning; the
+dispatch layer stays the one contract.
+
+### What was pleasant
+
+The ADR-0064 unification made the survey mechanical: with
+`FieldPredicate` deriving `DecidableEq` and
+`regionRemoveIfTargets` carrying the whole predicate, pair A's
+comparability was a one-glance fact, and the two non-joiners (the
+anonymous count/hidden pair, the unstored guard literal) named exactly
+where normalization would have to happen. The mounted split answered
+the layer question the same way — `MountedAttrSelect` and
+`MountedEvent` both carry element paths, so co-location is computable
+in `ComponentSpec.check` today — which let the rejection rest on
+representability and over-rejection rather than on any claimed
+implementation difficulty.
+
+### Friction encountered
+
+None mechanical. The one conceptual snag was productive: the toggle-all
+input itself is the counterexample to the obvious pairing rule — it
+co-locates a predicate-free `hidden` selection with a predicate-free
+broadcast binding, so a co-location checker needs a selection-kind ×
+event-kind compatibility table before its first comparison, and that
+table is the speculative vocabulary the convention rejects.
+
+### Bugs found
+
+None. The survey confirmed the three pairs sit in the model exactly as
+their ADRs recorded them, and turned up one structural fact worth
+naming: the meaningful half of the toggle-all alignment lives in the
+value alphabet of an uninterpreted string field — no checker over the
+current model can certify it, only suggest it certifies it.
+
+### Performance observations
+
+Nothing to measure and nothing measured: the diff is markdown only —
+the ADR, the DECISIONS.md row, and this record — no generated `.mjs`,
+manifest, or size-gate input changed, and the benchmark bundle is
+untouched. Freeze intact, BENCHMARK.md numbers stand, regression watch
+only.
+
+### Follow-up issue or commit
+
+`docs(adr): reject the affordance-contract alignment check (ADR-0065)`
+— the survey-and-rejection ADR, the DECISIONS.md row, and this record.
+ADR-0059 OQ1 and ADR-0061 OQ1 are closed, not carried; future
+affordance rounds inherit "presentation policy, free to differ" as a
+decided invariant. The invariants hold: the key set stays sealed at
+Enter/Escape; the guard literal stays `""`; the count-label literal
+stays one; row guards stay single-field remove-or-commit; row scope
+still has no `s!`; branch cells stay single-level two-branch with
+exact click/dblclick agreement; child instrumentation stays
+unreachable through the parent disposer.
