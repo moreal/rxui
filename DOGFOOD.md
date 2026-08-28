@@ -2754,3 +2754,80 @@ child instrumentation still unreachable through the parent disposer. The
 next-next round should be an ADR weighing the freeze-compatible residue
 (unifying the raw-field comparisons, revisiting attribute-position count
 labels) against lifting the freeze for routing and persistence.
+
+## The freeze boundary — a decision round (ADR-0063)
+
+### Scenario exercised
+
+A decision round, not an execution round: with routing and persistence
+the only TodoMVC interaction gaps left and both needing host exports,
+ADR-0063 weighed the freeze-compatible residue (unifying the five
+spellings of the single-field-literal equality, re-opening
+attribute-position count labels, affordance-contract checking) against
+the exports, and took the parity axis — five sealed DOM-host exports
+(`readHash`, `listenHash`, `writeHash`, `storageGet`, `storageSet`) as
+one runtime ABI 17 round, execution deferred to the next round. Routing
+seals onto the routed state field (the ADR-0045/0051 filter field);
+persistence seals onto the declared region row table via the
+region-touch sweep. The diff is the ADR, the DECISIONS row, one stale
+sentence repaired in `runtime-representation.md`, and this record.
+
+### What was pleasant
+
+The freeze turned out to have a surveyable boundary rather than a
+mood. The size gate measures exactly `index.html` and `main.mjs`, the
+benchmark module carries no ABI byte, and the compactor prunes
+unreachable host functions before renaming — so ADR-0048's "byte
+identical, manifest number only" was not a lucky outcome but the
+mechanism, and ABI 17 inherits it as three written conditions
+(reachability-gated imports, no non-literal module-level bindings in
+the host, no compactor-rejected constructs). The residue survey was
+equally concrete: seven backend lowerings, six elaborator resolutions,
+nineteen validator bounds checks, five model spellings of one concept,
+with the byte-neutral unification scope (comparison builder yes, scan
+loops no — the golden ident prefixes pin the loops) recordable in
+advance.
+
+### Friction encountered
+
+The survey caught two debts from the ABI 16 fan-out: `check_cli.sh`'s
+doctor literal had been missed then and fixed a round late, so the
+ADR-0063 checklist names it explicitly; and
+`runtime-representation.md` still said "currently version 15" two
+sections above its own ABI 16 paragraph — repaired in this round since
+the fix is documentation. The count of mechanical bump sites is 24
+literals plus two docs, not the folklore ~25 — close enough that the
+folklore never got audited.
+
+### Bugs found
+
+One documentation staleness bug (the "version 15" sentence), fixed.
+No code bugs; no code was touched.
+
+### Performance observations
+
+Docs only: every lab and the benchmark bundle are byte-identical by
+construction and the full gate suite runs against unchanged code. The
+freeze holds with nothing to verify; the next round owes the size gate
+its green under the three ADR-0063 freeze conditions.
+
+### Follow-up issue or commit
+
+`docs(adr): take the parity axis at the freeze boundary (ADR-0063)`
+and this record. Next round executes ABI 17: the five exports, the
+sealed route item and storage key, the 24-literal fan-out, unit gates
+beside the DOM-host helpers, compile-fail fixtures, and the Toggle Lab
+browser gates (hash seed, hashchange dispatch, flip-only writeHash,
+hydration, per-touch persistence). Remaining gaps carried forward: the
+`FieldPredicate` unification stays open with its byte-neutral scope
+recorded; affordance-contract agreement stays ADR-0059's first open
+question; the component-scope payload reaches one construct
+(ADR-0061); the count label stays text-position-only with the one
+literal sealed and the two-threshold grammar rejected (ADR-0062);
+attribute-position count labels stay rejected; negated and composite
+subjects stay rejected; the guard literal stays `""`; row guards stay
+single-field remove-or-commit; row scope still has no `s!`; branch
+cells stay single-level two-branch with exact click/dblclick
+agreement; child instrumentation stays unreachable through the parent
+disposer.
+

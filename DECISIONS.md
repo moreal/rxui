@@ -64,6 +64,7 @@
 | [0060](docs/adr/0060-region-checked-reflection.md) | Accepted | Reflect the sealed region-count boolean into the toggle-all checkbox's checked property | 2026-08-28 |
 | [0061](docs/adr/0061-payload-broadcast.md) | Accepted | Flow the delegated checked payload into the region broadcast to close toggle-all | 2026-08-28 |
 | [0062](docs/adr/0062-count-label-selection.md) | Accepted | Select between two static strings from a region count against the one literal — items-left singular/plural | 2026-08-28 |
+| [0063](docs/adr/0063-freeze-boundary-routing-persistence.md) | Accepted | Take the parity axis: routing and persistence host exports as one ABI 17 round under the pruning-sealed freeze boundary; defer the field-predicate unification | 2026-08-28 |
 
 The governing decision process is described in `ARCHITECTURE.md` and `PLAN.md`.
 New accepted ADRs may refine those documents only when the rationale, migration
