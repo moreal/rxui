@@ -594,19 +594,34 @@ different reasons and still run in that order. Two filters over *one*
 region stay rejected (`LRX-TYPE-113`): a region owns one container and one
 row table, so a second table would be two writers of one `hidden` property.
 
-The touch half of that guard narrows at elaboration time (ADR-0082). A
-region's touched flag folds two events together — the row set changed
-(structural), or a `row` update queued a position for the drain — and only
-the first can change which rows a table selects unless the drain writes a
-field the arms read. So when a region has a drain path and *no* declared
-`row` update stage writes a filter subject field, that region's sweep is
-emitted behind `region_structural_{regionIndex} || changed[field]` instead:
-renaming a row no longer walks every row root to rewrite `hidden` with the
-value already there. The narrowing is per region and per sweep — a region
-whose drain does write a subject field keeps the touched flag, and so do
-the count and persistence sweeps beside it — and it is invisible where it
-cannot pay: a region with no drain path at all has a provably empty pending
-slot, so its emission is unchanged.
+The touch half of that guard is chosen per sweep at elaboration time
+(ADR-0082, generalized by ADR-0083). A region's touched flag folds two
+events together — the row set changed (structural), or a `row` update queued
+a position for the drain — and the second can only move a sweep that reads a
+field the drain writes. So *every* sweep over a region is guarded on
+`region_structural_{regionIndex}` when its read set is disjoint from the
+union of what that region's declared `row` update stages assign — the
+ADR-0052 key arms included — and on `region_touched_{regionIndex}`
+otherwise. The read sets are fixed by the surface:
+
+| sweep | read set |
+| --- | --- |
+| `{count r}`, `hidden={count r == 0}` | the row array's length, no field |
+| `{count r (f == "x")}`, `hidden={count r (f == "x") == 0}`, `checked={…}` | that one field |
+| `filter r by s := …` | every arm predicate's subject fields |
+| `persist r := "key"` | every field — so it never narrows |
+
+Adjacent sweeps of one kind that agree share one guarded block, so a region
+whose sweeps all read the same flag emits exactly the block it did before
+the flag became per sweep. A region with no drain path at all has a provably
+empty pending slot, so `touched` and `structural` are the same predicate
+there and every sweep keeps the uniform flag. The flag set is therefore
+derived per region rather than fixed by the feature list: a region may bind
+both flags, one of them, or — when every sweep over it is disjoint from its
+drain — only the structural one. What this buys is evaluations, not always
+DOM: renaming a row no longer walks every row root to rewrite `hidden` with
+the value already there, and no longer runs a predicate scan whose field the
+rename cannot touch, but a row total it skips was an `O(1)` comparison.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the

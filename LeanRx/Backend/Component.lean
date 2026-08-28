@@ -253,18 +253,51 @@ expression projects out of a row. -/
 private def filterSubjectFields (filter : RegionFilter Γ) : List Nat :=
   filter.arms.flatMap fun arm => arm.2.subject.fieldRefs
 
-/-- Whether one region's filter sweep may skip the pending-drain wake
-(ADR-0082): the region has a drain path, and no field that path writes is
-read by the filter's arm predicates, so a drain-only transaction provably
-leaves every row's selection where the last sweep put it. Regions without a
-drain path keep the uniform touched flag — their pending slot is provably
-empty, so the two guards are the same predicate. -/
-private def filterNarrows (region : RegionSpec) (filter? : Option (RegionFilter Γ)) : Bool :=
-  match filter? with
-  | none => false
-  | some filter =>
-      let writes := regionDrainWrites region
-      !writes.isEmpty && !(filterSubjectFields filter).any writes.contains
+/-- The row fields one sealed count subject reads (ADR-0083): a predicate
+count reads its one predicate field; a row total reads the row array's
+`length` and no field at all. The ADR-0062 label selection rides its own
+count's read set, because the string it picks is a function of that number
+alone. -/
+private def countReadFields (count : MountedRegionCount) : List Nat :=
+  match count.predicate with
+  | none => []
+  | some (field, _) => [field]
+
+/-- The row fields one region-subject attribute selection reads (ADR-0083):
+the ADR-0059/0060 predicate-count subjects read their predicate field; the
+ADR-0058 emptiness subject reads the row array's `length` and no field. -/
+private def attrSelectReadFields (select : AttrSelect Γ) : List Nat :=
+  match select.regionPredicate? with
+  | none => []
+  | some (field, _) => [field]
+
+/-- Whether one region sweep may skip the pending-drain wake — ADR-0082's
+rule, per sweep since ADR-0083: the region has a drain path, and no field
+that path writes is in this sweep's read set, so a drain-only transaction
+provably leaves the value the sweep computes where the last one put it. A
+region with no drain path has a provably empty pending slot, so `touched`
+and `structural` are the same predicate there and every sweep keeps the
+uniform flag. -/
+private def sweepNarrows (drainWrites reads : List Nat) : Bool :=
+  !drainWrites.isEmpty && !reads.any drainWrites.contains
+
+/-- Fuse adjacent sweeps of one kind that read the same wake flag into one
+guarded block (ADR-0083), so a region whose sweeps agree emits exactly the
+single block it did before the flag became per sweep. -/
+private def mergeWakeRuns (runs : List (Bool × List Stmt)) :
+    List (Bool × List Stmt) :=
+  (runs.foldl (fun acc run =>
+    match acc with
+    | (flag, stmts) :: rest =>
+        if flag == run.1 then (flag, stmts ++ run.2) :: rest else run :: acc
+    | [] => [run]) []).reverse
+
+/-- Emit one region's sweeps of one kind, each guarded on the flag its own
+read set selects, adjacent agreeing sweeps sharing one block (ADR-0083). -/
+private def wakeGuarded (touched structural : Ident)
+    (runs : List (Bool × List Stmt)) : List Stmt :=
+  (mergeWakeRuns runs).map fun (narrowed, stmts) =>
+    .ifThen (.ident (if narrowed then structural else touched)) (.ofList stmts)
 
 /-- Whether one region's sealed template composes a row-scoped child
 component (ADR-0075). -/
@@ -767,44 +800,56 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
       ]
     ]]
   for (region, regionIndex) in checked.spec.regions.toList.zipIdx do
-    /- Sealed row aggregates (ADR-0050): whenever this region was touched
-    this transaction — structurally dirty or holding pending row updates —
-    every count over it is recomputed from the row table, compared against
-    its cache slot, and written through `setText`, riding the sink counters
-    with `count:{region}:{index}` labels. The sweep reads the flags before
-    the reconcile and drain below consume them. -/
+    /- Sealed row aggregates (ADR-0050): whenever this region woke the flag
+    the count's own read set selects (ADR-0083), the count is recomputed
+    from the row table, compared against its cache slot, and written through
+    `setText`, riding the sink counters with `count:{region}:{index}`
+    labels. The sweeps read the flags before the reconcile and drain below
+    consume them. -/
     let counts := checked.view.regionCounts.filter (·.region == region.name)
     let filter? := checked.spec.filters.toList.find? (·.region == region.name)
     let hiddens := checked.view.attrSelects.zipIdx.filter
       fun (mounted, _) => mounted.select.regionSubject? == some region.name
     let persist? := checked.spec.persists.toList.find? (·.region == region.name)
     let touched ← Ident.checked s!"region_touched_{regionIndex}"
-    /- The ADR-0082 narrowed filter wake: when no drain path writes a field
-    the filter's arms read, the sweep is guarded on the structural flag
-    alone and the region's touched flag serves only its other sweeps. -/
-    let narrowed := filterNarrows region filter?
     let structural ← Ident.checked s!"region_structural_{regionIndex}"
-    unless counts.isEmpty && (filter?.isNone || narrowed) && hiddens.isEmpty &&
-        persist?.isNone do
-      /- The shared touched flag serves the count sweep (ADR-0050), the
-      filter sweep (ADR-0051), the empty-region visibility sweep (ADR-0058),
-      and the persistence sweep (ADR-0063); all read it before the reconcile
-      and drain below consume the dirty flag and the pending positions. -/
+    /- The ADR-0083 per-sweep wake: every sweep over this region is guarded
+    on the flag its own read set selects. A sweep whose read set is disjoint
+    from what this region's drain paths write cannot move on a drain, so it
+    reads the structural bit; every other sweep keeps the touched flag. The
+    persistence write-back reads every field, so it never narrows — that
+    falls out of `sweepNarrows` rather than being spelled here. -/
+    let drainWrites := regionDrainWrites region
+    let countNarrows := counts.map fun count =>
+      sweepNarrows drainWrites (countReadFields count)
+    let hiddenNarrows := hiddens.map fun (mounted, _) =>
+      sweepNarrows drainWrites (attrSelectReadFields mounted.select)
+    let filterNarrows := filter?.toList.map fun filter =>
+      sweepNarrows drainWrites (filterSubjectFields filter)
+    let persistNarrows := persist?.toList.map fun _ =>
+      sweepNarrows drainWrites (List.range region.fields.size)
+    let wakes := countNarrows ++ hiddenNarrows ++ filterNarrows ++ persistNarrows
+    if wakes.contains false then
+      /- The touched flag serves every sweep a drain can move: the count
+      sweep (ADR-0050), the filter sweep (ADR-0051), the empty-region
+      visibility sweep (ADR-0058), and the persistence sweep (ADR-0063). It
+      is read before the reconcile and drain below consume the dirty flag
+      and the pending positions. -/
       commitBody := commitBody ++ [
         .const touched (.binary .or (regionEntry regions regionIndex 3)
           (.unary .not (.binary .eq
             (.index (regionEntry regions regionIndex 4) (.literal (.string "length")))
             (uint 0))))
       ]
-    if narrowed then
+    if wakes.contains true then
       /- Read before the reconcile below clears the dirty bit, exactly as the
       touched flag is (ADR-0082). -/
       commitBody := commitBody ++ [
         .const structural (regionEntry regions regionIndex 3)
       ]
     unless counts.isEmpty do
-      let mut countStmts : List Stmt := []
-      for (count, slot) in counts.zipIdx do
+      let mut countRuns : List (Bool × List Stmt) := []
+      for ((count, slot), narrowed) in counts.zipIdx.zip countNarrows do
         let next ← Ident.checked s!"count_next_{regionIndex}_{slot}"
         let differs ← Ident.checked s!"count_changed_{regionIndex}_{slot}"
         let label := s!"count:{region.name}:{slot}"
@@ -836,7 +881,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
               pure (Expr.ident selected, [Stmt.const selected <|
                 .conditional (.binary .eq (.ident next) (uint 1))
                   (.literal (.string one)) (.literal (.string other))])
-        countStmts := countStmts ++ [
+        countRuns := countRuns ++ [(narrowed, [
           incrementAt tx 5,
           pushTrace tx s!"{label}:evaluated"
         ] ++ computeStmts ++ selectStmts ++ [
@@ -850,12 +895,12 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             incrementAt tx 6,
             pushTrace tx s!"dom:{label}:write"
           ]
-        ]
-      commitBody := commitBody ++ [.ifThen (.ident touched) (.ofList countStmts)]
+        ])]
+      commitBody := commitBody ++ wakeGuarded touched structural countRuns
     /- Sealed region-count subjects (ADR-0058/0059/0060): whenever this
-    region was touched this transaction, every `hiddenIfEmpty` and
-    `checkedIfEmpty` selection over it re-evaluates its row count against
-    the zero literal — the total for the ADR-0058 emptiness subject, or the
+    region woke the flag the selection's own read set selects (ADR-0083),
+    the `hiddenIfEmpty` or `checkedIfEmpty` selection re-evaluates its row
+    count against the zero literal — the total for the ADR-0058 emptiness subject, or the
     ADR-0050 predicate scan for the ADR-0059/0060 predicate-count
     subjects — compares it against the shared attr cache slot, and writes
     its boolean property (`hidden` or `checked`) through the existing
@@ -864,8 +909,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     displayed rows, so an ADR-0051 filter hiding every row leaves the
     section visible — and the toggle-all box unmoved — either way. -/
     unless hiddens.isEmpty do
-      let mut hiddenStmts : List Stmt := []
-      for (mounted, attrIndex) in hiddens do
+      let mut hiddenRuns : List (Bool × List Stmt) := []
+      for ((mounted, attrIndex), narrowed) in hiddens.zip hiddenNarrows do
         let next ← attrNextName attrIndex
         let differs ← attrChangedName attrIndex
         let label := attrLabel attrIndex mounted
@@ -889,7 +934,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
                 ]),
                 .const next (.binary .eq (.index (.ident scan) (uint 0)) (uint 0))
               ]
-        hiddenStmts := hiddenStmts ++ [
+        hiddenRuns := hiddenRuns ++ [(narrowed, [
           incrementAt tx 8,
           pushTrace tx s!"{label}:evaluated"
         ] ++ computeStmts ++ [
@@ -901,8 +946,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             incrementAt tx 9,
             pushTrace tx s!"dom:{label}:write"
           ]
-        ]
-      commitBody := commitBody ++ [.ifThen (.ident touched) (.ofList hiddenStmts)]
+        ])]
+      commitBody := commitBody ++ wakeGuarded touched structural hiddenRuns
     /- The keyed region reconciles the whole target on commit; the dirty flag
     keeps clean regions out of the sweep entirely (ADR-0041). A structurally
     dirty reconcile re-runs every retained row, so it drops pending update
@@ -960,7 +1005,8 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
             acc)
         (Expr.literal (.boolean false))
       commitBody := commitBody ++ [.ifThen
-        (.binary .or (.ident (if narrowed then structural else touched))
+        (.binary .or
+          (.ident (if filterNarrows.contains true then structural else touched))
           (arrayAt changed filter.field.index)) <| .ofList [
           incrementAt tx 8,
           pushTrace tx s!"filter:{region.name}:evaluated",
@@ -978,7 +1024,9 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           pushTrace tx s!"dom:filter:{region.name}:write"
         ]]
     /- The sealed persistence sweep (ADR-0063): whenever this region was
-    touched this transaction, the whole row table is re-serialized — fields
+    touched this transaction — the write-back reads every field, so
+    `sweepNarrows` never lets it take the narrow flag (ADR-0083) — the
+    whole row table is re-serialized — fields
     behind the key slot escaped by the throw-free split/join encoding, rows
     joined by the row separator — and written through one `storageSet`. One
     write per region-touching transaction; a filter change alone touches
@@ -986,7 +1034,9 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     if let some persist := persist? then
       let rows ← Ident.checked s!"persist_rows_{regionIndex}"
       let row ← Ident.checked s!"persist_row_{regionIndex}"
-      commitBody := commitBody ++ [.ifThen (.ident touched) <| .ofList [
+      commitBody := commitBody ++ [.ifThen
+        (.ident (if persistNarrows.contains true then structural else touched)) <|
+        .ofList [
         .const rows (.array .nil),
         .forOf row (regionEntry regions regionIndex 1) (.ofList [
           .expr <| .call (.index (.ident rows) (.literal (.string "push")))

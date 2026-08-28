@@ -8,9 +8,9 @@ The lab is deliberately narrow — three regions, no child components, one
 persisted region out of the three — so the generated module is a direct
 reading of the per-region filter contract:
 
-- `left` carries a count cell, so its record is `[handle, rows, nextKey,
-  dirty, pending, countRefs, countCache, container]` and its filter
-  container rides slot 7.
+- `left` carries two count cells, so its record is `[handle, rows, nextKey,
+  dirty, pending, countRefs, countCache, container]` — the two count slots
+  hold arrays of two — and its filter container rides slot 7.
 - `right` carries no count, so its record is `[handle, rows, nextKey,
   dirty, pending, container]` and the *same* container rides slot 5.
   The container slot is `5 + counts?2`, computed inside the per-region
@@ -94,22 +94,34 @@ dispatches, the second reading the hash the first just rewrote
 `row left mark := set label (label ++ "*")` is the last shape on top of
 that: a drain path on a *filtered* region that writes a field no arm of
 its table reads. A region's touched flag folds two events together — the
-row set changed, or a row's fields did — and only the first can move a
-selection unless the second writes a subject field, so `left`'s sweep is
-guarded on the structural bit alone while the count sweep beside it keeps
-reading the touched flag (ADR-0082):
+row set changed, or a row's fields did — and the second can only move a
+sweep that reads a field the drain writes. ADR-0083 makes that a per-sweep
+question, and `left` is the region where every answer comes out the same
+way: `{count left}` reads the row array's length, `{count left (flag ==
+"true")}` reads `flag`, and the filter arms read `flag`, while the only
+drain path writes `label`. So `left` binds *one* flag and it is the
+narrow one —
 
 ```js
-    const region_touched_0 = regions[0][3] || regions[0][4]["length"] !== 0;
     const region_structural_0 = regions[0][3];
 ```
 
-`right` is the control on that axis: its `toggle` writes the very field
-its arms read, so it keeps `region_touched_1 || changed[1]`; `solo` has no
-drain path at all, so its pending slot is provably empty and it grows no
-second flag. A `mark` therefore drains one row and runs no scan — the
-`hidden` the last sweep wrote survives on both the displayed and the
-hidden row, because `updateAt` re-runs the retained handle in place.
+— and its count block and its filter sweep both read it. `right` is the
+control on that axis: its `toggle` writes the very field its arms read, so
+it keeps `region_touched_1 || changed[1]`, and its persistence write-back
+reads every field and could never narrow anyway; `solo` has no drain path
+at all, so its pending slot is provably empty and the two flags would be
+one value. Three regions, three different flag sets, all derived from the
+declared read sets.
+
+A `mark` therefore drains one row and runs no scan at all — neither the
+selection walk nor the `flag` count — and the `hidden` the last sweep wrote
+survives on both the displayed and the hidden row, because `updateAt`
+re-runs the retained handle in place. Mix Lab and Toggle Lab are the mixed
+case the same rule produces: there a row toggle writes the field the
+predicate counts and the filter read, so those sweeps keep the touched flag
+while the row totals beside them move behind the structural bit, and one
+region's block list interleaves the two.
 
 No host change; runtime ABI stays 17. -/
 
@@ -193,7 +205,7 @@ component TwinLab (schema := TwinSchema) where {
     <button type="button" onClick={toneAll}> ["Tone all"],
     <button type="button" onClick={toneOn}> ["Tone on"],
     <button type="button" onClick={stir}> ["Stir"],
-    <p id="left-line"> [{count left}, " left"],
+    <p id="left-line"> [{count left}, " left, ", {count left (flag == "true")}, " on"],
     <ul id="left" ariaLabel="Left"> [<region left/>],
     <ul id="right" ariaLabel="Right"> [<region right/>],
     <ul id="solo" ariaLabel="Solo"> [<region solo/>]

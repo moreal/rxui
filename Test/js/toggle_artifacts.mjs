@@ -126,19 +126,19 @@ for (const required of [
   "  setProperty(attrRefs[4], \"hidden\", attrCache[4]);",
   "  setProperty(attrRefs[5], \"hidden\", attrCache[5]);",
   // The ADR-0058/0059/0060 sweep re-evaluates every region-count subject
-  // on the region-touch path the count texts ride — behind the shared
-  // touched flag, before the reconcile consumes it — and writes each
-  // boolean property only on a flip: the button's subject is the ADR-0050
-  // predicate scan against zero, the wrapper's the row-table emptiness,
-  // and the toggle-all box's the not-done predicate scan exported into
-  // the checked property with the same attr:{index} label shape. The
-  // empty-list chrome slots extend the same block: the toggle-all hidden
-  // (attr 4) and the footer hidden (attr 5) evaluate the same row-table
-  // emptiness the wrapper's attr 2 reads — three slots, one subject, each
-  // with its own evaluation, cache compare, and flip-only write, so the
-  // first append reveals wrapper, toggle-all, and footer in one commit and
-  // draining the region re-hides all three in one commit.
-  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const hidden_scan_0_1 = [0];\n      for (const hidden_row_0_1 of regions[0][1]) {\n        if (hidden_row_0_1[3] === \"true\") {\n          hidden_scan_0_1[0] += 1;\n        }\n      }\n      const attr_next_1 = hidden_scan_0_1[0] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:2:hidden:evaluated\");\n      const attr_next_2 = regions[0][1][\"length\"] === 0;\n      const attr_changed_2 = attrCache[2] !== attr_next_2;\n      if (attr_changed_2) {\n        attrCache[2] = attr_next_2;\n        setProperty(attrRefs[2], \"hidden\", attr_next_2);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:2:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:3:checked:evaluated\");\n      const checked_scan_0_3 = [0];\n      for (const checked_row_0_3 of regions[0][1]) {\n        if (checked_row_0_3[3] === \"false\") {\n          checked_scan_0_3[0] += 1;\n        }\n      }\n      const attr_next_3 = checked_scan_0_3[0] === 0;\n      const attr_changed_3 = attrCache[3] !== attr_next_3;\n      if (attr_changed_3) {\n        attrCache[3] = attr_next_3;\n        setProperty(attrRefs[3], \"checked\", attr_next_3);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:3:checked:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:4:hidden:evaluated\");\n      const attr_next_4 = regions[0][1][\"length\"] === 0;\n      const attr_changed_4 = attrCache[4] !== attr_next_4;\n      if (attr_changed_4) {\n        attrCache[4] = attr_next_4;\n        setProperty(attrRefs[4], \"hidden\", attr_next_4);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:4:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:5:hidden:evaluated\");\n      const attr_next_5 = regions[0][1][\"length\"] === 0;\n      const attr_changed_5 = attrCache[5] !== attr_next_5;\n      if (attr_changed_5) {\n        attrCache[5] = attr_next_5;\n        setProperty(attrRefs[5], \"hidden\", attr_next_5);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:5:hidden:write\");\n      }\n    }",
+  // before the reconcile consumes the flags, and writes each boolean
+  // property only on a flip: the button's subject is the ADR-0050 predicate
+  // scan against zero, the wrapper's the row-table emptiness, and the
+  // toggle-all box's the not-done predicate scan exported into the checked
+  // property with the same attr:{index} label shape. ADR-0083 splits the
+  // one block into four by read set: the two `done` predicate subjects
+  // (attr 1, attr 3) ride the touched flag because a row drain writes
+  // `done`, while the three emptiness subjects read only the row array's
+  // length and ride the structural bit — attr 4 and attr 5 are adjacent and
+  // agree, so they share one block. The first append still reveals wrapper,
+  // toggle-all, and footer in one commit and draining the region re-hides
+  // all three in one commit; a row edit no longer re-asks any of them.
+  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const hidden_scan_0_1 = [0];\n      for (const hidden_row_0_1 of regions[0][1]) {\n        if (hidden_row_0_1[3] === \"true\") {\n          hidden_scan_0_1[0] += 1;\n        }\n      }\n      const attr_next_1 = hidden_scan_0_1[0] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n    }\n    if (region_structural_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:2:hidden:evaluated\");\n      const attr_next_2 = regions[0][1][\"length\"] === 0;\n      const attr_changed_2 = attrCache[2] !== attr_next_2;\n      if (attr_changed_2) {\n        attrCache[2] = attr_next_2;\n        setProperty(attrRefs[2], \"hidden\", attr_next_2);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:2:hidden:write\");\n      }\n    }\n    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:3:checked:evaluated\");\n      const checked_scan_0_3 = [0];\n      for (const checked_row_0_3 of regions[0][1]) {\n        if (checked_row_0_3[3] === \"false\") {\n          checked_scan_0_3[0] += 1;\n        }\n      }\n      const attr_next_3 = checked_scan_0_3[0] === 0;\n      const attr_changed_3 = attrCache[3] !== attr_next_3;\n      if (attr_changed_3) {\n        attrCache[3] = attr_next_3;\n        setProperty(attrRefs[3], \"checked\", attr_next_3);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:3:checked:write\");\n      }\n    }\n    if (region_structural_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:4:hidden:evaluated\");\n      const attr_next_4 = regions[0][1][\"length\"] === 0;\n      const attr_changed_4 = attrCache[4] !== attr_next_4;\n      if (attr_changed_4) {\n        attrCache[4] = attr_next_4;\n        setProperty(attrRefs[4], \"hidden\", attr_next_4);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:4:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:5:hidden:evaluated\");\n      const attr_next_5 = regions[0][1][\"length\"] === 0;\n      const attr_changed_5 = attrCache[5] !== attr_next_5;\n      if (attr_changed_5) {\n        attrCache[5] = attr_next_5;\n        setProperty(attrRefs[5], \"hidden\", attr_next_5);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:5:hidden:write\");\n      }\n    }",
   "    if (changed[2]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:0:disabled:evaluated\");\n      const attr_next_0 = state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      const attr_changed_0 = attrCache[0] !== attr_next_0;\n      if (attr_changed_0) {\n        attrCache[0] = attr_next_0;\n        setProperty(attrRefs[0], \"disabled\", attr_next_0);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:0:disabled:write\");\n      }\n    }",
   // The attr slots ride behind the prop slots; the region record follows
   // them (ADR-0045), so the context carries eleven slots.
@@ -239,13 +239,17 @@ for (const required of [
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n  }\n  regions[0][3] = true;",
   "  const kept_0 = [];",
   "  regions[0][1] = kept_0;",
-  // The count sweep reads the touched flag before the reconcile consumes
-  // it, recomputes both count forms, and writes through setText. The
-  // ADR-0062 label count rides the same loop: the recomputed predicate
-  // count selects one of the two static strings against the one literal,
-  // and the selected string takes the cache compare and the setText write.
+  // The count sweep reads its wake flag before the reconcile consumes it,
+  // recomputes each count form, and writes through setText. The ADR-0062
+  // label count rides the predicate block: the recomputed predicate count
+  // selects one of the two static strings against the one literal, and the
+  // selected string takes the cache compare and the setText write. ADR-0083
+  // splits the block by read set — both `done` predicate counts keep the
+  // touched flag, the row total moves behind the structural bit — so the
+  // region declares both flags.
   "    const region_touched_0 = regions[0][3] || regions[0][4][\"length\"] !== 0;",
-  "      const count_next_0_2 = regions[0][1][\"length\"];",
+  "    const region_structural_0 = regions[0][3];",
+  "    if (region_structural_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:items:2:evaluated\");\n      const count_next_0_2 = regions[0][1][\"length\"];",
   "        setText(regions[0][5][0], count_next_0_0);",
   "      const count_label_0_1 = count_next_0_1 === 1 ? \" item left\" : \" items left\";",
   "      const count_changed_0_1 = regions[0][6][1] !== count_label_0_1;",

@@ -71,6 +71,7 @@ async function markTrace(page) {
     globalThis.twinTraceLength = tx[7].length;
     return {
       commits: tx[1],
+      counts: tx[5],
       evaluations: tx[8],
       metrics: globalThis.twinDispose.regionInstrumentation(),
     };
@@ -82,6 +83,7 @@ async function readTrace(page) {
     const tx = globalThis.twinDispose.instrumentation();
     return {
       commits: tx[1],
+      counts: tx[5],
       evaluations: tx[8],
       slice: tx[7].slice(globalThis.twinTraceLength),
       metrics: globalThis.twinDispose.regionInstrumentation(),
@@ -111,9 +113,9 @@ async function flipMode(page, name, hash) {
 
 test("three filtered regions mount with their own containers", async ({ page }) => {
   await mountTwin(page);
-  await expect(page.locator("#left-line")).toHaveText("0 left");
+  await expect(page.locator("#left-line")).toHaveText("0 left, 0 on");
   await seedBoth(page);
-  await expect(page.locator("#left-line")).toHaveText("2 left");
+  await expect(page.locator("#left-line")).toHaveText("2 left, 1 on");
   await expect(page.locator("#left .twin-label")).toHaveText(["L0", "L1"]);
   await expect(page.locator("#right .twin-label")).toHaveText(["R0", "R1"]);
   await expect(page.locator("#solo .twin-label")).toHaveText(["S0", "S1"]);
@@ -175,6 +177,7 @@ test("a second field filters the third region alone", async ({ page }) => {
     globalThis.twinRows = Array.from(document.querySelectorAll("#left > li, #right > li"));
     return {
       commits: tx[1],
+      counts: tx[5],
       evaluations: tx[8],
       metrics: globalThis.twinDispose.regionInstrumentation(),
       hidden: globalThis.twinRows.map((row) => row.hidden),
@@ -205,7 +208,7 @@ test("a second field filters the third region alone", async ({ page }) => {
   expect(after.identical).toBe(true);
   expect(after.metrics).toEqual(before.metrics);
   // The unfiltered-by-`tone` twins keep their row count too.
-  await expect(page.locator("#left-line")).toHaveText("2 left");
+  await expect(page.locator("#left-line")).toHaveText("2 left, 1 on");
 });
 
 test("a region touch alone wakes only that region's sweep", async ({ page }) => {
@@ -432,6 +435,7 @@ test("a row write outside the filter subject drains without waking the sweep",
     globalThis.twinRows = Array.from(document.querySelectorAll("#left > li"));
     return {
       commits: tx[1],
+      counts: tx[5],
       evaluations: tx[8],
       metrics: globalThis.twinDispose.regionInstrumentation(),
       hidden: globalThis.twinRows.map((row) => row.hidden),
@@ -450,11 +454,18 @@ test("a row write outside the filter subject drains without waking the sweep",
   expect(occurrences(after.slice, "filter:left:evaluated")).toBe(0);
   expect(occurrences(after.slice, "dom:filter:left:write")).toBe(0);
   expect(after.evaluations).toBe(before.evaluations);
-  // The sibling axis is still open: the count sweep beside it reads the
-  // shared touched flag, so the drain re-evaluates the row total — and
-  // finds it unchanged, so no text is written.
-  expect(occurrences(after.slice, "count:left:0:evaluated")).toBe(1);
+  // ADR-0083 closes the sibling axis: the count sweep beside it is derived
+  // from its own read set, and neither count reads `label`. The row total
+  // reads only `rows.length`, which a drain cannot move; the predicate count
+  // reads `flag`, which this region's only drain path does not write. So the
+  // drain asks neither — the O(N) predicate scan does not run at all, and
+  // tx[5] is where that shows.
+  expect(occurrences(after.slice, "count:left:0:evaluated")).toBe(0);
+  expect(occurrences(after.slice, "count:left:1:evaluated")).toBe(0);
   expect(occurrences(after.slice, "dom:count:left:0:write")).toBe(0);
+  expect(after.counts).toBe(before.counts);
+  // The counts on screen are still the ones the last structural commit left.
+  await expect(page.locator("#left-line")).toHaveText("2 left, 1 on");
   // The selection is exactly where the last sweep left it, on both rows.
   const marked = await page.evaluate(() => ({
     hidden: globalThis.twinRows.map((row) => row.hidden),
@@ -476,6 +487,7 @@ test("a row write outside the filter subject drains without waking the sweep",
   expect(occurrences(afterHidden.slice, "region:left:updateAt")).toBe(1);
   expect(occurrences(afterHidden.slice, "filter:left:evaluated")).toBe(0);
   expect(afterHidden.evaluations).toBe(beforeHidden.evaluations);
+  expect(afterHidden.counts).toBe(beforeHidden.counts);
   await expect(page.locator("#left > li").nth(1)).toBeHidden();
   // The twins' shared field and the unrelated region are untouched, and a
   // structural touch afterwards still wakes the sweep and re-selects every
@@ -488,6 +500,10 @@ test("a row write outside the filter subject drains without waking the sweep",
   const afterAppend = await readTrace(page);
   expect(occurrences(afterAppend.slice, "filter:left:evaluated")).toBe(1);
   expect(afterAppend.evaluations).toBe(beforeAppend.evaluations + 1);
+  // The structural touch wakes both counts in the one block they share, and
+  // the appended row is a `flag == "true"` one, so both texts move.
+  expect(afterAppend.counts).toBe(beforeAppend.counts + 2);
+  await expect(page.locator("#left-line")).toHaveText("3 left, 2 on");
   await expect(page.locator("#left > li").nth(0)).toBeVisible();
   await expect(page.locator("#left > li").nth(1)).toBeHidden();
   await expect(page.locator("#left > li").nth(2)).toBeVisible();

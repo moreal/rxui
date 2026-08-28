@@ -4570,3 +4570,97 @@ with its own cell, the artifact-gate pins for both flags, the browser
 witness, the language-guide prose, the ADR, and this record. Open: the
 same read-set treatment for the count, emptiness, and persistence sweeps,
 and the sweep's missing per-row cache.
+
+## Every sweep reads its own wake flag (ADR-0083)
+
+### What was built
+
+ADR-0082 narrowed the filter sweep and left the three sweeps beside it —
+the counts, the emptiness/checked selections, and the persistence
+write-back — waking on the uniform region-touch flag, with a browser
+assertion pinning that boundary in the opposite direction. This round
+turns the one-sweep rule into a per-sweep one.
+
+The survey confirmed the classification is total. Read off the emitted
+dispatches, the pending array is pushed in exactly one place — the
+guard-miss arm of a row stage, beside the assignments that define the
+write set — while `append`, event `remove`, ADR-0050 predicate removal, an
+ADR-0053 guard hit, an ADR-0050/0061 broadcast, and hydration all raise
+the dirty bit. So "the row set changed" and "some row's fields changed"
+really are separable, and a sweep can be asked which one it depends on.
+
+The backend answer is one predicate, `sweepNarrows drainWrites reads`,
+with a read set per sweep kind: `[]` for a row total and for the ADR-0058
+emptiness subject (they read `rows.length`), the one predicate field for a
+predicate count or an ADR-0059/0060 selection, the arm subjects for a
+filter, and every field for a `persist` write-back — which is why the
+write-back can never narrow without that being spelled anywhere. Adjacent
+sweeps of one kind that agree fuse into one guarded block, so a region
+whose sweeps agree emits exactly what it did before.
+
+Twin Lab's `left` gained `{count left (flag == "true")}` beside its row
+total: an O(N) sweep on a field its only drain path (`mark`, which writes
+`label`) does not write. Every sweep over `left` now narrows, so the
+region binds `region_structural_0` and nothing else — the artifact gate
+lists `region_touched_0` among the *banned* strings.
+
+### Friction encountered
+
+The value had to be measured twice, in two labs, because one measurement
+would have been misleading in either direction. Two A/B pairs of
+hand-edited generated modules — the count block's guard the only
+difference — mounted with N rows and driven with single-row drains gave
+0.0584 → 0.0371 ms per commit at 10k rows in Twin Lab (36%) and *nothing*
+in Mix Lab, where a persistence write-back, a filter sweep, and two
+predicate scans still wake and the narrowing skips two `rows.length`
+comparisons. Quoting only the first number would have sold an O(1)
+bookkeeping change as a performance win.
+
+Seeding N rows for the measurement needed a hand edit anyway: the labs
+reach 10k rows only through 10k appends, so the measurement copies publish
+the context on `globalThis`, push rows straight into the region's row
+array, and let one real append reconcile them.
+
+The trace helpers in `twin.spec.mjs` returned `commits`, `tx[8]`, the
+slice and the metrics — but the counter this round moves is `tx[5]`, and
+an absent field would have compared `undefined` to `undefined` and passed.
+Widening `markTrace`/`readTrace` first was the only reason the new
+assertions mean anything. Two `before` objects in that file are built
+inline rather than through the helpers, and the first patch missed one.
+
+### Bugs found
+
+None. The prediction from the read sets matched the generated output
+exactly, region by region, before anything was measured.
+
+What the round did find is that the goal's own expectation — that Mix
+Lab's and Toggle Lab's evaluation-counter assertions would move — was
+wrong in practice. Both suites passed unchanged: the counters those specs
+assert on are all measured across structural transactions, where every
+sweep still wakes. The narrowing is only visible on a drain-only commit,
+and the existing specs never asserted a counter across one.
+
+### Performance observations
+
+The benchmark artifacts are byte-identical and BENCHMARK.md stands — the
+js-framework-benchmark backend is hand-written and never reaches this
+path. Inside the labs the emission grows where read sets disagree (Toggle
+Lab +3072 bytes, +2%; Mix Lab +1452) and shrinks where they agree (Twin
+Lab −1184 for the rule itself, before its new count cell). What the change
+buys is evaluations: a Toggle Lab keystroke inside a row editor stops
+asking one row total and three emptiness subjects; a Twin Lab `mark` stops
+asking a row total and an O(N) predicate scan. No DOM write counter moves,
+because every value skipped was equal to its cache — which is the whole
+argument.
+
+### Follow-up issue or commit
+
+`feat(component): derive every sweep's wake flag from its read set
+(ADR-0083)` — the `sweepNarrows` predicate and the per-kind read sets, the
+run-merging emission for the count and selection blocks, Twin Lab's second
+count cell, the artifact-gate pins for Twin's single flag and Toggle's
+interleaved blocks, the widened trace helpers and the browser witness, the
+language-guide table, the ADR, and this record. Open: the write set is the
+union over all of a region's row events, so a `retype` still wakes the
+`done` scans some *other* row event writes; and the sweep still has no
+per-row cache.

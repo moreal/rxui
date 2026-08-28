@@ -48,18 +48,17 @@ for (const required of [
   // ADR-0081: `right` is now persisted, and this line is the proof that
   // persistence adds no region-record slot — the six-slot record and the
   // container at 5 are byte-for-byte what ADR-0080 pinned.
-  "const regions = [[region_0, [], 0, false, [], [count_text_22], [0], node_24], [region_1, [], 0, false, [], node_25], [region_2, [], 0, false, [], node_26]];",
-  // Each region's touched flag is its own, read before the reconcile
-  // consumes the dirty bit and the pending positions.
-  "    const region_touched_0 = regions[0][3] || regions[0][4][\"length\"] !== 0;",
+  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_24], [0, 0], node_26], [region_1, [], 0, false, [], node_27], [region_2, [], 0, false, [], node_28]];",
+  // Each region's wake flag is its own, read before the reconcile consumes
+  // the dirty bit and the pending positions.
   "    const region_touched_1 = regions[1][3] || regions[1][4][\"length\"] !== 0;",
   "    const region_touched_2 = regions[2][3] || regions[2][4][\"length\"] !== 0;",
-  // ADR-0082: `left`'s only drain path writes `label`, and its filter arms
-  // read `flag`, so the sweep takes a second, narrower flag — the structural
-  // bit alone, read at the same point in the commit, before the reconcile
-  // clears it. The touched flag stays for the count sweep beside it, so both
-  // wake reasons are visible in one region's emission.
-  "    const region_touched_0 = regions[0][3] || regions[0][4][\"length\"] !== 0;\n    const region_structural_0 = regions[0][3];",
+  // ADR-0083: `left`'s only drain path writes `label`; its filter arms and
+  // its predicate count read `flag`, and its row total reads no field at
+  // all. Every sweep over the region is therefore disjoint from the drain,
+  // so `left` declares *only* the structural flag — the flag set is derived
+  // per region from the read sets, not fixed by the feature list.
+  "    const region_structural_0 = regions[0][3];",
   // ADR-0079, axis one — two filtered regions: two scans with their own
   // `filter_scan_{i}` / `filter_row_{i}` identifiers, each navigating
   // `childAt` from *its own* container slot, so neither walk can reach the
@@ -79,6 +78,7 @@ for (const required of [
   // writes the very field its arms read — still on the touched flag, and
   // `solo`, which has no drain path at all, keeps the uniform flag because
   // its pending slot is provably empty.
+  //
   "    if (region_structural_0 || changed[1]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"filter:left:evaluated\");",
   "    if (region_touched_1 || changed[1]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"filter:right:evaluated\");",
   "    if (region_touched_2 || changed[2]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"filter:solo:evaluated\");",
@@ -94,12 +94,15 @@ for (const required of [
   // a delegated `click` on `left`'s container and a delegated `change` on
   // `right`'s — so the two dispatches never share a listener; `solo` binds
   // none and emits no dispatch at all.
-  "const region_off_0 = listenDelegatedCells(node_24, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\", \"mark\"]);",
-  // ADR-0082: the count sweep beside the narrowed filter sweep still reads
-  // the touched flag — a `mark` drain re-evaluates the row total (finding it
-  // unchanged) while the filter scan does not run at all.
-  "    if (region_touched_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:left:0:evaluated\");",
-  "const region_off_1_change = listenDelegatedCells(node_25, \"change\", state, context, $lrx_region_1_dispatch, [\"\", \"\", \"toggle\"]);",
+  "const region_off_0 = listenDelegatedCells(node_26, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\", \"mark\"]);",
+  // ADR-0083: the count sweep beside the narrowed filter sweep reads the
+  // same structural bit — the row total reads only `rows.length` and the
+  // predicate count reads `flag`, so a `mark` drain (which writes `label`)
+  // asks neither. The two counts agree on their flag, so they share one
+  // block rather than growing a second guard.
+  "    const region_structural_0 = regions[0][3];\n    if (region_structural_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:left:0:evaluated\");",
+  "      tx[7][\"push\"](\"count:left:1:evaluated\");\n      const count_scan_0_1 = [0];",
+  "const region_off_1_change = listenDelegatedCells(node_27, \"change\", state, context, $lrx_region_1_dispatch, [\"\", \"\", \"toggle\"]);",
   // ADR-0080, axis one — a route over the *shared* filter field. The sealed
   // literal set is the declared default plus the union of both tables over
   // `mode`, so `#/mixed` is legal on the strength of `right`'s table alone
@@ -122,9 +125,9 @@ for (const required of [
   "    if (region_touched_1) {\n      const persist_rows_1 = [];",
   "      storageSet(\"leanrx-twin-lab.right\", persist_rows_1[\"join\"](\";\"));\n      tx[7][\"push\"](\"storage:right:write\");",
   // ...while the canonical hash write rides `changed[1]` in the commit
-  // prologue, ahead of *every* region block — the first `region_touched_`
-  // binding in the commit is the statement that follows it.
-  "      tx[7][\"push\"](\"route:mode:write\");\n    }\n    const region_touched_0 = regions[0][3]",
+  // prologue, ahead of *every* region block — the first region wake flag in
+  // the commit is the statement that follows it.
+  "      tx[7][\"push\"](\"route:mode:write\");\n    }\n    const region_structural_0 = regions[0][3];",
   // Mount seeds the routed field from the hash before the DOM exists and
   // hydrates the persisted region after the listeners are wired, so the
   // hydrate transaction's own sweep applies the routed literal to the rows
@@ -162,6 +165,10 @@ for (const banned of [
   "const region_structural_1",
   "const region_structural_2",
   "if (region_touched_0 || changed[1]) {",
+  // ADR-0083: every sweep over `left` is disjoint from what its drain
+  // writes, so the region's touched flag has no reader left and is not
+  // bound at all — the flag set follows the read sets, not the features.
+  "region_touched_0",
 ]) {
   if (twinSource.includes(banned)) {
     throw new Error(`generated Twin Lab unexpectedly emits ${banned}`);
