@@ -877,11 +877,15 @@ ADR-0085's cache has taken the row loop down to 0.05 ms. Against the click it
 is 11.3%.
 
 Two more of those numbers are worth knowing before optimising anything a
-filter does (ADR-0100, priced in ADR-0101, re-split in ADR-0103). The largest
-thing a ten-thousand-row filter flip's commit does is not the sweep — it is
-the `route` field's own history write, 20.3–21.0 ms of a commit that is
-21.5 ms when the flip moves a hundred rows and 48.3 ms when it moves all ten
-thousand. That write is *not* about the fragment: at ten thousand rows
+filter does (ADR-0100, priced in ADR-0101, re-split in ADR-0103 and again in
+ADR-0105). A filter flip's commit has **exactly two terms** — the `route`
+field's own history write and the region sweep — because a flip raises no
+dirty bit, queues no removal, counts no append and stages no row update, so
+the reconcile, the ADR-0063 write-back and all three drains measure exactly
+zero in both directions. Before ADR-0104 the history write was the larger one
+almost everywhere, 20.3–21.0 ms of a commit that was 21.5 ms when the flip
+moved a hundred rows and 48.3 ms when it moved all ten thousand. That write is
+*not* about the fragment: at ten thousand rows
 `location.hash =`, `history.replaceState` and `history.pushState` all cost
 the same 17–18 ms, and the cost is linear in the document's **stateful form
 controls** — about 1.7 µs each, saved into the session-history entry by every
@@ -917,7 +921,22 @@ language can emit is inside its own A/A band on both — and the mount is 0.998�
 at ten thousand rows, so it is a term removed and nothing traded for it. It is also not a filter's number: every
 commit that writes the hash paid it. A control the program does *not* own —
 an input with an `onInput` and no `value` — is left alone, and keeps the
-browser's restoration.
+browser's restoration. The same rule reaches the hand-written backends
+(ADR-0105): Temperature's two converted inputs, Validated Form's `name`, `age`
+and `terms`, TodoMVC's row checkbox, row editor and new-todo field, and Notes'
+`<textarea>` all declare it through one shared `FormDom.ownedState`, while
+Issue Browser's query field — given a literal value once and never written
+again, so there is no cell a restored value could contradict — does not.
+
+Which changed the ranking of the two terms. The history write is now flat at
+3.29–3.93 ms on a ten-thousand-row list and the sweep fits
+`0.15 ms + 3.03 µs · k`, so **the sweep is the larger of the two past
+`k` ≈ 11% of `N`** rather than past half the table. And neither is what the
+flip costs: style and layout is **65.5–84.7%** of the round trip at every cell
+from a hundred rows moved to ten thousand, almost all of it the show
+direction — 3.70 ms of layout on the hide leg against 108.03 on the show leg
+at 10 000 / 5 000. What is left of a filter flip is the rows being in the
+document.
 
 And the style and layout a flip used to dirty cost **1 282 ms** when the
 deselected rows were one contiguous run, which is what a benchmark seed
@@ -950,14 +969,15 @@ Taking `k` rows out costs `368 ns` per row plus `156 ns` per DOM node inside
 it, which one bulk write does not reduce — `parent.textContent = ""` is
 0.974× against `k` removals on the row shape above, and wins 1.111× only on a
 row that is a single text node — because the nodes leave the document either
-way. Putting them back costs `1.045 µs · N + 14.83 µs · k` of style and
-layout, which is **exactly what mounting `k` fresh rows into the same places
-costs** (0.975–1.016×, inside an A/A control of 0.958–1.009×): a detached
-node carries neither a discount nor a penalty, so the show direction is the
-price of rendering the rows and nothing else. The 14.83 µs is the row
-template's, not the framework's — 5.45 µs for a row of text, 11.36 µs for one
-carrying a `<button>`, 18.16 µs for the four cells, checkbox and two buttons
-above. ADR-0104 split that by control kind and found the three axes do not
+way. Putting them back costs **exactly what mounting `k` fresh rows
+into the same places costs** (0.975–1.016×, inside an A/A control of
+0.958–1.009×): a detached node carries neither a discount nor a penalty, so
+the show direction is the price of rendering the rows and nothing else.
+ADR-0103 fitted that framework-free at `1.045 µs · N + 14.83 µs · k`; measured
+on the module that ships it is **`0.67 µs · N + 20.6 µs · k`** (ADR-0105). The
+per-row term is the row template's, not the framework's — 5.45 µs for a row of
+text, 11.36 µs for one carrying a `<button>`, 18.16 µs for the four cells,
+checkbox and two buttons above. ADR-0104 split that by control kind and found the three axes do not
 agree: what the **render** charges for is a rendered widget (a `<button>` and
 its text are 1.69 µs against a `<span>`'s 0.43, a text input 5.27, a
 `<select>` 19.88 — but a checkbox is 0.38, no worse than a span), what the
@@ -968,6 +988,23 @@ plus half a microsecond for a control holding editable text). A row of a
 checkbox and two buttons is therefore cheap on the first axis and expensive on
 the second, which is why ADR-0103's six-node button row beat its seven-node
 span row.
+
+The one lowering that would move the remaining `20.6 µs · k` is a region that
+renders a **window** of its selection rather than all of it, and ADR-0105
+declines it on a number rather than on a contract. The contract objection
+turned out to be false: counts read the row table, the sweep is ADR-0102's
+`setDisplayed` and is already written for rows outside the container, and the
+container-positional export was deleted by ADR-0102 — so a window needs no
+host export, record slot or ABI, only a filter predicate that reads a row's
+position. What it costs is that the saving is a *transfer*. The one-time gain
+is real and larger than estimated (112.16 ms of show direction becomes about
+7.4 at ten thousand rows with five thousand selected), but afterwards every
+row crossing the window edge costs 24.6–29.0 µs — 65.0 µs when the window
+moves one row at a time, because each step forces its own style and layout —
+so scrolling that selection past the viewport once costs about 130 ms in a
+hundred separate interruptions, against a laid-out list that scrolls without
+entering script at all. The window does not remove the per-row cost; it moves
+it out of a click the user has accepted as a wait and into a scroll.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the

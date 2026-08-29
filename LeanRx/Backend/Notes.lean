@@ -288,6 +288,7 @@ private def mountFunction (runtime : RuntimeNames) (componentName : String)
       .const textarea (call runtime.createElement [.literal (.string "textarea")]),
       .expr <| call runtime.setAttribute [
         .ident textarea, .literal (.string "aria-label"), .literal (.string "Note")],
+      .expr <| FormDom.ownedState runtime.setAttribute (.ident textarea),
       .expr <| call runtime.append [.ident root, .ident textarea],
       .const status (call runtime.createElement [.literal (.string "p")]),
       .expr <| call runtime.setAttribute [

@@ -143,3 +143,24 @@ test("restores, debounces, reports storage errors, and cancels owned work", asyn
   await page.evaluate(() => globalThis.thirdNotesDispose());
   expect(pageErrors).toEqual([]);
 });
+
+test("the restored textarea declares the program's ownership (ADR-0105)", async ({ page }) => {
+  await page.goto(origin);
+  const expected = await page.evaluate(async () => (await fetch("/Notes.expected.json")).json());
+  await page.evaluate(async ({ storageKey }) => {
+    localStorage.setItem(storageKey, "restored note");
+    const { mount } = await import("/Notes.mjs");
+    globalThis.notesOwnedDispose = mount(document.getElementById("app"));
+  }, expected);
+  const owned = () => page.evaluate(() =>
+    document.querySelectorAll('[autocomplete="off"]').length);
+  // The restore effect writes state[0] back into the textarea, which is the
+  // claim being declared -- and a <textarea> is the one shape the checked
+  // pipeline cannot emit, so this is the rule's only reach to one.
+  expect(await owned()).toBe(1);
+  const input = page.locator(".leanrx-notes").getByRole("textbox", { name: "Note" });
+  await expect(input).toHaveValue("restored note");
+  await expect(input).toHaveAttribute("autocomplete", "off");
+  await page.evaluate(() => globalThis.notesOwnedDispose());
+  expect(await owned()).toBe(0);
+});

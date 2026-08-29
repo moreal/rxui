@@ -38,6 +38,27 @@ if (
   throw new Error("generated Validated Form lost its checked submit path");
 }
 
+// ADR-0105: three controlled controls, three declarations. `name` and `age`
+// are ADR-0038 text bindings and `terms` is a `checked` binding, which is the
+// same three-way split the checked pipeline covers -- and the submit button
+// and the two error paragraphs, which the program only ever writes `disabled`
+// and text into, declare nothing.
+for (const required of [
+  '  setAttribute(nameInput, "autocomplete", "off");\n  setProperty(nameInput, "value",',
+  '  setAttribute(ageInput, "autocomplete", "off");\n  setProperty(ageInput, "value",',
+  '  setAttribute(termsInput, "autocomplete", "off");\n  setProperty(termsInput, "checked",',
+]) {
+  if (!source.includes(required)) {
+    throw new Error(`generated Validated Form is missing ${required}`);
+  }
+}
+{
+  const declared = source.split('"autocomplete", "off"').length - 1;
+  if (declared !== 3) {
+    throw new Error(`generated Validated Form declares ${declared} owned controls, expected 3`);
+  }
+}
+
 const generated = await import(pathToFileURL(path.join(directory, "ValidatedForm.mjs")).href);
 if (JSON.stringify(Object.keys(generated)) !== JSON.stringify(["mount"])) {
   throw new Error("Validated Form exposed an unchecked submit function");

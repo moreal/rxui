@@ -166,3 +166,25 @@ test("prevents invalid submit and exposes only a validated fake command", async 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });
+
+test("the three controlled controls declare ownership and the buttons do not (ADR-0105)",
+  async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    const { mount } = await import("/ValidatedForm.mjs");
+    globalThis.formOwnedDispose = mount(document.getElementById("one"));
+  });
+  const root = page.locator("#one .validated-form");
+  // Two ADR-0038 text bindings and one `checked` binding: three controls the
+  // program writes, three declarations. The submit button carries `disabled`
+  // written from the same state and declares nothing, because `disabled` is
+  // not state the browser restores.
+  const owned = () => page.evaluate(() =>
+    document.querySelectorAll('#one [autocomplete="off"]').length);
+  expect(await owned()).toBe(3);
+  await expect(root.locator('input[autocomplete="off"]')).toHaveCount(3);
+  await expect(root.locator('button[autocomplete="off"]')).toHaveCount(0);
+  await expect(root.locator('input[type="checkbox"][autocomplete="off"]')).toHaveCount(1);
+  await page.evaluate(() => globalThis.formOwnedDispose());
+  expect(await owned()).toBe(0);
+});

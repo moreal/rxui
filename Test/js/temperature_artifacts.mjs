@@ -36,6 +36,31 @@ if (
   throw new Error("generated temperature parser/payload path is incomplete");
 }
 
+// ADR-0105: the hand-written backend makes the ADR-0104 ownership claim in
+// the same words the checked pipeline uses. Both inputs have their `value`
+// rewritten from the state cell on every conversion, so both declare it --
+// last static attribute, directly before the owned property write.
+for (const required of [
+  '  setAttribute(celsiusInput, "aria-invalid", "false");\n'
+    + '  setAttribute(celsiusInput, "autocomplete", "off");\n'
+    + '  setProperty(celsiusInput, "value", "0");',
+  '  setAttribute(fahrenheitInput, "aria-invalid", "false");\n'
+    + '  setAttribute(fahrenheitInput, "autocomplete", "off");\n'
+    + '  setProperty(fahrenheitInput, "value", "32");',
+]) {
+  if (!source.includes(required)) {
+    throw new Error(`generated Temperature Converter is missing ${required}`);
+  }
+}
+{
+  const declared = source.split('"autocomplete", "off"').length - 1;
+  if (declared !== 2) {
+    throw new Error(
+      `generated Temperature Converter declares ${declared} owned controls, expected 2`,
+    );
+  }
+}
+
 const generated = await import(
   pathToFileURL(path.join(directory, "TemperatureConverter.mjs")).href,
 );

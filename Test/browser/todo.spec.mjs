@@ -174,7 +174,11 @@ test("preserves keyed identity, focus, routing, and local region ownership", asy
   await expect(status).toHaveText("0 items left");
 
   const instrumentation = await page.evaluate(() => globalThis.todoDispose.instrumentation());
-  expect(instrumentation.slice(0, 7)).toEqual([0, 17, 26, 0, 0, 39, 203]);
+  // ADR-0105 moved the last of these by six: this run mounts six row branches
+  // and each now writes one more attribute, the declaration that the program
+  // and not the browser owns the control it wraps. This backend counts its own
+  // mount attributes, so the claim is counted like every attribute beside it.
+  expect(instrumentation.slice(0, 7)).toEqual([0, 17, 26, 0, 0, 39, 209]);
   const regions = await page.evaluate(() => globalThis.todoDispose.regionInstrumentation());
   expect(regions).toEqual([[4, 15, 5, 4], [3, 39, 0]]);
   const accessibility = await new AxeBuilder({ page }).analyze();
@@ -226,4 +230,45 @@ test("scopes delegated keyboard edits and preserves retained drafts", async ({ p
   await rows.nth(0).getByRole("textbox", { name: "Edit todo" }).press("Escape");
   await expect(rows.nth(0).locator("span")).toHaveText("Active");
   await page.evaluate(() => globalThis.todoDispose());
+});
+
+test("the owned count follows every row and every branch (ADR-0105)", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    const { mount } = await import("/TodoMVC.mjs");
+    globalThis.todoOwnedDispose = mount(document.getElementById("app"));
+  });
+  const root = page.locator(".leanrx-todo");
+  const newInput = root.locator('input[aria-label="New todo"]');
+  const rows = root.locator("li");
+  const owned = () => page.evaluate(() =>
+    document.querySelectorAll('[autocomplete="off"]').length);
+  // The static new-todo field is the only owned control before a row exists:
+  // the add handler clears its value from the program's side.
+  expect(await owned()).toBe(1);
+  await newInput.fill("First");
+  await newInput.press("Enter");
+  await newInput.fill("Second");
+  await newInput.press("Enter");
+  await expect(rows).toHaveCount(2);
+  // Each view-branch row adds its checkbox, whose `checked` the row update
+  // rewrites from the item on every toggle.
+  expect(await owned()).toBe(3);
+  await expect(rows.locator('input[type="checkbox"][autocomplete="off"]')).toHaveCount(2);
+  // The edit branch swaps the checkbox for the value-reflected editor, so the
+  // count stays put while the element behind it changes.
+  await rows.nth(0).getByRole("button", { name: "Edit" }).click();
+  expect(await owned()).toBe(3);
+  await expect(rows.nth(0).locator('input[aria-label="Edit todo"][autocomplete="off"]'))
+    .toHaveCount(1);
+  await expect(rows.locator('input[type="checkbox"][autocomplete="off"]')).toHaveCount(1);
+  // The Edit/Delete buttons are written by nothing and declare nothing.
+  await expect(root.locator('button[autocomplete="off"]')).toHaveCount(0);
+  await rows.nth(0).getByRole("button", { name: "Save" }).click();
+  expect(await owned()).toBe(3);
+  await rows.nth(1).getByRole("button", { name: "Delete" }).click();
+  await expect(rows).toHaveCount(1);
+  expect(await owned()).toBe(2);
+  await page.evaluate(() => globalThis.todoOwnedDispose());
+  expect(await owned()).toBe(0);
 });

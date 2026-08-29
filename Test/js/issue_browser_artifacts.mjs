@@ -68,6 +68,19 @@ for (const required of [
   if (!source.includes(required)) throw new Error(`generated Issue Browser lost ${required}`);
 }
 
+// ADR-0105's negative, and the boundary for the hand-written backends. The
+// query field is given a literal value once at mount and never written again
+// -- the program reads it through the event and stores nothing it would have
+// to put back -- so there is no cell for the browser's restoration to
+// contradict and the claim is not made. Nest Lab carries the same negative on
+// the checked side.
+if (source.includes('"autocomplete"')) {
+  throw new Error("generated Issue Browser disowned a control the program does not own");
+}
+if (!source.includes('  setAttribute(queryInput, "aria-label", "Issue query");')) {
+  throw new Error("generated Issue Browser lost its uncontrolled query input");
+}
+
 const generated = await import(pathToFileURL(path.join(directory, "IssueBrowser.mjs")).href);
 if (JSON.stringify(Object.keys(generated)) !== JSON.stringify(["mount"])) {
   throw new Error("Issue Browser exposed internal handlers");

@@ -40,6 +40,31 @@ for (const required of [
   if (!source.includes(required)) throw new Error(`generated TodoMVC lost ${required}`);
 }
 
+// ADR-0105: three owned controls, two of them row-scoped. The row branches
+// rewrite `checked` and `value` from the item on every update, and this
+// backend counts each of its own mount attributes into metrics[6], so the
+// declaration is counted like every attribute beside it rather than being
+// smuggled past the DOM-write counter.
+for (const required of [
+  '    setAttribute(checkbox, "aria-label", item[1]);\n    metrics[6] += 1;\n'
+    + '    setAttribute(checkbox, "autocomplete", "off");\n    metrics[6] += 1;\n'
+    + '    setProperty(checkbox, "checked", item[2]);',
+  '    setAttribute(editInput, "aria-label", "Edit todo");\n    metrics[6] += 1;\n'
+    + '    setAttribute(editInput, "autocomplete", "off");\n    metrics[6] += 1;\n'
+    + '    setProperty(editInput, "value", item[4]);',
+  '  setAttribute(newInput, "aria-label", "New todo");\n'
+    + '  setAttribute(newInput, "autocomplete", "off");\n'
+    + '  setProperty(newInput, "value", "");',
+]) {
+  if (!source.includes(required)) throw new Error(`generated TodoMVC is missing ${required}`);
+}
+{
+  const declared = source.split('"autocomplete", "off"').length - 1;
+  if (declared !== 3) {
+    throw new Error(`generated TodoMVC declares ${declared} owned controls, expected 3`);
+  }
+}
+
 const generated = await import(pathToFileURL(path.join(directory, "TodoMVC.mjs")).href);
 if (JSON.stringify(Object.keys(generated)) !== JSON.stringify(["mount"])) {
   throw new Error("TodoMVC exposed internal handlers");

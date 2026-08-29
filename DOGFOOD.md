@@ -7242,3 +7242,151 @@ that is entirely rendered. Two smaller things: the hand-written backends
 (Validated Form, Temperature) make the same ownership claim through their own
 emitters and do not say it, which is worth deciding rather than leaving, and
 `swapAt` and the filter still cannot meet in any emission.
+
+## Drawing fewer rows than a filter selects (ADR-0105)
+
+### What was built
+
+Almost nothing, deliberately. ADR-0103's second open question — a region that
+renders a window of its selection — was priced and declined, and the only
+emission change in the round is the one that closes ADR-0104's first: the four
+hand-written backends that write a control's `value` or `checked` from their
+own state now declare it, through one shared `FormDom.ownedState` that reads
+identically to `StaticAttr.ownedState` in the checked pipeline. Nine sites:
+Temperature's two converted inputs, Validated Form's `name`, `age` and `terms`,
+TodoMVC's row checkbox, row editor and static new-todo field, and Notes'
+`<textarea>` — the first one the rule has reached, since `HtmlTag` cannot emit
+one.
+
+### What broke or surprised
+
+**ADR-0103's open question rested on a premise its own predecessors had already
+removed, and nobody noticed for two rounds.** The question said a window would
+break because "every count, every sweep and every `childAt`-free positional
+export is written against a table that is entirely rendered". Checked function
+by function against the current source, all three are false: a count compiles
+to `regions[i][1]["length"]` or a read of the ADR-0099 predicate accumulator
+and never touches the parent; the sweep walks the row table and calls
+ADR-0102's `setDisplayed(position, key, …)`, whose entire purpose is a row that
+is in the table and not in the parent; and `rowNavigate` folds `childAt` from
+the *row's own root*, the region record's container slot having been deleted by
+ADR-0102 with a comment in `Component.lean` saying so. The lesson is narrow and
+worth keeping: an open question written in one round describes the code of that
+round, and two rounds of folding can dissolve it without anyone editing the
+question.
+
+**A filter flip's commit turns out to have exactly two terms.** The reconcile,
+the ADR-0063 write-back, the removal drain, the append drain, the row-update
+drain, the ADR-0099 rescan and the event body all read **exactly 0.000** in
+both directions at all fourteen cells — a flip raises no dirty bit, queues no
+removal, counts no append and stages no row update — so the commit is the route
+write plus the sweep, with a residue of −0.4% to +2.2%. Three rounds of asking
+"what share is the write-back" had an answer of zero available the whole time.
+
+**The restore-and-re-detach bracket costs no layout at all**, which was the one
+thing that could have made a window unaffordable and was measured rather than
+assumed. Putting ten thousand rows back into the parent and taking them out
+again inside one reconcile is 2.9 ms of DOM writes — 0.29 µs a row — and the
+forced layout after it stays at 0.02–0.20 ms, because nothing reads layout in
+between. ADR-0102 promised that in a comment; this is the number.
+
+**Todo's DOM-write counter caught the change, as it should have.** The existing
+browser assertion moved 203 → 209 and failed, which is six row-branch mounts
+each writing one more attribute. That backend counts its own mount attributes,
+so the honest fix was to update the pinned number rather than to emit the
+attribute past the counter it belongs in.
+
+### Performance observations
+
+The flip commit, both directions, current emission, ten thousand rows. `resid`
+is `commit − route − sweep`:
+
+| N / k | dir | commit | route | | sweep | | resid |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 000 / 100 | hide | 4.360 | 3.880 | **89.0%** | 0.455 | 10.4% | 0.6% |
+| 10 000 / 1 000 | hide | 7.100 | 3.930 | **55.4%** | 3.170 | 44.6% | 0.0% |
+| 10 000 / 5 000 | hide | 19.475 | 3.675 | 18.9% | 15.520 | **79.7%** | 1.4% |
+| 10 000 / 10 000 | hide | 34.075 | 3.295 | 9.7% | 30.420 | **89.3%** | 1.1% |
+| 10 000 / 10 000 | show | 4.555 | 0.180 | 4.0% | 4.370 | **95.9%** | 0.1% |
+
+The route write is flat at 3.29–3.93 ms (ADR-0104's `0.34 µs · rows + 0.15 ms`)
+and the sweep fits `0.15 ms + 3.03 µs · k` to within 1.5%, so they cross at
+`k` ≈ 1 120 — **11% of `N`, where ADR-0103 had the crossover at half the
+table**. Walked directly: route leads at k = 500, 750 and 1 000 (3.605 against
+3.130) and the sweep leads from k = 1 250 (3.520 against 3.850).
+
+Neither is what the flip costs. Round trips, with the forced style and layout
+after each dispatch:
+
+| N / k | round trip | style + layout | | commit | | sweep | route |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 000 / 100 | 25.16 | 16.48 | **65.5%** | 8.15 | 32.4% | 2.2% | 30.1% |
+| 10 000 / 1 000 | 46.82 | 35.87 | **76.6%** | 10.90 | 23.3% | 7.9% | 15.3% |
+| 10 000 / 5 000 | 135.50 | 111.74 | **82.5%** | 23.63 | 17.4% | 13.2% | 4.0% |
+| 10 000 / 10 000 | 252.29 | 213.69 | **84.7%** | 38.63 | 15.3% | 13.8% | 1.4% |
+
+and the show direction on the real emission is `0.67 µs · N + 20.6 µs · k`,
+against ADR-0103's framework-free `1.045 µs · N + 14.83 µs · k`: a Toggle Lab
+row costs **20.6 µs** to put into the document.
+
+The window, priced. One step of `m` rows out and `m` in, ten thousand rows,
+window of fifty: 65.0 µs per row moved at m = 1, then 28.0, 26.5, 24.6 and
+29.0 at m = 5, 10, 25 and 50. The edges: down to a window of fifty is 29.96 ms
+(29.86 write + 0.10 layout), back to all shown is 224.54 (3.61 + 220.82). An
+idle table walk that writes nothing is 3 ns a row. So at 10 000 / 5 000 the
+one-time trade is 135.50 ms of round trip against about 38 — a **3.6× win**,
+with a real 105 ms gain on the show direction and a 6.6 ms loss on the hide,
+which must take 9 950 rows out instead of 5 000 — and then scrolling that
+selection past the viewport once costs about **130 ms** in a hundred separate
+0.65–1.45 ms interruptions, against **no number at all**, because a list the
+browser has already laid out scrolls without entering script. The window does
+not remove the `20.6 µs · k`; it moves it out of an accepted click and into a
+scroll, and makes the total larger.
+
+A/A control ratios, second page of the same dist: 0.966–1.083× on the
+whole-dispatch cells and 0.875–1.255× on the sub-millisecond probe segments,
+which is the sub-millisecond band ADR-0104 also had.
+
+### Compiler and gate work
+
+`LeanRx/Backend/FormDom.lean` gains `ownedState`, the one spelling the four
+hand-written backends share; `Temperature.lean`, `ValidatedForm.lean`,
+`Todo.lean` and `Notes.lean` call it at nine sites, each as the last static
+attribute directly before the property write it declares ownership of. Four
+bundles change by pure addition with **no existing line moved** — TodoMVC
+14 181 → 14 375 (+194, three declarations plus two `metrics[6] += 1` for the
+row-scoped ones, because that backend counts its own mount attributes),
+ValidatedForm 9 928 → 10 078 (+150), TemperatureConverter 8 192 → 8 301 (+109),
+Notes 5 044 → 5 094 (+50). Fifteen bundles are byte-identical including Toggle
+Lab and the js-framework-benchmark bundle, so **the size baseline does not
+move**; every manifest and every `graphHash` is unchanged, and `runtimeAbi`
+stays 20 with the four host modules untouched.
+
+The witnesses are counts. Four artifact gates pin every emitted sequence *and*
+assert the exact number of declarations — TodoMVC 3, Validated Form 3,
+Temperature 2, Notes 1 — so a fifth would mean the rule had started paying for
+a control the program does not own. The Issue Browser gate carries the negative
+for the hand-written side: its module contains no `autocomplete` at all and its
+uncontrolled query input, given a literal value once and never written again,
+is pinned in place. Four browser tests walk the DOM count and take it to zero
+through disposal, TodoMVC's following it through two row mounts, the edit
+branch, a save and a delete.
+
+### Follow-up issue or commit
+
+`feat(backend): say who owns a hand-written control's state (ADR-0105)` — the
+ADR, the DECISIONS.md row, the guide and dynamic-regions paragraphs, the shared
+`ownedState` and its nine sites, five gates and this record. **ADR-0103 OQ2 and
+ADR-0104 OQ1 are both closed.** What stands open is smaller than what closed.
+The sweep is now the whole commit at large `k` and fits
+`0.15 ms + 3.03 µs · k`, of which ADR-0103's detach law accounts for about
+1.9 µs on Toggle Lab's row — the remaining ~1.1 µs a row is the host's display
+cell compare, key check and backward anchor walk, 11 ms at ten thousand rows
+and 4.4% of the round trip, which is under this round's bar but is the only
+part of the sweep a compiler owns. A window remains one predicate away, and the
+number that would change its verdict is the row template's rather than the
+compiler's: the recurring cost is the render plus roughly 4–8 µs of host, so a
+cheaper row moves it down and a list too long to lay out moves it the other way
+by fiat. `<textarea>` is now reachable by the ownership rule and still not by
+`HtmlTag`, alongside `<select>`. And `swapAt` and the filter still cannot meet
+in any emission, fourth round standing.

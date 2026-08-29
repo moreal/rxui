@@ -151,3 +151,28 @@ test("derives invalid observations from the complete checked state", async ({ pa
   }
   await page.evaluate(() => globalThis.temperatureOrderDisposers.forEach((dispose) => dispose()));
 });
+
+test("both converted inputs declare the program's ownership (ADR-0105)", async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    const { mount } = await import("/TemperatureConverter.mjs");
+    globalThis.temperatureDispose = mount(document.getElementById("app"));
+  });
+  // Every edit rewrites the *other* input's value from the converted state, so
+  // both controls are owned and both say so. The count is the witness: a third
+  // would mean the rule had reached something the program does not write.
+  const owned = () => page.evaluate(() =>
+    document.querySelectorAll('[autocomplete="off"]').length);
+  expect(await owned()).toBe(2);
+  const inputs = page.locator(".temperature-converter input");
+  await expect(inputs).toHaveCount(2);
+  await expect(inputs.nth(0)).toHaveAttribute("autocomplete", "off");
+  await expect(inputs.nth(1)).toHaveAttribute("autocomplete", "off");
+  // The declaration does not disturb the conversion it protects.
+  await inputs.nth(0).fill("100");
+  await inputs.nth(0).dispatchEvent("input");
+  await expect(inputs.nth(1)).toHaveValue("212");
+  expect(await owned()).toBe(2);
+  await page.evaluate(() => globalThis.temperatureDispose());
+  expect(await owned()).toBe(0);
+});

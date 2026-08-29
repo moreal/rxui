@@ -50,6 +50,21 @@ for (const required of [
   if (!source.includes(required)) throw new Error(`generated Notes lost ${required}`);
 }
 
+// ADR-0105: one owned control. The restore effect writes the note text back
+// into the textarea from state[0], which is the claim, and a `<textarea>` is
+// the one shape the checked pipeline cannot emit -- so this is the only place
+// in the repository where the rule reaches one.
+if (!source.includes('  setAttribute(noteInput, "aria-label", "Note");\n'
+  + '  setAttribute(noteInput, "autocomplete", "off");')) {
+  throw new Error("generated Notes lost the owned-state declaration on its textarea");
+}
+{
+  const declared = source.split('"autocomplete", "off"').length - 1;
+  if (declared !== 1) {
+    throw new Error(`generated Notes declares ${declared} owned controls, expected 1`);
+  }
+}
+
 const generated = await import(pathToFileURL(path.join(directory, "Notes.mjs")).href);
 if (JSON.stringify(Object.keys(generated)) !== JSON.stringify(["mount"])) {
   throw new Error("Notes exposed internal handlers");

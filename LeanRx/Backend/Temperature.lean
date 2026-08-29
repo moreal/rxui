@@ -301,6 +301,7 @@ def emit (moduleName : String) (checked : TemperatureSpec.Checked) : Except Erro
       .ident celsiusInput, .literal (.string "aria-describedby"), .ident errorId],
     .expr <| call runtime.setAttribute [
       .ident celsiusInput, .literal (.string "aria-invalid"), .literal (.string "false")],
+    .expr <| FormDom.ownedState runtime.setAttribute (.ident celsiusInput),
     .expr <| setProperty runtime (.ident celsiusInput)
       checked.celsiusUpdate.binding.property (.literal (.string checked.spec.initialCelsius)),
     .expr <| call runtime.append [.ident celsiusLabel, .ident celsiusInput],
@@ -317,6 +318,7 @@ def emit (moduleName : String) (checked : TemperatureSpec.Checked) : Except Erro
       .ident fahrenheitInput, .literal (.string "aria-describedby"), .ident errorId],
     .expr <| call runtime.setAttribute [
       .ident fahrenheitInput, .literal (.string "aria-invalid"), .literal (.string "false")],
+    .expr <| FormDom.ownedState runtime.setAttribute (.ident fahrenheitInput),
     .expr <| setProperty runtime (.ident fahrenheitInput)
       checked.fahrenheitUpdate.binding.property (.literal (.string checked.spec.initialFahrenheit)),
     .expr <| call runtime.append [.ident fahrenheitLabel, .ident fahrenheitInput],

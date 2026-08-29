@@ -221,12 +221,35 @@ next round does not have to. Detaching is `368 ns` per row plus `156 ns` per
 node, and no bulk write reduces it — one owned-parent `textContent = ""` for a
 whole filtered-out table is 0.974× on this repository's widest row and 1.111×
 only on a row that is a single text node, which is 1.1% of that shape's round
-trip. Re-showing is `1.045 µs · N + 14.83 µs · k` of forced style and layout,
-which is what mounting `k` fresh rows into the same places costs to within an
-A/A band (0.975–1.016× over six cells): the host's restore is the price of
-rendering the rows and carries nothing of its own. What sets the 14.83 µs is
-the row template — 5.45 µs for a row of text against 18.16 µs for Toggle
-Lab's — so it is the author's declaration and not a lowering.
+trip. Re-showing is what mounting `k` fresh rows into the same places
+costs to within an A/A band (0.975–1.016× over six cells): the host's restore
+is the price of rendering the rows and carries nothing of its own. ADR-0103
+fitted that framework-free at `1.045 µs · N + 14.83 µs · k`; on the module
+that ships it is **`0.67 µs · N + 20.6 µs · k`** (ADR-0105), and what sets the
+per-row term is the row template — 5.45 µs for a row of text against 18.16 µs
+for Toggle Lab's — so it is the author's declaration and not a lowering.
+
+ADR-0105 re-split the commit around it once the history write was small, and
+found it has exactly two terms: the route write and this sweep. The reconcile,
+the ADR-0063 write-back and all three drains measure **exactly zero** in both
+directions at every cell, because a filter flip raises no dirty bit, queues no
+removal, counts no append and stages no row update. The sweep fits
+`0.15 ms + 3.03 µs · k` at ten thousand rows and the route write is flat, so
+the sweep is the larger of the two past `k` ≈ 11% of `N`. Neither is what the
+flip *costs*: style and layout is 65.5–84.7% of the round trip at every cell,
+almost all of it the show direction.
+
+A region that rendered a **window** of its selection is the one thing that
+would move that, and this host already implements it — a window is
+`setDisplayed` applied to more rows, and every entry point above is written
+for a row that is in the table and not in the parent. ADR-0105 declines it on
+the recurring cost rather than on any contract: the restore bracket a
+reconcile pays is only 0.29 µs per row out with no style or layout at all
+(9.645 → 12.580 ms of reconcile from zero to ten thousand rows out) and the
+one-time gain is real (105 ms at ten thousand rows with five thousand
+selected), but every row crossing the window edge afterwards costs 24.6–29.0 µs
+— 65.0 µs when the window moves one row at a time — against a laid-out list
+that scrolls without entering script at all.
 
 One number about the commit around it, because it was the largest and it is
 not this file's: the ADR-0063 history write a routed filter field triggers

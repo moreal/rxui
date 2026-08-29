@@ -185,3 +185,21 @@ test("loads, paginates, retries, suppresses stale HTTP, and cancels disposal", a
     .toEqual([13, 2]);
   expect(pageErrors).toEqual([]);
 });
+
+test("the query field the program never writes keeps the browser's restoration (ADR-0105)",
+  async ({ page }) => {
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    const { mount } = await import("/IssueBrowser.mjs");
+    globalThis.issuesOwnedDispose = mount(document.getElementById("app"));
+  });
+  // The boundary, on the hand-written side. The query input is given a literal
+  // value once at mount and never written again -- the program reads it off
+  // the event and stores nothing it would have to put back -- so there is no
+  // cell for a restored value to contradict and no claim is made.
+  const owned = await page.evaluate(() =>
+    document.querySelectorAll('[autocomplete]').length);
+  expect(owned).toBe(0);
+  await expect(page.locator('input[aria-label="Issue query"]')).toHaveCount(1);
+  await page.evaluate(() => globalThis.issuesOwnedDispose());
+});

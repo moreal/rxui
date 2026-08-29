@@ -148,6 +148,8 @@ private def branchMountFunction (runtime : RuntimeNames) : Except Error Function
         incrementAt metrics 6,
         setAttribute runtime (.ident checkbox) "aria-label" (indexAt (.ident item) 1),
         incrementAt metrics 6,
+        .expr <| FormDom.ownedState runtime.setAttribute (.ident checkbox),
+        incrementAt metrics 6,
         setProperty runtime (.ident checkbox) DomProperty.checked (indexAt (.ident item) 2),
         incrementAt metrics 6
       ] ++ countedActionAttrs runtime metrics checkbox .toggle key ++ [
@@ -176,6 +178,8 @@ private def branchMountFunction (runtime : RuntimeNames) : Except Error Function
         setAttribute runtime (.ident input) "type" (.literal (.string "text")),
         incrementAt metrics 6,
         setAttribute runtime (.ident input) "aria-label" (.literal (.string "Edit todo")),
+        incrementAt metrics 6,
+        .expr <| FormDom.ownedState runtime.setAttribute (.ident input),
         incrementAt metrics 6,
         setProperty runtime (.ident input) DomProperty.value (indexAt (.ident item) 4),
         incrementAt metrics 6
@@ -827,6 +831,7 @@ def emit (moduleName : String) (checked : LeanRx.Todo.Spec.Checked) : Except Err
     .const newInput (call runtime.createElement [.literal (.string "input")]),
     setAttribute runtime (.ident newInput) "type" (.literal (.string "text")),
     setAttribute runtime (.ident newInput) "aria-label" (.literal (.string "New todo")),
+    .expr <| FormDom.ownedState runtime.setAttribute (.ident newInput),
     setProperty runtime (.ident newInput) DomProperty.value (.literal (.string "")),
     .expr <| call runtime.append [.ident root, .ident newInput],
     .const addButton (call runtime.createElement [.literal (.string "button")]),

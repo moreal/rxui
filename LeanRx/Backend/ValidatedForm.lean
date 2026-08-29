@@ -438,6 +438,7 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
     .expr <| call runtime.setAttribute [
       .ident nameInput, .literal (.string "aria-invalid"),
       .literal (.string (if initial.nameError.isEmpty then "false" else "true"))],
+    .expr <| FormDom.ownedState runtime.setAttribute (.ident nameInput),
     .expr <| setProperty runtime (.ident nameInput) checked.nameControl.property
       (.literal (.string checked.spec.initial.name)),
     .expr <| call runtime.append [.ident form, .ident nameInput],
@@ -465,6 +466,7 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
     .expr <| call runtime.setAttribute [
       .ident ageInput, .literal (.string "aria-invalid"),
       .literal (.string (if initial.ageError.isEmpty then "false" else "true"))],
+    .expr <| FormDom.ownedState runtime.setAttribute (.ident ageInput),
     .expr <| setProperty runtime (.ident ageInput) checked.ageControl.property
       (.literal (.string checked.spec.initial.age)),
     .expr <| call runtime.append [.ident form, .ident ageInput],
@@ -485,6 +487,7 @@ def emit (moduleName : String) (checked : ValidatedFormSpec.Checked) : Except Er
     .expr <| call runtime.setAttribute [
       .ident termsInput, .literal (.string "aria-invalid"),
       .literal (.string (if initial.termsError.isEmpty then "false" else "true"))],
+    .expr <| FormDom.ownedState runtime.setAttribute (.ident termsInput),
     .expr <| setProperty runtime (.ident termsInput) checked.acceptedControl.property
       (.literal (.boolean checked.spec.initial.accepted)),
     .expr <| call runtime.append [.ident termsLabel, .ident termsInput],
