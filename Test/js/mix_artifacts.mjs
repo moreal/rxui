@@ -90,7 +90,10 @@ for (const required of [
   // behind it, and writes `hidden` without ever touching a child. ADR-0078:
   // the scan identifier carries the region index, so the one filtered region
   // owns `filter_scan_0` alone and an unfiltered neighbour emits no scan.
-  "setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", state[1] === \"active\" ? filter_row_0[2] !== \"false\" : state[1] === \"done\" ? filter_row_0[2] !== \"true\" : false);",
+  // ADR-0086: `crew` is filtered *and* persisted, so its displayed-state cell
+  // sits at slot 5, behind three declared fields and the ADR-0085
+  // serialization cell at slot 4, and the navigation is paid per written row.
+  "      const filter_scan_0 = [0];\n      const filter_written_0 = [0];\n      for (const filter_row_0 of regions[0][1]) {\n        const filter_next_0 = state[1] === \"active\" ? filter_row_0[2] !== \"false\" : state[1] === \"done\" ? filter_row_0[2] !== \"true\" : false;\n        if (filter_row_0[5] !== filter_next_0) {\n          filter_row_0[5] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_scan_0[0] += 1;\n      }",
   // ADR-0078: the count sweep distributes by region record — crew's two cells
   // fill its own two-slot refs and cache, pins' single cell its own one-slot
   // pair, and the trace labels carry the region name with a region-local

@@ -79,7 +79,7 @@ for (const required of [
   // The Enter arm's guard miss appends through its own evaluator namespace
   // behind the plain events (pseudo event index 7), with the same trimmed
   // append and draft reset the Add button's $lrx_event_1 runs.
-  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_7_append_0_0(state[0], state[1], state[2]), $lrx_event_7_append_0_1(state[0], state[1], state[2]), $lrx_event_7_append_0_2(state[0], state[1], state[2]), $lrx_event_7_append_0_3(state[0], state[1], state[2]), null]);",
+  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_7_append_0_0(state[0], state[1], state[2]), $lrx_event_7_append_0_1(state[0], state[1], state[2]), $lrx_event_7_append_0_2(state[0], state[1], state[2]), $lrx_event_7_append_0_3(state[0], state[1], state[2]), null, null]);",
   "function $lrx_event_7_append_0_0(added, filter, draft) {\n  return draft[\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n}",
   "function $lrx_event_7_write_1(added, filter, draft) {\n  return \"\";\n}",
   // The ADR-0055 sealed skip guard: the guarded add dispatch returns before
@@ -91,7 +91,7 @@ for (const required of [
   "  if (state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\") {\n    return null;\n  }\n  if (tx[0] === 0) {",
   // The guard miss appends one row with the trimmed label mirrored into the
   // row draft, then resets the component draft — one transaction.
-  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1], state[2]), $lrx_event_1_append_0_1(state[0], state[1], state[2]), $lrx_event_1_append_0_2(state[0], state[1], state[2]), $lrx_event_1_append_0_3(state[0], state[1], state[2]), null]);",
+  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1], state[2]), $lrx_event_1_append_0_1(state[0], state[1], state[2]), $lrx_event_1_append_0_2(state[0], state[1], state[2]), $lrx_event_1_append_0_3(state[0], state[1], state[2]), null, null]);",
   "function $lrx_event_1_append_0_0(added, filter, draft) {\n  return draft[\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n}",
   "function $lrx_event_1_write_1(added, filter, draft) {\n  return \"\";\n}",
   // The ADR-0057 trimmed disabled selection: the Add button mounts with the
@@ -231,7 +231,7 @@ for (const required of [
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n    row_item[5] = null;\n  }",
   // A fresh row is born unencoded, so the tuple shape never changes after
   // construction and the next write-back fills the cell.
-  "$lrx_event_1_append_0_3(state[0], state[1], state[2]), null]);",
+  "$lrx_event_1_append_0_3(state[0], state[1], state[2]), null, null]);",
   // A removal writes no field: the kept-filter rebuilds the row array around
   // the same tuples, so every survivor's cell stays valid — no stale, and
   // nothing re-encodes.
@@ -245,7 +245,7 @@ for (const required of [
   "  tx[7][\"push\"](\"event:hydrate:items\");",
   "  const stored_value = storageGet(\"leanrx-toggle-lab.items\");",
   "        const hydrate_fields = hydrate_part[\"split\"](\",\");\n        if (hydrate_fields[\"length\"] !== 4) {\n          hydrate_ok[0] = false;\n        }\n        hydrate_rows[\"push\"](hydrate_fields);",
-  "  if (hydrate_ok[0] && hydrate_rows[\"length\"] !== 0) {\n    for (const hydrate_row of hydrate_rows) {\n      regions[0][1][\"push\"]([regions[0][2], hydrate_row[0][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), hydrate_row[1][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), hydrate_row[2][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), hydrate_row[3][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), null]);\n      regions[0][2] += 1;\n    }\n    regions[0][3] = true;\n    tx[7][\"push\"](\"region:items:hydrate\");\n  }",
+  "  if (hydrate_ok[0] && hydrate_rows[\"length\"] !== 0) {\n    for (const hydrate_row of hydrate_rows) {\n      regions[0][1][\"push\"]([regions[0][2], hydrate_row[0][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), hydrate_row[1][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), hydrate_row[2][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), hydrate_row[3][\"split\"](\"%2C\")[\"join\"](\",\")[\"split\"](\"%3B\")[\"join\"](\";\")[\"split\"](\"%25\")[\"join\"](\"%\"), null, null]);\n      regions[0][2] += 1;\n    }\n    regions[0][3] = true;\n    tx[7][\"push\"](\"region:items:hydrate\");\n  }",
   "  $lrx_hydrate_0(context, null);",
   // The ADR-0050 region record carries the count refs and numeric cache in
   // two region-local slots behind the pending slot, and the ADR-0051 filter
@@ -278,14 +278,19 @@ for (const required of [
   // zero differs from one — the plural branch is the mount text.
   "  const count_text_20 = createText(\" items left\");",
   // The ADR-0051 filter sweep runs after the reconcile and drain whenever
-  // the region was touched or the filter field changed, writing each row
-  // root's hidden property from the sealed state-to-predicate table by
-  // childAt navigation from the record's container slot — the unmatched
-  // "all" falls through to false.
+  // the region was touched or the filter field changed, selecting each row
+  // from the sealed state-to-predicate table — the unmatched "all" falls
+  // through to false.
   "    if (region_touched_0 || changed[1]) {",
-  "        setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", state[1] === \"active\" ? filter_row_0[3] !== \"false\" : state[1] === \"completed\" ? filter_row_0[3] !== \"true\" : false);",
   "      tx[7][\"push\"](\"filter:items:evaluated\");",
-  "      tx[7][\"push\"](\"dom:filter:items:write\");",
+  // ADR-0086: the selection is compared against the row's own displayed-state
+  // cell at slot 6 — behind the four declared fields and the ADR-0085
+  // serialization cell at slot 5 — and only a row whose value moved is
+  // navigated to by childAt and written. The written count rides one
+  // commit-time trace entry, and the shared DOM-write counter takes the
+  // ADR-0045 evaluate-compare-write shape: it fires only when a row moved.
+  "      const filter_scan_0 = [0];\n      const filter_written_0 = [0];\n      for (const filter_row_0 of regions[0][1]) {\n        const filter_next_0 = state[1] === \"active\" ? filter_row_0[3] !== \"false\" : state[1] === \"completed\" ? filter_row_0[3] !== \"true\" : false;\n        if (filter_row_0[6] !== filter_next_0) {\n          filter_row_0[6] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_scan_0[0] += 1;\n      }",
+  "      tx[7][\"push\"](\"filter:items:written:\" + filter_written_0[0]);\n      if (filter_written_0[0] !== 0) {\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:filter:items:write\");\n      }",
   // ADR-0084 splits the drain wake by row event inside the region's own
   // dispatch function, which is the only transaction function that can tell
   // one drain path from another: its `action` argument names the row event

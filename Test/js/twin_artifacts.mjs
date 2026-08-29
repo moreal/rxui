@@ -64,12 +64,12 @@ for (const required of [
   // `childAt` from *its own* container slot, so neither walk can reach the
   // other's container or row table. The two inline arm tables are inverted,
   // so one field value hides complementary rows in the two regions.
-  "      const filter_scan_0 = [0];\n      for (const filter_row_0 of regions[0][1]) {\n        setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", state[1] === \"on\" ? filter_row_0[2] !== \"true\" : state[1] === \"off\" ? filter_row_0[2] !== \"false\" : false);\n        filter_scan_0[0] += 1;\n      }",
+  "      const filter_scan_0 = [0];\n      const filter_written_0 = [0];\n      for (const filter_row_0 of regions[0][1]) {\n        const filter_next_0 = state[1] === \"on\" ? filter_row_0[2] !== \"true\" : state[1] === \"off\" ? filter_row_0[2] !== \"false\" : false;\n        if (filter_row_0[3] !== filter_next_0) {\n          filter_row_0[3] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_scan_0[0] += 1;\n      }",
   // ADR-0080: `right` names one literal (`"mixed"`) its twin does not. The
   // two chains stay independent — `left`'s chain has no `"mixed"` test at
   // all, so under that literal `left` falls through to show-all.
-  "      const filter_scan_1 = [0];\n      for (const filter_row_1 of regions[1][1]) {\n        setProperty(childAt(regions[1][5], filter_scan_1[0]), \"hidden\", state[1] === \"on\" ? filter_row_1[2] !== \"false\" : state[1] === \"off\" ? filter_row_1[2] !== \"true\" : state[1] === \"mixed\" ? filter_row_1[2] !== \"true\" : false);\n        filter_scan_1[0] += 1;\n      }",
-  "      const filter_scan_2 = [0];\n      for (const filter_row_2 of regions[2][1]) {\n        setProperty(childAt(regions[2][5], filter_scan_2[0]), \"hidden\", state[2] === \"on\" ? filter_row_2[2] !== \"true\" : false);\n        filter_scan_2[0] += 1;\n      }",
+  "      const filter_scan_1 = [0];\n      const filter_written_1 = [0];\n      for (const filter_row_1 of regions[1][1]) {\n        const filter_next_1 = state[1] === \"on\" ? filter_row_1[2] !== \"false\" : state[1] === \"off\" ? filter_row_1[2] !== \"true\" : state[1] === \"mixed\" ? filter_row_1[2] !== \"true\" : false;\n        if (filter_row_1[4] !== filter_next_1) {\n          filter_row_1[4] = filter_next_1;\n          setProperty(childAt(regions[1][5], filter_scan_1[0]), \"hidden\", filter_next_1);\n          filter_written_1[0] += 1;\n        }\n        filter_scan_1[0] += 1;\n      }",
+  "      const filter_scan_2 = [0];\n      const filter_written_2 = [0];\n      for (const filter_row_2 of regions[2][1]) {\n        const filter_next_2 = state[2] === \"on\" ? filter_row_2[2] !== \"true\" : false;\n        if (filter_row_2[3] !== filter_next_2) {\n          filter_row_2[3] = filter_next_2;\n          setProperty(childAt(regions[2][5], filter_scan_2[0]), \"hidden\", filter_next_2);\n          filter_written_2[0] += 1;\n        }\n        filter_scan_2[0] += 1;\n      }",
   // ADR-0079, axis two — two filters over one state field: `left` and
   // `right` both wake on `changed[1]`, `solo` only on `changed[2]`. Each
   // guard names exactly one region's flag and exactly one field's bit, and
@@ -89,7 +89,7 @@ for (const required of [
   // touch of `solo` beside a write to the twins' filter field — so the one
   // commit runs all three sweeps, two woken by the changed bit and one by
   // its own touched flag.
-  "  tx[7][\"push\"](\"event:stir\");\n  regions[2][1][\"push\"]([regions[2][2], $lrx_event_8_append_0_0(state[0], state[1], state[2]), $lrx_event_8_append_0_1(state[0], state[1], state[2])]);\n  regions[2][2] += 1;\n  regions[2][3] = true;\n  tx[7][\"push\"](\"region:solo:append\");\n  state[1] = $lrx_event_8_write_1(state[0], state[1], state[2]);",
+  "  tx[7][\"push\"](\"event:stir\");\n  regions[2][1][\"push\"]([regions[2][2], $lrx_event_8_append_0_0(state[0], state[1], state[2]), $lrx_event_8_append_0_1(state[0], state[1], state[2]), null]);\n  regions[2][2] += 1;\n  regions[2][3] = true;\n  tx[7][\"push\"](\"region:solo:append\");\n  state[1] = $lrx_event_8_write_1(state[0], state[1], state[2]);",
   // ADR-0080: `left` and `right` each bind one row event of their own kind —
   // a delegated `click` on `left`'s container and a delegated `change` on
   // `right`'s — so the two dispatches never share a listener; `solo` binds
@@ -124,15 +124,20 @@ for (const required of [
   // `changed[1]` disjunct, so a route flip can never provoke a storageSet.
   "    if (region_touched_1) {\n      const persist_rows_1 = [];",
   // ADR-0085: the serialization cache is a *row tuple* cell, not a record
-  // slot, and it exists only where a region is persisted. `right` is the one
-  // persisted region of three, so its rows carry the cell behind their two
-  // declared fields and its row stage stales it...
-  "  regions[1][1][\"push\"]([regions[1][2], $lrx_event_0_append_1_0(state[0], state[1], state[2]), $lrx_event_0_append_1_1(state[0], state[1], state[2]), null]);",
+  // slot, and it exists only where a region is persisted. ADR-0086 puts the
+  // displayed-state cell behind it, and all three regions are filtered, so
+  // `right` — the one persisted region of three — carries *two* cells behind
+  // its two declared fields, serial at 3 and shown at 4, and its row stage
+  // stales the first without touching the second...
+  "  regions[1][1][\"push\"]([regions[1][2], $lrx_event_0_append_1_0(state[0], state[1], state[2]), $lrx_event_0_append_1_1(state[0], state[1], state[2]), null, null]);",
   "      persist_row_1[3] = persist_row_1[1]",
-  // ...while `left` and `solo` append rows of exactly the old shape and
-  // stale nothing. No record slot moved for any of the three.
-  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_0_append_0_0(state[0], state[1], state[2]), $lrx_event_0_append_0_1(state[0], state[1], state[2])]);",
-  "  regions[2][1][\"push\"]([regions[2][2], $lrx_event_0_append_2_0(state[0], state[1], state[2]), $lrx_event_0_append_2_1(state[0], state[1], state[2])]);",
+  "      const row_next_0 = checked ? \"true\" : \"false\";\n      row_item[2] = row_next_0;\n      row_item[3] = null;\n      regions[1][4][\"push\"](scan[1]);",
+  // ...while `left` and `solo` carry the displayed-state cell alone, at slot
+  // 3, and `left`'s own row stage — which writes `label`, a field no filter
+  // arm reads — stales nothing at all. No record slot moved for any of the
+  // three.
+  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_0_append_0_0(state[0], state[1], state[2]), $lrx_event_0_append_0_1(state[0], state[1], state[2]), null]);",
+  "  regions[2][1][\"push\"]([regions[2][2], $lrx_event_0_append_2_0(state[0], state[1], state[2]), $lrx_event_0_append_2_1(state[0], state[1], state[2]), null]);",
   "      storageSet(\"leanrx-twin-lab.right\", persist_rows_1[\"join\"](\";\"));\n      tx[7][\"push\"](\"storage:right:encode:\" + persist_encoded_1[0]);\n      tx[7][\"push\"](\"storage:right:write\");",
   // ...while the canonical hash write rides `changed[1]` in the commit
   // prologue, ahead of *every* region block — the first region wake flag in

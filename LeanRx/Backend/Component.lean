@@ -406,13 +406,45 @@ private def staleRowSerial (row : Ident) : Option Nat → List Stmt
   | none => []
   | some slot => [.assign (.index (.ident row) (uint slot)) (.literal .null)]
 
-/-- The trailing cells of a freshly constructed row tuple (ADR-0085): a
-persisted region's row is born with an unencoded cache cell, so the array
-shape never changes after construction and the sweep fills it on the first
-write-back that sees it. -/
-private def freshRowSerial : Option Nat → List Expr
-  | none => []
-  | some _ => [.literal .null]
+/-- The regions one component filters, by name (ADR-0086). A filtered
+region's rows carry the displayed-state cache cell behind the ADR-0085
+serialization cell; every other region's rows stop at the declared fields. -/
+private def filteredRegionNames (spec : ComponentSpec Γ) : List String :=
+  spec.filters.toList.map (·.region)
+
+/-- The *row tuple* slot holding one filtered region's last written `hidden`
+value (ADR-0086): the cell behind ADR-0085's serialization cell, so a region
+that is both filtered and persisted lays its rows out as
+`[key, f_0, …, f_{n-1}, serial, shown]` and ADR-0085's slot never moves. As
+with the serialization cell, no *record* slot moves. `none` for an unfiltered
+region, whose rows keep their exact old shape.
+
+The value is a function of the row's fields *and* the filter state field, so
+unlike ADR-0085's cell it can never be invalidated per write: a state change
+stales every row at once. The sweep therefore recomputes the predicate for
+every row and compares — this cell elides the *DOM write*, not the
+evaluation — which is why nothing anywhere has to null it. -/
+private def rowFilterSlot? (persisted filtered : List String) (region : RegionSpec) :
+    Option Nat :=
+  if filtered.contains region.name then
+    some (region.fields.size + 1 + (if persisted.contains region.name then 1 else 0))
+  else none
+
+/-- Look one region's displayed-state slot up by name, for the row
+construction sites that carry a region name rather than a spec (ADR-0086). -/
+private def rowFilterSlotOf? (persisted filtered : List String)
+    (regionSpecs : Array RegionSpec) (regionName : String) : Option Nat :=
+  (regionSpecs.toList.find? (·.name == regionName)).bind (rowFilterSlot? persisted filtered)
+
+/-- The trailing cells of a freshly constructed row tuple: a persisted
+region's row is born with an unencoded serialization cell (ADR-0085) and a
+filtered region's with an unwritten displayed-state cell (ADR-0086), so the
+array shape never changes after construction and each sweep fills its own
+cell the first time it sees the row. `null` differs from every value either
+sweep can compute, so a fresh row is always written once. -/
+private def freshRowCells (serialSlot? filterSlot? : Option Nat) : List Expr :=
+  (serialSlot?.toList.map fun _ => Expr.literal .null) ++
+    (filterSlot?.toList.map fun _ => Expr.literal .null)
 
 /-- Lower one sealed row expression against the row item array; fields sit
 behind the key slot (ADR-0041/0043). `payload` is the delegated payload
@@ -570,8 +602,8 @@ private def regionBroadcastStmts (regions tx : Ident) (regionSpecs : Array Regio
   ]
 
 private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
-    (regionSpecs : Array RegionSpec) (persisted : List String) (eventNames : List String)
-    (valueCount eventIndex : Nat) :
+    (regionSpecs : Array RegionSpec) (persisted filtered : List String)
+    (eventNames : List String) (valueCount eventIndex : Nat) :
     Update Γ → Nat → Except Error (Nat × List Stmt)
   | .set field _ _, writeIndex => do
       let evaluator ← evaluator evaluators s!"event:{eventIndex}:write:{writeIndex}"
@@ -602,9 +634,12 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
         let evaluator ← evaluator evaluators
           s!"event:{eventIndex}:append:{writeIndex}:{fieldIndex}"
         pure (evaluatorCall evaluator state valueCount)
-      /- ADR-0085: a persisted region's row is born with an unencoded cache
-      cell, so the tuple shape is fixed at construction. -/
-      let fresh := freshRowSerial (rowSerialSlotOf? persisted regionSpecs regionName)
+      /- A persisted region's row is born with an unencoded serialization
+      cell (ADR-0085) and a filtered region's with an unwritten
+      displayed-state cell (ADR-0086), so the tuple shape is fixed at
+      construction. -/
+      let fresh := freshRowCells (rowSerialSlotOf? persisted regionSpecs regionName)
+        (rowFilterSlotOf? persisted filtered regionSpecs regionName)
       pure (writeIndex + 1, [
         .expr <| .call (.index (regionEntry regions regionIndex 1) (.literal (.string "push")))
           (.ofList [.array (.ofList
@@ -650,9 +685,9 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
       ])
   | .sequence first second, writeIndex => do
       let (writeIndex, first) ← updateStatements evaluators context state tx regions
-        regionSpecs persisted eventNames valueCount eventIndex first writeIndex
+        regionSpecs persisted filtered eventNames valueCount eventIndex first writeIndex
       let (writeIndex, second) ← updateStatements evaluators context state tx regions
-        regionSpecs persisted eventNames valueCount eventIndex second writeIndex
+        regionSpecs persisted filtered eventNames valueCount eventIndex second writeIndex
       pure (writeIndex, first ++ second)
 
 private def anyChanged (changed : Ident) (deps : List Nat) : Expr :=
@@ -1142,16 +1177,31 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     drain, whenever the region was touched — or, when no drain path writes a
     field the arms read, whenever it was structurally dirty (ADR-0082) — or
     the filter field changed, walk
-    the row table in order and write each row root's `hidden` property from
-    the sealed state-to-predicate table — a state value outside the table
-    shows every row. Row roots are `childAt(container, i)` because the
-    region owns its whole container and rows precede the anchor marker in
-    `items` order; the container element rides the record's filter slot. -/
+    the row table in order and select each row from the sealed
+    state-to-predicate table — a state value outside the table shows every
+    row.
+
+    ADR-0086: the selection is compared against the row's own displayed-state
+    cell — `rowFilterSlot?`, behind the ADR-0085 serialization cell — and only
+    a row whose value moved is navigated to and written. The sweep is the one
+    writer of a row root's `hidden` (row scope has no `hidden` selection), and
+    the cell is keyed on row identity, so a rebuild of the row array carries
+    every survivor's cell along with its untouched DOM node. Navigation stays
+    `childAt(container, i)` — the region owns its whole container and rows
+    precede the anchor marker in `items` order, and the container element
+    rides the record's filter slot — but it is now paid per *written* row
+    rather than per row. The written count rides one commit-time trace entry
+    beside ADR-0085's encode count; the shared DOM-write counter and its trace
+    take the ADR-0045 evaluate-compare-write shape and fire only when the
+    sweep wrote something. -/
     if let some filter := filter? then
       let filterFlag ← wakeIdent regionIndex (filterWakes.head?.getD .touched)
       let filterSlot := 5 + (if counts.isEmpty then 0 else 2)
       let scan ← Ident.checked s!"filter_scan_{regionIndex}"
       let filterRow ← Ident.checked s!"filter_row_{regionIndex}"
+      let next ← Ident.checked s!"filter_next_{regionIndex}"
+      let written ← Ident.checked s!"filter_written_{regionIndex}"
+      let shownSlot := region.fields.size + 1 + (if persist?.isSome then 1 else 0)
       let hiddenExpr := filter.arms.foldr
         (fun (equals, predicate) acc =>
           Expr.conditional
@@ -1164,17 +1214,31 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           incrementAt tx 8,
           pushTrace tx s!"filter:{region.name}:evaluated",
           .const scan (.array (.ofList [uint 0])),
+          .const written (.array (.ofList [uint 0])),
           .forOf filterRow (regionEntry regions regionIndex 1) (.ofList [
-            .expr <| call runtime.setProperty [
-              call runtime.childAt [regionEntry regions regionIndex filterSlot,
-                .index (.ident scan) (uint 0)],
-              .literal (.string "hidden"), hiddenExpr
-            ],
+            .const next hiddenExpr,
+            .ifThen (.unary .not (.binary .eq
+                (.index (.ident filterRow) (uint shownSlot)) (.ident next))) (.ofList [
+              .assign (.index (.ident filterRow) (uint shownSlot)) (.ident next),
+              .expr <| call runtime.setProperty [
+                call runtime.childAt [regionEntry regions regionIndex filterSlot,
+                  .index (.ident scan) (uint 0)],
+                .literal (.string "hidden"), .ident next
+              ],
+              .assign (.index (.ident written) (uint 0))
+                (.binary .add (.index (.ident written) (uint 0)) (uint 1))
+            ]),
             .assign (.index (.ident scan) (uint 0))
               (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
           ]),
-          incrementAt tx 9,
-          pushTrace tx s!"dom:filter:{region.name}:write"
+          pushTraceExpr tx (.binary .add
+            (.literal (.string s!"filter:{region.name}:written:"))
+            (.index (.ident written) (uint 0))),
+          .ifThen (.unary .not (.binary .eq (.index (.ident written) (uint 0)) (uint 0)))
+            (.ofList [
+              incrementAt tx 9,
+              pushTrace tx s!"dom:filter:{region.name}:write"
+            ])
         ]]
     /- The sealed persistence sweep (ADR-0063): whenever this region was
     touched this transaction — the write-back reads every field, so
@@ -1246,7 +1310,8 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
   let tx ← Ident.checked "tx"
   let regions ← Ident.checked "regions"
   let (_, writes) ← updateStatements evaluators context state tx regions
-    checked.spec.regions (persistedRegionNames checked.spec) eventNames
+    checked.spec.regions (persistedRegionNames checked.spec)
+    (filteredRegionNames checked.spec) eventNames
     checked.spec.values.size eventIndex event.update 0
   transactionShell checked evaluators runtime (← eventName eventIndex)
     #[context, ignored] event.name writes (skipIf? := event.guard?.map (skipGuardExpr state))
@@ -1330,7 +1395,8 @@ private def keyEventFunctions (checked : CheckedComponent Γ) (evaluators : Eval
   let mut dispatchBody : List Stmt := []
   for (arm, armIndex) in event.arms.zipIdx do
     let (_, writes) ← updateStatements evaluators context state tx regions
-      checked.spec.regions (persistedRegionNames checked.spec) eventNames
+      checked.spec.regions (persistedRegionNames checked.spec)
+      (filteredRegionNames checked.spec) eventNames
       checked.spec.values.size (bodyIndex + armIndex) arm.update 0
     let armFn ← keyArmName eventIndex armIndex
     functions := functions ++ [← transactionShell checked evaluators runtime armFn
@@ -1476,13 +1542,17 @@ private def hydrateFunction (checked : CheckedComponent Γ) (evaluators : EvalSt
       .forOf rowId (.ident rowsId) (.ofList [
         /- ADR-0085: hydrated rows arrive with an unencoded cache cell, so
         the mount write-back re-encodes them — and therefore normalizes a
-        hand-edited stored value exactly as ADR-0063 promised. -/
+        hand-edited stored value exactly as ADR-0063 promised. ADR-0086: if
+        the region is also filtered they arrive unwritten, so the mount sweep
+        writes every hydrated row's `hidden` once. -/
         .expr <| .call
           (.index (regionEntry regions regionIndex 1) (.literal (.string "push")))
           (.ofList [.array (.ofList (regionEntry regions regionIndex 2 ::
             ((List.range region.fields.size).map fun index =>
               persistDecodeJs (.index (.ident rowId) (uint index))) ++
-            [.literal .null]))]),
+            freshRowCells (some (region.fields.size + 1))
+              (rowFilterSlot? (persistedRegionNames checked.spec)
+                (filteredRegionNames checked.spec) region)))]),
         .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 2))
           (.binary .add (regionEntry regions regionIndex 2) (uint 1))
       ]),

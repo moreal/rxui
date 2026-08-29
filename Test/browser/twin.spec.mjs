@@ -73,6 +73,7 @@ async function markTrace(page) {
       commits: tx[1],
       counts: tx[5],
       evaluations: tx[8],
+      writes: tx[9],
       metrics: globalThis.twinDispose.regionInstrumentation(),
     };
   });
@@ -85,6 +86,7 @@ async function readTrace(page) {
       commits: tx[1],
       counts: tx[5],
       evaluations: tx[8],
+      writes: tx[9],
       slice: tx[7].slice(globalThis.twinTraceLength),
       metrics: globalThis.twinDispose.regionInstrumentation(),
     };
@@ -93,6 +95,16 @@ async function readTrace(page) {
 
 function occurrences(slice, event) {
   return slice.filter((entry) => entry === event).length;
+}
+
+// ADR-0086: one entry per sweep carrying how many rows it wrote, so the
+// per-row cache is observable without a host counter and without an entry per
+// row. One number per sweep the window saw, in commit order.
+function writtenCounts(slice, region) {
+  const prefix = `filter:${region}:written:`;
+  return slice
+    .filter((entry) => entry.startsWith(prefix))
+    .map((entry) => Number(entry.slice(prefix.length)));
 }
 
 // ADR-0080: `mode` is routed, so a `mode` button writes the canonical hash
@@ -634,4 +646,112 @@ test("a routed literal filters the rows its own hydration mounted", async ({ pag
   expect(hydrated.stored).toBe("R0,true;R1,false");
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
+});
+
+test("the filter sweep writes exactly the rows whose selection moved (ADR-0086)",
+  async ({ page }) => {
+  await mountTwin(page);
+  // The first row of every region is born with an unwritten displayed-state
+  // cell — `null` differs from both booleans — so each of the three sweeps
+  // writes exactly the row it has just seen for the first time.
+  const beforeFirst = await markTrace(page);
+  await page.getByRole("button", { name: "Seed on" }).click();
+  await expect(page.locator("#left > li")).toHaveCount(1);
+  const afterFirst = await readTrace(page);
+  expect(writtenCounts(afterFirst.slice, "left")).toEqual([1]);
+  expect(writtenCounts(afterFirst.slice, "right")).toEqual([1]);
+  expect(writtenCounts(afterFirst.slice, "solo")).toEqual([1]);
+  expect(afterFirst.writes).toBe(beforeFirst.writes + 3);
+  // A second append evaluates two rows per region and writes exactly the
+  // appended one: the row that was already selected keeps its cell, and the
+  // sweep never reaches its DOM node at all.
+  const beforeSecond = await markTrace(page);
+  await page.getByRole("button", { name: "Seed off" }).click();
+  await expect(page.locator("#left > li")).toHaveCount(2);
+  const afterSecond = await readTrace(page);
+  expect(writtenCounts(afterSecond.slice, "left")).toEqual([1]);
+  expect(writtenCounts(afterSecond.slice, "right")).toEqual([1]);
+  expect(writtenCounts(afterSecond.slice, "solo")).toEqual([1]);
+  expect(afterSecond.evaluations).toBe(beforeSecond.evaluations + 3);
+  expect(afterSecond.writes).toBe(beforeSecond.writes + 3);
+  // A filter *state* change is the asymmetry with ADR-0085's cell: the value
+  // is a function of the row's fields *and* the filter field, so no write
+  // site can pre-stale one row — every row is stale at once. The sweep
+  // recomputes all of them and still writes only what moved: under `"on"`
+  // `left` hides its `flag == "false"` row and `right`, whose table is
+  // inverted, hides its `flag == "true"` one.
+  const beforeFlip = await markTrace(page);
+  await flipMode(page, "Show on", "#/on");
+  await expect(page.locator("#left > li").nth(0)).toBeVisible();
+  await expect(page.locator("#left > li").nth(1)).toBeHidden();
+  const afterFlip = await readTrace(page);
+  expect(writtenCounts(afterFlip.slice, "left")).toEqual([1]);
+  expect(writtenCounts(afterFlip.slice, "right")).toEqual([1]);
+  expect(writtenCounts(afterFlip.slice, "solo")).toEqual([]);
+  expect(afterFlip.writes).toBe(beforeFlip.writes + 2);
+  // The identity keying, measured: `remove` rebuilds the row array around
+  // unchanged tuples and detaches one node, so every survivor's cell and its
+  // untouched DOM node still agree. The sweep runs — the region is
+  // structurally dirty — evaluates the survivor and writes *nothing*.
+  const beforeRemove = await page.evaluate(() => {
+    const tx = globalThis.twinDispose.instrumentation();
+    globalThis.twinTraceLength = tx[7].length;
+    globalThis.twinSurvivor = document.querySelectorAll("#left > li")[1];
+    return { writes: tx[9], evaluations: tx[8] };
+  });
+  await page.locator("#left > li").nth(0)
+    .getByRole("button", { name: "Remove left" }).click();
+  await expect(page.locator("#left > li")).toHaveCount(1);
+  const afterRemove = await readTrace(page);
+  expect(writtenCounts(afterRemove.slice, "left")).toEqual([0]);
+  expect(occurrences(afterRemove.slice, "filter:left:evaluated")).toBe(1);
+  expect(occurrences(afterRemove.slice, "dom:filter:left:write")).toBe(0);
+  expect(afterRemove.evaluations).toBe(beforeRemove.evaluations + 1);
+  expect(afterRemove.writes).toBe(beforeRemove.writes);
+  const survivor = await page.evaluate(() => ({
+    same: document.querySelectorAll("#left > li")[0] === globalThis.twinSurvivor,
+    hidden: globalThis.twinSurvivor.hidden,
+  }));
+  expect(survivor).toEqual({ same: true, hidden: true });
+  // A row event that writes the filter's own subject moves exactly its own
+  // row, and the two per-row caches show up side by side in one commit: the
+  // ADR-0085 cell re-encodes one row and this one rewrites one row's
+  // `hidden`, while the other row pays neither.
+  const beforeToggle = await markTrace(page);
+  await page.locator("#right > li").nth(1)
+    .getByRole("checkbox", { name: "Flag right" }).click();
+  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  const afterToggle = await readTrace(page);
+  expect(writtenCounts(afterToggle.slice, "right")).toEqual([1]);
+  expect(afterToggle.slice).toContain("storage:right:encode:1");
+  expect(afterToggle.writes).toBe(beforeToggle.writes + 1);
+  expect(occurrences(afterToggle.slice, "filter:left:evaluated")).toBe(0);
+  expect(occurrences(afterToggle.slice, "filter:solo:evaluated")).toBe(0);
+  // Two state literals that select the same predicate: `right`'s `"off"` and
+  // `"mixed"` arms are both `flag == "true"`, and `left` names no `"mixed"`
+  // arm at all, so it falls through to show-all — which under `"off"` is
+  // already what its one `flag == "false"` survivor gets. So a hash flip
+  // between them wakes both sweeps, evaluates every row, and writes zero.
+  await page.evaluate(() => {
+    location.hash = "#/off";
+  });
+  await expect(page.locator("#right > li").nth(0)).toBeVisible();
+  await expect(page.locator("#left > li").nth(0)).toBeVisible();
+  const beforeMixed = await markTrace(page);
+  await page.evaluate(() => {
+    location.hash = "#/mixed";
+  });
+  await expect
+    .poll(() => page.evaluate(() => globalThis.twinDispose.instrumentation()[1]))
+    .toBe(beforeMixed.commits + 1);
+  const afterMixed = await readTrace(page);
+  expect(writtenCounts(afterMixed.slice, "left")).toEqual([0]);
+  expect(writtenCounts(afterMixed.slice, "right")).toEqual([0]);
+  expect(occurrences(afterMixed.slice, "dom:filter:left:write")).toBe(0);
+  expect(occurrences(afterMixed.slice, "dom:filter:right:write")).toBe(0);
+  expect(afterMixed.evaluations).toBe(beforeMixed.evaluations + 2);
+  expect(afterMixed.writes).toBe(beforeMixed.writes);
+  expect(afterMixed.metrics).toEqual(beforeMixed.metrics);
+  await expect(page.locator("#right > li").nth(0)).toBeVisible();
+  await expect(page.locator("#left > li").nth(0)).toBeVisible();
 });

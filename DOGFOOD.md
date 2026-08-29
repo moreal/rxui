@@ -4857,3 +4857,100 @@ is the new floor (0.59 ms at 10k, and caching the joined string would put
 the region-record change back on the table); the key→position scan is still
 O(N) and is now 7.8% of a smaller commit; and the sweeps still have no
 per-row cache.
+
+## A filtered row carries its own displayed state (ADR-0086)
+
+### What was built
+
+ADR-0085 collapsed the persistence half of a drain commit and left the sweep
+half where ADR-0082 OQ2 had put it: the filter sweep writes `hidden` on
+every row through a `childAt` + `setProperty` pair however few rows the
+filter moved. This round split a 10 000-row `toggle` commit into its
+segments, then sealed the one the split pointed at.
+
+The survey ablated again — Chromium's 0.1 ms clamp is still larger than most
+of the segments — with a nine-rung ladder over the generated Toggle Lab
+module, 400 dispatches per rung, median of five runs. Differencing it at
+10 000 rows: the sweep's `childAt` is 28.0% of the commit, `storageSet`
+23.2%, the sweep's `setProperty` 21.0%, the persistence push loop 12.1%, the
+`join` 7.8%, the four predicate scans 4.7%, the key→position scan 1.2%, and
+the sweep's own predicate evaluation **0.0%**. Two of those readings decided
+the round. The sweep's DOM pair is half the commit, so that is where the ADR
+goes; and the predicate is free, so the cache does not have to skip it.
+
+That second reading is the whole design. ADR-0085's serialization cell is a
+function of the row's fields alone, so it can be invalidated at two sites and
+the sweep then skips the *work*. This value is a function of the row's fields
+**and** the filter state field, so a state flip stales every row at once and
+there is no O(1) invalidation to write. Since re-evaluating costs nothing
+measurable, the cell stops being a compute cache and becomes a
+**write-elision** cache: recompute always, compare against the cell, and let
+the cell guard only the two DOM calls. The result has **zero** invalidation
+sites where ADR-0085 has two — no write path anywhere touches it — and the
+asymmetry between the two cells is now the contract's own sentence rather
+than an omission.
+
+The goal also asked whether the `childAt(container, i)` walk itself could
+go, since the region runtime already holds every row root. It can — a
+`firstChild`/`nextSibling` cursor needs no ABI bump, both are already host
+exports — and it was measured and **rejected**: 1.08× on its own, and
+*combined* with the cache it is 1.43× where the cache alone is 3.3×,
+because a sibling cursor has to advance on every row, which is exactly the
+work the cache exists to skip. Cheaper navigation and rarer navigation are
+alternatives, not addends.
+
+### What broke or surprised
+
+The `childAt` navigation costing *more* than the `setProperty` it navigates
+for — 0.697 ms against 0.522 ms at 10 000 rows, 70 ns per row for a child
+lookup. `childAt` is `parent.childNodes[i]`, which re-crosses the binding for
+the live child list on every call; Blink's index cache makes the walk O(1)
+but does not make the crossing free.
+
+The other surprise was how much smaller this contract is than ADR-0085's.
+`freshRowSerial` generalised to `freshRowCells`, the sweep gained a compare,
+and that is the whole emission change — there is no `staleRowFilter` to
+write, no write-site enumeration to keep honest, and the broadcast emitter
+was not touched at all.
+
+Twin Lab turned out to be the witness the design wanted: three filtered
+regions of which exactly one is persisted, so the slot asymmetry is visible
+in one module — `shown` at slot 3 for `left` and `solo`, at slot 4 behind
+`serial` for `right` — and `right`'s `"off"` and `"mixed"` arms select the
+*same* predicate, which gives a hash flip that wakes both sweeps, evaluates
+every row and writes zero.
+
+### Performance observations
+
+Shipped emission against the pre-change baseline, same harness, 400
+dispatches, median of five runs, ms per commit:
+
+| rows | event | before | after | |
+| ---: | --- | ---: | ---: | ---: |
+| 1000 | `toggle` | 0.2003 | 0.1143 | 1.8× |
+| 10000 | `toggle` (filter `"all"`) | 2.4703 | 0.7625 | **3.2×** |
+| 10000 | `toggle` (filter `"active"`) | 2.4850 | 0.8438 | **2.9×** |
+| 10000 | `retype` | 0.6060 | 0.5853 | — |
+
+`retype` is the control: ADR-0084 already keeps a keystroke out of the
+filter sweep, so the extra tuple cell costs it nothing measurable. The
+worst case is a whole-table flip where every row's selection moves and the
+cache elides nothing — measured with the hash write stubbed out, median of
+nine runs: 1000 rows 0.1353 → 0.1467 ms (+8.4%), 10 000 rows 2.23 → 1.93 ms,
+inside the run-to-run noise in either direction. The benchmark artifacts are
+byte-identical and BENCHMARK.md stands unre-measured — the
+js-framework-benchmark backend is hand-written and filters nothing.
+
+### Follow-up issue or commit
+
+`feat(component): write only the rows a filter sweep moved (ADR-0086)` —
+`rowFilterSlot?`/`rowFilterSlotOf?`, `freshRowSerial` generalised to
+`freshRowCells`, the filtered-region set threaded through the append and
+hydrate emitters, the compare-and-write sweep with its computed
+`filter:{region}:written:{n}` trace and its now-conditional `tx[9]` write,
+the artifact-gate pins across Toggle/Twin/Mix, the Twin Lab browser witness,
+the language guide, the ADR, and this record. Open: `storageSet` plus the
+persistence push/join loop is now the largest thing in a cached commit; the
+four predicate scans still each run their own O(N) pass over one row table in
+one commit (4.7%, a codegen question rather than a contract one); and the
+key→position scan is still O(N) and is now 4% of the smaller commit.

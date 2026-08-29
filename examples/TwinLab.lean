@@ -123,6 +123,27 @@ predicate counts and the filter read, so those sweeps keep the touched flag
 while the row totals beside them move behind the structural bit, and one
 region's block list interleaves the two.
 
+The ADR-0086 displayed-state cache is what this lab witnesses next, and it
+witnesses it in one module because the three regions disagree about
+everything the cache's slot depends on. Every one of them is filtered, so
+every one of their rows carries the cell holding the `hidden` the sweep last
+wrote; only `right` is persisted, so only `right` carries the ADR-0085
+serialization cell in front of it — `shown` sits at slot 3 in `left` and
+`solo` and at slot 4 in `right`. The sweep evaluates its table for every row
+and writes only the rows whose value moved, reporting the number as
+`filter:{region}:written:{n}`, so each of the first two appends writes
+exactly the row it just mounted, a `mode` flip writes exactly the one row per
+twin whose selection inverted, and a ✕ removal writes **zero** — the row
+array is rebuilt around unchanged tuples whose DOM nodes were never touched,
+which is the identity keying made observable. A `right` toggle puts the two
+per-row caches in one commit, `storage:right:encode:1` beside
+`filter:right:written:1`. And because `right`'s `"off"` and `"mixed"` arms
+select the same predicate while `left` names no `"mixed"` arm at all, the
+hash flip between them wakes both sweeps, evaluates every row, and writes
+nothing: the state-change path — the one no cell can be pre-staled for,
+since the value depends on the filter field as well as the row's — still
+crossing into the DOM exactly zero times.
+
 No host change; runtime ABI stays 17. -/
 
 namespace LeanRxExamples.TwinLab

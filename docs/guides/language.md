@@ -662,6 +662,31 @@ one `storageSet` per region-touching transaction, byte-identical stored
 values, and no region record slot changed — an unpersisted region's rows
 keep their exact shape.
 
+The filter sweep beside it caches the same way and *not* the same way
+(ADR-0086). A filtered region's rows carry one more cell — behind the
+serialization cell, so a region that is both filtered and persisted lays its
+rows out as `[key, f_0, …, f_{n-1}, serial, shown]` — holding the `hidden`
+value the sweep last wrote into that row's root, `null` until it writes one.
+The sweep evaluates the state-to-predicate table for every row, compares the
+result against that cell, and only on a mismatch navigates to the row root
+and writes it. The difference from the serialization cell is the one worth
+knowing: a row's serialization depends on the row's fields alone, so a write
+can stale it, but its displayed state depends on the row's fields **and** the
+filter field, so a filter change stales every row at once. There is no
+invalidation to write for that, and none is written — the predicate is
+recomputed unconditionally (it is pure JS over a row tuple and measured at
+0.0% of the commit), and the cell elides only the DOM write. So nothing
+anywhere nulls this cell, and every path still ends with the DOM agreeing
+with the table: a fresh or hydrated row is born `null` and therefore written
+once; `remove`, an `update … remove` predicate removal and a remove-if guard
+hit carry survivors' cells along with their untouched nodes and write
+nothing; and a filter flip writes exactly the rows that changed side. The
+sweep reports what it wrote as `filter:{region}:written:{n}`, and its
+`dom:filter:{region}:write` entry now fires only when that number is
+nonzero, exactly as an attribute selection's does. On a 10 000-row region a
+row toggle's commit drops from 2.47 ms to 0.76 ms; a whole-table flip, where
+the cache elides nothing, costs about 8% more.
+
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
 **union** of every filter table over that field, not the first-declared
