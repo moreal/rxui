@@ -242,6 +242,13 @@ Both directions were checked against deliberate breakage.
    closing the hole properly means giving the audit a notion of *which
    parameters carry a row table*, which is an interprocedural step neither ADR
    needed so far.
+
+   *Closed by [ADR-0095](0095-row-tables-across-call-boundaries.md).* R0's
+   subject widened instead of a rule being added: the audit computes the
+   fixpoint of `(function, argument position)` pairs that receive a row table
+   and applies the same eight rules to the matching parameters, so
+   `$lrx_row_seek`'s body is audited as a row table's and a second helper
+   inherits the rules rather than renegotiating them.
 2. **The contract is over a stand-in, by construction.** H3 is what keeps a
    host from being able to tell the stand-in from the original; a host that
    ever keyed behaviour on the array object's identity (a `WeakMap` from table

@@ -5830,3 +5830,130 @@ where the table stops being spelled `regions[r][1]` and is checked by
 neither side. That one was confirmed by injection rather than by reading:
 with `rows["sort"]()` as the helper's first statement, Toggle Lab emits
 the sort into its bundle and the generator exits zero.
+
+## A row table stays a row table when it becomes a parameter (ADR-0095)
+
+### What was built
+
+ADR-0094 closed the host half of ADR-0093's open question and named what
+survived: `$lrx_row_seek`'s body, where the table stops being spelled
+`regions[r][1]` and becomes a parameter called `rows`. Seven of the audit's
+eight rules are phrased over that spelling, so inside the helper they have
+no subject. R4's parameter half forbids writing slot 0 of any parameter,
+which catches `rows[0] = …` by coincidence; everything else — `rows.sort()`,
+`rows.reverse()`, `rows.splice(i, 2)`, `rows.unshift(row)`, `rows.push(row)`,
+`const t = rows`, `return rows`, `rows[i] = rows[j]`, `rows[i][0] = k` —
+passed every gate the repo has.
+
+The round pays it by **widening R0 instead of adding a rule**. The audit now
+computes, before it applies anything, the set of `(function, argument
+position)` pairs that receive a row table anywhere in the module, and treats
+the matching parameters as row tables. R0's claim becomes "every row table in
+the module is named: `regions[r][1]`, or a parameter of a module function
+that some call site hands one to." There is no ninth rule and no new
+diagnostic code — the eight rules were always phrased over "a row table", and
+the round's content is that the phrase now denotes what it always meant.
+Rejections stay `LRX-BE-036`; only the subject half of the message is new.
+
+The propagation is a least fixpoint rather than one step: `sweep` reads every
+function with the pairs known so far and adds the ones its body raises, and
+`propagate` iterates until nothing is added. So a table forwarded from one
+helper to a second is a row table in the second too, and the first round that
+writes a second helper inherits the rules instead of renegotiating them.
+
+### What broke or surprised
+
+**The narrow fix was one line and it was still the wrong one.**
+`$lrx_row_seek` is emitted by a single Lean function and called from a single
+place, so "audit that body with its first parameter known to be a table"
+costs nothing. It is rejected on ADR-0093's own ground for declining a
+narrowed emission vocabulary: it constrains the path that opts in. A rule
+that names `$lrx_row_seek` is a rule about today's emitter, and the audit's
+whole claim is that its rules are about JavaScript.
+
+**Three gates look like they cover this and none do.** The codegen gate's
+double-generate `diff -ru` proves the emitter is *deterministic*: a helper
+that sorts its argument is emitted identically both times and the diff is
+empty. The artifact tests and manifest digests pin whatever the emitter
+currently produces, so they move with it. `LRX-BE-018` is a scoping rule and
+`rows["sort"]()` is perfectly well-scoped. Enumerating that was the part of
+the round that made the decision obvious.
+
+**The ADR-0092 browser gate would catch it only above nine rows.**
+`Array.prototype.sort()` with no comparator stringifies its elements, and for
+single-digit keys the string order and the numeric order agree. A nine-cell
+gate over small regions is green on a table sorted into an order the binary
+search cannot use. That is ADR-0093's argument about witnesses over an open
+surface, sharpened: not only is the breaking emission the one nobody wrote a
+cell for, the cells that exist can be silently the wrong size.
+
+**A parameter table has no region, and that is the rules speaking rather than
+a gap.** R2 wants a pushed row's key to be `regions[r][2]` for the table's own
+region and a parameter cannot name one, so a parameter table cannot be pushed
+onto at all; R5's target is a region slot, so a rebuild cannot be installed
+through a parameter either. Neither is a new ban — they are the existing
+rules evaluated at a subject whose region is unknown. R3 is the one mutation
+that survives, and on merit: a two-argument single-row `splice` is
+order-preserving whichever table it is, so R3 stays a shape rule at both
+subjects and a future helper that removes a row inherits it.
+
+**The rebuild-push branch had to learn about parameters.** `kept["push"](row)`
+inside a `for`-of over a table is R5's rebuild shape, and the branch that
+recognises it matched before the row-table method call. With `rows` as the
+target that read a push onto the caller's table as an order-preserving
+rebuild. One guard — the target must not itself be a table — and the witness
+that fails without it.
+
+**Both vacuity modes fail the real emission rather than passing quietly.**
+Making the propagation collect nothing does not make the new rules silently
+inapplicable: `audit` re-sweeps and rejects under R0 when the pair set is not
+stable, and Toggle Lab really does hand `regions[0][1]` to `$lrx_row_seek`, so
+the real module goes red. Blinding the rules to parameters while leaving the
+propagation intact makes the audit's two halves disagree about a parameter the
+emitter really passes a table to, and the real module goes red under R1. The
+fail-safe direction is to reject, as in ADR-0093.
+
+### Performance observations
+
+The audit of Toggle Lab — the largest generated module, 168 kB and 4 700
+printed lines — goes from **666 µs to 1 483 µs**, measured compiled over 200
+repetitions inside `lake exe leanrx_test`. The extra 817 µs is three
+traversals: two propagation sweeps (one to find the pairs, one to see nothing
+was added) and the stability re-sweep, each cheaper than the audit proper
+because it collects without an `Except` and without the R5 census. The wall
+time of `lake exe leanrx_toggle_js` is 0.54–0.59 s, unchanged and three
+orders of magnitude above the delta.
+
+Zero output bytes and no ABI move. Toggle, Mix, Twin, Branch and Nest Lab
+were generated from the pre-change emitter under `git stash`, regenerated
+after, both symlinked bundles dereferenced with `cp -RL` and compared with
+`diff -rq`: no difference in any `.mjs`, `.graph.json` or `.manifest.json`,
+and none in the bundled `leanrx_dom.mjs`, `leanrx_form_events.mjs` or
+`leanrx_region.mjs`. The only file that differs is `.leanrx-bundle-owner`,
+which names the output directory by construction. `runtimeAbi` stays 17; the
+benchmark size gate, its manifest and BENCHMARK.md are untouched.
+
+Witness matrix: the suite goes from 24 cases to 43. Sixteen of the nineteen
+new ones are rejections and every one of them was accepted before this round —
+thirteen injected into `$lrx_row_seek` across R1, R2, R3 and R4, two into the
+dispatch (R5, and a table handed to an import), and four watching the
+propagation cross two calls into an appended second helper. The three new
+acceptances are a single-row removal through a parameter, a second helper that
+only reads what it is forwarded, and an uncalled helper sorting its own
+parameter — the last pinning the rule to call sites rather than to the name
+`rows`. Emitter broken three ways — `rows["sort"]()`, `rows["splice"](0, 2)`,
+and a forwarding helper `$lrx_row_trim` that sorts what it is handed — each
+red at `lake exe leanrx_toggle_js` under its named rule. Audit broken four
+ways, described above.
+
+### Follow-up issue or commit
+
+`feat(backend): follow a row table across call boundaries (ADR-0095)` — R0's
+second clause and the `(function, argument position)` fixpoint in
+`LeanRx/Backend/RowOrder.lean`, the nineteen witness cases, the language
+guide, the ADR, the DECISIONS.md row, and this record. **ADR-0094 OQ1 is
+closed.** What survives is narrower and named in the new ADR: the audit
+follows a table across calls inside one module, and a module is where it
+stops — a table handed to an *import* is rejected rather than followed, which
+is safe and is also the whole of the answer until an emission wants to pass a
+row table between modules.

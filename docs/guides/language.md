@@ -755,7 +755,18 @@ code the audit cannot see, a counter that rewinds, a region mounted
 non-empty, or a whole-table assignment that is not the order-preserving
 kept-filter rebuild. Nothing an author writes can trip it — it is a rule
 about the emitter, not about the language — and it costs no output bytes and
-under a millisecond per module.
+under two milliseconds per module.
+
+The audit follows a table across calls (ADR-0095). `$lrx_row_seek` receives
+`regions[r][1]` as a parameter, and inside the helper the table is no longer
+spelled `regions[r][1]` — so the audit computes, before it applies any rule,
+which parameters of which functions ever receive a row table, and applies the
+same eight rules there. The set is a least fixpoint, so a table forwarded from
+one helper to a second is a row table in the second too. Two rules cannot be
+satisfied through a parameter and therefore reject: a push needs the region's
+own key counter, which a parameter cannot name, and a whole-table rebuild
+needs a region slot to install into. A single-row `splice` stays legal, because
+it is order-preserving whichever table it is.
 
 The other side of that call is checked as well (ADR-0094). A region host
 never writes, reorders, resizes, re-keys or retains the array it is handed:
