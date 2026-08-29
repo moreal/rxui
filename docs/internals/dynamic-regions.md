@@ -132,7 +132,12 @@ strictly ascending array of `[position, key]` pairs against the order the call
 starts in, validates every pair before any callback or DOM mutation
 (`LRX-REGION-003`), disposes and detaches exactly those rows, and closes the
 gaps with one native copy per surviving run — one write clears a parent the
-region owns outright when the set is the whole table. Since ADR-0100 the
+region owns outright when the set is the whole table. That clear is one
+*call* and not one saving: ADR-0103 measured it at 0.974× against the
+`removeChild` loop it replaces on a Toggle Lab row, because the browser
+charges `368 ns` per row plus `156 ns` per node inside it whichever way the
+nodes leave the document. ADR-0100's win was never there — it was in not
+entering the reconcile. Since ADR-0100 the
 commit sweep drains the whole queue through it whatever the length, and the
 ADR-0050 component-event predicate removal queues into the same slot instead
 of raising the dirty bit: the one loop that keeps the survivors also records
@@ -210,6 +215,25 @@ in row scope would have no conflict to resolve and still does not exist. And
 a deselected row is unreachable: the delegated listener is on the container,
 so nothing dispatches for a row the filter is not showing — which is what a
 user could already do, and is now what a script can do too.
+
+Both directions of the flip are floors, and ADR-0103 priced them so that the
+next round does not have to. Detaching is `368 ns` per row plus `156 ns` per
+node, and no bulk write reduces it — one owned-parent `textContent = ""` for a
+whole filtered-out table is 0.974× on this repository's widest row and 1.111×
+only on a row that is a single text node, which is 1.1% of that shape's round
+trip. Re-showing is `1.045 µs · N + 14.83 µs · k` of forced style and layout,
+which is what mounting `k` fresh rows into the same places costs to within an
+A/A band (0.975–1.016× over six cells): the host's restore is the price of
+rendering the rows and carries nothing of its own. What sets the 14.83 µs is
+the row template — 5.45 µs for a row of text against 18.16 µs for Toggle
+Lab's — so it is the author's declaration and not a lowering.
+
+One number about the commit around it, because it is the largest and it is
+not this file's: the ADR-0063 history write a routed filter field triggers
+costs `2.06 µs` per row *in the document when it runs*, which since ADR-0102
+the sweep itself changes. Reordering it against the sweep is a wash across
+the round trip (0.984–1.013× at seven cells), because the hide and show
+directions swap which document each pays for.
 The ADR-0063 write-back keeps walking every row, because two thirds of its
 cost is the bytes of a payload that is the whole table by contract and the
 only layout that would narrow it costs 7.2 µs per key.

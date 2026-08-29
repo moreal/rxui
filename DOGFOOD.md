@@ -6949,3 +6949,158 @@ this record. **ADR-0101 OQ1 is closed.** What it leaves is the other half of
 the flip: the show direction is now the largest term at 84 ms for five thousand
 rows and 172 ms for ten thousand, identical in both shapes, and nothing in this
 round touched it.
+
+## What is left of a filter flip (ADR-0103)
+
+### What was built
+
+Nothing, and that is the result. ADR-0102's own open question and ADR-0100's
+third were both priced on the new emission, together with the bulk-detach path
+ADR-0101's owner-conflict decline had reopened. All three are declines, and
+splitting the flip in both directions turned up a fourth term that nobody had
+named: on a ten-thousand-row list the largest thing a filter flip's *commit*
+does is the ADR-0063 history write, not the sweep.
+
+### What broke or surprised
+
+**A one-write clear of the container buys nothing at the row shape that
+matters.** The obvious bulk path for "every row deselected" is `removeMany`'s
+own trick — `parent.textContent = ""` for a parent the region owns outright —
+and it is **0.974×** against ten thousand `removeChild` calls on Toggle Lab's
+row, outside an A/A band of 0.998–1.014×. It *loses*. Varying the row shape
+says why: the detach write is `368 ns per row + 156 ns per DOM node inside
+it`, so a bulk call removes the calls and not the nodes, and the calls are a
+sixth of the cost on an eleven-node row. It wins 1.111× only on a row that is
+a single text node, which is 0.7 ms — 1.1% of that shape's round trip, an
+order of magnitude under the 10% bar the round set.
+
+The same measurement corrects something already shipped: **ADR-0100's
+owned-parent clear is one write and not one saving.** Its metric is honest —
+one bulk write where the loop counted `N` — but the browser charges the same
+either way. ADR-0100's 9.39× came from not entering the reconcile, which is
+where that ADR always said it was; the host comment claiming the clear is
+"the one place the row count stops costing a detach each" is now corrected in
+place.
+
+**Re-showing a detached row costs exactly what mounting a fresh one costs.**
+The contrast is the same final DOM reached two ways — the same `k` nodes back,
+or `k` brand-new clones into the same `k` places, same anchors, same call
+count, cloning outside the timed span — and it reads 0.975–1.016× at six cells
+against an A/A control of 0.958–1.009×. A detached node carries neither a
+discount nor a penalty, so ADR-0102's 84 ms and 172 ms are the price of
+rendering the rows and nothing else.
+
+**The stale-display-cell trap got worse, exactly as ADR-0101 warned it
+would.** A re-seed that installs fresh row tuples without resetting the
+ADR-0086 cells used to leave rows `hidden` while the cell said shown; since
+ADR-0102 it leaves them **out of the document**, and the reconcile's
+restore-and-re-detach bracket faithfully puts them back out. The container
+then silently holds half a table and every cell in the round reads a fraction
+of its cost. The seed now calls `setDisplayed(index, key, true)` on every row.
+
+**Ten probe anchors, all at sixteen, first try.** ADR-0100 and ADR-0101 were
+each saved by the exact-count assertion. This round added three anchors
+(`route`, `persistLoop`, `persistStore`) to ADR-0099's seven and every one of
+the ten matched exactly sixteen times on the first run — the first of the last
+four rounds in which none had rotted, worth recording precisely because the
+three before it were each caught by it.
+
+### Performance observations
+
+**The show direction, fitted.** Forced style and layout for putting `k` rows
+into a list of `N`, over `N` from one thousand to twenty thousand and `k` from
+two hundred and fifty to `N`, both distributions:
+
+```
+forced = 1.045 µs · N + 14.83 µs · k        worst residual 8.5%
+```
+
+ADR-0102's "linear in `k`, insensitive to `N`" was nearly right: there is a
+second term, about a microsecond per row already in the list, fourteen times
+smaller than the one that matters. What sets the 14.83 µs is the row template
+— 5.45 µs for a row of text, 7.08 for one `<span>`, 9.05 for three, **11.36
+for one `<span>` and one `<button>`**, 18.16 for Toggle Lab's row and 23.79
+for three nodes more. It is not a node count: the six-node row with a button
+beats the seven-node row of spans, the same way a checkbox and not a `<span>`
+is what makes a history write O(N).
+
+**The write-back, three rounds after it was declined.** Commit-scoped, ten
+thousand rows, medians of five page loads:
+
+| action | commit | write-back | share | row loop | `join` + `setItem` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `append` | 0.840 | 0.784 | **93.4%** | 0.049 | 0.736 |
+| `removeIf` 1 row | 0.806 | 0.766 | **95.0%** | 0.031 | 0.735 |
+| `removeIf` 1 000 | 3.281 | 0.747 | 22.8% | 0.031 | 0.714 |
+| `removeIf` 5 000 | 13.284 | 0.408 | 3.1% | 0.022 | 0.387 |
+| `broadcast` | 14.335 | 4.773 | 33.3% | 4.251 | 0.527 |
+| filter flip | 22.5–46.8 | **0** | 0% | 0 | 0 |
+
+ADR-0099's 74% is now 93.4%, and the write-back did not grow — everything
+around it went away. The sub-split is the answer the ratio is not: **94% of
+it is one `join` and one `setItem`** over a payload `persist` defines as the
+whole table, because ADR-0085's cache has taken the row loop to 0.05 ms. The
+broadcast is the same cache from the other side — ten thousand invalidated
+cells, 4.25 ms of re-encoding. Against the click rather than the commit the
+write-back is **11.3%**: the append dispatches in 0.85 ms and dirties 6.06 ms.
+
+**The flip's commit, split in both directions.** The finding of the round:
+
+| N / k | hide: route / sweep / commit | show: route / sweep / commit |
+| --- | ---: | ---: |
+| 10 000 / 100 | 21.03 / 0.40 / 21.45 | 20.46 / 0.11 / 20.58 |
+| 10 000 / 1 000 | 20.78 / 2.85 / 23.61 | 17.90 / 0.47 / 18.38 |
+| 10 000 / 5 000 | 20.30 / 13.47 / 33.78 | 9.22 / 2.04 / 11.31 |
+| 10 000 / 10 000 | 20.87 / 27.64 / 48.34 | 0.33 / 3.97 / 4.31 |
+
+The history write is 88% of the hide commit at `k` = 1 000 and the sweep only
+overtakes it once half the table moves. It is **2.06 µs × the rows in the
+document at the moment of the write**, and since ADR-0102 the sweep changes
+that count inside the same commit — so the emission has a free choice it did
+not have before, and the choice is a wash: before the sweep the round trip
+pays `f(N) + f(N − k)`, after it `f(N − k) + f(N)`. Measured on two dists
+differing only in the position of sixteen statements, ABBA inside every pass:
+0.984–1.013× at seven cells against an A/A control of 0.972–1.037×, plus one
+1.8 ms cell below the floor.
+
+### Compiler and gate work
+
+None. `runtimeAbi` stays **20**, no host export is added or removed, no record
+slot moves, no statement order changes, and every generated module in the
+repository is byte-identical to the one the previous commit produced. The
+js-framework-benchmark size baseline and every manifest are unmoved, and
+BENCHMARK.md is untouched.
+
+Five files change: this record, the ADR, the DECISIONS.md row, the language
+guide (whose flip paragraph quoted a single 24.7 ms cell of a single
+direction, now the per-direction split and the `2.06 µs × rows displayed`
+rule, plus the show-direction law and the write-back's current share) and the
+dynamic-regions note. One source file changes and it changes only comments:
+`runtime/leanrx_region.mjs` corrects the `removeMany` clear's cost claim and
+gives `setDisplayed` both laws, growing it 20 644 → **21 423** bytes in the
+eight bundles that ship it — Branch, Grid, Issue Browser, Mix, Nest, Todo,
+Toggle and Twin — and nothing else in any bundle. Toggle Lab's generated
+module and its manifest were regenerated and compared byte for byte against
+the previous commit's.
+
+### Follow-up issue or commit
+
+`docs(adr): split what a filter flip has left (ADR-0103)` — the ADR, the
+DECISIONS.md row, the two documents, the host comments and this record.
+**ADR-0102 OQ1 is closed** and **ADR-0100 OQ3 is answered as far as
+measurement can answer it**: what is left of the write-back is a contract, not
+a lowering. What stands open is the row template, now the largest term in all
+three of this round's measurements from three directions at once — 14.83 µs to
+render one, 156 ns per node to detach one, 2.06 µs of history write per one —
+and one scouted number says the platform has a word for it. Framework-free and
+coarse (medians of nine, not paired, run beside a CPU-bound gate),
+`location.hash =` over ten thousand rows costs **18.29 ms** with a plain
+checkbox per row, **1.05 ms** with `autocomplete="off"` on it, and 0.375 ms
+with no control at all — a 17× on the term this round named largest, bought
+with one static attribute per row that ADR-0101 already measured as free at
+mount. It is a scout and nothing here takes it: the round that does owes a
+paired measurement on the real emission and a written statement of what a user
+loses when the browser stops restoring a row's controls across reload and
+back-forward. Behind it stands a region that renders a window of its selection
+rather than all of it, which is the only lowering left that would move the
+show direction and is a language round rather than a host one.

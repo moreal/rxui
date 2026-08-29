@@ -415,9 +415,12 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
         last = position;
       }
       // A removal that takes every row out of a parent the region owns clears
-      // it in one write, which is the rebuild path's trick and the one place
-      // the row count stops costing a detach each. count is nonzero here, so
-      // count === total implies the table is nonempty.
+      // it in one write, which is the rebuild path's trick. It is one *call*
+      // and not one cost: ADR-0103 measured `parent.textContent = ""` against
+      // count removeChild calls at 0.974x on this repository's widest row and
+      // 1.111x on a row that is one text node, because the browser charges
+      // 368 ns per row plus 156 ns per node inside it either way. count is
+      // nonzero here, so count === total implies the table is nonempty.
       const wholesale = count === total &&
         ownsWholeParent(parent, marker, current[0].node, total);
       for (let index = 0; index < count; index += 1) {
@@ -452,6 +455,13 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
     // is a filter's selection, not a change to the row. A row already in the
     // asked-for state is not touched, so the call is idempotent and the
     // caller's own displayed-state cache decides how often it is made.
+    // Both directions are floors and ADR-0103 says so with the browser's own
+    // numbers. Taking k rows out costs 368 ns each plus 156 ns per node in
+    // the row, which no bulk call reduces because the nodes leave the
+    // document either way; putting them back costs 1.045 us * N + 14.83 us * k
+    // of style and layout, which is exactly what mounting k fresh rows into
+    // the same places costs (0.975-1.016x, inside an A/A band of 0.958-1.009x)
+    // -- a detached node carries neither a discount nor a penalty.
     setDisplayed(index, key, displayed) {
       if (disposed) return;
       const entry = current[index];

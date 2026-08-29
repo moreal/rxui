@@ -869,18 +869,35 @@ unchanged. What is left of all three is the persistence write-back, and the
 last number worth knowing about a ten-thousand-row list is that the whole
 commit is about 8% of the click: the dispatch returns in 0.86 ms and the
 style and layout it dirties cost 9.5 ms more, which is the browser's and not
-the compiler's.
+the compiler's. Four rounds of folding later the write-back is **93.4%** of
+that append's commit and 95.0% of a single-row `removeIf`'s (ADR-0103) — it
+did not grow, everything around it went away — and 94% of *it* is one `join`
+and one `setItem` over a payload `persist` defines as the whole table, because
+ADR-0085's cache has taken the row loop down to 0.05 ms. Against the click it
+is 11.3%.
 
 Two more of those numbers are worth knowing before optimising anything a
-filter does (ADR-0100, priced in ADR-0101). Flipping a filter over ten
-thousand rows costs 24.7 ms of commit, of which the sweep is **2.6** and the
-other 21.5 is the `route` field's own history write. That write is *not*
-about the fragment: at ten thousand rows `location.hash =`,
-`history.replaceState` and `history.pushState` all cost the same 17–18 ms,
-and the cost is linear in the document's **stateful form controls** — about
-1.7 µs each, saved into the session-history entry by every history write
-alike. The same ten thousand rows carrying only text pay 0.15–0.32 ms for
-the identical write; it is the one checkbox per row that makes it O(N).
+filter does (ADR-0100, priced in ADR-0101, re-split in ADR-0103). The largest
+thing a ten-thousand-row filter flip's commit does is not the sweep — it is
+the `route` field's own history write, 20.3–21.0 ms of a commit that is
+21.5 ms when the flip moves a hundred rows and 48.3 ms when it moves all ten
+thousand. That write is *not* about the fragment: at ten thousand rows
+`location.hash =`, `history.replaceState` and `history.pushState` all cost
+the same 17–18 ms, and the cost is linear in the document's **stateful form
+controls** — about 1.7 µs each, saved into the session-history entry by every
+history write alike. The same ten thousand rows carrying only text pay
+0.15–0.32 ms for the identical write; it is the one checkbox per row that
+makes it O(N).
+
+Since ADR-0102 detached the deselected rows, that write costs **2.06 µs per
+row in the document at the moment it happens**, which the flip itself changes:
+un-hiding into a document that holds none of the rows is 0.33 ms and hiding
+out of one that holds all ten thousand is 20.87. Moving the write after the
+region sweeps, so a commit pays history for the document it leaves rather than
+the one it entered, is therefore a **wash** and not a lowering — the hide
+direction would pay `f(N − k)` and the show direction `f(N)` instead of the
+other way round, and a filter that hides also un-hides. Measured that way it
+is 0.984–1.013× at seven cells against an A/A control of 0.972–1.037×.
 
 And the style and layout a flip used to dirty cost **1 282 ms** when the
 deselected rows were one contiguous run, which is what a benchmark seed
@@ -907,6 +924,21 @@ made cheap. Nothing in it loses. Two consequences are worth knowing: the
 deselected row is unreachable from the page — the delegated listener is on
 the container and the row is not in it, so nothing can dispatch for a row the
 filter is not showing.
+
+Both halves of the flip are floors now, and ADR-0103 measured where they sit.
+Taking `k` rows out costs `368 ns` per row plus `156 ns` per DOM node inside
+it, which one bulk write does not reduce — `parent.textContent = ""` is
+0.974× against `k` removals on the row shape above, and wins 1.111× only on a
+row that is a single text node — because the nodes leave the document either
+way. Putting them back costs `1.045 µs · N + 14.83 µs · k` of style and
+layout, which is **exactly what mounting `k` fresh rows into the same places
+costs** (0.975–1.016×, inside an A/A control of 0.958–1.009×): a detached
+node carries neither a discount nor a penalty, so the show direction is the
+price of rendering the rows and nothing else. The 14.83 µs is the row
+template's, not the framework's — 5.45 µs for a row of text, 11.36 µs for one
+carrying a `<button>`, 18.16 µs for the four cells, checkbox and two buttons
+above — and a form control costs more than a `<span>` here for the same
+reason it costs more in the history write.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
