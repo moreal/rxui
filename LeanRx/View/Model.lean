@@ -596,7 +596,14 @@ instantiates its template once per row, so an id in it is one more way a
 composed component's tree mints unbounded copies of one document id; the
 transitive predicate folds this in beside the component's own view.
 Row-scoped child references carry no attributes of their own — the composed
-child's tree is folded through the child table instead. -/
+child's tree is folded through the child table instead.
+
+This predicate has two readers (ADR-0091): the trail, which answers about a
+component *reached by name* through a child table, and `validateRegions`,
+which rejects a component's own region template outright (`LRX-VIEW-046`).
+Both ask the same question of the same walk, so a checked component's regions
+always answer `false` and the trail's region arm speaks only for specs the
+validator has not seen. -/
 mutual
   def RowNode.hasStaticId : RowNode → Bool
     | .element _ attrs _ children _ _ _ _ =>

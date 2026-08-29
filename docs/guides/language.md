@@ -230,9 +230,16 @@ immutable-prop boundary in row scope); and no template in the child's
 a trail the child recorded when it elaborated, folding the child's own view,
 the row templates of any region it declares, and every component it composes,
 at any depth — so an id-free wrapper around an id-carrying leaf is rejected
-too, and the diagnostic names the path (`Frame → Badge`). View scope is
-unaffected: a component composed in a view mounts once, so it may carry ids
-freely and only row references consult the trail.
+too, and the diagnostic names the path (`Frame → Badge`). The same rule
+covers the component's *own* row template (ADR-0091): a region mounts one
+instance of its template per row, so a static `id` there is rejected by
+`LRX-VIEW-046` — use a class. The line is the multiplication, not the module
+boundary: a static `id` is rejected wherever the compiler instantiates the
+carrying template more than once, and left to you (and the axe
+`duplicate-id` gate) wherever it mounts once. View scope is therefore
+unaffected: `<ul id="roster">` around a region is fine, and a component
+composed in a view mounts once, so it may carry ids freely — only row
+references consult the trail.
 A template may compose **any number** of children, different components or
 the same one repeated: each mounts where it sits in the template, the row
 root stashes the mount returns as a list in that order, and the dispose

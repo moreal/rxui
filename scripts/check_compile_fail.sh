@@ -132,6 +132,7 @@ fixtures=(
   Test/fixtures/compile-fail/RouteDuplicateHash.lean
   Test/fixtures/compile-fail/RouteDuplicateLiteral.lean
   Test/fixtures/compile-fail/PersistEmptyKey.lean
+  Test/fixtures/compile-fail/RegionRowStaticId.lean
 )
 fragments=(
   "Constructor for"
@@ -270,6 +271,9 @@ fragments=(
   # ADR-0082: the fourth `validatePersists` branch, pinned on its own message
   # because three siblings share LRX-TYPE-118.
   "declares an empty storage key"
+  # ADR-0091: the component's *own* region row template, rejected at the model
+  # layer on the same predicate the ADR-0090 trail folds.
+  "error[LRX-VIEW-046]"
 )
 
 for index in "${!fixtures[@]}"; do
@@ -336,6 +340,16 @@ if [[ "$twice_output" != *"RouteTwice.lean:25:3"* ||
       "$twice_output" != *"RouteTwice.lean:26:3"* ]]; then
   echo "route cap diagnostic lost one of the two route declarations" >&2
   echo "$twice_output" >&2
+  exit 1
+fi
+
+region_id_output="$(lake env lean -E hasSorry Test/fixtures/compile-fail/RegionRowStaticId.lean 2>&1 || true)"
+# ADR-0091: the rejection is a claim about the region — the thing that
+# multiplies the template — so its diagnostic names the region declaration
+# (line 21), not just the component whose check reported it.
+if [[ "$region_id_output" != *"RegionRowStaticId.lean:21:3"* ]]; then
+  echo "region row static-id diagnostic lost its region declaration" >&2
+  echo "$region_id_output" >&2
   exit 1
 fi
 

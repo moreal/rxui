@@ -19,10 +19,13 @@ is summarized by one list without any consumer resolving a grandchild's
 spec. -/
 private abbrev TrailSchema : Schema := .field "n" Int .empty
 
+/- One declared state value, so a forged spec is complete enough to run
+through `check` as well as through the trail (ADR-0091). -/
 private def trailSpec (name : String) (view : View TrailSchema)
     (children : Array ChildComponent := #[]) (regions : Array RegionSpec := #[]) :
     ComponentSpec TrailSchema :=
-  { name, values := #[], events := #[], view, children, regions }
+  { name, values := #[ValueSpec.state (Field.here : Field TrailSchema Int) (.int 0)]
+    events := #[], view, children, regions }
 
 private def staticIdTrails : IO Unit := do
   let cleanLeaf := trailSpec "Leaf"
@@ -74,6 +77,57 @@ private def staticIdTrails : IO Unit := do
     }])
   unless cleanRegion.staticIdTrail == [] do
     throw <| IO.userError "an id-free row template reported a static-id trail"
+  /- ADR-0091: the trail's region arm and the region validation read the same
+  predicate, so the very spec whose trail names itself for a row template is
+  the spec `check` rejects. -/
+  expectError "LRX-VIEW-046" regioned.check
+  match cleanRegion.check with
+  | .error error =>
+      throw <| IO.userError s!"forged id-free region rejected: {error.code}"
+  | .ok _ => pure ()
+
+/- ADR-0091: a region mounts one instance of its row template per row, so the
+static-id rule follows the *multiplication* rather than the module boundary —
+the component's own template is rejected exactly where a row-composed child's
+tree is (`LRX-ELAB-135`), and a single-mount element keeps ADR-0071's stance.
+The decision is `RowNode.hasStaticId`, so the walk that answers for a composer
+is the walk that rejects here: root, cell, and branch subtree alike. -/
+private def regionRowStaticIds : IO Unit := do
+  let regionSpec (template : RowNode) : ComponentSpec TrailSchema :=
+    trailSpec "Roster" (View.node .ul [View.region "rows"])
+      (regions := #[{
+        name := "rows"
+        fields := #["label"]
+        events := #[]
+        template := template
+      }])
+  expectError "LRX-VIEW-046"
+    (regionSpec (RowNode.node .li [.fieldText 0] [.id "row"])).check
+  expectError "LRX-VIEW-046"
+    (regionSpec (RowNode.node .li [RowNode.node .span [.fieldText 0]
+      [.id "cell"]])).check
+  expectError "LRX-VIEW-046"
+    (regionSpec (RowNode.node .li [RowNode.branch 0 "view"
+      (RowNode.node .span [.fieldText 0] [.id "edit"])
+      (RowNode.node .span [.fieldText 0])])).check
+  /- The other side of the line, unmoved: an element the component mounts once
+  may carry an id. The same component still answers `["Roster"]` for a
+  composer, because in row scope that one element would become many — one
+  question, two scopes. -/
+  let viewId := trailSpec "Roster"
+    (View.node .ul [View.region "rows"] (attrs := [.id "roster"]))
+    (regions := #[{
+      name := "rows"
+      fields := #["label"]
+      events := #[]
+      template := RowNode.node .li [.fieldText 0] [.className "row"]
+    }])
+  match viewId.check with
+  | .error error =>
+      throw <| IO.userError s!"a single-mount view id was rejected: {error.code}"
+  | .ok _ => pure ()
+  unless viewId.staticIdTrail == ["Roster"] do
+    throw <| IO.userError "an accepted view id vanished from the static-id trail"
 
 private def checkCounter (checked : CheckedComponent CounterSchema) : IO Unit := do
   unless checked.sourceCount == 1 do
@@ -1274,5 +1328,6 @@ def run : IO Unit := do
       view := View.node .p [.text "cycle"] }
   expectError "LRX-GRAPH-001" cycle.check
   staticIdTrails
+  regionRowStaticIds
 
 end LeanRxTest.Component.Model

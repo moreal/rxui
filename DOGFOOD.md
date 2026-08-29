@@ -5397,3 +5397,118 @@ one open question is now the mirror image: a component's *own* region row
 template can still carry a static `id`, and closing that needs its own
 diagnostic number on the region validation, not another extension of
 `LRX-ELAB-135`.
+
+## The static-id rule follows the multiplication (ADR-0091)
+
+### What was built
+
+ADR-0090's single open question, and the last asymmetry in the id rule:
+`staticIdTrail` walks the row templates of regions declared by a
+*composed child*, but nothing looks at the row template of the component
+doing the composing. `region roster (label) := jsx% <li id="row">` minted
+one `row` per row and compiled clean, while the same three lines in a
+module composed into that row were rejected.
+
+The round spent its first half on the line rather than on the code,
+because the two governing sentences disagreed with each other. ADR-0071:
+*the pipeline does not scout for duplicate ids, axe does.* ADR-0090:
+*the compiler polices templates the author is not looking at.* The second
+explains the child rule but not why a child's own regions were folded in,
+and it can only leave the top-level hole open — which is what ADR-0090
+did, explicitly.
+
+The replacement is one sentence with no hole in it: **a static `id` is
+rejected wherever the compiler instantiates the carrying template more
+than once, and left to the author wherever it mounts once.** Authorship
+was the wrong invariant. Whoever wrote `<li id="row">` wrote exactly one
+id and did nothing wrong until the region machinery repeated it; the
+duplication is the compiler's emission, so the compiler owns it — in the
+author's own file or three modules away. Both existing rejections
+re-derive from it, and nothing else in the language multiplies a
+template, so the rule closes.
+
+The rejection is one `if` in `validateRegions` under the new
+`LRX-VIEW-046`, and its decision is `RowNode.hasStaticId` — the same
+function `ComponentSpec.staticIdTrail` folds. The elaborator was the
+other candidate: `lowerRowAttrs` sees the `id=` token itself and would
+report a column-exact span. It lost on two counts. One predicate with two
+readers cannot drift, while a second attribute test in the lowering would
+have to be remembered whenever a `RowNode` constructor gains attributes.
+And `check` is the contract every consumer reads, including hand-written
+specs that never pass through the `component` command — an
+elaborator-only rejection would have left `check` accepting a spec whose
+regions the trail simultaneously reported as id-minting.
+
+The witnesses are a fixture and forged specs, as the axis called for. The
+`RegionRowStaticId` fixture carries the id in the row template *and*
+keeps `<ul id="roster">` in the view, so both sides of the line sit in
+one file; the compile-fail script pins the message and, separately, that
+the diagnostic still names the region declaration at line 21. The model
+assertions cover the row root, one cell down, and one subtree of a
+two-branch cell — the whole domain of the predicate — plus the accepting
+pair: an id-free region passes, and a component whose view carries an id
+passes `check` while still answering `["Roster"]` for a composer. One
+question, two scopes, in two adjacent assertions.
+
+ADR-0090's option (c) — lifting the whole id rule into the model layer —
+was judged in the same round and **declined rather than deferred**. It
+became possible when `ChildComponent` gained its trail: `validateRegions`
+could match each `RowNode.child` name against the child table. It buys no
+rejection that does not already happen, and it would trade an exact
+reference-site span for a name-to-table lookup whose coherence nothing
+currently owes. The rule is stated once, in the ADR; it is enforced at the
+layer where its datum lives.
+
+### What broke or surprised
+
+**The hole was exactly as advertised, which is worth having measured.**
+Disabling the new check made `RegionRowStaticId` compile clean — no
+diagnostic at all, not a weaker one — and dropped the model assertions to
+"expected component error LRX-VIEW-046". ADR-0090 described the gap
+precisely; running with it disabled is the difference between believing
+that and knowing it.
+
+**The forged trail specs had never been through `check`.** They carried
+`values := #[]` and answered `LRX-TYPE-101` — *component must declare at
+least one value* — the moment anything asked them to validate. The trail
+is a pure fold and never needed a well-formed spec; the rejection does.
+One state value in the `trailSpec` helper made the same forged specs
+serve both readers, which is what makes the paired assertion possible at
+all: the very spec whose trail names itself for a row template is the
+spec `check` rejects.
+
+**Moving a line is a bigger claim than closing a gap, and it costs more
+words.** The code is nine lines. Most of the round went into what
+replaces two accepted ADRs' sentences without contradicting either — the
+one-mount case has to keep working *for the stated reason*, not by
+accident, or the next round reopens the same argument.
+
+**The span trade was real but small.** The elaborator would have pointed
+at the `id=` token; the model layer points at the region declaration,
+line 21 in the fixture rather than line 22. The region is what multiplies
+the template, so it is what the message is about — and the gate pins the
+location so it cannot decay to `<generated>` unnoticed.
+
+### Performance observations
+
+No codegen change at all, and this time not even a source line moved: no
+example carries an `id` in a row template, so all 155 generated files
+across the nineteen generators — 66 `.mjs`, 20 `.graph.json`, every
+`.manifest.json` — compare byte-identical under the stash/rebuild
+protocol, `graphHash` included. The size gate, every manifest and
+BENCHMARK.md stand unre-measured; no host change, ABI stays 17. Checking
+costs one extra tree walk per declared region at `check` time, on a
+predicate that was already being evaluated for every child-table entry.
+
+### Follow-up issue or commit
+
+`feat(component): reject static ids in a component's own row template
+(ADR-0091)` — the `validateRegions` rejection under the new
+`LRX-VIEW-046`, the two-reader note on `RowNode.hasStaticId` and the
+totality note on `staticIdTrail`, the `RegionRowStaticId` fixture with
+its script registration and region-span assertion, the forged-spec model
+assertions and the `trailSpec` state value, the language guide, the ADR,
+the DECISIONS.md row, and this record. **ADR-0090 OQ1 is closed by
+rejection and its option (c) by decision.** The id rule now has no open
+questions: every template the compiler instantiates more than once is
+policed, and single-mount ids remain the author's and the axe gate's.

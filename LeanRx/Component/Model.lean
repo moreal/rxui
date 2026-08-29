@@ -337,7 +337,13 @@ The recursion terminates in the stored trails rather than in a name lookup —
 `children` carries strings, and nothing guarantees a grandchild's spec is in
 scope wherever this predicate is read. A row-composed child mounts one
 instance per row, so the parent-side row lowering evaluates this trail and
-rejects a non-empty one, naming the path it found. -/
+rejects a non-empty one, naming the path it found.
+
+The region arm stays total even though `check` now rejects a component whose
+own region template carries an id (`LRX-VIEW-046`, ADR-0091): the trail is
+defined on any `ComponentSpec`, and the two readers of `RowNode.hasStaticId`
+agree by sharing it — validation makes the checked world the subset where
+this arm never fires. -/
 def ComponentSpec.staticIdTrail (spec : ComponentSpec Γ) : List String :=
   if spec.view.hasStaticId ||
       spec.regions.any (fun region => region.template.hasStaticId) then
@@ -1424,6 +1430,19 @@ private def validateRegions (spec : ComponentSpec Γ) (split : ViewSplit Γ) :
       throw {
         code := "LRX-VIEW-026"
         message := s!"region {region.name} row field names must be nonempty and unique"
+        spans := #[region.span]
+      }
+    /- A region instantiates its row template once per row, so a static `id`
+    anywhere in it mints one document id per row — the same unbounded
+    duplication `LRX-ELAB-135` rejects one level in, on a template the
+    compiler multiplies rather than one the author mounts once (ADR-0091).
+    The decision is `RowNode.hasStaticId`, the very predicate
+    `ComponentSpec.staticIdTrail` folds over this table, so the trail's region
+    arm and this rejection cannot drift apart. -/
+    if region.template.hasStaticId then
+      throw {
+        code := "LRX-VIEW-046"
+        message := s!"region {region.name} row template carries a static id attribute; a region mounts one instance of the template per row, so the template must use classes instead"
         spans := #[region.span]
       }
     let eventNames := region.events.toList.map (·.name)
