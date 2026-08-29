@@ -4,6 +4,18 @@ namespace LeanRxTest.View.Model
 
 open LeanRx LeanRxExamples.Counter
 
+mutual
+  private def ownedAnywhere : MountNode → Bool
+    | .element _ attrs children =>
+        attrs.contains .ownedState || ownedAnywhereChildren children
+    | .text _ | .dynamicText | .child .. | .region _ | .countText _
+    | .propText _ => false
+
+  private def ownedAnywhereChildren : MountChildren → Bool
+    | .nil => false
+    | .cons head tail => ownedAnywhere head || ownedAnywhereChildren tail
+end
+
 def run : IO Unit := do
   let split := syntaxView.split
   unless split.textSinks.map (·.name) ==
@@ -25,5 +37,22 @@ def run : IO Unit := do
   match split.template with
   | .element .main [.className "counter"] _ => pure ()
   | _ => throw <| IO.userError "view split changed the static mount template"
+  -- ADR-0104: the split is where a component-scope element declares that the
+  -- program owns its control state, and the law is exactly "carries a
+  -- reflected property or a checked selection". Counter reflects nothing, so
+  -- its whole mount tree stays silent -- the attribute is never a decoration
+  -- on an element that happens to be an input.
+  unless ¬ownedAnywhere split.template do
+    throw <| IO.userError "an unowned component claimed ownership of control state"
+  unless StaticAttr.ownedState.name == "autocomplete" &&
+      StaticAttr.ownedState.value == "off" do
+    throw <| IO.userError "the owned-state declaration changed its spelling"
+  unless StaticAttr.withOwnedState [.className "row"] false == [.className "row"] &&
+      StaticAttr.withOwnedState [.className "row"] true ==
+        [.className "row", .ownedState] do
+    throw <| IO.userError "the owned-state declaration moved out of last position"
+  unless (AttrSelect.ownsControlState (Γ := CounterSchema) (.checkedIfEmpty "items")) &&
+      ¬(AttrSelect.ownsControlState (Γ := CounterSchema) (.hiddenIfEmpty "items")) do
+    throw <| IO.userError "an attribute selection changed what control state it owns"
 
 end LeanRxTest.View.Model

@@ -228,12 +228,19 @@ rendering the rows and carries nothing of its own. What sets the 14.83 µs is
 the row template — 5.45 µs for a row of text against 18.16 µs for Toggle
 Lab's — so it is the author's declaration and not a lowering.
 
-One number about the commit around it, because it is the largest and it is
+One number about the commit around it, because it was the largest and it is
 not this file's: the ADR-0063 history write a routed filter field triggers
-costs `2.06 µs` per row *in the document when it runs*, which since ADR-0102
-the sweep itself changes. Reordering it against the sweep is a wash across
-the round trip (0.984–1.013× at seven cells), because the hide and show
-directions swap which document each pays for.
+costs per row *in the document when it runs*, which since ADR-0102 the sweep
+itself changes. Reordering it against the sweep is a wash across the round
+trip (0.984–1.013× at seven cells), because the hide and show directions swap
+which document each pays for. What made it large was that the browser saved
+every row's checkbox into the session-history entry; ADR-0104 emits one static
+`autocomplete="off"` on every control whose `value` or `checked` the program
+writes, and the write fell from `2.00 µs` per row displayed to
+`0.34 µs · rows + 0.15 ms` — 5.6–5.9× on the real emission, and 3.39× on a
+ten-thousand-row flip's whole hide commit. Nothing in this file changed: the
+attribute is written once at mount, the region host never sees it, and a row
+the filter has detached is not in the document the write is charged for.
 The ADR-0063 write-back keeps walking every row, because two thirds of its
 cost is the bytes of a payload that is the whole table by contract and the
 only layout that would narrow it costs 7.2 µs per key.

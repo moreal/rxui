@@ -2279,7 +2279,7 @@ mutual
         let dom := rowAppend { dom with allocator, count := dom.count + 1 } <| .const name <|
           call runtime.createElement [.literal (.string tag.name)]
         let mut dom := dom
-        for attr in attrs do
+        for attr in StaticAttr.withOwnedState attrs !reflects.isEmpty do
           dom := rowAppend dom <| .expr <| call runtime.setAttribute [
             .ident name, .literal (.string attr.name), .literal (.string attr.value)
           ]

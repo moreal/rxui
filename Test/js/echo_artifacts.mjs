@@ -46,10 +46,21 @@ for (const required of [
   "setProperty(propRefs[0], \"value\", propCache[0])",
   "setProperty(propRefs[1], \"checked\", propCache[1])",
   "setProperty(propRefs[2], \"value\", propCache[2])",
+  // ADR-0104: all three controlled controls declare the program's ownership,
+  // in component scope exactly as in row scope — one static attribute each,
+  // written at mount between the author's attributes and the owned property.
+  "  setAttribute(node_4, \"aria-label\", \"Draft\");\n  setAttribute(node_4, \"autocomplete\", \"off\");",
+  "  setAttribute(node_5, \"aria-label\", \"Loud\");\n  setAttribute(node_5, \"autocomplete\", \"off\");",
+  "  setAttribute(node_8, \"aria-label\", \"Note\");\n  setAttribute(node_8, \"autocomplete\", \"off\");",
 ]) {
   if (!source.includes(required)) {
     throw new Error(`generated Echo Lab is missing ${required}`);
   }
+}
+
+const declared = source.split('"autocomplete", "off"').length - 1;
+if (declared !== 3) {
+  throw new Error(`generated Echo Lab declares ${declared} owned controls, expected 3`);
 }
 
 const generated = await import(pathToFileURL(path.join(directory, "EchoLab.mjs")).href);

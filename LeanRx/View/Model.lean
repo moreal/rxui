@@ -49,7 +49,10 @@ def InputType.name : InputType → String
   | .text => "text"
   | .checkbox => "checkbox"
 
-/-- Safe, context-specific static attributes supported in the safe view. -/
+/-- Safe, context-specific static attributes supported in the safe view.
+`ownedState` is the one constructor no author can write: the JSX attribute
+vocabulary has no spelling for it and the compiler adds it to exactly the
+elements whose `value` or `checked` it owns (ADR-0104). -/
 inductive StaticAttr where
   | className (value : String)
   | id (value : String)
@@ -58,6 +61,7 @@ inductive StaticAttr where
   | inputType (value : InputType)
   | role (value : String)
   | placeholder (value : String)
+  | ownedState
 deriving Repr, BEq
 
 def StaticAttr.name : StaticAttr → String
@@ -68,12 +72,26 @@ def StaticAttr.name : StaticAttr → String
   | .inputType _ => "type"
   | .role _ => "role"
   | .placeholder _ => "placeholder"
+  | .ownedState => "autocomplete"
 
 def StaticAttr.value : StaticAttr → String
   | .className value | .id value | .ariaLabel value | .role value
   | .placeholder value => value
   | .buttonType value => value.name
   | .inputType value => value.name
+  | .ownedState => "off"
+
+/-- The compiler-owned declaration that a control's state is the program's and
+not the browser's (ADR-0104). A control carrying an ADR-0038 `value` binding or
+an ADR-0060/ADR-0047 `checked` reflection has its property rewritten from the
+state cell at every mount and every update sweep, so the copy the browser saves
+into a session-history entry cannot survive a traversal — it can only land
+*after* the mount has written the owned value and leave the DOM disagreeing
+with the cell. `autocomplete="off"` is the platform's own word for that, and it
+is one static attribute written once at mount. -/
+def StaticAttr.withOwnedState (attrs : List StaticAttr) : Bool → List StaticAttr
+  | false => attrs
+  | true => attrs ++ [.ownedState]
 
 inductive EventKind where
   | click
@@ -440,6 +458,17 @@ def checkedPredicate? : AttrSelect Γ → Option (Nat × String)
   | .classSelect .. | .pressedSelect .. | .disabledSelect ..
   | .hiddenIfEmpty .. => none
   | .checkedIfEmpty _ _ predicate => predicate
+
+/-- Whether the selection owns a form control's own restorable state
+(ADR-0104). Only `checkedIfEmpty` does: it writes a checkbox's `checked`
+property from a region row count at mount and at every region touch, exactly
+as an ADR-0038 `value` binding writes an input's text. The `class`,
+`aria-pressed`, `disabled` and `hidden` selections write element properties
+the browser never saves into a session-history entry. -/
+def ownsControlState : AttrSelect Γ → Bool
+  | .classSelect .. | .pressedSelect .. | .disabledSelect ..
+  | .hiddenIfEmpty .. => false
+  | .checkedIfEmpty .. => true
 
 /-- The declared region of either region-count subject — hidden (ADR-0058)
 or checked (ADR-0060); both ride the same region-touch sweep. -/
@@ -848,7 +877,11 @@ structure ViewSplit (Γ : Schema) where
 
 mutual
   private def View.mountNode : View Γ → MountNode
-    | .element tag attrs _ children _ _ _ => .element tag attrs (children.mountChildren)
+    | .element tag attrs _ children _ props selects =>
+        .element tag
+          (StaticAttr.withOwnedState attrs
+            (!props.isEmpty || selects.any AttrSelect.ownsControlState))
+          (children.mountChildren)
     | .text value _ => .text value
     | .scalarText _ _ _ => .dynamicText
     | .child name _ props => .child name (props.map (·.2))

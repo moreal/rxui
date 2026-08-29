@@ -335,7 +335,25 @@ unload hook. Nothing in the emission changed — the round measured a per-task
 flush at 1.00× on the only workload a user can drive, and a joined-string
 cache on the region record at 1.52× against seven invalidation sites and two
 record slots, and declined both. Once more: no host change and no runtime ABI
-bump. -/
+bump.
+
+The ADR-0104 ownership declaration is the one attribute nothing here writes.
+Four elements of this lab have a `value` or `checked` the program owns — the
+row checkbox's `checked={done == "true"}`, the branch editor's
+`value={draft}`, the controlled `#new-todo` input, and the `#toggle-all` box
+whose `checked` follows a region count — and the compiler gives each of them
+one static `autocomplete="off"`, because a control the program rewrites from
+its state cell at every mount and every sweep has nothing the browser's
+session-history entry is worth saving. Measured, saving it is worse than
+useless: a back/forward traversal that re-creates the document restores the
+user's edit *over* the value the mount just wrote, leaving the DOM
+disagreeing with the cell — the ADR-0060 divergence class, arriving through
+the one door left open. The cost the browser was charging for that was the
+largest term of a flip's commit: the ADR-0063 route write at ten thousand
+rows is 19.90 ms without the attribute and 3.53 with it, so the hide commit
+is 3.39× and the whole round trip 1.64×. It changes nothing else — the
+mount, the render and the detach are all inside their own A/A bands — and it
+is one static attribute, so no host change and no runtime ABI bump. -/
 
 namespace LeanRxExamples.ToggleLab
 

@@ -7104,3 +7104,141 @@ loses when the browser stops restoring a row's controls across reload and
 back-forward. Behind it stands a region that renders a window of its selection
 rather than all of it, which is the only lowering left that would move the
 show direction and is a language round rather than a host one.
+
+## Who owns a control's state (ADR-0104)
+
+### What was built
+
+ADR-0103's first open question, taken. The compiler now emits one static
+`autocomplete="off"` on exactly the elements whose `value` or `checked` the
+program writes — an ADR-0047/0049 row reflection, an ADR-0038 prop binding, an
+ADR-0060 `checkedIfEmpty` selection — which is one function
+(`StaticAttr.withOwnedState`) applied at the two places an element's static
+attributes are emitted, plus one constructor of the sealed attribute
+vocabulary that the JSX surface has no spelling for. No host export, no record
+slot, no ABI.
+
+### What broke or surprised
+
+**The three axes disagree about what a form control costs, and that is the
+round's finding.** ADR-0103 had a checkbox row costing more than a span row on
+all three of render, detach and history write, and read it as one fact. Split
+by control kind it is three different orderings. The **history write** charges
+per *stateful* control: a checkbox 1.71 µs, a radio 1.75, a `<select>` 3.54, a
+text input 0.93 — and a `<button>` is **free**, as is `<input type="hidden">`.
+The **render** charges per rendered widget: a `<button>` and its text are
+1.69 µs against a `<span>`'s 0.43, a text input 5.27, a `<textarea>` 5.88, a
+`<select>` 19.88 — but a checkbox is 0.38, no worse than a span. The **detach**
+is `450 ns/row + 126 ns/node` plus about half a microsecond for a control
+holding editable text. So ADR-0103's unexplained cell — a six-node row with a
+button beating a seven-node row of spans — is a `<button>` rendering for four
+`<span>`s, and Toggle Lab's checkbox is the exact mirror image: the cheapest
+control to render and the second most expensive to save.
+
+**The reload half of the open question costs nothing, and the back/forward
+half is worse than "a loss".** The expectation going in was that a document
+built entirely by `mount()` after load would be exempt from form-state
+restoration, so the whole 20 ms would be pure waste. Both halves of that were
+wrong. A **reload restores nothing for anyone** — parse-time control or
+script-built, attribute or not, eight fields and zero restored — so nothing is
+at stake there. A **back/forward traversal that re-creates the document does
+restore, and it does reach script-built controls**: `js-on` came back with the
+user's `typed-js-on` and its checkbox came back checked. And for a control the
+program owns, what comes back **contradicts the cell**: give it a mount value
+of `from-state`, type `user-typed` over it, traverse back, and the DOM says
+`user-typed` while the cell still says `from-state`. That is the ADR-0060
+cache-DOM divergence class arriving through the one door the compiler had not
+closed, which turns the attribute from a speed trade into the correct thing to
+say. With it, the DOM comes back agreeing with the cell.
+
+**The bfcache path was not reachable.** `pageshow.persisted` stayed `false`
+even with the back/forward cache enabled by flag, so every traversal this
+harness produced re-created the document. The ADR states that path from the
+platform's contract rather than from a number, and says so.
+
+**Twelve probes, all at sixteen, in both dists, first try.** Second round
+running since ADR-0102 moved the record slots under nine of them.
+
+### Performance observations
+
+**The attribute, framework-free and paired.** At ten thousand rows the history
+write is 17.565 ms with a plain checkbox per row and 1.035 with the attribute
+(**16.97×**, A/A 0.981×); a radio 15.42×, a `<select>` 5.99×, a text input
+4.27×, a `<textarea>` 3.82×; Toggle Lab's own row **8.37×** (19.550 → 2.335,
+A/A 0.989×) and 4.30× at a thousand rows. On a row of text or a row with a
+`<button>` it is 0.97× and 1.04× — nothing to remove. It moves **neither** of
+the other two axes: show and detach are 0.941–1.026× and 0.988–1.013× across
+six shapes, every cell inside its own A/A band.
+
+**The real emission, two dists paired.** The ADR-0063 route probe on a
+ten-thousand-row flip's hide direction is 19.90 → 3.53 ms (**5.637×**, A/A
+0.994×) and 5.6–5.9× at every cell; the hide commit 23.37 → 6.89 (**3.39×**);
+the whole round trip 77.41 → 47.27 (**1.638×**) at `k` = 1 000. The 30.1 ms
+the trip drops is the two route writes' 16.37 + 13.14 to within 0.7 ms, and
+the commit residue either side of the probe is unmoved (3.47 → 3.36 at
+`k` = 1 000, 30.12 → 30.48 at `k` = `N`) — one term left and nothing else
+changed.
+
+**ADR-0103's law is replaced.** The history write was `2.00 µs` per row in the
+document when it ran; it is `0.34 µs · rows + 0.15 ms`, a **5.9×** on the row
+term, confirmed at every intermediate document size the flip itself produces
+(the show direction writes with `N − k` rows present and reads 3.26, 1.75,
+2.22 and 0.19 ms against 16.40, 9.02, 10.17 and 0.35).
+
+**This is not a filter's number.** It is a fixed term of every commit that
+writes the hash, so it matters most to the flips that move the *fewest* rows:
+1.638× at `k` = 1 000 and 1.054× at `k` = `N`, where a 267 ms sweep is the
+whole flip.
+
+**The mount was measured rather than inherited.** ADR-0101 had a static
+attribute per row free at mount; this round ships one, so the real emission
+was checked: 0.998×, 1.019× and 0.962× on the click at ten thousand, one
+thousand and a hundred rows, each inside its own A/A control. The reconcile
+segment's ten-thousand-row cell sits at the edge of its own drift instead
+(0.943× against 0.953×): the 1.9 ms is one `setAttribute` per row and the same
+size as that segment's page-to-page variation, so the two cannot be
+separated.
+
+### Compiler and gate work
+
+`LeanRx/View/Model.lean` gains `StaticAttr.ownedState`, the two-case
+`StaticAttr.withOwnedState` law, `AttrSelect.ownsControlState`, and the
+injection in `View.mountNode`; `LeanRx/Backend/Component.lean` applies the same
+law over `reflects` in `rowNodeStmts`. Five generated modules grow — Toggle Lab
++187 bytes (four sites), Echo Lab +141 (three), Branch Lab, Mix Lab and Twin
+Lab +46 each (one) — every changed line an added `setAttribute`, no existing
+line moved. Fourteen bundles are byte-identical, including Nest Lab and the
+js-framework-benchmark bundle, so **the size baseline does not move** and
+`runtimeAbi` stays 20 with the four host modules untouched.
+
+The witnesses are counts, not substrings: the Toggle Lab and Echo Lab artifact
+gates pin every emitted sequence *and* assert the module declares exactly four
+and exactly three, so a fifth would mean the rule had started paying for a
+control the program does not own and a third that an owned one had stopped
+declaring it. The Nest Lab gate carries the negative — its module contains no
+`autocomplete` at all and its uncontrolled rename input is pinned in place. A
+new Toggle Lab browser test walks the DOM count through a mount (2 static
+controls), three appends (5), a branch entry and Escape (6, then 5) and a
+filter flip (3, then 5) — the same count the history write is charged for,
+since ADR-0102 detached the rows. `Test/View/Model.lean` pins the law itself:
+the spelling, the last position, both `withOwnedState` cases,
+`checkedIfEmpty` owning control state while `hiddenIfEmpty` does not, and
+Counter carrying it nowhere.
+
+### Follow-up issue or commit
+
+`feat(component): declare who owns a control's state (ADR-0104)` — the ADR, the
+DECISIONS.md row, the guide and dynamic-regions paragraphs, the Toggle Lab and
+Nest Lab example prose, the compiler change, four gates and this record.
+**ADR-0103 OQ1 is closed.** What stands open is the same thing ADR-0103 left
+standing and this round made larger by removing the term in front of it: with
+the history write at 0.34 µs per row displayed, a flip is
+`1.045 µs · N + 14.83 µs · k` of style and layout and nothing else, and the
+only lowering that would move it is a region that renders a window of its
+selection rather than all of it — 74 ms for five thousand rows a user cannot
+see at once. That is a language round: a region's rows would stop being *the*
+rows, and every count, sweep and positional export is written against a table
+that is entirely rendered. Two smaller things: the hand-written backends
+(Validated Form, Temperature) make the same ownership claim through their own
+emitters and do not say it, which is worth deciding rather than leaving, and
+`swapAt` and the filter still cannot meet in any emission.

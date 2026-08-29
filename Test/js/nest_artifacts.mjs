@@ -269,6 +269,18 @@ if (nestSource.includes("./Chip.mjs")) {
   throw new Error("generated Nest Lab unexpectedly imports the wrapped leaf");
 }
 
+// ADR-0104's negative half. The roster's rename input carries an `onInput`
+// and no `value` — the DOM owns its text and nothing in the program writes
+// it — so the compiler makes no claim about it and the browser keeps its
+// restoration. This is the one uncontrolled control in the repository and it
+// is the reason the rule reads "owned" rather than "input".
+if (nestSource.includes('"autocomplete"')) {
+  throw new Error("generated Nest Lab disowned a control the program does not own");
+}
+if (!nestSource.includes('setAttribute(row_6, "aria-label", "Rename row");\n  append(row_5, row_6);')) {
+  throw new Error("generated Nest Lab lost the uncontrolled rename input");
+}
+
 const generated = await import(pathToFileURL(path.join(directory, "NestLab.mjs")).href);
 if (typeof generated.mount !== "function") {
   throw new Error("generated Nest Lab does not export mount");

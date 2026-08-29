@@ -195,6 +195,19 @@ for (const required of [
   // The sealed row checked reflection (ADR-0049): the checkbox mounts with
   // its done state and the retained-row update sweep re-writes it.
   "  setProperty(row_2, \"checked\", item[3] === \"true\");",
+  // ADR-0104: every control whose value or checked the program owns declares
+  // it, in one compiler-owned static attribute written once at mount, right
+  // after the author's own attributes and right before the owned property.
+  // Four elements qualify here and no other: the row checkbox (its ADR-0049
+  // reflection), the row editor input (its ADR-0047 value reflection), the
+  // ADR-0055 controlled new-todo input, and the ADR-0060 toggle-all box whose
+  // checked follows a region count. The session-history entry the ADR-0063
+  // route write saves is 19.90 ms at ten thousand rows without it and 3.53
+  // with, and what it would have restored is a value the mount overwrites.
+  "  const row_2 = createElement(\"input\");\n  setAttribute(row_2, \"type\", \"checkbox\");\n  setAttribute(row_2, \"aria-label\", \"Toggle item\");\n  setAttribute(row_2, \"autocomplete\", \"off\");\n  setProperty(row_2, \"checked\", item[3] === \"true\");",
+  "  const row_0 = createElement(\"input\");\n  setAttribute(row_0, \"aria-label\", \"Item editor\");\n  setAttribute(row_0, \"autocomplete\", \"off\");\n  setProperty(row_0, \"value\", item[2]);",
+  "  setAttribute(node_3, \"aria-label\", \"New todo\");\n  setAttribute(node_3, \"autocomplete\", \"off\");",
+  "  setAttribute(node_15, \"aria-label\", \"Toggle all\");\n  setAttribute(node_15, \"autocomplete\", \"off\");",
   "  setProperty(childAt(childAt(row, 0), 0), \"checked\", item[3] === \"true\");",
   // The dblclick edit entry replaces the branch and focuses the editor
   // (ADR-0047/0048): replacement arm only.
@@ -400,6 +413,18 @@ for (const required of [
   if (!source.includes(required)) {
     throw new Error(`generated Toggle Lab is missing ${required}`);
   }
+}
+
+// ADR-0104's exact-count assertion, the other half of the required lines
+// above: the attribute is compiler-owned and the JSX vocabulary has no
+// spelling for it, so the emission carries it exactly where an owned control
+// is and nowhere else. The four are the row checkbox, the row editor input,
+// the new-todo input and the toggle-all box; a fifth would mean the rule had
+// started paying for a control the program does not own, and a third would
+// mean an owned one had stopped declaring it.
+const declared = source.split('"autocomplete", "off"').length - 1;
+if (declared !== 4) {
+  throw new Error(`generated Toggle Lab declares ${declared} owned controls, expected 4`);
 }
 
 const generated = await import(pathToFileURL(path.join(directory, "ToggleLab.mjs")).href);

@@ -127,7 +127,15 @@ reference is admitted — while `Pulse`, composed in the same component's *view*
 answers `["Pulse"]` and would be rejected in row scope. The two answers sit in
 one child table. `mark` is forwarded on into the leaf's `tag` (ADR-0068), so a
 row-mount constant now reaches a grandchild: the row's unwritten `origin` field
-shows up two components down. -/
+shows up two components down.
+
+ADR-0104: the roster's rename input is the repository's one *uncontrolled*
+control — it binds `onInput` and no `value`, so the DOM owns its text and
+nothing in the program writes it — and it is therefore the one input the
+compiler leaves without an `autocomplete="off"`. The ownership declaration is
+a claim about who writes the control's state, not a tag test: this input keeps
+the browser's own form-state restoration because nothing here would contradict
+it. -/
 component Cuff (schema := CuffSchema) where {
   state cuffs : Int := 0;
   prop mark : String;

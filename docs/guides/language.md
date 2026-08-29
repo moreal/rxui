@@ -889,8 +889,8 @@ history write alike. The same ten thousand rows carrying only text pay
 0.15–0.32 ms for the identical write; it is the one checkbox per row that
 makes it O(N).
 
-Since ADR-0102 detached the deselected rows, that write costs **2.06 µs per
-row in the document at the moment it happens**, which the flip itself changes:
+Since ADR-0102 detached the deselected rows, that write costs **per row in
+the document at the moment it happens**, which the flip itself changes:
 un-hiding into a document that holds none of the rows is 0.33 ms and hiding
 out of one that holds all ten thousand is 20.87. Moving the write after the
 region sweeps, so a commit pays history for the document it leaves rather than
@@ -898,6 +898,26 @@ the one it entered, is therefore a **wash** and not a lowering — the hide
 direction would pay `f(N − k)` and the show direction `f(N)` instead of the
 other way round, and a filter that hides also un-hides. Measured that way it
 is 0.984–1.013× at seven cells against an A/A control of 0.972–1.037×.
+
+What *does* move it is saying who owns the control (ADR-0104). The browser
+saves a stateful form control's state into the session-history entry so it can
+restore it on a back/forward traversal, and it reaches controls a script
+created after load, so every row's checkbox was being saved on every hash
+write. A control whose `value` or `checked` the program writes — a controlled
+input, a row reflection, a `checked` selection — has nothing worth saving,
+because the mount rewrites it from the state cell; measured, what the browser
+restores on a traversal *contradicts* the cell rather than merely duplicating
+it. So the compiler emits one static `autocomplete="off"` on exactly those
+elements, and the history write falls from `2.00 µs` per row displayed to
+`0.34 µs · rows + 0.15 ms` — **5.6–5.9×** on the real emission at four cells,
+against an A/A control of 0.961–1.071× — taking a ten-thousand-row flip's hide
+commit from 23.37 to 6.89 ms and the whole round trip from 77.41 to 47.27. The
+attribute moves neither the render nor the detach — every row shape the
+language can emit is inside its own A/A band on both — and the mount is 0.998×
+at ten thousand rows, so it is a term removed and nothing traded for it. It is also not a filter's number: every
+commit that writes the hash paid it. A control the program does *not* own —
+an input with an `onInput` and no `value` — is left alone, and keeps the
+browser's restoration.
 
 And the style and layout a flip used to dirty cost **1 282 ms** when the
 deselected rows were one contiguous run, which is what a benchmark seed
@@ -937,8 +957,17 @@ node carries neither a discount nor a penalty, so the show direction is the
 price of rendering the rows and nothing else. The 14.83 µs is the row
 template's, not the framework's — 5.45 µs for a row of text, 11.36 µs for one
 carrying a `<button>`, 18.16 µs for the four cells, checkbox and two buttons
-above — and a form control costs more than a `<span>` here for the same
-reason it costs more in the history write.
+above. ADR-0104 split that by control kind and found the three axes do not
+agree: what the **render** charges for is a rendered widget (a `<button>` and
+its text are 1.69 µs against a `<span>`'s 0.43, a text input 5.27, a
+`<select>` 19.88 — but a checkbox is 0.38, no worse than a span), what the
+**history write** charges for is a *stateful* control (a checkbox 1.71 µs, a
+`<select>` 3.54 — but a `<button>` and an `<input type="hidden">` are free),
+and what the **detach** charges for is nodes (`450 ns/row + 126 ns/node`,
+plus half a microsecond for a control holding editable text). A row of a
+checkbox and two buttons is therefore cheap on the first axis and expensive on
+the second, which is why ADR-0103's six-node button row beat its seven-node
+span row.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the

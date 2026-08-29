@@ -2311,6 +2311,48 @@ test("the serialization cache re-encodes exactly the rows a write staled (ADR-00
   expect(await stored()).toBe("raw%25,raw%25,false,view;b,b,true,view");
 });
 
+test("every control the program owns declares it, and the row's does per row (ADR-0104)", async ({ page }) => {
+  await mountToggle(page);
+  // Before a row exists the document carries exactly the two static owned
+  // controls: the ADR-0055 controlled new-todo input and the ADR-0060
+  // toggle-all box whose checked follows a region count.
+  const owned = () => page.evaluate(() =>
+    document.querySelectorAll('[autocomplete="off"]').length);
+  expect(await owned()).toBe(2);
+  await expect(page.locator('#new-todo[autocomplete="off"]')).toHaveCount(1);
+  await expect(page.locator('#toggle-all[autocomplete="off"]')).toHaveCount(1);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  // Each mounted row carries its own: the checkbox's checked is the ADR-0049
+  // reflection the update sweep rewrites, so the copy a session-history entry
+  // would save can only land after the mount has already written it.
+  expect(await owned()).toBe(5);
+  await expect(page.locator('#items > li input[type="checkbox"][autocomplete="off"]'))
+    .toHaveCount(3);
+  // Entering the edit branch swaps the label span for the ADR-0047
+  // value-reflected editor, which declares ownership on the same rule; the
+  // count follows the branch in both directions.
+  await page.locator("#items > li").nth(0).locator(".item-label").dblclick();
+  await expect(page.locator("#items > li").nth(0)
+    .getByRole("textbox", { name: "Item editor" })).toBeFocused();
+  expect(await owned()).toBe(6);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#items > li").nth(0).locator(".item-label")).toHaveCount(1);
+  expect(await owned()).toBe(5);
+  // A filter flip takes rows out of the container, so the count the browser
+  // would save follows the document and not the table -- which is the whole
+  // reason the history write was 2.06 us per row displayed.
+  await page.locator("#items > li").nth(0).getByRole("checkbox", { name: "Toggle item" }).check();
+  await page.getByRole("button", { name: "Show completed" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  expect(await owned()).toBe(3);
+  await page.getByRole("button", { name: "Show all" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(3);
+  expect(await owned()).toBe(5);
+});
+
 test("the store is current at the end of every commit, not of the task (ADR-0087)", async ({ page }) => {
   await mountToggle(page);
   const count = (tx, label) => tx[7].filter((entry) => entry === label).length;
