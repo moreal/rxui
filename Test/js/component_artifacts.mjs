@@ -14,7 +14,7 @@ if (
   manifest.module !== "Counter.mjs" ||
   typeof manifest.graphHash !== "string" ||
   manifest.graphHash.length === 0 ||
-  manifest.runtimeAbi !== 18 ||
+  manifest.runtimeAbi !== 19 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "int", "string"]) ||
   manifest.sourceCount !== 1 ||

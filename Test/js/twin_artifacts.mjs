@@ -13,7 +13,7 @@ if (
   twinManifest.module !== "TwinLab.mjs" ||
   typeof twinManifest.graphHash !== "string" ||
   twinManifest.graphHash.length === 0 ||
-  twinManifest.runtimeAbi !== 18 ||
+  twinManifest.runtimeAbi !== 19 ||
   JSON.stringify(twinManifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(twinManifest.stateSlots) !==
     JSON.stringify(["int", "string", "string"]) ||

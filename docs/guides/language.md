@@ -817,9 +817,27 @@ it, so a transaction that also appends still reconciles. It runs before the
 filter sweep, which navigates by row-table position and needs the DOM back in
 step. And every wake flag that read the dirty bit as "the row set moved" reads
 the queue beside it, so the counts, the emptiness sweeps, the filter table and
-the write-back still run on a removal. An `update … remove` predicate removal
-keeps the reconcile on purpose: its row count is unbounded, and the reconcile
-clears an owned parent in bulk when nothing is retained.
+the write-back still run on a removal.
+
+An `update … remove` predicate removal takes the same queue since ADR-0100,
+and the reason it took the reconcile until then turns out not to survive
+measurement. Its row count *is* unbounded, but that is an argument for a
+threshold and there is no threshold worth emitting. Repeating the per-row
+`removeAt` beats the reconcile up to about two thousand rows out of ten
+thousand, nine hundred out of one thousand and ninety-nine out of a hundred —
+neither a constant nor a fraction, because the crossover is where the per-row
+`splice`'s quadratic term overtakes the reconcile's linear one. Nothing needs
+those *k* separate shifts of the same array: ABI 19's
+`removeMany(drops, context)` takes the whole ascending set of
+`[position, key]` pairs, disposes and detaches exactly those rows, and closes
+the gaps with one native copy per surviving run. It ties `removeAt` for a
+single row, beats repeating it by up to 3.5×, and is never worse than the
+reconcile at any *k*, so the drain calls it once whatever the length. The
+predicate removal's one loop keeps the survivors, queues each dropped row's
+position and decrements the ADR-0099 accumulator, so all three of the dirty
+bit's O(N) consumers stay asleep: no reconcile, no rescan, and a filter sweep
+that reads zero rows. Clearing one row out of a ten-thousand-row list was
+13.8 ms of commit and is now about 2.0.
 
 An `append` is the same shape from the other end, and ABI 18 gives it the
 counterpart it lacked (ADR-0098). At ten thousand rows a single-row append
@@ -853,6 +871,17 @@ last number worth knowing about a ten-thousand-row list is that the whole
 commit is about 8% of the click: the dispatch returns in 0.86 ms and the
 style and layout it dirties cost 9.5 ms more, which is the browser's and not
 the compiler's.
+
+Two more of those numbers are worth knowing before optimising anything a
+filter does (ADR-0100). Flipping a filter over ten thousand rows costs
+24.7 ms of commit, of which the sweep is **2.6** and the other 21.5 is the
+`route` field's own `location.hash` write — a fragment change invalidates
+`:target` for the whole document, and an assignment to `location.hash` with
+layout already clean and no LeanRx code in the loop measures 19.8–22.2 ms at
+ten thousand rows against 0.20 ms at one hundred. And the style and layout
+that flip dirties cost **1 282 ms**, which a control writing the same five
+thousand `hidden` bits straight onto the nodes also pays. Both are the
+browser's.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
@@ -1106,7 +1135,7 @@ A row stage may carry a *remove-if guard* (ADR-0053):
 (set field (expr), …)` — and the same `if` shape inside a `when` key arm —
 compares one row field against one string literal when the event dispatches.
 A guard hit removes the dispatching row through the same positional
-`removeAt` drain the sealed `remove` action uses (ADR-0097), reusing the
+drain the sealed `remove` action uses (ADR-0097/0100), reusing the
 position its own stage already resolved; a miss commits the else-steps
 exactly as an unguarded stage does. This is what makes TodoMVC's
 destroy-on-empty-commit expressible: guard both commit paths with

@@ -578,14 +578,19 @@ test("one chained event drains both regions in one commit", async ({ page }) => 
   // Event order: pins append before the crew removal.
   expect(after.slice.indexOf("region:pins:append"))
     .toBeLessThan(after.slice.indexOf("region:crew:removeIf"));
-  // Sweep order: crew's reconcile and write-back before pins'.
-  expect(after.slice.indexOf("region:crew:update"))
+  // Sweep order: crew's drain and write-back before pins'.
+  expect(after.slice.indexOf("region:crew:removeMany:1"))
     .toBeLessThan(after.slice.indexOf("region:pins:insertAt"));
   expect(after.slice.indexOf("storage:crew:write"))
     .toBeLessThan(after.slice.indexOf("storage:pins:write"));
-  // Pins never reconciles: one row entered it, and one row is what mounts.
+  // Neither region reconciles any more (ADR-0098, ADR-0100): one row entered
+  // pins and one row mounts, one row left crew and one row is disposed. Each
+  // region's queue guard reads only its own record, so the two record
+  // themselves independently inside the one transaction.
   expect(after.slice.filter((event) => event === "region:pins:update")).toHaveLength(0);
   expect(after.slice.filter((event) => event === "region:pins:insertAt")).toHaveLength(1);
+  expect(after.slice.filter((event) => event === "region:crew:update")).toHaveLength(0);
+  expect(after.slice.filter((event) => event === "region:crew:removeMany:1")).toHaveLength(1);
   // One removal, one mount: the static seed, the surviving member's run of
   // three, and the pin.
   expect(after.children).toBe(5);

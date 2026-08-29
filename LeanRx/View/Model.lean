@@ -287,8 +287,10 @@ def RowAction.hasGuard : RowAction → Bool
 
 /-- Whether the action can take the dispatching row out of the table: the
 sealed `remove` action, or the hit side of an ADR-0053 remove-if guard on any
-stage. Exactly the actions whose emission queues a position for the ADR-0097
-`removeAt` drain — an action that only assigns never shortens the table. -/
+stage. Exactly the actions whose emission queues a position for the ADR-0097/0100
+drain — an action that only assigns never shortens the table. Since ADR-0100
+the ADR-0050 component-event predicate removal queues into the same slot, so
+this is no longer the whole of what makes a region carry one. -/
 def RowAction.removesRow : RowAction → Bool
   | .remove => true
   | .update stage => stage.removeIf.isSome

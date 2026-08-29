@@ -144,7 +144,8 @@ function monotoneKeys(items, count) {
 // at most two moves and re-runs updateItem for them; insertAt(index, item,
 // context) mounts one row into a position and shifts the rest, and
 // removeAt(index, key, context) disposes one retained row and shifts the rest,
-// both without re-rendering anything else.
+// and removeMany(drops, context) does the same for an ascending set of them in
+// one pass, all without re-rendering anything else.
 // The key index (entries) exists only after an update needed it (a retained
 // key away from its position, or keys that are not monotone) and until an
 // update retains nothing.
@@ -307,6 +308,57 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       detach(entry.node);
       if (entries !== null) entries.delete(key);
       metrics[3] += 1;
+    },
+    // The retained rows named by drops -- strictly ascending [position, key]
+    // pairs against the order this call starts in, LRX-REGION-003 otherwise --
+    // are disposed and detached, and the survivors close the gaps with one
+    // native copy per surviving run. Every survivor keeps its handle, its node
+    // and its rendering without an update callback, exactly as removeAt leaves
+    // them; the caller owns the same order obligation removeAt gives it, once
+    // for the whole set instead of once per row.
+    removeMany(drops, context) {
+      if (disposed) return;
+      const count = drops.length;
+      if (count === 0) return;
+      const total = current.length;
+      let last = -1;
+      for (let index = 0; index < count; index += 1) {
+        const position = drops[index][0];
+        const entry = current[position];
+        if (!(position > last) || entry === undefined || entry.key !== drops[index][1]) {
+          throw mismatchedKey(position, drops[index][1]);
+        }
+        last = position;
+      }
+      // A removal that takes every row out of a parent the region owns clears
+      // it in one write, which is the rebuild path's trick and the one place
+      // the row count stops costing a detach each. count is nonzero here, so
+      // count === total implies the table is nonempty.
+      const wholesale = count === total &&
+        ownsWholeParent(parent, marker, current[0].node, total);
+      for (let index = 0; index < count; index += 1) {
+        const entry = current[drops[index][0]];
+        disposeItem(entry.handle, entry.key, context);
+        if (!wholesale) detach(entry.node);
+        if (entries !== null) entries.delete(entry.key);
+      }
+      if (wholesale) {
+        parent.textContent = "";
+        parent.appendChild(marker);
+        current.length = 0;
+      } else {
+        let write = drops[0][0];
+        for (let index = 0; index < count; index += 1) {
+          const from = drops[index][0] + 1;
+          const to = index + 1 < count ? drops[index + 1][0] : total;
+          if (to > from) {
+            current.copyWithin(write, from, to);
+            write += to - from;
+          }
+        }
+        current.length = write;
+      }
+      metrics[3] += count;
     },
     instrumentation() {
       return snapshot(metrics);

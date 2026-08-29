@@ -166,6 +166,19 @@ index exists the caller owns key freshness, exactly as it owns the shape of the
 `items` array `update` reconciles. See
 [ADR-0098](../adr/0098-positional-row-insertion.md).
 
+ABI 19 adds `removeMany(drops, context)` beside it: `drops` is a strictly
+ascending array of `[position, key]` pairs against the order the call starts
+in (`LRX-REGION-003` otherwise, checked in full before any callback or DOM
+mutation), and the rows it names are disposed and detached while the
+survivors close the gaps with one native copy per surviving run. A set that
+names every row of a parent the region owns clears it in one write. Every
+survivor keeps its handle, node and rendering, exactly as `removeAt` leaves
+them. ADR-0100 measured the crossover this replaces and emitted no threshold:
+at ten thousand rows a one-row `removeMany` ties `removeAt` and a
+thousand-row one beats repeating it 3.5×, while the reconcile is 1.0× to 210×
+worse across the whole range. See
+[ADR-0100](../adr/0100-bulk-row-removal.md).
+
 No ABI moves for ADR-0099, but the *region record* gains a final slot: the
 predicate accumulator, one cell per distinct field equality the region's
 sealed aggregates read, present only when it has one. It sits behind the

@@ -13,7 +13,7 @@ if (
   mixManifest.module !== "MixLab.mjs" ||
   typeof mixManifest.graphHash !== "string" ||
   mixManifest.graphHash.length === 0 ||
-  mixManifest.runtimeAbi !== 18 ||
+  mixManifest.runtimeAbi !== 19 ||
   JSON.stringify(mixManifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(mixManifest.stateSlots) !== JSON.stringify(["int", "string"]) ||
   mixManifest.sourceCount !== 2 ||
@@ -188,11 +188,15 @@ for (const required of [
   // ADR-0078: one chained event touches both regions in one transaction — the
   // pins append and the crew removal record themselves in *event* order, and
   // the commit sweep then drains them in *region declaration* order, crew
-  // before pins. Since ADR-0098 the two record themselves differently: the
-  // unbounded predicate removal still raises crew's dirty flag, while the
-  // single appended row counts itself in pins' last slot.
+  // before pins. Since ADR-0098 the two record themselves differently, and
+  // since ADR-0100 neither raises a dirty flag at all: the appended row counts
+  // itself in pins' last slot, and the predicate removal queues one position
+  // per dropped crew row for the `removeMany` drain. Each region's guard reads
+  // only its own record, so the two record themselves independently in one
+  // transaction — crew's `drop_clean_1` names crew's three slots.
   "  tx[7][\"push\"](\"event:stowDone\");\n  regions[1][1][\"push\"]([regions[1][2], $lrx_event_4_append_0_0(state[0], state[1]), null]);\n  regions[1][2] += 1;\n  regions[1][9] += 1;\n  tx[7][\"push\"](\"region:pins:append\");",
-  "  regions[0][1] = kept_1;\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:crew:removeIf\");",
+  "  const drop_clean_1 = regions[0][9][\"length\"] === 0 && regions[0][4][\"length\"] === 0 && regions[0][10] === 0;",
+  "  regions[0][1] = kept_1;\n  if (!drop_clean_1) {\n    regions[0][3] = true;\n  }\n  tx[7][\"push\"](\"region:crew:removeIf\");",
   // ADR-0092: one key search serves the whole module. Both regions' dispatch
   // functions call the same helper on their own row table, and neither
   // carries a copy of it — the search belongs to the row-table *shape*, which

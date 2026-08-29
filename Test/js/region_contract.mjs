@@ -56,6 +56,7 @@ const SURFACE = {
     swapAt: { 2: "table" },
     insertAt: { 1: "row" },
     removeAt: {},
+    removeMany: { 0: "list" },
     instrumentation: {},
     dispose: {},
   },

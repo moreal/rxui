@@ -16,7 +16,7 @@ if (
   // The ADR-0063 execution round is the one ABI 17 bump: five sealed DOM-host
   // exports (readHash, listenHash, writeHash, storageGet, storageSet) for the
   // routing and persistence vocabularies.
-  manifest.runtimeAbi !== 18 ||
+  manifest.runtimeAbi !== 19 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "string", "string"]) ||
   manifest.sourceCount !== 3 ||
@@ -168,14 +168,14 @@ for (const required of [
   // commits the trimmed assignment sequence.
   // ADR-0092: a guard hit already stands on a resolved position, so it
   // splices at `scan[1]` unconditionally — no second search, and no rebuild.
-  "      if (scan !== -1) {\n        const row_item = regions[0][1][scan];\n        const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n        if (row_guard) {\n          if (regions[0][1][scan][3] === \"false\") {\n            regions[0][10][0] -= 1;\n          }\n          if (regions[0][1][scan][3] === \"true\") {\n            regions[0][10][1] -= 1;\n          }\n          if (regions[0][1][scan][4] === \"edit\") {\n            regions[0][10][2] -= 1;\n          }\n          regions[0][1][\"splice\"](scan, 1);\n          const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n          if (drop_queued) {\n            regions[0][8][\"push\"]([scan, key]);\n          }\n          if (!drop_queued) {\n            regions[0][3] = true;\n          }\n          tx[7][\"push\"](\"region:items:keys\");",
+  "      if (scan !== -1) {\n        const row_item = regions[0][1][scan];\n        const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n        if (row_guard) {\n          if (regions[0][1][scan][3] === \"false\") {\n            regions[0][10][0] -= 1;\n          }\n          if (regions[0][1][scan][3] === \"true\") {\n            regions[0][10][1] -= 1;\n          }\n          if (regions[0][1][scan][4] === \"edit\") {\n            regions[0][10][2] -= 1;\n          }\n          regions[0][1][\"splice\"](scan, 1);\n          const drop_queued = regions[0][8][\"length\"] === 0 && regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n          if (drop_queued) {\n            regions[0][8][\"push\"]([scan, key]);\n          }\n          if (!drop_queued) {\n            regions[0][3] = true;\n          }\n          tx[7][\"push\"](\"region:items:keys\");",
   "        const row_next_0 = row_item[1];\n        const row_next_1 = \"view\";\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] -= 1;\n        }\n        row_item[2] = row_next_0;\n        row_item[4] = row_next_1;\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] += 1;\n        }",
   // The ADR-0053 guarded commit with the ADR-0054 trim contract: the OK
   // button's action branch carries the same trimmed guard equality, trimmed
   // label commit, and removal sequence — destroy-on-whitespace-commit
   // through both commit paths, with the Escape revert arm unguarded and
   // untrimmed.
-  "      const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      if (row_guard) {\n        if (regions[0][1][scan][3] === \"false\") {\n          regions[0][10][0] -= 1;\n        }\n        if (regions[0][1][scan][3] === \"true\") {\n          regions[0][10][1] -= 1;\n        }\n        if (regions[0][1][scan][4] === \"edit\") {\n          regions[0][10][2] -= 1;\n        }\n        regions[0][1][\"splice\"](scan, 1);\n        const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n        if (drop_queued) {\n          regions[0][8][\"push\"]([scan, key]);\n        }\n        if (!drop_queued) {\n          regions[0][3] = true;\n        }\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_2 = \"view\";\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] -= 1;\n        }\n        row_item[1] = row_next_0;\n        row_item[2] = row_next_1;\n        row_item[4] = row_next_2;\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] += 1;\n        }\n        row_item[5] = null;\n        regions[0][4][\"push\"](scan);\n        tx[7][\"push\"](\"region:items:commit\");",
+  "      const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      if (row_guard) {\n        if (regions[0][1][scan][3] === \"false\") {\n          regions[0][10][0] -= 1;\n        }\n        if (regions[0][1][scan][3] === \"true\") {\n          regions[0][10][1] -= 1;\n        }\n        if (regions[0][1][scan][4] === \"edit\") {\n          regions[0][10][2] -= 1;\n        }\n        regions[0][1][\"splice\"](scan, 1);\n        const drop_queued = regions[0][8][\"length\"] === 0 && regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n        if (drop_queued) {\n          regions[0][8][\"push\"]([scan, key]);\n        }\n        if (!drop_queued) {\n          regions[0][3] = true;\n        }\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_2 = \"view\";\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] -= 1;\n        }\n        row_item[1] = row_next_0;\n        row_item[2] = row_next_1;\n        row_item[4] = row_next_2;\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] += 1;\n        }\n        row_item[5] = null;\n        regions[0][4][\"push\"](scan);\n        tx[7][\"push\"](\"region:items:commit\");",
   // ADR-0092: the key search is one module-level helper, shared by every
   // region and every branch, and `scan` is the position it returns. The loop
   // is the one `while` the emitter models: the window is half-open, the
@@ -264,13 +264,16 @@ for (const required of [
   // have shifted. The `-1` branch is unreachable from a mounted row's own
   // button and is emitted anyway; an absent key now changes nothing at all
   // but the trace, because there is no position to queue.
-  "    const drop = $lrx_row_seek(regions[0][1], key);\n    if (drop !== -1) {\n      if (regions[0][1][drop][3] === \"false\") {\n        regions[0][10][0] -= 1;\n      }\n      if (regions[0][1][drop][3] === \"true\") {\n        regions[0][10][1] -= 1;\n      }\n      if (regions[0][1][drop][4] === \"edit\") {\n        regions[0][10][2] -= 1;\n      }\n      regions[0][1][\"splice\"](drop, 1);\n      const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n      if (drop_queued) {\n        regions[0][8][\"push\"]([drop, key]);\n      }\n      if (!drop_queued) {\n        regions[0][3] = true;\n      }\n    }",
-  // The ADR-0097 drain, ahead of the reconcile and ahead of the ADR-0051
-  // filter sweep that navigates by row-table position: one `removeAt` per
-  // queued pair, in the order the table was spliced, and the queue is
-  // emptied. Every survivor keeps its DOM node and its generated row-update
-  // callback goes unrun.
-  "    if (regions[0][8][\"length\"] !== 0) {\n      for (const dropped_row of regions[0][8]) {\n        regions[0][0][\"removeAt\"](dropped_row[0], dropped_row[1], null);\n        tx[7][\"push\"](\"region:items:removeAt\");\n      }\n      regions[0][8] = [];\n    }\n    if (regions[0][3]) {\n      regions[0][3] = false;\n      regions[0][0][\"update\"](regions[0][1], null);",
+  "    const drop = $lrx_row_seek(regions[0][1], key);\n    if (drop !== -1) {\n      if (regions[0][1][drop][3] === \"false\") {\n        regions[0][10][0] -= 1;\n      }\n      if (regions[0][1][drop][3] === \"true\") {\n        regions[0][10][1] -= 1;\n      }\n      if (regions[0][1][drop][4] === \"edit\") {\n        regions[0][10][2] -= 1;\n      }\n      regions[0][1][\"splice\"](drop, 1);\n      const drop_queued = regions[0][8][\"length\"] === 0 && regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n      if (drop_queued) {\n        regions[0][8][\"push\"]([drop, key]);\n      }\n      if (!drop_queued) {\n        regions[0][3] = true;\n      }\n    }",
+  // The ADR-0097/0100 drain, ahead of the reconcile and ahead of the ADR-0051
+  // filter sweep that navigates by row-table position: one `removeMany` for
+  // the whole ascending queue, whatever its length, and the queue is emptied.
+  // Every survivor keeps its DOM node and its generated row-update callback
+  // goes unrun. ADR-0100 measured a threshold here and emitted none: at ten
+  // thousand rows a one-row `removeMany` ties the `removeAt` loop it replaces
+  // and a thousand-row one beats repeating it 3.5x, while the reconcile below
+  // is 1.0x to 210x worse across the whole range.
+  "    if (regions[0][8][\"length\"] !== 0) {\n      regions[0][0][\"removeMany\"](regions[0][8], null);\n      tx[7][\"push\"](\"region:items:removeMany:\" + regions[0][8][\"length\"]);\n      regions[0][8] = [];\n    }\n    if (regions[0][3]) {\n      regions[0][3] = false;\n      regions[0][0][\"update\"](regions[0][1], null);",
   // ADR-0098: the append is a tail push that counts itself in the record's
   // last slot instead of raising the dirty bit, so the reconcile the count
   // replaced never runs for it.
@@ -305,10 +308,16 @@ for (const required of [
   // mounts as the else string — the mounted DOM text of the empty region.
   "const regions = [[region_0, [], 0, false, [], [count_text_19, count_text_20, count_text_22], [0, \" items left\", 0], node_14, [], 0, [0, 0, 0]]];",
   // The broadcast writes every row from the sealed row expression and raises
-  // the dirty flag; the predicate removal keeps the non-matching rows.
+  // the dirty flag: every row's DOM has to be rewritten either way, and
+  // ADR-0100 measured the alternative — N `updateAt` calls against the one
+  // reconcile — at 0.98x on ten thousand rows, which is no win at all.
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n    row_item[5] = null;\n  }\n  regions[0][3] = true;",
-  "  const kept_0 = [];",
-  "  regions[0][1] = kept_0;",
+  // ADR-0100: the predicate removal's one loop keeps the survivors, queues
+  // each dropped row's position for the `removeMany` drain, and decrements
+  // the ADR-0099 accumulator by exactly what left — so no dirty bit, no
+  // rescan, and the ADR-0051 sweep takes its narrow path and reads zero. The
+  // fallback is the same shape ADR-0097 emits and is unreachable today.
+  "  const kept_0 = [];\n  const drop_clean_0 = regions[0][8][\"length\"] === 0 && regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n  const drop_at_0 = [0];\n  for (const row_entry of regions[0][1]) {\n    const drop_hit_0 = row_entry[3] === \"true\";\n    if (!drop_hit_0) {\n      kept_0[\"push\"](row_entry);\n    }\n    if (drop_hit_0) {\n      if (drop_clean_0) {\n        regions[0][8][\"push\"]([drop_at_0[0], row_entry[0]]);\n      }\n      if (row_entry[3] === \"false\") {\n        regions[0][10][0] -= 1;\n      }\n      if (row_entry[3] === \"true\") {\n        regions[0][10][1] -= 1;\n      }\n      if (row_entry[4] === \"edit\") {\n        regions[0][10][2] -= 1;\n      }\n    }\n    drop_at_0[0] += 1;\n  }\n  regions[0][1] = kept_0;\n  if (!drop_clean_0) {\n    regions[0][3] = true;\n  }\n  tx[7][\"push\"](\"region:items:removeIf\");",
   // The count sweep reads its wake flag before the reconcile consumes it,
   // recomputes each count form, and writes through setText. The ADR-0062
   // label count rides the predicate block: the recomputed predicate count

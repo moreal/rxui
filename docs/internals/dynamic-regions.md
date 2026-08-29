@@ -122,10 +122,26 @@ row's payload depends on its position). `removeAt` unregisters the key only
 while an index exists; validation always fails before any callback or DOM
 mutation. Since ADR-0097 the component backend shows exactly that for a
 sealed single-row removal — the `remove` row action and every ADR-0053
-remove-if guard hit — and emits `removeAt` for it: the dispatch queues the
+remove-if guard hit: the dispatch queues the
 position ADR-0092's key search already resolved and the commit sweep drains
 the queue before the reconcile, so the host's `update` is not entered and no
 retained row's update callback runs.
+
+ABI 19 makes that drain unbounded. `removeMany(drops, context)` takes a
+strictly ascending array of `[position, key]` pairs against the order the call
+starts in, validates every pair before any callback or DOM mutation
+(`LRX-REGION-003`), disposes and detaches exactly those rows, and closes the
+gaps with one native copy per surviving run — one write clears a parent the
+region owns outright when the set is the whole table. Since ADR-0100 the
+commit sweep drains the whole queue through it whatever the length, and the
+ADR-0050 component-event predicate removal queues into the same slot instead
+of raising the dirty bit: the one loop that keeps the survivors also records
+each dropped row's position and decrements the ADR-0099 accumulator, so no
+reconcile, no rescan, and the ADR-0051 sweep takes its narrow path and reads
+zero rows. ADR-0100 emitted no threshold because it measured that none is
+worth emitting: a one-row `removeMany` ties the `removeAt` loop it replaces,
+a thousand-row one beats it 3.5×, and the reconcile is never more than 1.0×
+better anywhere.
 
 ABI 18 adds the mounting counterpart: `insertAt(index, item, context)` mounts
 one row through `mountItem` and places it before the row that holds `index`
@@ -140,8 +156,8 @@ push shifts nothing, so no position is stored and none can go stale. The drain f
 and a tail insert pushes each row's children onto its end — where the
 reconcile's own in-order mount loop would have put them; a mid-table caller
 would owe that argument separately. A
-component-event predicate removal, a broadcast and the ADR-0063 hydration
-still reconcile; the hydration deliberately, because its rows arrive as a whole
+broadcast and the ADR-0063 hydration still reconcile; the hydration
+deliberately, because its rows arrive as a whole
 table into an empty region, where the reconcile clears and refills an owned
 parent detached.
 

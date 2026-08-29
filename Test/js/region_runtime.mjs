@@ -1053,6 +1053,85 @@ function values(parent) {
 }
 
 {
+  // removeMany (ADR-0100) takes an ascending set of [position, key] pairs in
+  // the order the call starts in: it disposes and detaches exactly those rows,
+  // closes the gaps without one update callback, unregisters the keys, checks
+  // every pair before it touches anything, and clears a parent it owns in one
+  // write when the set is the whole table.
+  const parent = new FakeParent();
+  const updates = [];
+  const disposals = [];
+  const region = createKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}`)],
+    (handle, item, index, context) => { updates.push([item[0], index, context]); },
+    (handle, key, context) => { disposals.push([key, context]); },
+    (handle) => handle[0],
+  );
+  const table = [[1, "a"], [2, "b"], [3, "c"], [4, "d"], [5, "e"], [6, "f"]];
+  region.update(table);
+  const nodes = parent.children.slice(0, 6);
+  const context = { tag: "many" };
+  region.removeMany([[0, 1], [2, 3], [3, 4]], context);
+  if (JSON.stringify(values(parent)) !== '["2","5","6"]' ||
+      parent.children[0] !== nodes[1] || parent.children[1] !== nodes[4] ||
+      parent.children[2] !== nodes[5] || updates.length !== 0 ||
+      nodes[0].parentNode !== null || nodes[2].parentNode !== null ||
+      nodes[3].parentNode !== null ||
+      JSON.stringify(disposals) !== '[[1,{"tag":"many"}],[3,{"tag":"many"}],[4,{"tag":"many"}]]' ||
+      JSON.stringify(region.instrumentation()) !== "[6,0,6,3]") {
+    throw new Error(`removeMany did not remove exactly the named rows: ${JSON.stringify(values(parent))}`);
+  }
+  // An empty set is a no-op, and every rejection leaves the table untouched:
+  // a key that is not at its position, a descending pair, a repeated one, and
+  // a position past the end.
+  region.removeMany([], context);
+  function expectManyMismatch(drops) {
+    let failed = false;
+    try {
+      region.removeMany(drops, context);
+    } catch (error) {
+      failed = String(error).includes("LRX-REGION-003");
+    }
+    if (!failed || disposals.length !== 3 || JSON.stringify(values(parent)) !== '["2","5","6"]') {
+      throw new Error(`removeMany accepted ${JSON.stringify(drops)}`);
+    }
+  }
+  expectManyMismatch([[0, 5]]);
+  expectManyMismatch([[1, 5], [0, 2]]);
+  expectManyMismatch([[1, 5], [1, 5]]);
+  expectManyMismatch([[3, 6]]);
+  expectManyMismatch([[0, 2], [2, 7]]);
+  // The keys of the removed rows are gone from the index the earlier update
+  // built, so reusing one mounts a fresh row rather than resurrecting a node.
+  region.update([[2, "b"], [5, "e"], [6, "f"], [1, "a"]]);
+  if (JSON.stringify(values(parent)) !== '["2","5","6","1"]' ||
+      parent.children[3] === nodes[0] ||
+      JSON.stringify(region.instrumentation()) !== "[7,3,7,3]") {
+    throw new Error("removeMany left a stale key behind");
+  }
+  // The whole table at once: the region owns its parent, so the nodes leave in
+  // one clear rather than one detach each, and the marker survives it.
+  const marker = parent.children[parent.children.length - 1];
+  region.removeMany([[0, 2], [1, 5], [2, 6], [3, 1]], context);
+  if (values(parent).length !== 0 || parent.bulkClears !== 1 ||
+      parent.children.length !== 1 || parent.children[0] !== marker ||
+      disposals.length !== 7 ||
+      JSON.stringify(region.instrumentation()) !== "[7,3,7,7]") {
+    throw new Error("removeMany did not clear a parent the region owns in one write");
+  }
+  region.update([[8, "h"], [9, "i"]]);
+  if (JSON.stringify(values(parent)) !== '["8","9"]') {
+    throw new Error("removeMany left the emptied region unable to remount");
+  }
+  region.dispose();
+  region.removeMany([[0, 8]], context);
+  if (disposals.length !== 9 || parent.children.length !== 0) {
+    throw new Error("removeMany ran after disposal");
+  }
+}
+
+{
   // insertAt mounts one row into a position and shifts the rest, without an
   // update callback anywhere else: at the tail before the marker, at the
   // front and in the middle before the row that holds the position now.

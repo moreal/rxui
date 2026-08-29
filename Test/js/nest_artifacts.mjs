@@ -13,7 +13,7 @@ if (
   nestManifest.module !== "NestLab.mjs" ||
   typeof nestManifest.graphHash !== "string" ||
   nestManifest.graphHash.length === 0 ||
-  nestManifest.runtimeAbi !== 18 ||
+  nestManifest.runtimeAbi !== 19 ||
   JSON.stringify(nestManifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(nestManifest.stateSlots) !== JSON.stringify(["int", "int"]) ||
   nestManifest.sourceCount !== 2 ||

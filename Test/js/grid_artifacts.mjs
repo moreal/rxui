@@ -10,7 +10,7 @@ const expected = JSON.parse(fs.readFileSync(path.join(directory, "DataGrid.expec
 const readable = fs.readFileSync(path.join(directory, "DataGrid.mjs"), "utf8");
 const compact = fs.readFileSync(path.join(directory, "DataGrid.min.mjs"), "utf8");
 
-if (manifest.runtimeAbi !== 18 || manifest.module !== "DataGrid.mjs" ||
+if (manifest.runtimeAbi !== 19 || manifest.module !== "DataGrid.mjs" ||
     JSON.stringify(manifest.exports) !== '["mountFull","mountDelta","mountHybrid"]' ||
     manifest.graphHash !== "grid:10000:5000:10:1:9998:7777:256:8:3:1" ||
     JSON.stringify(manifest.stateSlots) !==

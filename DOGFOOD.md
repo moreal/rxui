@@ -6533,3 +6533,174 @@ expectations, two rewritten browser witnesses, the guide's sweep paragraphs,
 both internals notes, the ADR, the DECISIONS.md row and this record.
 **ADR-0098 OQ1 is closed**, and what it leaves is one number: the 9.5 ms of
 layout that the whole commit is 8% of.
+
+## A removal removes its rows, however many there are (ADR-0100)
+
+### What was built
+
+ADR-0099 closed on the bulk threshold, the question ADR-0097 and ADR-0098 had
+each deferred, and noted that the dirty bit now had three O(N) consumers
+rather than two. The round asked whether a threshold in the generated code is
+justified and demanded the crossover as a number. It is a number, and the
+answer is that no threshold should be emitted.
+
+**Where a wide path's time is.** The ADR-0099 probes re-anchored on the wide
+paths, at 100, 1 000 and 10 000 rows. A `removeIf` at ten thousand rows that
+removes **one** row costs 13.76 ms of commit, of which **12.41 is the
+reconcile**; the ADR-0099 rescan is 0.15 and the ADR-0051 wide sweep 0.18,
+together 2.4%. The reconcile is nearly flat in the number removed and linear
+in the table, because what it costs is re-rendering the rows it *retains*.
+
+**The crossover, as asked.** Repeating the host's per-row `removeAt` beats
+handing the table to `update` up to about **2 000 rows of 10 000, 900 of
+1 000 and 99 of 100** — 0.20, 0.90 and 0.99 of the table. So the boundary is
+**neither a constant nor a ratio**, and the model says why: the reconcile
+costs `a·(N − k)` with *a* ≈ 1.15 µs of `updateItem` per retained row, the
+per-row loop costs *k* splices each moving about `N − k/2` elements at
+≈ 0.5 ns, and the crossing solves `a(N − k) = σk(N − k/2)` — a constant
+`a/σ` ≈ 2 300 while *k* ≪ *N*, collapsing toward *N* as *k* approaches it.
+Fitting σ at ten thousand rows predicts 790 and 96 out of sample against 900
+and 99 measured.
+
+**And the crossover is an artifact of the splice.** Nothing about a bulk
+removal needs *k* separate shifts of the same array. ABI 19's
+`removeMany(drops, context)` takes the whole strictly ascending array of
+`[position, key]` pairs, validates every pair before any callback or DOM
+mutation, disposes and detaches its rows, and closes the gaps with **one
+native `copyWithin` per surviving run** — a set naming every row of a parent
+the region owns clears it in one write instead. It **ties `removeAt` at one
+row** (0.92–1.22×, inside the harness's bias floor), **beats it up to 3.54×**
+at a thousand, and is **never worse than the reconcile anywhere** (0.99×
+worst, 210× best). So the drain calls it once whatever the length, and the
+ADR-0050 predicate removal queues into the same slot: its one survivor loop
+now also records each dropped position and applies the ADR-0099 accumulator
+decrement, so all three of the dirty bit's O(N) consumers go quiet together —
+no reconcile, no rescan, and a filter sweep that reads **zero** rows.
+
+**Three declines, each with a number.** The **broadcast** keeps the
+reconcile: one `update` against *N* `updateAt` is 11.92 against 12.12 ms at
+ten thousand rows, **0.98×**, because the per-row update loop *is* what a
+broadcast owes. **Hydration** keeps it again: one `update` into an empty
+region against *N* `insertAt` is 37.05 against 36.04 ms, **1.03×**, inside
+the bias floor and against ADR-0098's detached-rebuild shape. And the
+**filter sweep** has nothing to fold, because the largest number in
+ADR-0099's paired table was misread.
+
+### The 20.5 ms cell, taken apart
+
+Of a ten-thousand-row filter flip's 24.66 ms commit, the sweep is **2.56 ms**.
+The other 21.5 is one statement — ADR-0063's `writeHash`. Timed bare, with
+layout already clean and no LeanRx code between the two clock reads, an
+assignment to `location.hash` costs **19.8–22.2 ms at ten thousand rows,
+1.9–2.1 at one thousand and 0.20 at one hundred**: a fragment change
+invalidates `:target` for the whole document, so it is O(N) and it is the
+browser's.
+
+The layout *after* the flip is worse and equally not ours. Hiding five
+thousand of ten thousand rows costs **1 282 ms** of forced style and layout,
+and a control that writes the same five thousand `hidden` bits straight onto
+the nodes — no sweep, no framework, one loop — pays **1 237 ms** for the same
+flip and 126 ms for the reverse.
+
+### The harness bugs that would have been findings
+
+Two, and both produced a number first.
+
+**A probe anchored on generated text measures zero when the text moves.** The
+injector asserts an exact count on both ends of every probe — sixteen, one
+per transaction function — and two of nine anchors were wrong on the first
+run: one matched *thirty-two* times, because the reconcile's tail and the
+append drain's end are the same two lines, and one matched *fifteen*, because
+the region's own dispatch function spells the filter sweep's guard
+`region_drain_0_0` rather than `region_touched_0`. Neither would have thrown.
+
+**Seeding a row table is not committing one.** The first seed installed rows
+straight into the record and reconciled them, which leaves every attr cache
+saying what it said while the region was empty — including the ADR-0058
+`hidden` on the list wrapper. Every DOM write in every cell then went into a
+`display:none` subtree, and the forced layout after a five-thousand-row
+filter flip read **0.010 ms** instead of 1 282. The seed now settles through
+one real, untimed commit; a `<ul>` whose `getBoundingClientRect().height` is
+zero while it holds ten thousand `<li>` is what said so.
+
+A third one shaped the schedule rather than a number: re-seeding with *fresh*
+keys makes every reset a full dispose-and-remount, which is 350 ms per
+repetition at ten thousand rows and turned one paired cell into five minutes.
+Seeding the same keys every time makes the reset a retained reconcile, and
+the same cell into forty seconds.
+
+### What it cost
+
+Paired A/B, ten passes, ABBA inside every cell, medians of per-cell minima,
+every node lookup outside the timed step. The **A/A control** — the same dist
+against a byte copy of itself — read **0.980–1.017×** across all thirteen
+cells before anything else was read.
+
+`removeIf` at ten thousand rows: **9.39×** for one row, **7.09×** for a
+hundred, **3.29×** for a thousand, **1.32×** for five thousand; at one
+thousand rows, **6.02×** for one and **2.48×** for a hundred. The three
+declines sit inside the A/A band — broadcast 0.996×, hydrate 0.998×, filter
+flip 0.981× — which is the statement that nothing was taken from the paths
+the decision keeps.
+
+Two cells sat outside the band and a sixteen-pass re-run with its own A/A
+control separated them. The **`append` at 0.880× was noise**: re-run it reads
+**1.023×** against an A/A of 1.013×, and it could not have been anything
+else, because the two emissions of that transaction function differ only
+*inside* a branch an append never enters. **Removing almost every row is a
+real 4%**, and it reproduces: 0.958× at 9 999 of 10 000 and 0.980× at 999 of
+1 000. That is the far end of the crossover — with one row retained the
+reconcile has no `updateItem` loop left to skip and both paths owe the same
+*k* detaches — and removing *every* row is 1.00×, because there the drain
+takes the same one-write clear. Trading 4% at *k*/*N* = 0.999 for 9.4× at
+*k* = 1 is the trade one call makes, and a threshold that recovered it would
+have to fire within a row of the table's length.
+
+### Compiler and gate work
+
+`runtimeAbi` 18 → 19 with twenty-six mechanical references — the version
+constant, seventeen artifact gates, six Lean backend tests, the scalar
+manifest string, the CLI doctor line and the region contract's surface table,
+where a new export has to declare which of its arguments are caller arrays or
+H3 fails.
+
+**The js-framework-benchmark size baseline moves again**, and for the same
+reason ADR-0098's did: that backend inlines the whole keyed host, so
+`main.mjs` grows **8 776 → 9 345 raw bytes (+6.5%, brotli 3 200 → 3 400)**
+for an export its own emission never calls. BENCHMARK.md's timings are
+unaffected and untouched.
+
+Five generated modules change — exactly the five labs that declare a removing
+path, Branch, Nest, Twin, Mix and Toggle — and **no record slot moves
+anywhere**, because every region that gains the widened drops queue already
+had one. Toggle Lab's module gets **174 bytes smaller**: the drain's loop and
+its per-row trace push cost more than the predicate removal's queue
+bookkeeping.
+
+### Follow-up issue or commit
+
+The witness is a count of rows, not of calls: the drain's trace entry carries
+its length, `region:{region}:removeMany:{n}`. One Toggle Lab test pins a
+three-gap predicate removal at one call for three rows with zero mounts, zero
+updates, zero moves, three disposals, every survivor keeping its exact DOM
+node, *no* `predicate:items:read:` entry at all, and `filter:items:read:0`
+beside `filter:items:written:0` — then flips the filter to prove the
+survivors are still addressable by position. A second pins the whole-table
+case at one `removeMany:4` into an emptied, re-mountable region. A third
+assertion, on the test that was already there, pins the *empty* clear: a
+predicate that matches nothing is now a no-op in the trace too, where before
+it reconciled the table and rewrote the store to the bytes already in it.
+Mix Lab's chained event now drains both regions in one commit and reconciles
+neither.
+
+`feat(component): drain an unbounded row removal through one removeMany
+(ADR-0100)` — the host export and its gate section, the widened
+`regionRemovesRows` and the drop-slot table, the predicate removal's queued
+positions and accumulator decrements, the one-call drain, the ABI bump and
+its twenty-six references, the size baseline, three browser witnesses, two
+labs' artifact expectations, the guide, both internals notes, the ADR, the
+DECISIONS.md row and this record. **ADR-0099 OQ3 is closed**, and what it
+leaves is the two numbers that dwarf everything the compiler reaches: one
+`location.hash` write costing 20 ms at ten thousand rows, and 1 282 ms of
+style and layout for a filter flip that a framework-free control pays in
+full.
