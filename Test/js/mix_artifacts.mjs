@@ -21,7 +21,9 @@ if (
   mixManifest.textSinkCount !== 0 ||
   mixManifest.eventCount !== 8 ||
   JSON.stringify(mixManifest.hostImports) !==
-    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs", "./Badge.mjs"]) ||
+    JSON.stringify([
+      "./leanrx_dom.mjs", "./leanrx_region.mjs", "./Badge.mjs", "./Stamp.mjs",
+    ]) ||
   JSON.stringify(mixManifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
     "attr-selections", "child-components", "keyed-regions",
@@ -48,8 +50,27 @@ if (
   throw new Error("generated Badge manifest is invalid");
 }
 
+// ADR-0089: the second row-composed child module — the crew row mounts it
+// twice through the one aliased import, so its manifest must be the same
+// plain immutable-prop leaf the single-instance Badge is.
+const stampManifest = JSON.parse(
+  await readFile(path.join(directory, "Stamp.mjs.manifest.json"), "utf8"),
+);
+if (
+  stampManifest.module !== "Stamp.mjs" ||
+  JSON.stringify(stampManifest.hostImports) !==
+    JSON.stringify(["./leanrx_dom.mjs"]) ||
+  JSON.stringify(stampManifest.features) !== JSON.stringify([
+    "scalar", "events", "transactions", "instrumentation", "trace",
+    "immutable-props",
+  ])
+) {
+  throw new Error("generated Stamp manifest is invalid");
+}
+
 const mixSource = await readFile(path.join(directory, "MixLab.mjs"), "utf8");
 const badgeSource = await readFile(path.join(directory, "Badge.mjs"), "utf8");
+const stampSource = await readFile(path.join(directory, "Stamp.mjs"), "utf8");
 // ADR-0087 seals the flush point: a persisted region's storageSet runs inside
 // the commit, so the store is current the moment the dispatch returns. The
 // deferral primitives a per-task flush would need are banned outright, so the
@@ -58,12 +79,16 @@ for (const banned of [
   "currentObserver", "new Proxy", "eval(", "Function(",
   "queueMicrotask", "setTimeout", "requestAnimationFrame", "Promise",
 ]) {
-  if (mixSource.includes(banned) || badgeSource.includes(banned)) {
+  if (
+    mixSource.includes(banned) || badgeSource.includes(banned) ||
+    stampSource.includes(banned)
+  ) {
     throw new Error(`generated Mix Lab contains ${banned}`);
   }
 }
 for (const required of [
   "import { mount as $lrx_child_0 } from \"./Badge.mjs\";",
+  "import { mount as $lrx_child_1 } from \"./Stamp.mjs\";",
   "import { createKeyedRegion } from \"./leanrx_region.mjs\";",
   "const region_0 = createKeyedRegion(node_13, $lrx_region_0_row, $lrx_region_0_update, $lrx_region_0_dispose);",
   "const region_1 = createKeyedRegion(node_27, $lrx_region_1_row, $lrx_region_1_update, $lrx_region_1_dispose);",
@@ -117,12 +142,20 @@ for (const required of [
   // the live inventory; each region's dispose callback splices its own row's
   // stashed instance back out by indexOf — a per-row function identity, so
   // neither region can misidentify the other's entries (ADR-0077).
-  "const row_child_0 = $lrx_child_0(row_0, [item[3]]);",
-  "const row_child_0 = $lrx_child_0(row_0, [item[1]]);",
-  "context[\"push\"](row_child_0);",
-  "row_0[\"$lrxRowChild\"] = row_child_0;",
-  "function $lrx_region_0_dispose(row, key, context) {\n  if (context) {\n    context[\"splice\"](context[\"indexOf\"](row[\"$lrxRowChild\"]), 1);\n  }\n  row[\"$lrxRowChild\"]();\n  return null;\n}",
-  "function $lrx_region_1_dispose(row, key, context) {\n  if (context) {\n    context[\"splice\"](context[\"indexOf\"](row[\"$lrxRowChild\"]), 1);\n  }\n  row[\"$lrxRowChild\"]();\n  return null;\n}",
+  // ADR-0089: the crew row mounts three children in template order — one
+  // Badge and the same Stamp twice, the repeat through the one aliased
+  // import with its own props — each pushed into the shared inventory at its
+  // own mount point, and the row root stashes the mount returns as a list.
+  // The pins row keeps a single child, so one component holds a one-child
+  // and a three-child region against the same inventory.
+  "  const row_child_0 = $lrx_child_0(row_0, [item[3]]);\n  context[\"push\"](row_child_0);\n  const row_child_1 = $lrx_child_1(row_0, [item[1]]);\n  context[\"push\"](row_child_1);\n  const row_child_2 = $lrx_child_1(row_0, [\"crew stamp\"]);\n  context[\"push\"](row_child_2);\n  row_0[\"$lrxRowChild\"] = [row_child_0, row_child_1, row_child_2];",
+  "  const row_child_0 = $lrx_child_0(row_0, [item[1]]);\n  context[\"push\"](row_child_0);\n  row_0[\"$lrxRowChild\"] = [row_child_0];",
+  // The dispose callback is one loop over the stash, identical in both
+  // regions: its body no longer depends on how many children the template
+  // composes, and each entry leaves the inventory by its own identity, never
+  // by position, so neither the repeat pair nor a neighbouring row collide.
+  "function $lrx_region_0_dispose(row, key, context) {\n  for (const row_child of row[\"$lrxRowChild\"]) {\n    if (context) {\n      context[\"splice\"](context[\"indexOf\"](row_child), 1);\n    }\n    row_child();\n  }\n  return null;\n}",
+  "function $lrx_region_1_dispose(row, key, context) {\n  for (const row_child of row[\"$lrxRowChild\"]) {\n    if (context) {\n      context[\"splice\"](context[\"indexOf\"](row_child), 1);\n    }\n    row_child();\n  }\n  return null;\n}",
   // ADR-0077: the pins rows are immutable — the retained-row callback is the
   // no-op, so a retained pin touches neither its DOM nor its child.
   "function $lrx_region_1_update(row, item, position, context) {\n  return null;\n}",
@@ -159,8 +192,8 @@ for (const required of [
   "  tx[7][\"push\"](\"event:stowDone\");\n  regions[1][1][\"push\"]([regions[1][2], $lrx_event_4_append_0_0(state[0], state[1]), null]);\n  regions[1][2] += 1;\n  regions[1][3] = true;\n  tx[7][\"push\"](\"region:pins:append\");",
   "  regions[0][1] = kept_1;\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:crew:removeIf\");",
   // The Badge cells dispatch no delegated action — no carve-out needed.
-  "const region_off_0 = listenDelegatedCells(node_13, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\", \"\"]);",
-  "const region_off_0_change = listenDelegatedCells(node_13, \"change\", state, context, $lrx_region_0_dispatch, [\"\", \"toggle\", \"\", \"\"]);",
+  "const region_off_0 = listenDelegatedCells(node_13, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\", \"\", \"\", \"\"]);",
+  "const region_off_0_change = listenDelegatedCells(node_13, \"change\", state, context, $lrx_region_0_dispatch, [\"\", \"toggle\", \"\", \"\", \"\", \"\"]);",
   "const region_off_1 = listenDelegatedCells(node_27, \"click\", state, context, $lrx_region_1_dispatch, [\"\", \"remove\", \"\"]);",
   "disposer[\"children\"] = childInventory;",
   // ADR-0088: `crew`'s ADR-0050 predicate count and its ADR-0059 hidden
@@ -184,9 +217,15 @@ for (const required of [
   if (!badgeSource.includes(required)) {
     throw new Error(`generated Badge is missing ${required}`);
   }
+  if (!stampSource.includes(required)) {
+    throw new Error(`generated Stamp is missing ${required}`);
+  }
 }
 if (badgeSource.includes("$lrx_child") || badgeSource.includes("Badge.mjs")) {
   throw new Error("generated Badge module unexpectedly nests children");
+}
+if (stampSource.includes("$lrx_child") || stampSource.includes("Stamp.mjs")) {
+  throw new Error("generated Stamp module unexpectedly nests children");
 }
 
 const generated = await import(pathToFileURL(path.join(directory, "MixLab.mjs")).href);

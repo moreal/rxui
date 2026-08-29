@@ -18,14 +18,17 @@ private def emitComponent (directory : System.FilePath) (moduleName graphName : 
   IO.FS.writeFile (directory / graphName) (checked.graph.toJson ++ "\n")
 
 def generateInto (directory : System.FilePath) : IO Unit := do
-  match Badge_spec.check, MixLab_spec.check with
-  | .error error, _ =>
+  match Badge_spec.check, Stamp_spec.check, MixLab_spec.check with
+  | .error error, _, _ =>
       throw <| IO.userError s!"Badge component invalid: {error.code}"
-  | _, .error error =>
+  | _, .error error, _ =>
+      throw <| IO.userError s!"Stamp component invalid: {error.code}"
+  | _, _, .error error =>
       throw <| IO.userError s!"Mix component invalid: {error.code}"
-  | .ok badge, .ok mix => do
+  | .ok badge, .ok stamp, .ok mix => do
       IO.FS.createDirAll directory
       emitComponent directory "Badge.mjs" "Badge.graph.json" badge
+      emitComponent directory "Stamp.mjs" "Stamp.graph.json" stamp
       emitComponent directory "MixLab.mjs" "Mix.graph.json" mix
       IO.FS.writeFile (directory / "leanrx_dom.mjs")
         (← IO.FS.readFile "runtime/leanrx_dom.mjs")

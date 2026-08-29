@@ -1046,19 +1046,16 @@ private def validateChildComponents (spec : ComponentSpec Γ)
             message := s!"child prop {bound} forwards parent prop index {field}, but only {spec.props.size} immutable props are declared"
             spans := #[reference.span]
           }
-  /- Row-scoped child references (ADR-0075): at most one per template, each
-  naming a declared child, and a projected prop field must be one no row
-  event stage or region broadcast rewrites — the child's immutable prop is a
-  row-mount constant, so a writable field would silently diverge from the
-  row's own re-rendered text. -/
+  /- Row-scoped child references (ADR-0075, unbounded by ADR-0089): any
+  number per template, each naming a declared child, and a projected prop
+  field must be one no row event stage or region broadcast rewrites — the
+  child's immutable prop is a row-mount constant, so a writable field would
+  silently diverge from the row's own re-rendered text. Multiplicity is not
+  checked: the row root stashes its mount returns as a list in template
+  order and the dispose callback splices each by identity, so a second
+  reference costs the same argument as the first. -/
   for region in spec.regions do
     let rowRefs := region.template.childRefs
-    unless rowRefs.length ≤ 1 do
-      throw {
-        code := "LRX-VIEW-045"
-        message := s!"the row template of region {region.name} composes at most one child reference, found {rowRefs.length}"
-        spans := #[region.span]
-      }
     let written := regionWrittenFields spec region
     for (childName, props, span) in rowRefs do
       unless names.contains childName do

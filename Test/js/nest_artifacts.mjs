@@ -140,13 +140,14 @@ for (const required of [
   // ADR-0075: the row mount callback mounts the row-scoped child at its cell
   // with the projected origin field, stashes the mount return on the row root
   // for the dispose callback, and pushes it into the live inventory the
-  // region call sites pass as context.
+  // region call sites pass as context. ADR-0089: the stash is a list even at
+  // one child, and the dispose callback loops over it — the single-child
+  // region is now the one-element case of the general shape, not a shape of
+  // its own.
   "const row_child_0 = $lrx_child_0(row_0, [item[4]]);",
   "context[\"push\"](row_child_0);",
-  "row_0[\"$lrxRowChild\"] = row_child_0;",
-  "function $lrx_region_0_dispose(row, key, context) {",
-  "    context[\"splice\"](context[\"indexOf\"](row[\"$lrxRowChild\"]), 1);",
-  "  row[\"$lrxRowChild\"]();",
+  "row_0[\"$lrxRowChild\"] = [row_child_0];",
+  "function $lrx_region_0_dispose(row, key, context) {\n  for (const row_child of row[\"$lrxRowChild\"]) {\n    if (context) {\n      context[\"splice\"](context[\"indexOf\"](row_child), 1);\n    }\n    row_child();\n  }\n  return null;\n}",
   // ADR-0066/0075: the disposer republishes the live inventory — the static
   // Pulse disposer seeded first, then one entry per mounted row.
   "const childInventory = [child_off_0];",

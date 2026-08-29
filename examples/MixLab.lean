@@ -72,7 +72,21 @@ touch no region metric, count, or persisted value, while a removal
 (✕ or `clearDone`) decrements the count texts and splices the inventory
 in the same commit; the `crew` filter flip is likewise crew's alone —
 `pins` has no filter, no scan, and no touched flag on a filter change.
-No host change; runtime ABI stays 17. -/
+
+ADR-0089 lifts the one-child-per-row bound. The `crew` row template now
+composes *three* children — `<Badge tag={tag}/>`, `<Stamp mark={label}/>`,
+and `<Stamp mark="crew stamp"/>` — so one row exercises both shapes at
+once: two different components side by side, and the same component twice
+through one aliased import with independent props and state. The row root
+stashes the mount returns as a *list* in template order
+(`row_0["$lrxRowChild"] = [row_child_0, row_child_1, row_child_2]`) and the
+dispose callback loops over it, splicing each entry out of the shared
+inventory by its own identity — a mount return is a fresh function per
+instance, so the repeat pair never collide and no neighbour's entry moves.
+`pins` keeps a single child, so one component holds a one-child region and
+a three-child region against the same inventory: the entries interleave in
+actual mount order, three per crew row and one per pin. No host change;
+runtime ABI stays 17. -/
 
 namespace LeanRxExamples.MixLab
 
@@ -81,6 +95,10 @@ open LeanRx
 abbrev BadgeSchema : Schema := .field "hits" Int .empty
 
 def hits : Field BadgeSchema Int := .here
+
+abbrev StampSchema : Schema := .field "stamps" Int .empty
+
+def stamps : Field StampSchema Int := .here
 
 abbrev MixSchema : Schema := .field "added" Int (.field "filter" String .empty)
 
@@ -98,6 +116,17 @@ component Badge (schema := BadgeSchema) where {
     <span class="badge-tag"> [{tag}],
     <button type="button" onClick={hit}> ["Hit"],
     <p class="badge-text"> [{"badgeText": rx% s!"Hits: {hits}"}]
+  ];
+}
+
+component Stamp (schema := StampSchema) where {
+  state stamps : Int := 0;
+  prop mark : String;
+  event press := set stamps (stamps + 1);
+  view := jsx% <div class="stamp"> [
+    <span class="stamp-mark"> [{mark}],
+    <button type="button" onClick={press}> ["Stamp"],
+    <p class="stamp-text"> [{"stampText": rx% s!"Stamps: {stamps}"}]
   ];
 }
 
@@ -131,7 +160,9 @@ component MixLab (schema := MixSchema) where {
       <span class="crew-actions"> [
         <button type="button" ariaLabel="Remove member" onClick={remove}> ["✕"]
       ],
-      <Badge tag={tag}/>
+      <Badge tag={tag}/>,
+      <Stamp mark={label}/>,
+      <Stamp mark="crew stamp"/>
     ];
   region pins (note) := jsx% <li class="pin-row"> [
     <span class="pin-note"> [{note}],

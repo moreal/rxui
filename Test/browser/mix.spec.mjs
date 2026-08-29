@@ -10,6 +10,7 @@ if (!directory) throw new Error("LEANRX_MIX_DIST is required");
 const files = new Set([
   "MixLab.mjs",
   "Badge.mjs",
+  "Stamp.mjs",
   "leanrx_dom.mjs",
   "leanrx_region.mjs",
 ]);
@@ -79,9 +80,15 @@ test("appended rows mount badges, and badge clicks touch no region state", async
     "Member 0", "Member 1",
   ]);
   await expect(page.locator("#crew .badge-tag")).toHaveText(["Tag 0", "Tag 1"]);
+  // ADR-0089: each crew row also mounts the repeated Stamp pair — the
+  // projected `label` and the literal — so the shared inventory grows by
+  // three per row, not one.
+  await expect(page.locator("#crew .stamp-mark")).toHaveText([
+    "Member 0", "crew stamp", "Member 1", "crew stamp",
+  ]);
   await expect(page.locator("#crew-line")).toHaveText("0 done of 2");
   const mounted = await page.evaluate(() => globalThis.mixDispose.children.length);
-  expect(mounted).toBe(3);
+  expect(mounted).toBe(7);
   // ADR-0076: counts, the persisted value, and the region metrics are
   // row-table-scoped — a Badge transaction commits in the child's own state
   // array and touches none of them.
@@ -114,6 +121,9 @@ test("hydrated rows mount their badges through the shared reconcile", async ({ p
   });
   await expect(page.locator("#crew > li .crew-label")).toHaveText(["Alpha", "Beta"]);
   await expect(page.locator("#crew .badge-tag")).toHaveText(["Tag A", "Tag B"]);
+  await expect(page.locator("#crew .stamp-mark")).toHaveText([
+    "Alpha", "crew stamp", "Beta", "crew stamp",
+  ]);
   await expect(page.locator("#crew > li").first()).toHaveClass("crew-row done");
   await expect(page.locator("#crew > li").first()
     .getByRole("checkbox", { name: "Toggle member" })).toBeChecked();
@@ -124,7 +134,7 @@ test("hydrated rows mount their badges through the shared reconcile", async ({ p
     rowChildKind: typeof globalThis.mixDispose.children[1].instrumentation,
     trace: globalThis.mixDispose.instrumentation()[7],
   }));
-  expect(hydrated.count).toBe(3);
+  expect(hydrated.count).toBe(7);
   expect(hydrated.rowChildKind).toBe("function");
   expect(hydrated.trace).toContain("event:hydrate:crew");
   expect(hydrated.trace).toContain("region:crew:hydrate");
@@ -199,7 +209,7 @@ test("a removal decrements the counts and splices the inventory in one commit", 
       stored: localStorage.getItem("leanrx-mix-lab.crew"),
     };
   });
-  expect(removed.count).toBe(3);
+  expect(removed.count).toBe(7);
   expect(removed.stillListed).toBe(false);
   expect(removed.attached).toBe(false);
   expect(removed.snapshot[7].filter((event) => event === "transaction:commit")).toHaveLength(1);
@@ -216,7 +226,7 @@ test("a removal decrements the counts and splices the inventory in one commit", 
     count: globalThis.mixDispose.children.length,
     stored: localStorage.getItem("leanrx-mix-lab.crew"),
   }));
-  expect(cleared.count).toBe(2);
+  expect(cleared.count).toBe(4);
   expect(cleared.stored).toBe("Member 2,false,Tag 2");
 });
 
@@ -262,6 +272,100 @@ test("a broadcast re-renders retained rows without remounting or muting their ba
   await expect(page.locator("#crew .badge-text").first()).toHaveText("Hits: 2");
 });
 
+test("a three-child row splices exactly its own run and keeps the survivors live", async ({ page }) => {
+  await mountMix(page);
+  const add = page.getByRole("button", { name: "Add member" });
+  await add.click();
+  await add.click();
+  await add.click();
+  // ADR-0089: one row mounts three children in template order — a Badge and
+  // the same Stamp twice, the repeat through one aliased import with its own
+  // props — so the shared inventory is the static seed followed by one
+  // contiguous run of three per row.
+  await expect(
+    page.locator("#crew > li").first().locator(".badge-tag, .stamp-mark"),
+  ).toHaveText(["Tag 0", "Member 0", "crew stamp"]);
+  const middle = page.locator("#crew > li").nth(1);
+  await middle.locator(".badge button").click();
+  await middle.locator(".stamp button").first().click();
+  await middle.locator(".stamp button").nth(1).click();
+  await middle.locator(".stamp button").nth(1).click();
+  await expect(middle.locator(".badge-text")).toHaveText("Hits: 1");
+  await expect(middle.locator(".stamp-text")).toHaveText(["Stamps: 1", "Stamps: 2"]);
+  const seeded = await page.evaluate(() => {
+    globalThis.mixEntries = globalThis.mixDispose.children.slice();
+    globalThis.middleButtons = Array.from(
+      document.querySelectorAll("#crew > li")[1]
+        .querySelectorAll(".badge button, .stamp button"),
+    );
+    globalThis.middleChildren = globalThis.mixEntries.slice(4, 7);
+    return {
+      count: globalThis.mixEntries.length,
+      commits: globalThis.middleChildren.map((child) => child.instrumentation()[1]),
+    };
+  });
+  expect(seeded.count).toBe(10);
+  // The repeated pair are separate instances: one import, three independent
+  // states, told apart here by their own commit counts.
+  expect(seeded.commits).toEqual([1, 1, 2]);
+  // Removing the middle row splices exactly its own run of three — the runs
+  // on either side keep both their identities and their order, because each
+  // entry leaves by its own function identity, never by position.
+  await middle.getByRole("button", { name: "Remove member" }).click();
+  await expect(page.locator("#crew > li .crew-label")).toHaveText([
+    "Member 0", "Member 2",
+  ]);
+  const removed = await page.evaluate(() => {
+    for (const button of globalThis.middleButtons) {
+      button.dispatchEvent(new Event("click", { bubbles: true }));
+    }
+    return {
+      order: globalThis.mixDispose.children.map((child) =>
+        globalThis.mixEntries.indexOf(child),
+      ),
+      attached: globalThis.middleButtons.filter((button) =>
+        document.contains(button),
+      ).length,
+      commits: globalThis.middleChildren.map((child) => child.instrumentation()[1]),
+    };
+  });
+  expect(removed.order).toEqual([0, 1, 2, 3, 7, 8, 9]);
+  expect(removed.attached).toBe(0);
+  // All three were disposed, not just the first: every listener is gone, so
+  // the dispatched clicks commit nothing.
+  expect(removed.commits).toEqual([1, 1, 2]);
+  // ADR-0077: a broadcast retains every key, so the reconcile re-renders the
+  // survivors without touching a single inventory entry.
+  await page.getByRole("button", { name: "Mark all done" }).click();
+  await expect(page.locator("#crew-line")).toHaveText("2 done of 2");
+  const broadcast = await page.evaluate(() =>
+    globalThis.mixDispose.children.map((child) =>
+      globalThis.mixEntries.indexOf(child),
+    ),
+  );
+  expect(broadcast).toEqual([0, 1, 2, 3, 7, 8, 9]);
+  // And the next reconcile appends the new row's whole run behind them.
+  await add.click();
+  const appended = await page.evaluate(() => ({
+    order: globalThis.mixDispose.children.slice(0, 7).map((child) =>
+      globalThis.mixEntries.indexOf(child),
+    ),
+    count: globalThis.mixDispose.children.length,
+    marks: Array.from(
+      document.querySelectorAll("#crew > li:last-child .stamp-mark"),
+      (node) => node.textContent,
+    ),
+  }));
+  expect(appended.order).toEqual([0, 1, 2, 3, 7, 8, 9]);
+  expect(appended.count).toBe(10);
+  expect(appended.marks).toEqual(["Member 3", "crew stamp"]);
+  // The survivors are still live instances carrying their own state.
+  await page.locator("#crew > li").first().locator(".stamp button").first().click();
+  await expect(
+    page.locator("#crew > li").first().locator(".stamp-text").first(),
+  ).toHaveText("Stamps: 1");
+});
+
 test("two child-composing regions interleave the shared inventory in mount order", async ({ page }) => {
   await mountMix(page);
   // ADR-0077: one mount-scope inventory — the static seed first, then row
@@ -275,19 +379,31 @@ test("two child-composing regions interleave the shared inventory in mount order
   await page.locator("#pins .badge button").first().click();
   await page.locator("#crew .badge button").first().click();
   await page.locator("#crew .badge button").first().click();
-  await page.locator("#pins .badge button").nth(1).click();
-  await page.locator("#pins .badge button").nth(1).click();
-  await page.locator("#pins .badge button").nth(1).click();
-  await expect(page.locator("#pins .badge-text")).toHaveText(["Hits: 1", "Hits: 3"]);
+  // ADR-0089: the crew row contributes a run of three, so the interleaving
+  // is by *entry*, not by row — the crew Stamp pair sits between the two
+  // pins' single entries, in the crew template's own mount order.
+  for (let index = 0; index < 3; index += 1) {
+    await page.locator("#crew .stamp button").first().click();
+  }
+  for (let index = 0; index < 4; index += 1) {
+    await page.locator("#crew .stamp button").nth(1).click();
+  }
+  for (let index = 0; index < 5; index += 1) {
+    await page.locator("#pins .badge button").nth(1).click();
+  }
+  await expect(page.locator("#pins .badge-text")).toHaveText(["Hits: 1", "Hits: 5"]);
   await expect(page.locator("#crew .badge-text")).toHaveText(["Hits: 2"]);
+  await expect(page.locator("#crew .stamp-text")).toHaveText([
+    "Stamps: 3", "Stamps: 4",
+  ]);
   const commits = await page.evaluate(() =>
     globalThis.mixDispose.children.map((child) =>
       child.instrumentation()[7].filter((event) => event === "transaction:commit").length,
     ),
   );
-  // Inventory order = [static, first pin, crew member, second pin] — pinned by
-  // each badge's own commit count.
-  expect(commits).toEqual([0, 1, 2, 3]);
+  // Inventory order = [static, first pin, crew badge, crew stamp, crew stamp,
+  // second pin] — pinned by each child's own commit count.
+  expect(commits).toEqual([0, 1, 2, 3, 4, 5]);
 });
 
 test("a removal in one region splices only its own inventory entry", async ({ page }) => {
@@ -302,7 +418,7 @@ test("a removal in one region splices only its own inventory entry", async ({ pa
       crewMetrics: globalThis.mixDispose.regionInstrumentation()[0],
     };
   });
-  expect(seeded.count).toBe(4);
+  expect(seeded.count).toBe(6);
   // ADR-0077: each dispose callback splices by indexOf of its own row's
   // stashed mount return — removing a pin leaves the crew entry (and the
   // other pin) exactly in place, and the crew region's metrics untouched.
@@ -315,7 +431,7 @@ test("a removal in one region splices only its own inventory entry", async ({ pa
     crewMetrics: globalThis.mixDispose.regionInstrumentation()[0],
     pinDisposals: globalThis.mixDispose.regionInstrumentation()[1][3],
   }));
-  expect(pinRemoved.children).toEqual([0, 2, 3]);
+  expect(pinRemoved.children).toEqual([0, 2, 3, 4, 5]);
   expect(pinRemoved.crewMetrics).toEqual(seeded.crewMetrics);
   expect(pinRemoved.pinDisposals).toBe(1);
   await expect(page.locator("#crew .badge-tag")).toHaveText(["Tag 1"]);
@@ -329,7 +445,9 @@ test("a removal in one region splices only its own inventory entry", async ({ pa
     ),
     pinMetrics: globalThis.mixDispose.regionInstrumentation()[1],
   }));
-  expect(crewRemoved.children).toEqual([0, 3]);
+  // The crew row's whole run of three leaves at once, the surviving pin's
+  // single entry keeps its identity and its place.
+  expect(crewRemoved.children).toEqual([0, 5]);
   expect(crewRemoved.pinMetrics[3]).toBe(1);
   await expect(page.locator("#pins .badge-tag")).toHaveText(["Pin 2"]);
 });
@@ -355,11 +473,13 @@ test("two persisted regions hydrate and save under their own keys", async ({ pag
     count: globalThis.mixDispose.children.length,
     trace: globalThis.mixDispose.instrumentation()[7],
     tags: Array.from(document.querySelectorAll(".badge-tag"), (node) => node.textContent),
+    marks: Array.from(document.querySelectorAll(".stamp-mark"), (node) => node.textContent),
   }));
   // Both hydrations mount their row children into the one shared inventory,
   // crew's before pins' — the hydrate transactions run in declaration order.
-  expect(hydrated.count).toBe(4);
+  expect(hydrated.count).toBe(6);
   expect(hydrated.tags).toEqual(["Tag A", "Pin A", "Pin B", "static badge"]);
+  expect(hydrated.marks).toEqual(["Alpha", "crew stamp"]);
   for (const event of [
     "event:hydrate:crew", "region:crew:hydrate", "storage:crew:write",
     "event:hydrate:pins", "region:pins:hydrate", "storage:pins:write",
@@ -428,8 +548,9 @@ test("one chained event drains both regions in one commit", async ({ page }) => 
     .toBeLessThan(after.slice.indexOf("region:pins:update"));
   expect(after.slice.indexOf("storage:crew:write"))
     .toBeLessThan(after.slice.indexOf("storage:pins:write"));
-  // One removal, one mount: the static seed, the surviving member, the pin.
-  expect(after.children).toBe(3);
+  // One removal, one mount: the static seed, the surviving member's run of
+  // three, and the pin.
+  expect(after.children).toBe(5);
   expect(after.crew).toBe("Member 1,false,Tag 1");
   expect(after.pins).toBe("Stowed 2");
 });
@@ -475,7 +596,7 @@ test("root disposal disposes row badges while the inventory keeps reachability",
   await page.locator("#crew .badge button").first().click();
   const before = await page.evaluate(() => {
     globalThis.rowBadgeButtons = Array.from(
-      document.querySelectorAll("#crew .badge button"),
+      document.querySelectorAll("#crew .badge button, #crew .stamp button"),
     );
     const snapshot = globalThis.mixDispose.children[1].instrumentation();
     globalThis.mixDispose();
@@ -493,7 +614,7 @@ test("root disposal disposes row badges while the inventory keeps reachability",
       snapshot: globalThis.mixDispose.children[1].instrumentation(),
     };
   });
-  expect(after.count).toBe(3);
+  expect(after.count).toBe(7);
   expect(after.attachedCount).toBe(0);
   expect(after.snapshot).toEqual(before);
 });

@@ -1861,10 +1861,13 @@ private def rowAppend (dom : RowDom) (statement : Stmt) : RowDom :=
 branch cell wrapper, in the `setKey`/`$lrxKey` style (ADR-0047). -/
 private def branchMarker : String := "$lrxBranch"
 
-/-- The compiler-owned property stashing a row's child mount return on the
-row root (ADR-0075), in the `$lrxKey`/`$lrxBranch` style: every host removal
+/-- The compiler-owned property stashing a row's child mount returns on the
+row root (ADR-0089), in the `$lrxKey`/`$lrxBranch` style: every host removal
 path hands the row root to the dispose callback, so the stash is the one
-place the per-row child disposer stays reachable from. -/
+place the per-row child disposers stay reachable from. The value is always a
+*list* in template mount order, one entry per row-scoped child reference, so
+the dispose callback's shape is independent of how many the template composes
+(ADR-0075 stashed the single reference directly). -/
 private def rowChildMarker : String := "$lrxRowChild"
 
 mutual
@@ -2055,11 +2058,14 @@ private def regionRowFunction (runtime : RuntimeNames) (region : RegionSpec)
   let initial : RowDom :=
     { allocator := { used := ["item", "position", "context"] }, branchFns, childMounts }
   let (root, dom) ← rowNodeStmts runtime item region.template initial
-  /- The ADR-0075 stash: the row root carries its child mount return so the
-  dispose callback can reach it from the row handle alone — the region's own
-  dispose path passes no context. -/
-  let stashStmts := dom.childOffs.map fun off =>
-    Stmt.assign (.index (.ident root) (.literal (.string rowChildMarker))) (.ident off)
+  /- The ADR-0075 stash, generalized to a list by ADR-0089: the row root
+  carries its child mount returns in template mount order so the dispose
+  callback can reach them from the row handle alone — the region's own
+  dispose path passes no context. A row composing no child emits no stash at
+  all, so child-free modules stay byte-identical. -/
+  let stashStmts := if dom.childOffs.isEmpty then [] else
+    [Stmt.assign (.index (.ident root) (.literal (.string rowChildMarker)))
+      (.array (.ofList (dom.childOffs.map Expr.ident)))]
   let body : List Stmt := dom.statements ++ stashStmts ++ [
     .expr <| call runtime.setKey [.ident root, .index (.ident item) (uint 0)],
     .return (.ident root)
@@ -2209,25 +2215,33 @@ private def regionDisposeFunction (hasChild : Bool) (name : Ident) :
   let row ← Ident.checked "row"
   let key ← Ident.checked "key"
   let context ← Ident.checked "context"
+  let rowChild ← Ident.checked "row_child"
   let body : List Stmt :=
     if hasChild then
-      /- The per-row child dispose (ADR-0075): every host removal path — the
-      reconcile, `removeAt`, and the region's own dispose — funnels through
-      this callback with the row root, so the stashed mount return is called
-      here. The live-inventory splice is guarded: the region's full dispose
-      passes no context, and by then the whole component is being disposed —
-      the inventory keeps its (disposed) entries exactly as the static
-      ADR-0066 array does after a root dispose. -/
+      /- The per-row child dispose (ADR-0075, generalized by ADR-0089): every
+      host removal path — the reconcile, `removeAt`, and the region's own
+      dispose — funnels through this callback with the row root, so the
+      stashed mount returns are called here, one loop over the stash list in
+      mount order. Each entry is spliced by its own identity, never by
+      position, so a row's departure moves no neighbour's entry and the
+      callback body is the same for one child or many. The live-inventory
+      splice is guarded: the region's full dispose passes no context, and by
+      then the whole component is being disposed — the inventory keeps its
+      (disposed) entries exactly as the static ADR-0066 array does after a
+      root dispose. -/
       [
-        .ifThen (.ident context) (.ofList [
-          .expr <| .call (.index (.ident context) (.literal (.string "splice")))
-            (.ofList [
-              .call (.index (.ident context) (.literal (.string "indexOf")))
-                (.ofList [.index (.ident row) (.literal (.string rowChildMarker))]),
-              uint 1
-            ])
-        ]),
-        .expr <| .call (.index (.ident row) (.literal (.string rowChildMarker))) .nil,
+        .forOf rowChild (.index (.ident row) (.literal (.string rowChildMarker)))
+          (.ofList [
+            .ifThen (.ident context) (.ofList [
+              .expr <| .call (.index (.ident context) (.literal (.string "splice")))
+                (.ofList [
+                  .call (.index (.ident context) (.literal (.string "indexOf")))
+                    (.ofList [.ident rowChild]),
+                  uint 1
+                ])
+            ]),
+            .expr <| .call (.ident rowChild) .nil
+          ]),
         .return (.literal .null)
       ]
     else [.return (.literal .null)]

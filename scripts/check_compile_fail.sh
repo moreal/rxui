@@ -118,7 +118,6 @@ fixtures=(
   Test/fixtures/compile-fail/TemplateCallWithChildren.lean
   Test/fixtures/compile-fail/ChildRefInLogicalView.lean
   Test/fixtures/compile-fail/TemplateChildrenInLogicalView.lean
-  Test/fixtures/compile-fail/RowChildTwoPerRow.lean
   Test/fixtures/compile-fail/RowChildInBranch.lean
   Test/fixtures/compile-fail/RowChildWrittenField.lean
   Test/fixtures/compile-fail/RowChildStaticId.lean
@@ -250,7 +249,6 @@ fragments=(
   "error[LRX-ELAB-133]"
   "error[LRX-ELAB-132]"
   "error[LRX-ELAB-133]"
-  "error[LRX-VIEW-045]"
   "error[LRX-VIEW-045]"
   "error[LRX-VIEW-045]"
   "error[LRX-ELAB-135]"

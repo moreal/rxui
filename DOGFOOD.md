@@ -5179,3 +5179,104 @@ contract, or already `O(written)`. Open: the key→position scan is still
 `O(N)` per dispatch and is now the only unearned `O(N)` walk left in a
 `toggle`, still owed the append/remove/broadcast/hydrate invalidation matrix
 ADR-0085 priced at 1.5× against seven invalidation sites.
+
+## A row template composes a list, not one child (ADR-0089)
+
+### What was built
+
+ADR-0075 OQ2 said the one-child-per-row bound was "a sealing choice, not
+a structural limit — the stash and splice generalize to a list. Revisit
+with a consumer." This round produced the consumer and did the lift.
+
+The audit found the bound in exactly one place and two emissions
+depending on it. The check was `rowRefs.length ≤ 1` in
+`validateChildComponents`; nothing downstream read it. The elaborator
+already collected *every* row-scoped head into the child table, the row
+mount statements already emitted one `$lrx_child_k(cell, […])` and one
+`context["push"]` per reference at its own cell, and `RowDom.childOffs`
+was already a list. What assumed a single entry was the stash — written
+once per `childOffs` entry, so at n > 1 each assignment overwrote the
+last — and the dispose callback, which read that one stash and called it.
+
+Both generalize into strictly less code. The stash became one array
+literal, `row["$lrxRowChild"] = [row_child_0, row_child_1, row_child_2]`,
+and the dispose callback became one `for (const row_child of …)` loop
+around ADR-0075's body verbatim, so `regionDisposeFunction` still takes
+a `Bool` — the emission no longer knows or cares how many children a
+template composes, and a single-child region is now the one-element case
+rather than a shape of its own. A row with no child still emits no stash,
+so row-child-free modules stay byte-identical.
+
+The contract sealed with **no replacement bound and no new diagnostic
+number**: the references are template-static, so their count is fixed at
+compile time and bounded by the source, and the per-row cost is one mount
+call, one push and one array slot each. Every other `LRX-VIEW-045` arm
+stands — root position, branch placement, out-of-bounds field, and the
+written-field boundary — verified by running each remaining fixture and
+reading its code back. `RowChildTwoPerRow` left `Test/fixtures/compile-fail`
+and its *shape* moved into the lab.
+
+Mix Lab's `crew` row now carries `<Badge tag={tag}/>`,
+`<Stamp mark={label}/>`, `<Stamp mark="crew stamp"/>` — difference and
+repeat in one row, two never-written projections and one literal — while
+`pins` keeps its single child, so one component holds a one-child and a
+three-child region against the same mount-scope inventory.
+
+### What broke or surprised
+
+**The safety argument is identity, not contiguity.** A row's entries do
+land contiguously in the inventory (push at the end, splice of a whole
+run), and it is tempting to splice the run in one call. Nothing depends
+on it: a mount return is a fresh closure per instance, so `indexOf` is an
+identity lookup on a value no other entry can equal — *including* between
+two references to the same child module in the same row — and the loop
+re-reads `indexOf` per entry, so the shifts a splice causes cannot
+desynchronize the run being removed. The weaker argument is the one that
+also makes ADR-0077's two regions safe against each other, so the
+contiguity optimization was declined.
+
+**The witness had to remove a middle row.** Removing the first or last
+row cannot distinguish "spliced its own run" from "spliced three
+arbitrary entries", because the surviving indices are a prefix or a
+suffix either way. The gate removes `Member 1` of three and observes
+`[0,1,2,3,7,8,9]` — the only assertion that fails if the splice walks off
+its own run — and then holds that same list across a broadcast and the
+next reconcile, which appends the new row's whole run behind it.
+
+**Two children of the same component needed telling apart, and commit
+counts did it.** The repeated `Stamp` pair are indistinguishable by
+selector position alone once a row is removed, so the lab clicks them a
+different number of times and the gate reads each entry's own commit
+counter. That is also what re-pinned the cross-region interleaving test:
+it now asserts `[0,1,2,3,4,5]` over *entries* — static, pin, crew badge,
+crew stamp, crew stamp, pin — instead of `[0,1,2,3]` over rows.
+
+**No slot number moved.** The `regionChildSlot` formula is untouched;
+crew's record still ends at nine and pins' at eight, and the gate's
+two-record literal is byte-identical. Turning the *stash* into a list is
+orthogonal to the record layout, which is what let the four-round streak
+of not moving that slot continue.
+
+### Performance observations
+
+Codegen changes stay gated on a region actually composing a child, so
+every module without one is byte-identical — the benchmark size gate, the
+manifests, and BENCHMARK.md all stand unre-measured. The dispose callback
+got *shorter* at every arity: one loop replaces one `if`/call pair per
+child, so a three-child row's callback is the same length as a one-child
+row's. Per-row mount cost is unchanged per child (one call, one push) plus
+one array literal for the row.
+
+### Follow-up issue or commit
+
+`feat(component): compose a list of children per row template (ADR-0089)`
+— the list stash and loop dispose in the component backend, the retired
+`LRX-VIEW-045` arity arm, the Mix Lab `Stamp` component and three-child
+`crew` row, the Mix and Nest artifact gates, the Lean-level
+`childRefs` list assertion, the new browser witness and the re-pinned
+interleaving gate, the retired compile-fail fixture and its script
+registration, the language guide, the ADR, the DECISIONS.md row, and
+this record. **ADR-0075 OQ2 is closed**; OQ1 (transitive static-id
+checking) stays open and matters slightly more now — a row composing
+several children composes several templates that `LRX-ELAB-135` still
+checks only one level deep.

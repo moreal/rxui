@@ -52,7 +52,11 @@ its mount return is stashed on the row root, called by the generated row
 dispose callback on every removal path, and republished through the live
 `children` inventory the disposer shares with the region record: `children`
 holds the static `Pulse` disposer first and then one entry per mounted row,
-spliced as rows leave. The per-row edit input dogfoods typed row payloads (ADR-0046):
+spliced as rows leave. Since ADR-0089 lifted the arity bound, this roster is
+the *one-element* case of the general shape rather than a shape of its own:
+the row root stashes `[row_child_0]` and the dispose callback loops over it,
+byte-for-byte the same callback a three-child row emits (Mix Lab holds that
+witness). The per-row edit input dogfoods typed row payloads (ADR-0046):
 `row roster rename (value : String) := set label value;` receives the
 delegated `input` value and `row roster record (pressed : String) := …`
 receives the delegated `keydown` key, each draining exactly one `updateAt`

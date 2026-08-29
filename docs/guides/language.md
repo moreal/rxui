@@ -217,7 +217,7 @@ component RosterMini (schema := RosterMiniSchema) where {
 The delegated button must sit strictly inside a row cell (a direct child of
 the row root) so the dispatcher can resolve the action from row structure —
 `LRX-VIEW-027` rejects a button that is itself a cell. A row template may
-also compose at most one child component per row (ADR-0075): a capitalized
+also compose child components (ADR-0075, ADR-0089): a capitalized
 `<Chip tag={field}/>` head whose checked spec is in scope mounts one child
 instance per row — mounted by the generated row mount callback, disposed on
 every removal path through the row dispose callback, and republished on the
@@ -226,14 +226,20 @@ string literal or the bare projection of one declared row field that no row
 event or broadcast rewrites (`LRX-VIEW-045` otherwise, the ADR-0068 OQ1
 immutable-prop boundary in row scope); the child's own template must carry
 no static `id` because row instances are unbounded (`LRX-ELAB-135`).
-Everything outside that surface — a spec-less head, children on the head,
-a composed prop value, a second child, or a child inside a two-branch cell —
-stays rejected (`LRX-ELAB-131`/`LRX-VIEW-045`, ADR-0072/0075). The
+A template may compose **any number** of children, different components or
+the same one repeated: each mounts where it sits in the template, the row
+root stashes the mount returns as a list in that order, and the dispose
+callback loops over the list, splicing each entry out by its own identity —
+a mount return is a fresh closure per instance, so a repeated pair never
+collide (ADR-0089). Everything outside that surface — a spec-less head,
+children on the head, a composed prop value, or a child inside a two-branch
+cell — stays rejected (`LRX-ELAB-131`/`LRX-VIEW-045`, ADR-0072/0075). The
 inventory is one mount-scope array shared by every child-composing region
 in the component: entries follow the static child seed in actual mount
-order across regions, and each region's dispose callback splices only its
-own row's entry (ADR-0077). A region broadcast re-renders retained rows
-without remounting their children, so child state survives it.
+order across regions — one contiguous run per row, in template order — and
+each region's dispose callback splices only its own row's entries
+(ADR-0077). A region broadcast re-renders retained rows without remounting
+their children, so child state survives it.
 
 A `row` item declares a sealed update action on a region's rows (ADR-0043):
 `row roster mark := set marks (marks ++ " ★");` writes new field values —

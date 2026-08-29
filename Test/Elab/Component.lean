@@ -2,6 +2,7 @@ import examples.BranchLab
 import examples.Counter
 import examples.EchoLab
 import examples.FilterLab
+import examples.MixLab
 import examples.NestLab
 import examples.ToggleLab
 
@@ -58,6 +59,26 @@ private def verifyFilter
       "attr:0:class", "attr:1:aria-pressed", "attr:2:class", "attr:3:aria-pressed",
       "attr:4:class", "attr:5:aria-pressed", "attr:6:disabled"] do
     throw <| IO.userError "attribute selections did not join the planned graph"
+
+/- ADR-0089: a sealed row template composes a *list* of child references —
+any number, different components or the same one repeated — so the checked
+spec must keep every occurrence in template order with its own prop list,
+and the child table must still deduplicate by name. -/
+private def verifyMix (checked : CheckedComponent LeanRxExamples.MixLab.MixSchema) :
+    IO Unit := do
+  unless checked.spec.children.toList.map (·.name) == ["Badge", "Stamp"] do
+    throw <| IO.userError "row child table lost its first-occurrence order"
+  unless checked.spec.children.toList.map (·.moduleSpecifier) ==
+      ["./Badge.mjs", "./Stamp.mjs"] do
+    throw <| IO.userError "row child table lost the module specifier convention"
+  unless checked.spec.regions.toList.map
+      (fun region => region.template.childRefs.map
+        (fun (name, props, _) => (name, props))) ==
+      [[("Badge", [("tag", .field 2)]),
+        ("Stamp", [("mark", .field 0)]),
+        ("Stamp", [("mark", .lit "crew stamp")])],
+       [("Badge", [("tag", .field 0)])]] do
+    throw <| IO.userError "row templates lost their child reference lists"
 
 private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSchema) :
     IO Unit := do
@@ -409,6 +430,9 @@ def run : IO Unit := do
   match LeanRxExamples.NestLab.NestLab_check with
   | .error error => throw <| IO.userError s!"nested component rejected: {error.code}"
   | .ok checked => verifyNest checked
+  match LeanRxExamples.MixLab.MixLab_check with
+  | .error error => throw <| IO.userError s!"row-child component rejected: {error.code}"
+  | .ok checked => verifyMix checked
   match LeanRxExamples.BranchLab.BranchLab_check with
   | .error error => throw <| IO.userError s!"branch component rejected: {error.code}"
   | .ok checked => verifyBranch checked
