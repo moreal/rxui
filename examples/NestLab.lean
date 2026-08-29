@@ -45,18 +45,31 @@ field, the row `★` button mutates the dispatching row through the sealed
 `mark` update action (one `updateAt` on commit), and the row `✕` button
 removes it — resolved through structural delegated listeners on the `<ul>`
 container. The row template also composes one child per row (ADR-0075):
-`<Chip tag={origin}/>` mounts a fourth `Chip` instance inside every mounted
-row, its prop projecting the `origin` row field — a row-mount constant,
-legal exactly because no row event or broadcast ever writes `origin` — and
-its mount return is stashed on the row root, called by the generated row
-dispose callback on every removal path, and republished through the live
-`children` inventory the disposer shares with the region record: `children`
-holds the static `Pulse` disposer first and then one entry per mounted row,
-spliced as rows leave. Since ADR-0089 lifted the arity bound, this roster is
-the *one-element* case of the general shape rather than a shape of its own:
-the row root stashes `[row_child_0]` and the dispose callback loops over it,
-byte-for-byte the same callback a three-child row emits (Mix Lab holds that
-witness). The per-row edit input dogfoods typed row payloads (ADR-0046):
+`<Cuff mark={origin}/>` mounts a `Cuff` instance inside every mounted row, its
+prop projecting the `origin` row field — a row-mount constant, legal exactly
+because no row event or broadcast ever writes `origin` — and its mount return
+is stashed on the row root, called by the generated row dispose callback on
+every removal path, and republished through the live `children` inventory the
+disposer shares with the region record: `children` holds the static `Pulse`
+disposer first and then one entry per mounted row, spliced as rows leave.
+Since ADR-0089 lifted the arity bound, this roster is the *one-element* case
+of the general shape rather than a shape of its own: the row root stashes
+`[row_child_0]` and the dispose callback loops over it, byte-for-byte the same
+callback a three-child row emits (Mix Lab holds that witness).
+
+That row child is a *wrapper*, which is what makes this lab the witness for
+ADR-0090: `Cuff` composes `<Chip tag={mark}/>`, so every mounted row opens two
+templates, not one, and the row's `origin` constant is forwarded one level
+further into the leaf — `.cuff-mark` and the nested `.chip-tag` render the same
+string, and the per-row leaf is reachable as `children[1 + i].children[0]`.
+`LRX-ELAB-135` therefore has to answer about a tree it cannot see from the row:
+`Cuff`'s child table names `Chip` as a string, and the row lowering never
+resolves that name. It reads the trail `Cuff` recorded when *it* elaborated
+instead — `[]` here, because neither template carries an `id`. The contrast
+lives in the same child table: `Pulse`, composed in the view beside the region,
+carries `id="pulse-title"` and answers `["Pulse"]`, and `Tick`/`Blip` behind it
+would answer through their own trails. View scope admits all of them; row scope
+admits only the empty answer. The per-row edit input dogfoods typed row payloads (ADR-0046):
 `row roster rename (value : String) := set label value;` receives the
 delegated `input` value and `row roster record (pressed : String) := …`
 receives the delegated `keydown` key, each draining exactly one `updateAt`
@@ -100,6 +113,30 @@ component Chip (schema := ChipSchema) where {
     <span class="chip-tag"> [{tag}],
     <button type="button" onClick={chip}> ["Chip"],
     <p class="chip-text"> [{"chipText": rx% s!"Chips: {chips}"}]
+  ];
+}
+
+abbrev CuffSchema : Schema := .field "cuffs" Int .empty
+
+def cuffs : Field CuffSchema Int := .here
+
+/- ADR-0090: `Cuff` is the id-free wrapper the roster row composes. Its own
+template carries no `id` and neither does the `Chip` it composes, so the
+transitive predicate the row lowering evaluates returns an empty trail and the
+reference is admitted — while `Pulse`, composed in the same component's *view*,
+answers `["Pulse"]` and would be rejected in row scope. The two answers sit in
+one child table. `mark` is forwarded on into the leaf's `tag` (ADR-0068), so a
+row-mount constant now reaches a grandchild: the row's unwritten `origin` field
+shows up two components down. -/
+component Cuff (schema := CuffSchema) where {
+  state cuffs : Int := 0;
+  prop mark : String;
+  event cuff := set cuffs (cuffs + 1);
+  view := jsx% <div class="cuff"> [
+    <span class="cuff-mark"> [{mark}],
+    <button type="button" onClick={cuff}> ["Cuff"],
+    <p class="cuff-text"> [{"cuffText": rx% s!"Cuffs: {cuffs}"}],
+    <Chip tag={mark}/>
   ];
 }
 
@@ -161,7 +198,7 @@ component NestLab (schema := NestSchema) where {
       <span class="roster-actions"> [
         <button type="button" ariaLabel="Remove row" onClick={remove}> ["✕"]
       ],
-      <Chip tag={origin}/>
+      <Cuff mark={origin}/>
     ];
   view := jsx% <main class="nest-lab"> [
     <h1> ["Nest Lab"],

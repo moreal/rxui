@@ -5280,3 +5280,120 @@ this record. **ADR-0075 OQ2 is closed**; OQ1 (transitive static-id
 checking) stays open and matters slightly more now — a row composing
 several children composes several templates that `LRX-ELAB-135` still
 checks only one level deep.
+
+## The static-id rule reads a recorded trail (ADR-0090)
+
+### What was built
+
+ADR-0075 OQ1, carried since the row-child surface was sealed and widened
+by ADR-0089: `LRX-ELAB-135` walked the composed child's *own* template, so
+a grandchild with a static `id` slipped through, and a row that now
+composes several children opens several such templates.
+
+The round started with the obstacle rather than the fix, because the
+obvious implementation is unavailable. `componentViewHasStaticId`
+evaluates `{name}_spec` at the row's elaboration site; going transitive
+from there means turning the strings in the child's `spec.children` back
+into `{grandchild}_spec` — and nothing puts that identifier in the
+*parent's* scope. Three routes were written down and compared before any
+code moved:
+
+- **Recursive resolution at the row site.** Rejected on the failure
+  behavior, which is wrong in both directions: failing open reinstates
+  the hole silently, failing closed rejects correct programs, and either
+  way whether a program compiles depends on which modules the parent
+  happened to import. That is not a contract.
+- **Derived information on the spec.** Compute the answer at the one site
+  where it *is* computable — inside the child's own `component` command,
+  where the grandchild's spec is guaranteed to resolve, because that
+  resolution is exactly what turned the reference into a `View.child`.
+  Store it on the child-table entry; read it one level up. Chosen.
+- **Lift the check to the model layer.** Needs the second route first
+  (`spec.children` must carry more than a name) and then buys nothing,
+  while losing the row head's syntactic span. Left open rather than
+  taken: the trail lives on the spec, so a model-layer consumer could
+  read it unchanged.
+
+What is stored is a *trail*, not a flag. `ChildComponent.idTrail : List
+String` names the chain from that child down to the first component in
+its tree carrying an `id`, empty when clean, and
+`ComponentSpec.staticIdTrail` folds three sources — the component's own
+view, the row template of every region it declares (new
+`RowNode.hasStaticId`), and every child entry's stored trail. The
+recursion terminates in stored data, so depth costs nothing and no
+consumer resolves a name it holds only as a string.
+
+The witness is Nest Lab's roster promoted one level: the row composes
+`<Cuff mark={origin}/>` and `Cuff` composes `<Chip tag={mark}/>`, so every
+row opens two templates and the leaf hangs one hop behind the inventory
+entry at `children[1 + i].children[0]`. The compile-fail counterpart is
+`RowChildNestedStaticId` — an id-free `Frame` wrapping an id-carrying
+`Badge` — pinned on the transitive message so it cannot collapse into the
+direct branch.
+
+### What broke or surprised
+
+**The trail beat the flag on the diagnostic, not on the check.** A
+`Bool` answers the rejection perfectly well. It cannot answer *where*,
+and "child component `Cuff` carries a static id" is a lie about `Cuff`'s
+source, which is clean — the author would read `Cuff.lean`, find no `id`,
+and be stuck. One `List String` instead of one `Bool` buys `Cuff → Chip`.
+
+**Extending the code was the conservative choice, not the lazy one.**
+The two branches share a rule and a repair; only the attribute's location
+differs, and the author acts identically either way. A second number
+would have to be explained in terms of the first. They are pinned apart
+by *message* in the fixture script, the way ADR-0081 pinned the
+`LRX-TYPE-117` branches, so the branches still cannot collapse.
+
+**Region row templates joined the fold, and exposed an asymmetry worth
+stating.** A component composed into a row may itself declare a region,
+whose template also mints one copy per row — so `staticIdTrail` walks
+those too. But nothing rejects a static `id` in the *top-level*
+component's own row template, which duplicates just as hard. The line is
+ADR-0071's and is now written into ADR-0090 as its one open question: the
+compiler polices templates the author is not looking at (a child module's
+tree, reached by name), and leaves ids in the template under the cursor
+to the author and the axe `duplicate-id` gate.
+
+**Replacing the roster's child cost almost no gate churn, and adding one
+would have cost a lot.** Making the row compose `Cuff` *around* `Chip`
+instead of adding a second row child kept the inventory one entry per
+row, kept `#roster .chip-tag` and `#roster .chip button` resolving to one
+node per row, and kept the delegated action arrays at six cells. The two
+existing inventory tests needed renames and a one-hop read; a second row
+child would have doubled every count in them.
+
+**The witness proves the parent never learns the leaf's name.** The
+sharpest single assertion in the artifact gate is a negative one:
+`NestLab.mjs` does not contain `./Chip.mjs`. The row lowering admitted a
+tree containing `Chip` while having no way to name it.
+
+### Performance observations
+
+No codegen change at all: every generated module in every bundle is
+byte-identical across the change — the counter, diamond, echo, filter,
+branch, toggle, mix, twin, tabs, temperature, validated-form, todo,
+notes, issues, grid, docs and benchmark bundles all compare clean under
+the stash/rebuild protocol, so the size gate, BENCHMARK.md and every
+manifest stand unre-measured. Only the Nest bundle differs, because its
+source did; there the four unchanged modules' `.mjs` files are still
+byte-identical and only their `graphHash` moves with the source lines the
+new component shifted. Elaboration pays one extra `Meta.evalExpr` per
+child-table entry, beside the prop-names evaluation already at that site.
+
+### Follow-up issue or commit
+
+`feat(component): make the row static-id check transitive (ADR-0090)` —
+the `ChildComponent.idTrail` field and `ComponentSpec.staticIdTrail`
+fold, `RowNode.hasStaticId`, the elaborator's trail evaluation at the two
+child-table sites and the two-branch `LRX-ELAB-135`, the Nest Lab `Cuff`
+wrapper and its build registration, the model-level branch-by-branch
+Lean assertions and the Nest child-table trail assertion, the new
+compile-fail fixture and its script registration, the artifact gate and
+the new browser witness, the language guide, the ADR, the DECISIONS.md
+row, and this record. **ADR-0075 OQ1 and ADR-0089 OQ1 are closed.** The
+one open question is now the mirror image: a component's *own* region row
+template can still carry a static `id`, and closing that needs its own
+diagnostic number on the region validation, not another extension of
+`LRX-ELAB-135`.

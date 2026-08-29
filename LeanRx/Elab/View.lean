@@ -254,17 +254,22 @@ def componentPropNames (tag : TSyntax `ident) : TermElabM (List String) := do
   let expression ← instantiateMVars expression
   unsafe Meta.evalExpr (checkMeta := false) (List String) listString expression
 
-/-- Evaluate whether the checked component `{tag}_spec`'s own view template
-carries a static `id` attribute (ADR-0075), mirroring the prop-names
-compile-time evaluation: a row-composed child mounts one instance per row,
-so the parent-side row lowering rejects an id-carrying child template. -/
-def componentViewHasStaticId (tag : TSyntax `ident) : TermElabM Bool := do
+/-- Evaluate the checked component `{tag}_spec`'s static-id trail (ADR-0090),
+mirroring the prop-names compile-time evaluation: the chain of component
+names from `{tag}` down to the first component in its mounted tree carrying a
+static `id`, empty when the whole tree is id-free. A row-composed child mounts
+one instance per row, so the parent-side row lowering rejects a non-empty
+trail and names the path. The trail is read off the spec rather than walked
+here: the grandchildren of `{tag}` are names in its child table, and nothing
+puts their specs in scope at this elaboration site. -/
+def componentStaticIdTrail (tag : TSyntax `ident) : TermElabM (List String) := do
   let specIdent := mkIdentFrom tag (tag.getId.appendAfter "_spec")
+  let listString := mkApp (mkConst ``List [Level.zero]) (mkConst ``String)
   let expression ← Term.elabTermEnsuringType
-    (← `(LeanRx.ComponentSpec.viewHasStaticId $specIdent)) (mkConst ``Bool)
+    (← `(LeanRx.ComponentSpec.staticIdTrail $specIdent)) listString
   Term.synthesizeSyntheticMVarsNoPostponing
   let expression ← instantiateMVars expression
-  unsafe Meta.evalExpr (checkMeta := false) Bool (mkConst ``Bool) expression
+  unsafe Meta.evalExpr (checkMeta := false) (List String) listString expression
 
 private def renderNames (names : List String) : String :=
   String.intercalate ", " names

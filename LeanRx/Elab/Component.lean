@@ -507,18 +507,25 @@ sealed surface is deliberately narrow: props are the child's declared
 immutable props in name and order (LRX-ELAB-112), each value a string
 literal or the bare projection of one declared row field (a row-mount
 constant; a written field is rejected downstream by LRX-VIEW-045), and the
-child's own template must not carry a static `id` (LRX-ELAB-135) because
-row instances are unbounded. Everything else keeps the ADR-0072 rejection
-under LRX-ELAB-131. -/
+child's whole mounted tree must not carry a static `id` (LRX-ELAB-135)
+because row instances are unbounded — the evaluated trail folds the child's
+own view, its region row templates, and every component it composes, at any
+depth (ADR-0090). Everything else keeps the ADR-0072 rejection under
+LRX-ELAB-131. -/
 private def lowerRowChildRef (fields : List String) (tag : TSyntax `ident)
     (attrs : Array Syntax) (element : TSyntax `leanrxJsxElement) :
     CommandElabM (TSyntax `term) := do
   unless ← liftTermElabM (resolvesToComponentSpec tag) do
     throwErrorAt tag
       s!"error[LRX-ELAB-131]: {componentShortName tag} does not resolve to a checked component spec; a sealed row template composes checked child components only (ADR-0075)"
-  if ← liftTermElabM (componentViewHasStaticId tag) then
-    throwErrorAt tag
-      s!"error[LRX-ELAB-135]: child component {componentShortName tag} carries a static id attribute in its view; a row-composed child mounts one instance per row, so its template must use classes instead (ADR-0075)"
+  match ← liftTermElabM (componentStaticIdTrail tag) with
+  | [] => pure ()
+  | [_] =>
+      throwErrorAt tag
+        s!"error[LRX-ELAB-135]: child component {componentShortName tag} carries a static id attribute in its view; a row-composed child mounts one instance per row, so its template must use classes instead (ADR-0075)"
+  | trail =>
+      throwErrorAt tag
+        s!"error[LRX-ELAB-135]: child component {componentShortName tag} composes a static id attribute through {String.intercalate " → " trail}; a row-composed child mounts one instance per row, so every template in its tree must use classes instead (ADR-0090)"
   let declared ← liftTermElabM (componentPropNames tag)
   let mut boundNames : List String := []
   let mut pairTerms : Array (TSyntax `term) := #[]
@@ -1455,8 +1462,17 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
                 unless childNames.contains shortName do
                   childNames := childNames ++ [shortName]
                   let tagLit := Syntax.mkStrLit shortName
+                  /- ADR-0090: the entry records the child's static-id trail,
+                  evaluated here because this is the one site where the
+                  child's `{name}_spec` is known to resolve. Reading the
+                  child's own trail makes the fold inductive — the entry
+                  summarizes the child's whole tree, however deep. -/
+                  let trail ← liftTermElabM (componentStaticIdTrail tag)
+                  let trailLits : Array (TSyntax `term) :=
+                    trail.toArray.map fun entry => ⟨Syntax.mkStrLit entry⟩
                   childTerms := childTerms.push
-                    (← `(LeanRx.ChildComponent.of $tagLit $(← sourceSpanTerm tag)))
+                    (← `(LeanRx.ChildComponent.of $tagLit $(← sourceSpanTerm tag)
+                      (idTrail := [$trailLits,*])))
             regionTerms := regionTerms.push
               (← elabRegionItem item.raw itemSpan rowEventTerms)
           else if item.raw.getKind == ``leanrxItemRowEvent ||
@@ -1579,8 +1595,17 @@ scoped elab (name := leanrxComponent) "component" name:ident "(" "schema" ":=" s
                 unless childNames.contains shortName do
                   childNames := childNames ++ [shortName]
                   let tagLit := Syntax.mkStrLit shortName
+                  /- ADR-0090: the entry records the child's static-id trail,
+                  evaluated here because this is the one site where the
+                  child's `{name}_spec` is known to resolve. Reading the
+                  child's own trail makes the fold inductive — the entry
+                  summarizes the child's whole tree, however deep. -/
+                  let trail ← liftTermElabM (componentStaticIdTrail tag)
+                  let trailLits : Array (TSyntax `term) :=
+                    trail.toArray.map fun entry => ⟨Syntax.mkStrLit entry⟩
                   childTerms := childTerms.push
-                    (← `(LeanRx.ChildComponent.of $tagLit $(← sourceSpanTerm tag)))
+                    (← `(LeanRx.ChildComponent.of $tagLit $(← sourceSpanTerm tag)
+                      (idTrail := [$trailLits,*])))
             let counted ← rewriteCountRefs regionFields
               (rewritePropRefs declaredProps value.raw)
             let rewritten : TSyntax `term := ⟨rewriteEventRefs declaredEvents counted⟩

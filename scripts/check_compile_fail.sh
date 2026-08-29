@@ -121,6 +121,7 @@ fixtures=(
   Test/fixtures/compile-fail/RowChildInBranch.lean
   Test/fixtures/compile-fail/RowChildWrittenField.lean
   Test/fixtures/compile-fail/RowChildStaticId.lean
+  Test/fixtures/compile-fail/RowChildNestedStaticId.lean
   Test/fixtures/compile-fail/RowChildComposedProp.lean
   Test/fixtures/compile-fail/RowChildBroadcastField.lean
   Test/fixtures/compile-fail/FilterRegionTwice.lean
@@ -252,6 +253,9 @@ fragments=(
   "error[LRX-VIEW-045]"
   "error[LRX-VIEW-045]"
   "error[LRX-ELAB-135]"
+  # ADR-0090: the transitive branch of LRX-ELAB-135 is pinned on its message,
+  # not on the shared code, so it cannot collapse into the direct one above.
+  "composes a static id attribute through Frame → Badge"
   "error[LRX-ELAB-131]"
   "error[LRX-VIEW-045]"
   "error[LRX-TYPE-113]"

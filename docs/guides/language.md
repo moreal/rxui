@@ -224,8 +224,15 @@ every removal path through the row dispose callback, and republished on the
 disposer's live `children` inventory. Its props are row-mount constants: a
 string literal or the bare projection of one declared row field that no row
 event or broadcast rewrites (`LRX-VIEW-045` otherwise, the ADR-0068 OQ1
-immutable-prop boundary in row scope); the child's own template must carry
-no static `id` because row instances are unbounded (`LRX-ELAB-135`).
+immutable-prop boundary in row scope); and no template in the child's
+*mounted tree* may carry a static `id`, because row instances are unbounded
+(`LRX-ELAB-135`). That check is transitive (ADR-0090): the row lowering reads
+a trail the child recorded when it elaborated, folding the child's own view,
+the row templates of any region it declares, and every component it composes,
+at any depth — so an id-free wrapper around an id-carrying leaf is rejected
+too, and the diagnostic names the path (`Frame → Badge`). View scope is
+unaffected: a component composed in a view mounts once, so it may carry ids
+freely and only row references consult the trail.
 A template may compose **any number** of children, different components or
 the same one repeated: each mounts where it sits in the template, the row
 root stashes the mount returns as a list in that order, and the dispose

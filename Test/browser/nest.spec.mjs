@@ -13,6 +13,7 @@ const files = new Set([
   "Tick.mjs",
   "Blip.mjs",
   "Chip.mjs",
+  "Cuff.mjs",
   "leanrx_dom.mjs",
   "leanrx_region.mjs",
 ]);
@@ -492,15 +493,36 @@ test("fan-out sibling leaves stay independently reachable through the re-forward
 });
 
 test("each roster row mounts its own chip with a row-mount-constant prop", async ({ page }) => {
-  // ADR-0075: the row template composes one Chip per row, its `tag` prop
+  // ADR-0075: the row template composes one child per row, its prop
   // projecting the `origin` row field at row mount — a row-mount constant,
   // legal exactly because no row event or broadcast writes `origin`.
+  // ADR-0090: that child is the wrapper `Cuff`, which forwards the constant
+  // one level further into its own `Chip`, so the row's chip texts below are
+  // read off a *grandchild* of the region.
   await mountNest(page);
   await page.getByRole("button", { name: "Add item" }).click();
   await page.getByRole("button", { name: "Add item" }).click();
   await page.getByRole("button", { name: "Add item" }).click();
+  await expect(page.locator("#roster .cuff-mark")).toHaveText([
+    "Origin 0", "Origin 1", "Origin 2",
+  ]);
   await expect(page.locator("#roster .chip-tag")).toHaveText([
     "Origin 0", "Origin 1", "Origin 2",
+  ]);
+  // The leaf really is mounted inside the wrapper, not beside it: the row
+  // root's last cell is the `.cuff` div and the `.chip` div is its child, so
+  // the row opened two templates and the delegated cell math still sees one.
+  const rowShape = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#roster > li")).map((row) => [
+      Array.from(row.children).map((node) => node.className),
+      Array.from(row.querySelector(".cuff").children).map((node) =>
+        node.className || node.tagName.toLowerCase(),
+      ),
+    ]),
+  );
+  expect(rowShape[0]).toEqual([
+    ["roster-label", "roster-key", "roster-edit", "roster-mark", "roster-actions", "cuff"],
+    ["cuff-mark", "button", "cuff-text", "chip"],
   ]);
   // Each row's chip owns its own state array — clicking one never touches
   // its row siblings or the view-level chips inside Tick.
@@ -525,6 +547,84 @@ test("each roster row mounts its own chip with a row-mount-constant prop", async
   expect(accessibility.violations).toEqual([]);
 });
 
+test("a row-composed wrapper mounts and disposes its own leaf per row", async ({ page }) => {
+  // ADR-0090: the row child is a wrapper, so each row opens two templates and
+  // the inventory entry is one hop above the leaf — the per-row grandchild is
+  // reachable as `children[1 + i].children[0]`, commits in its own state
+  // array, and rides its wrapper's disposal on row removal. This is the shape
+  // `LRX-ELAB-135` now has to answer about: the row lowering saw only the name
+  // `Cuff`, and `Chip` is a string inside `Cuff`'s child table.
+  await mountNest(page);
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(page.locator("#roster > li")).toHaveCount(2);
+  const cuffButtons = page.locator("#roster .cuff > button");
+  await cuffButtons.first().click();
+  await page.locator("#roster .chip button").nth(1).click();
+  await page.locator("#roster .chip button").nth(1).click();
+  await expect(page.locator("#roster .cuff-text")).toHaveText(["Cuffs: 1", "Cuffs: 0"]);
+  await expect(page.locator("#roster .chip-text")).toHaveText(["Chips: 0", "Chips: 2"]);
+  // The wrapper and its leaf keep separate state arrays: neither click shows
+  // up in the other's trace, and neither reaches the region or the parent.
+  const reach = await page.evaluate(() => {
+    const inventory = globalThis.nestDispose.children;
+    const wrapper = inventory[1];
+    const leaf = wrapper.children[0];
+    return {
+      inventoryCount: inventory.length,
+      leafKind: typeof leaf.instrumentation,
+      wrapperCommits: wrapper.instrumentation()[7]
+        .filter((event) => event === "transaction:commit").length,
+      leafCommits: leaf.instrumentation()[7]
+        .filter((event) => event === "transaction:commit").length,
+      secondLeafCommits: inventory[2].children[0].instrumentation()[7]
+        .filter((event) => event === "transaction:commit").length,
+    };
+  });
+  // Two rows, two inventory entries behind the static Pulse seed — the leaves
+  // never join the inventory, they hang off their own wrapper's disposer.
+  expect(reach.inventoryCount).toBe(3);
+  expect(reach.leafKind).toBe("function");
+  expect(reach.wrapperCommits).toBe(1);
+  expect(reach.leafCommits).toBe(0);
+  expect(reach.secondLeafCommits).toBe(2);
+  // Removing the row disposes the wrapper, which disposes its leaf: both
+  // freeze, and the leaf's DOM leaves with the row.
+  const frozen = await page.evaluate(() => {
+    globalThis.rowWrapper = globalThis.nestDispose.children[1];
+    globalThis.rowLeaf = globalThis.rowWrapper.children[0];
+    globalThis.rowLeafButton = document.querySelector("#roster .chip button");
+    return {
+      wrapper: globalThis.rowWrapper.instrumentation(),
+      leaf: globalThis.rowLeaf.instrumentation(),
+    };
+  });
+  await page.locator("#roster > li").first().getByRole("button", { name: "Remove row" }).click();
+  await expect(page.locator("#roster > li")).toHaveCount(1);
+  const after = await page.evaluate(() => {
+    globalThis.rowLeafButton.dispatchEvent(new Event("click", { bubbles: true }));
+    return {
+      count: globalThis.nestDispose.children.length,
+      stillListed: globalThis.nestDispose.children.includes(globalThis.rowWrapper),
+      attached: document.contains(globalThis.rowLeafButton),
+      wrapper: globalThis.rowWrapper.instrumentation(),
+      leaf: globalThis.rowLeaf.instrumentation(),
+    };
+  });
+  expect(after.count).toBe(2);
+  expect(after.stillListed).toBe(false);
+  expect(after.attached).toBe(false);
+  expect(after.wrapper).toEqual(frozen.wrapper);
+  expect(after.leaf).toEqual(frozen.leaf);
+  // The surviving row keeps both of its levels live and untouched.
+  await expect(page.locator("#roster .cuff-mark")).toHaveText(["Origin 1"]);
+  await expect(page.locator("#roster .chip-text")).toHaveText(["Chips: 2"]);
+  await page.locator("#roster .chip button").click();
+  await expect(page.locator("#roster .chip-text")).toHaveText(["Chips: 3"]);
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
 test("the live children inventory tracks row mounts and removals", async ({ page }) => {
   // ADR-0075: `disposer.children` republishes the shared live inventory —
   // the static Pulse disposer seeded first, then one entry per mounted row
@@ -544,13 +644,13 @@ test("the live children inventory tracks row mounts and removals", async ({ page
   });
   expect(mounted.count).toBe(3);
   expect(mounted.rowChildKind).toBe("function");
-  // Removing the first row splices its chip out of the inventory and
+  // Removing the first row splices its entry out of the inventory and
   // disposes it: the DOM leaves with the row, the captured disposer stays
-  // reachable with frozen counters, and the retained row keeps its chip
+  // reachable with frozen counters, and the retained row keeps its child
   // instance (and state) across the structural reconcile.
   await page.locator("#roster .chip button").nth(1).click();
   await page.evaluate(() => {
-    globalThis.firstRowChip = globalThis.nestDispose.children[1];
+    globalThis.firstRowChild = globalThis.nestDispose.children[1];
     globalThis.firstRowChipButton = document.querySelectorAll("#roster .chip button")[0];
   });
   await page.locator("#roster > li").first().getByRole("button", { name: "Remove row" }).click();
@@ -561,16 +661,16 @@ test("the live children inventory tracks row mounts and removals", async ({ page
     globalThis.firstRowChipButton.dispatchEvent(new Event("click", { bubbles: true }));
     return {
       count: globalThis.nestDispose.children.length,
-      stillListed: globalThis.nestDispose.children.includes(globalThis.firstRowChip),
+      stillListed: globalThis.nestDispose.children.includes(globalThis.firstRowChild),
       attached: document.contains(globalThis.firstRowChipButton),
-      snapshot: globalThis.firstRowChip.instrumentation(),
+      snapshot: globalThis.firstRowChild.instrumentation(),
     };
   });
   expect(removed.count).toBe(2);
   expect(removed.stillListed).toBe(false);
   expect(removed.attached).toBe(false);
   expect(removed.snapshot[7].filter((event) => event === "transaction:commit")).toHaveLength(0);
-  // A fresh append mounts a fresh chip with fresh state behind the retained
+  // A fresh append mounts a fresh child with fresh state behind the retained
   // row's entry.
   await page.getByRole("button", { name: "Add item" }).click();
   await expect(page.locator("#roster .chip-tag")).toHaveText(["Origin 1", "Origin 2"]);
@@ -582,7 +682,9 @@ test("the live children inventory tracks row mounts and removals", async ({ page
 test("root disposal disposes row chips while the inventory keeps reachability", async ({ page }) => {
   // ADR-0075: the region's own dispose path passes no context, so the
   // inventory keeps its entries exactly as the static ADR-0066 array does —
-  // every entry disposed, counters frozen, DOM gone.
+  // every entry disposed, counters frozen, DOM gone. ADR-0090: the frozen
+  // counter read below belongs to the per-row *grandchild*, one hop behind
+  // the inventory entry, so root disposal reaches through the wrapper.
   await mountNest(page);
   await page.getByRole("button", { name: "Add item" }).click();
   await page.getByRole("button", { name: "Add item" }).click();
@@ -592,7 +694,7 @@ test("root disposal disposes row chips while the inventory keeps reachability", 
     globalThis.rowChipButtons = Array.from(
       document.querySelectorAll("#roster .chip button"),
     );
-    const snapshot = globalThis.nestDispose.children[1].instrumentation();
+    const snapshot = globalThis.nestDispose.children[1].children[0].instrumentation();
     globalThis.nestDispose();
     return snapshot;
   });
@@ -605,7 +707,7 @@ test("root disposal disposes row chips while the inventory keeps reachability", 
       attachedCount: globalThis.rowChipButtons.filter((button) =>
         document.contains(button),
       ).length,
-      snapshot: globalThis.nestDispose.children[1].instrumentation(),
+      snapshot: globalThis.nestDispose.children[1].children[0].instrumentation(),
     };
   });
   expect(after.count).toBe(3);

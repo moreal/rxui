@@ -21,7 +21,7 @@ if (
   nestManifest.textSinkCount !== 1 ||
   nestManifest.eventCount !== 2 ||
   JSON.stringify(nestManifest.hostImports) !==
-    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs", "./Chip.mjs", "./Pulse.mjs"]) ||
+    JSON.stringify(["./leanrx_dom.mjs", "./leanrx_region.mjs", "./Cuff.mjs", "./Pulse.mjs"]) ||
   JSON.stringify(nestManifest.features) !== JSON.stringify([
     "scalar", "events", "transactions", "instrumentation", "trace",
     "child-components", "keyed-regions", "row-child-components",
@@ -76,6 +76,25 @@ if (
   throw new Error("generated Blip manifest is invalid");
 }
 
+// ADR-0090: the row-composed child is a *wrapper* — its manifest names the
+// leaf it composes, so the row opens two templates per row and the static-id
+// question the row lowering answers spans both. The trail it reads is empty
+// exactly because neither manifest's module carries an id.
+const cuffManifest = JSON.parse(
+  await readFile(path.join(directory, "Cuff.mjs.manifest.json"), "utf8"),
+);
+if (
+  cuffManifest.module !== "Cuff.mjs" ||
+  JSON.stringify(cuffManifest.hostImports) !==
+    JSON.stringify(["./leanrx_dom.mjs", "./Chip.mjs"]) ||
+  JSON.stringify(cuffManifest.features) !== JSON.stringify([
+    "scalar", "events", "transactions", "instrumentation", "trace",
+    "child-components", "immutable-props",
+  ])
+) {
+  throw new Error("generated Cuff manifest is invalid");
+}
+
 const chipManifest = JSON.parse(
   await readFile(path.join(directory, "Chip.mjs.manifest.json"), "utf8"),
 );
@@ -96,18 +115,21 @@ const pulseSource = await readFile(path.join(directory, "Pulse.mjs"), "utf8");
 const tickSource = await readFile(path.join(directory, "Tick.mjs"), "utf8");
 const blipSource = await readFile(path.join(directory, "Blip.mjs"), "utf8");
 const chipSource = await readFile(path.join(directory, "Chip.mjs"), "utf8");
+const cuffSource = await readFile(path.join(directory, "Cuff.mjs"), "utf8");
 for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
   if (nestSource.includes(banned) || pulseSource.includes(banned) ||
       tickSource.includes(banned) || blipSource.includes(banned) ||
-      chipSource.includes(banned)) {
+      chipSource.includes(banned) || cuffSource.includes(banned)) {
     throw new Error(`generated Nest Lab contains ${banned}`);
   }
 }
 for (const required of [
-  // ADR-0075: the child table serves both scopes — the row-composed Chip and
+  // ADR-0075: the child table serves both scopes — the row-composed Cuff and
   // the view-composed Pulse share one aliased-import convention, ordered by
-  // first occurrence (the region item precedes the view item).
-  "import { mount as $lrx_child_0 } from \"./Chip.mjs\";",
+  // first occurrence (the region item precedes the view item). ADR-0090: the
+  // row entry is a wrapper, so the parent imports it and never learns the
+  // leaf's name — `Chip.mjs` is imported by `Cuff.mjs` alone.
+  "import { mount as $lrx_child_0 } from \"./Cuff.mjs\";",
   "import { mount as $lrx_child_1 } from \"./Pulse.mjs\";",
   "import { createKeyedRegion } from \"./leanrx_region.mjs\";",
   "const child_off_0 = $lrx_child_1(node_0, [\"Pulse child\"]);",
@@ -219,6 +241,26 @@ if (blipSource.includes("$lrx_child") || blipSource.includes("Blip.mjs")) {
 }
 if (chipSource.includes("$lrx_child") || chipSource.includes("Chip.mjs")) {
   throw new Error("generated Chip module unexpectedly nests children");
+}
+// ADR-0090: the wrapper is an ordinary composing module — the row mounts it
+// per row, and it mounts its own leaf and republishes the leaf's disposer, so
+// the per-row grandchild is reachable one hop behind the inventory entry.
+for (const required of [
+  "function mount(target, props)",
+  "createText(props[0])",
+  "import { mount as $lrx_child_0 } from \"./Chip.mjs\";",
+  "const child_off_0 = $lrx_child_0(node_0, [props[0]]);",
+  "disposer[\"children\"] = [child_off_0];",
+]) {
+  if (!cuffSource.includes(required)) {
+    throw new Error(`generated Cuff is missing ${required}`);
+  }
+}
+// The parent never imports the leaf the wrapper composes: the row lowering
+// answered the static-id question from the wrapper's recorded trail, not by
+// resolving a name it does not carry.
+if (nestSource.includes("./Chip.mjs")) {
+  throw new Error("generated Nest Lab unexpectedly imports the wrapped leaf");
 }
 
 const generated = await import(pathToFileURL(path.join(directory, "NestLab.mjs")).href);

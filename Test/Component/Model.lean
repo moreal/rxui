@@ -12,6 +12,69 @@ private def expectError (code : String)
       unless error.code == code do
         throw <| IO.userError s!"expected {code}, got {error.code}"
 
+/- ADR-0090: the transitive static-id trail, one branch at a time. The fold
+is inductive over stored answers, never over a name lookup: a child entry
+carries the trail its own elaboration computed, so an arbitrarily deep tree
+is summarized by one list without any consumer resolving a grandchild's
+spec. -/
+private abbrev TrailSchema : Schema := .field "n" Int .empty
+
+private def trailSpec (name : String) (view : View TrailSchema)
+    (children : Array ChildComponent := #[]) (regions : Array RegionSpec := #[]) :
+    ComponentSpec TrailSchema :=
+  { name, values := #[], events := #[], view, children, regions }
+
+private def staticIdTrails : IO Unit := do
+  let cleanLeaf := trailSpec "Leaf"
+    (View.node .div [View.node .span [.text "leaf"] [.className "leaf-mark"]])
+  unless cleanLeaf.staticIdTrail == [] do
+    throw <| IO.userError "an id-free leaf reported a static-id trail"
+  let idLeaf := trailSpec "Leaf"
+    (View.node .div [View.node .span [.text "leaf"] [.id "leaf-mark"]])
+  unless idLeaf.staticIdTrail == ["Leaf"] do
+    throw <| IO.userError "an id-carrying leaf lost its own name from the trail"
+  /- A wrapper whose own template is clean answers through its child entry,
+  and the answer keeps the whole path so a diagnostic can name it. -/
+  let wrapper := trailSpec "Wrapper" (View.node .div [.child "Leaf"])
+    (children := #[ChildComponent.of "Leaf" (idTrail := idLeaf.staticIdTrail)])
+  unless wrapper.staticIdTrail == ["Wrapper", "Leaf"] do
+    throw <| IO.userError "a clean wrapper did not inherit its child's trail"
+  let outer := trailSpec "Outer" (View.node .div [.child "Wrapper"])
+    (children := #[ChildComponent.of "Wrapper" (idTrail := wrapper.staticIdTrail)])
+  unless outer.staticIdTrail == ["Outer", "Wrapper", "Leaf"] do
+    throw <| IO.userError "the trail did not extend past one level"
+  unless (trailSpec "Outer" (View.node .div [.child "Wrapper"])
+      (children := #[ChildComponent.of "Wrapper"
+        (idTrail := wrapper.staticIdTrail)])).staticIdTrail.length == 3 do
+    throw <| IO.userError "the trail collapsed a level"
+  /- Two children: the first non-empty answer wins, so the reported path is
+  the one nearest the front of the table. -/
+  let both := trailSpec "Both" (View.node .div [.child "Clean", .child "Wrapper"])
+    (children := #[ChildComponent.of "Clean",
+      ChildComponent.of "Wrapper" (idTrail := wrapper.staticIdTrail)])
+  unless both.staticIdTrail == ["Both", "Wrapper", "Leaf"] do
+    throw <| IO.userError "a clean sibling masked a child's trail"
+  /- A region instantiates its template once per row, so an id there is the
+  same unbounded duplication the child rule exists for. -/
+  let regioned := trailSpec "Regioned" (View.node .ul [View.region "rows"])
+    (regions := #[{
+      name := "rows"
+      fields := #["label"]
+      events := #[]
+      template := RowNode.node .li [.fieldText 0] [.id "row"]
+    }])
+  unless regioned.staticIdTrail == ["Regioned"] do
+    throw <| IO.userError "a row template's static id escaped the trail"
+  let cleanRegion := trailSpec "Regioned" (View.node .ul [View.region "rows"])
+    (regions := #[{
+      name := "rows"
+      fields := #["label"]
+      events := #[]
+      template := RowNode.node .li [.fieldText 0] [.className "row"]
+    }])
+  unless cleanRegion.staticIdTrail == [] do
+    throw <| IO.userError "an id-free row template reported a static-id trail"
+
 private def checkCounter (checked : CheckedComponent CounterSchema) : IO Unit := do
   unless checked.sourceCount == 1 do
     throw <| IO.userError "Counter source prefix changed"
@@ -1210,5 +1273,6 @@ def run : IO Unit := do
       events := #[]
       view := View.node .p [.text "cycle"] }
   expectError "LRX-GRAPH-001" cycle.check
+  staticIdTrails
 
 end LeanRxTest.Component.Model

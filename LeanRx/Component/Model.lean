@@ -213,15 +213,26 @@ def SurfaceDecl.debug (value : SurfaceDecl) : String :=
 
 /-- One statically nested child component (ADR-0039). The parent's emitted
 module imports the child's `mount` export from `moduleSpecifier`; the child
-keeps its own independent state, schema, and events. -/
+keeps its own independent state, schema, and events.
+
+`idTrail` is the entry's one piece of derived information (ADR-0090): the
+chain of component names from this child down to the first component in its
+mounted tree that carries a static `id`, or `[]` when the whole tree is
+id-free. The elaborator fills it at the reference site — the only place where
+the child's `{name}_spec` is known to resolve — by reading the child spec's
+own trail, so the fold is inductive: every entry already summarizes an
+arbitrarily deep tree, and no consumer ever has to re-resolve a name it only
+knows as a string. -/
 structure ChildComponent where
   name : String
   moduleSpecifier : String
   span : SourceSpan := .generated
+  idTrail : List String := []
 deriving Repr, BEq
 
-def ChildComponent.of (name : String) (span : SourceSpan := .generated) : ChildComponent :=
-  { name, moduleSpecifier := s!"./{name}.mjs", span }
+def ChildComponent.of (name : String) (span : SourceSpan := .generated)
+    (idTrail : List String := []) : ChildComponent :=
+  { name, moduleSpecifier := s!"./{name}.mjs", span, idTrail }
 
 /-- One declared immutable component input (ADR-0042). The value arrives from
 the parent through the mount ABI (`mount(target, props)`); updates cannot
@@ -314,13 +325,27 @@ elaboration validates child prop bindings against this list (ADR-0042). -/
 def ComponentSpec.propNames (spec : ComponentSpec Γ) : List String :=
   spec.props.toList.map (·.name)
 
-/-- Whether this component's own view template carries a static `id`
-attribute anywhere (ADR-0075). A row-composed child mounts one instance per
-row, so the parent-side row lowering evaluates this predicate to reject
-composing an id-carrying child — unbounded instances would duplicate
-document ids. -/
-def ComponentSpec.viewHasStaticId (spec : ComponentSpec Γ) : Bool :=
-  spec.view.hasStaticId
+/-- The chain of component names from this component down to the first
+component in its mounted tree that carries a static `id`, or `[]` when the
+tree is id-free (ADR-0075/ADR-0090). Mounting one instance of this component
+places every element of its own view, every element of every region row
+template it instantiates, and the whole tree of every child it composes into
+the document, so all three are folded: the own-template answer names this
+component alone, and a composed child's answer extends its stored trail.
+
+The recursion terminates in the stored trails rather than in a name lookup —
+`children` carries strings, and nothing guarantees a grandchild's spec is in
+scope wherever this predicate is read. A row-composed child mounts one
+instance per row, so the parent-side row lowering evaluates this trail and
+rejects a non-empty one, naming the path it found. -/
+def ComponentSpec.staticIdTrail (spec : ComponentSpec Γ) : List String :=
+  if spec.view.hasStaticId ||
+      spec.regions.any (fun region => region.template.hasStaticId) then
+    [spec.name]
+  else
+    match (spec.children.toList.map (·.idTrail)).find? (fun trail => !trail.isEmpty) with
+    | some trail => spec.name :: trail
+    | none => []
 
 structure ComponentError where
   code : String

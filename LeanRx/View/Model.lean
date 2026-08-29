@@ -590,6 +590,26 @@ mutual
     | .cons head tail => RowNode.hasTrim head || RowChildren.hasTrim tail
 end
 
+/- Whether the sealed row template carries a static `id` attribute anywhere,
+including inside both subtrees of a two-branch cell (ADR-0090). A region
+instantiates its template once per row, so an id in it is one more way a
+composed component's tree mints unbounded copies of one document id; the
+transitive predicate folds this in beside the component's own view.
+Row-scoped child references carry no attributes of their own — the composed
+child's tree is folded through the child table instead. -/
+mutual
+  def RowNode.hasStaticId : RowNode → Bool
+    | .element _ attrs _ children _ _ _ _ =>
+        attrs.any (fun attr => attr.name == "id") || RowChildren.hasStaticId children
+    | .text _ _ | .fieldText _ _ | .exprText _ _ | .child .. => false
+    | .branch _ _ whenTrue whenFalse _ =>
+        RowNode.hasStaticId whenTrue || RowNode.hasStaticId whenFalse
+
+  def RowChildren.hasStaticId : RowChildren → Bool
+    | .nil => false
+    | .cons head tail => RowNode.hasStaticId head || RowChildren.hasStaticId tail
+end
+
 /- The row-scoped child references of one sealed template in traversal order
 (ADR-0075). Validation admits at most one per template and none inside branch
 subtrees, so the first entry is the whole inventory of a valid template; the
@@ -672,8 +692,10 @@ end ViewChildren
 /- Whether the view's static tree carries a static `id` attribute anywhere
 (ADR-0075): a row-composed child template mounts one instance per row, so an
 id-carrying template would duplicate document ids — the parent-side row
-lowering rejects such a child. Only this component's own template is walked;
-nested child references keep their own contracts. -/
+lowering rejects such a child. This walker answers for one component's own
+view alone; a `child` position is opaque to it, because the referenced
+component's tree is folded in separately through the child table's derived
+trail (ADR-0090) rather than re-resolved here. -/
 mutual
   def View.hasStaticId : View Γ → Bool
     | .element _ attrs _ children _ _ _ =>

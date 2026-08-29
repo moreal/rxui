@@ -82,11 +82,23 @@ private def verifyMix (checked : CheckedComponent LeanRxExamples.MixLab.MixSchem
 
 private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSchema) :
     IO Unit := do
-  unless checked.spec.children.toList.map (·.name) == ["Chip", "Pulse"] do
+  unless checked.spec.children.toList.map (·.name) == ["Cuff", "Pulse"] do
     throw <| IO.userError "child component table lost the nested Pulse reference"
   unless checked.spec.children.toList.map (·.moduleSpecifier) ==
-      ["./Chip.mjs", "./Pulse.mjs"] do
+      ["./Cuff.mjs", "./Pulse.mjs"] do
     throw <| IO.userError "child component table lost the module specifier convention"
+  /- ADR-0090: the child table's one derived field answers the transitive
+  static-id question for each entry's whole tree. The row-composed `Cuff`
+  wraps the id-free `Chip`, so its trail is empty and the row reference is
+  admitted; the view-composed `Pulse` carries `id="pulse-title"` in its own
+  template, so its trail names itself — the same table holds an admitted and
+  a rejectable answer, and only the row scope reads them. -/
+  unless checked.spec.children.toList.map (·.idTrail) == [[], ["Pulse"]] do
+    throw <| IO.userError "child component table lost the static-id trails"
+  unless LeanRxExamples.NestLab.Cuff_spec.staticIdTrail == [] do
+    throw <| IO.userError "the id-free wrapper reported a static-id trail"
+  unless LeanRxExamples.NestLab.Pulse_spec.staticIdTrail == ["Pulse"] do
+    throw <| IO.userError "the id-carrying child lost its own static-id trail"
   unless checked.view.childRefs.map (fun ref => (ref.name, ref.path)) == [("Pulse", [5])] do
     throw <| IO.userError "view split lost the mounted child reference"
   unless checked.view.childRefs.map (·.props) == [[("title", .lit "Pulse child")]] do
@@ -96,12 +108,13 @@ private def verifyNest (checked : CheckedComponent LeanRxExamples.NestLab.NestSc
   unless checked.spec.regions.toList.map (·.fields) ==
       [#["label", "marks", "lastKey", "origin"]] do
     throw <| IO.userError "region table lost the row field inventory"
-  /- ADR-0075: the sealed row template composes one Chip per row, its `tag`
-  prop projecting the unwritten `origin` field. -/
+  /- ADR-0075: the sealed row template composes one child per row, its prop
+  projecting the unwritten `origin` field. ADR-0090: that child is a wrapper,
+  so the row opens two templates per row and the constant is forwarded on. -/
   unless checked.spec.regions.toList.map
       (fun region => region.template.childRefs.map
         (fun (name, props, _) => (name, props))) ==
-      [[("Chip", [("tag", .field 3)])]] do
+      [[("Cuff", [("mark", .field 3)])]] do
     throw <| IO.userError "region table lost the row child reference"
   unless checked.spec.regions.toList.map
       (fun region => region.events.toList.map
