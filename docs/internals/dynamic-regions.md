@@ -180,7 +180,13 @@ that consume them — `childAt(container, i)` addresses the container's *i*-th
 child, and only after the drains do the row table and the host agree — so the
 three values the narrow path needs are snapshotted beside the wake flags,
 before the drains empty what they name. Both sweeps report the number of rows
-they read, as `predicate:{region}:read:{n}` and `filter:{region}:read:{n}`.
+they read, as `predicate:{region}:read:{n}` and `filter:{region}:read:{n}`. A
+filtered row is *hidden*, never detached, and that is what keeps the
+identity: were the sweep to remove a filtered row from the container,
+`childAt(container, i)`, `insertAt`'s `entries[position].node` anchor and
+`ownsWholeParent`'s one-write clear would all stop addressing the same row.
+ADR-0101 priced the alternative at 76× on the browser side and declined it
+for exactly that reason.
 The ADR-0063 write-back keeps walking every row, because two thirds of its
 cost is the bytes of a payload that is the whole table by contract and the
 only layout that would narrow it costs 7.2 µs per key.

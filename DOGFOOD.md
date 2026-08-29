@@ -6704,3 +6704,117 @@ leaves is the two numbers that dwarf everything the compiler reaches: one
 `location.hash` write costing 20 ms at ten thousand rows, and 1 282 ms of
 style and layout for a filter flip that a framework-free control pays in
 full.
+
+## What a filter costs the browser (ADR-0101)
+
+### What was built
+
+Nothing in the emission. This round was a measurement and three declines:
+ADR-0100 left two open questions pointing at the two largest numbers on the
+Toggle Lab page — 1 282 ms of forced style and layout after a filter flip,
+and 20 ms for one `location.hash` write — and both are answered here by
+finding out what they are actually made of.
+
+The harness is ADR-0099's at ADR-0100's settings, with two additions: a CDP
+timeline trace whose `B`/`E` events are paired per renderer thread, so the
+forced total splits into `UpdateLayoutTree`, `Layout`, `PrePaint` and
+`Paint`; and a seed that lays the same *k* done rows out either as a
+contiguous prefix — which is what ADR-0099 and ADR-0100 both seeded — or
+spread one in every `N/k`.
+
+### What broke or surprised
+
+**The distribution was the whole finding.** At ten thousand rows the same
+five thousand hidden rows cost **1 263 ms as a contiguous run and 28 ms
+scattered**, 44.8× apart, and at one thousand rows 14.65 against 2.55. The
+framework-free law, fitted over run lengths from 1 to 5 000, is
+`21.2 + 4.25·10⁻⁵ · k · R` milliseconds to within 2% at every point: linear
+in the rows hidden and linear again in the length of the run they sit in,
+quadratic only in the one case where the run is the whole set. ADR-0100's
+headline number is the worst case of a seed, not the price of filtering, and
+it is corrected in place.
+
+**The split says style recalc, not layout.** Of the 1 280 ms, 91.0% is
+`UpdateLayoutTree`, 7.8% `Layout`, 1.3% `PrePaint` and 0.8% `Paint`. Nothing
+about it is painting a screenful.
+
+**`location.hash` was never the subject.** All three history writes cost the
+same at ten thousand rows, and the cost tracks *form controls*: a document of
+text rows pays 0.315 / 0.150 / 0.145 ms for `location.hash =` /
+`replaceState` / `pushState`, the same rows with a `<span>` or a `<button>`
+pay 0.5–0.6, and the same rows with one `<input type="checkbox">` pay
+**17.850 / 16.865 / 16.970**. About 1.7 µs per stateful control, saved into
+the session-history entry by every history write alike. ADR-0100's `:target`
+attribution is wrong, and the twenty milliseconds belongs to the row
+template, not to ADR-0063.
+
+**A probe anchor went stale for the second round running, and the assertion
+caught it for the second round running.** ADR-0100 replaced ADR-0097's
+per-row drain loop with one `removeMany` call, so `removeDrain`'s open
+anchor matched **zero** times against a close anchor that still matched
+sixteen. Last round two of nine anchors were wrong; this round one of nine
+was, and neither round would have thrown without the count check.
+
+**A re-seed has to reset the ADR-0086 display cells, not just the row
+table.** The cells ride the row tuples, so installing *fresh* tuples into a
+region whose retained DOM nodes are still `hidden` from the previous flip
+leaves every cell claiming "shown" over a node that is not; the sweep then
+writes nothing and the flip measures a fraction of its cost. The first
+version of this round's table read `1 000/500` with the whole list collapsed
+to 220 px of body height and raised no error anywhere. The seed now walks
+the container once, untimed, and puts the DOM and the cells into agreement —
+the same class of bug as ADR-0100's uncommitted seed, one layer in.
+
+### Performance observations
+
+The container class was measured against today's per-row `hidden` on a
+byte-identical DOM, paired with ABBA inside every pass, per-cell minima,
+medians of pass values, and an **A/A control run first in every cell**:
+
+| cell | A/A | per-row `hidden` | container class | ratio |
+| --- | ---: | ---: | ---: | ---: |
+| 10 000 / 5 000 contiguous | 0.999× | 1 077.07 | 1 080.06 | 0.997× |
+| 10 000 / 5 000 spread | 1.001× | 21.68 | 21.29 | 1.018× |
+| 10 000 / 1 000 | 1.009× | 52.28 | 53.10 | 0.985× |
+| 10 000 / all | 0.999× | 4 331.93 | 4 332.25 | 1.000× |
+| 1 000 / 500 | 0.995× | 12.29 | 12.38 | 0.993× |
+| 1 000 / all | 0.995× | 45.01 | 45.13 | 0.998× |
+| 100 / 50 | 1.021× | 0.24 | 0.25 | 0.960× |
+
+Every cell inside its own band, and one extra static attribute per row costs
+1.025× / 0.999× / 0.996× to mount. The write was never the cost.
+
+Four shapes for the same flip — ten thousand rows, five thousand hidden as
+one run, framework-free, write and forced timed apart: per-row `hidden`
+1.29 + 1 099.7, one container class 0.01 + 1 080.1, comment placeholders
+232.4 + 3.5, **removed from the container 11.2 + 3.3**. Detaching is 76×
+here and 195× with every row filtered out, and it is not taken — the
+placeholder that would have kept `childAt(container, i)` meaningful pays the
+same law in the mutation instead of the recalc, and detaching breaks the
+identity of row-table position with container-child position that ADR-0092,
+ADR-0094 and ADR-0097/0098/0100 are built on.
+Hiding the container when a filter matches nothing is 4 386 → 31.6 ms, a
+real **139×**, declined because ADR-0058 already owns that element's
+`hidden` with a structural-emptiness subject and a second writer of one
+property is what ADR-0045 rejects.
+
+### Compiler and gate work
+
+None. `runtimeAbi` stays 19, no host export is added, no region record slot
+moves, every generated module is byte-identical, and the
+js-framework-benchmark size baseline, its manifest and BENCHMARK.md are
+untouched. Five files change: the new ADR, the DECISIONS.md row, this
+record, the language guide's filter-cost paragraph — which stated ADR-0100's
+`:target` attribution as fact and now states the form-control one, with the
+run-length law beside it — and the dynamic-regions note, which gains the one
+sentence saying that a filtered row is hidden and never detached, and what
+that identity is holding up.
+
+### Follow-up issue or commit
+
+`docs(adr): price a filter's visibility against the browser (ADR-0101)` —
+the ADR, the DECISIONS.md row and this record. **ADR-0100 OQ1 and OQ2 are
+closed**, one by a wash and one by a mechanism nobody had named, and what
+they leave is the detach lowering: 76× at ten thousand rows, priced, and
+costing the region's positional identity, which is a host round with an ABI
+event in it rather than a sweep round.

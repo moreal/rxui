@@ -873,15 +873,25 @@ style and layout it dirties cost 9.5 ms more, which is the browser's and not
 the compiler's.
 
 Two more of those numbers are worth knowing before optimising anything a
-filter does (ADR-0100). Flipping a filter over ten thousand rows costs
-24.7 ms of commit, of which the sweep is **2.6** and the other 21.5 is the
-`route` field's own `location.hash` write — a fragment change invalidates
-`:target` for the whole document, and an assignment to `location.hash` with
-layout already clean and no LeanRx code in the loop measures 19.8–22.2 ms at
-ten thousand rows against 0.20 ms at one hundred. And the style and layout
-that flip dirties cost **1 282 ms**, which a control writing the same five
-thousand `hidden` bits straight onto the nodes also pays. Both are the
-browser's.
+filter does (ADR-0100, priced in ADR-0101). Flipping a filter over ten
+thousand rows costs 24.7 ms of commit, of which the sweep is **2.6** and the
+other 21.5 is the `route` field's own history write. That write is *not*
+about the fragment: at ten thousand rows `location.hash =`,
+`history.replaceState` and `history.pushState` all cost the same 17–18 ms,
+and the cost is linear in the document's **stateful form controls** — about
+1.7 µs each, saved into the session-history entry by every history write
+alike. The same ten thousand rows carrying only text pay 0.15–0.32 ms for
+the identical write; it is the one checkbox per row that makes it O(N).
+
+And the style and layout that flip dirties cost **1 282 ms** when the hidden
+rows are one contiguous run, which is what a benchmark seed usually
+produces. The same five thousand rows scattered one in two cost **28 ms**:
+the browser charges `21.2 + 4.25·10⁻⁵ · k · R` milliseconds to hide *k* rows
+sitting in runs of *R*, 91% of it style recalc. Neither factor is a
+compiler's to choose, and the write shape is not either — one class on the
+container plus a CSS rule was measured at 0.960–1.018× against the per-row
+`hidden` the sweep emits, inside an A/A control's own band, because what
+costs is that the elements stop rendering and not what said so.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
