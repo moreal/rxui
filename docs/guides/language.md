@@ -603,16 +603,16 @@ component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
 
 Filters distribute per region (ADR-0079). Several regions may each carry
 one, and two of them may name the *same* state field: each sweep allocates
-its own `filter_scan_{regionIndex}` walk, reads its own container slot
-(`5 + counts?2`, computed from that region's own feature set — so two
-filtered regions of different widths read different slot numbers), and
-wakes on its own `region_touched_{regionIndex} || changed[field]` guard.
+its own `filter_scan_{regionIndex}` walk, writes through its own region
+handle, and wakes on its own `region_touched_{regionIndex} ||
+changed[field]` guard.
 One `set` on a shared filter field therefore runs two sweeps inside one
 commit, in region declaration order, once each; a region touch and a
 filter-field change mixing in one transaction wake their regions for
 different reasons and still run in that order. Two filters over *one*
 region stay rejected (`LRX-TYPE-113`): a region owns one container and one
-row table, so a second table would be two writers of one `hidden` property.
+row table, so a second table would be two writers of one row's displayed
+state.
 
 The touch half of that guard is chosen per sweep at elaboration time
 (ADR-0082, generalized by ADR-0083). A region's touched flag folds two
@@ -685,11 +685,10 @@ keep their exact shape.
 The filter sweep beside it caches the same way and *not* the same way
 (ADR-0086). A filtered region's rows carry one more cell — behind the
 serialization cell, so a region that is both filtered and persisted lays its
-rows out as `[key, f_0, …, f_{n-1}, serial, shown]` — holding the `hidden`
-value the sweep last wrote into that row's root, `null` until it writes one.
-The sweep evaluates the state-to-predicate table for every row, compares the
-result against that cell, and only on a mismatch navigates to the row root
-and writes it. The difference from the serialization cell is the one worth
+rows out as `[key, f_0, …, f_{n-1}, serial, shown]` — holding the displayed
+state the sweep last gave that row, `null` until it gives one. The sweep
+evaluates the state-to-predicate table for every row, compares the result
+against that cell, and only on a mismatch writes the row. The difference from the serialization cell is the one worth
 knowing: a row's serialization depends on the row's fields alone, so a write
 can stale it, but its displayed state depends on the row's fields **and** the
 filter field, so a filter change stales every row at once. There is no
@@ -883,15 +882,31 @@ and the cost is linear in the document's **stateful form controls** — about
 alike. The same ten thousand rows carrying only text pay 0.15–0.32 ms for
 the identical write; it is the one checkbox per row that makes it O(N).
 
-And the style and layout that flip dirties cost **1 282 ms** when the hidden
-rows are one contiguous run, which is what a benchmark seed usually
-produces. The same five thousand rows scattered one in two cost **28 ms**:
-the browser charges `21.2 + 4.25·10⁻⁵ · k · R` milliseconds to hide *k* rows
-sitting in runs of *R*, 91% of it style recalc. Neither factor is a
-compiler's to choose, and the write shape is not either — one class on the
-container plus a CSS rule was measured at 0.960–1.018× against the per-row
-`hidden` the sweep emits, inside an A/A control's own band, because what
+And the style and layout a flip used to dirty cost **1 282 ms** when the
+deselected rows were one contiguous run, which is what a benchmark seed
+usually produces. The same five thousand rows scattered one in two cost
+**28 ms**: a browser charges `21.2 + 4.25·10⁻⁵ · k · R` milliseconds to
+*hide* `k` rows sitting in runs of `R`, 91% of it style recalc, and neither
+factor is a compiler's to choose. The write *shape* was not the answer
+either — one class on the container plus a CSS rule measured 0.960–1.018×
+against the per-row `hidden`, inside an A/A control's own band, because what
 costs is that the elements stop rendering and not what said so.
+
+What ends the law is not hiding the rows at all. Since ADR-0102 the sweep
+calls the region handle's `setDisplayed(position, key, displayed)`, which
+takes a deselected row **out of its container** and puts it back at its table
+position when the filter selects it again; a row that is not in the document
+has no layout-less siblings for anything to skip past, so the run length
+stops mattering. Measured framework-free on the same row shape — paired,
+ABBA inside every pass, against an A/A control of 0.912–1.048× — the whole
+hide-and-show round trip is **11.99×** at ten thousand rows with five
+thousand deselected as a run, **21.62×** with every row deselected, 2.14–3.49×
+at a thousand rows, and 1.03–1.07× in the scattered case that the law already
+made cheap. Nothing in it loses. Two consequences are worth knowing: the
+`hidden` property of a row root is no longer written by anything, and a
+deselected row is unreachable from the page — the delegated listener is on
+the container and the row is not in it, so nothing can dispatch for a row the
+filter is not showing.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the

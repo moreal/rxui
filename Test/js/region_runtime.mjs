@@ -1222,6 +1222,154 @@ function values(parent) {
 }
 
 {
+  // setDisplayed (ADR-0102) takes one retained row out of the parent and puts
+  // it back where the row table says, without a callback, a disposal or a lost
+  // node -- and every other entry point goes on meaning what it meant while
+  // rows are out, because the parent's children are no longer the row table.
+  const parent = new FakeParent();
+  const mounts = [];
+  const updates = [];
+  const disposals = [];
+  const region = createKeyedRegion(
+    parent,
+    (item, index, context) => { mounts.push([item[0], index]); return [new FakeNode(`${item[0]}`)]; },
+    (handle, item, index, context) => { updates.push([item[0], index, context]); },
+    (handle, key, context) => { disposals.push([key, context]); },
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"], [3, "c"], [4, "d"], [5, "e"]]);
+  const nodes = parent.children.slice(0, 5);
+  const context = { tag: "display" };
+  // Out of the middle: the row keeps its node and its handle, nothing is
+  // disposed, and no callback runs.
+  region.setDisplayed(2, 3, false);
+  if (JSON.stringify(values(parent)) !== '["1","2","4","5"]' ||
+      nodes[2].parentNode !== null || updates.length !== 0 || disposals.length !== 0 ||
+      JSON.stringify(region.instrumentation()) !== "[5,0,5,0]") {
+    throw new Error(`setDisplayed did not take one row out: ${values(parent)}`);
+  }
+  // Idempotent in both directions, and the state it reads is the DOM's.
+  region.setDisplayed(2, 3, false);
+  region.setDisplayed(0, 1, true);
+  if (JSON.stringify(values(parent)) !== '["1","2","4","5"]' || parent.removals !== 1) {
+    throw new Error("setDisplayed wrote a row already in the state it asked for");
+  }
+  // Back in, at its table position rather than at either end.
+  region.setDisplayed(2, 3, true);
+  if (JSON.stringify(values(parent)) !== '["1","2","3","4","5"]' ||
+      parent.children[2] !== nodes[2] || updates.length !== 0) {
+    throw new Error(`setDisplayed put a row back in the wrong place: ${values(parent)}`);
+  }
+  // Every rejection leaves the parent untouched: a key that is not at its
+  // position, and a position past the end.
+  function expectDisplayMismatch(index, key) {
+    const before = values(parent).join(",");
+    let failed = false;
+    try {
+      region.setDisplayed(index, key, false);
+    } catch (error) {
+      failed = String(error).includes("LRX-REGION-003");
+    }
+    if (!failed || values(parent).join(",") !== before) {
+      throw new Error(`setDisplayed accepted ${index}/${String(key)}`);
+    }
+  }
+  expectDisplayMismatch(0, 2);
+  expectDisplayMismatch(5, 1);
+  expectDisplayMismatch(-1, 1);
+  // A whole contiguous prefix out and back in, walked upward the way the
+  // ADR-0051 sweep walks the row table: the anchor is the row just put back.
+  for (const index of [0, 1, 2]) region.setDisplayed(index, index + 1, false);
+  if (JSON.stringify(values(parent)) !== '["4","5"]') {
+    throw new Error(`setDisplayed left a prefix behind: ${values(parent)}`);
+  }
+  for (const index of [0, 1, 2]) region.setDisplayed(index, index + 1, true);
+  if (JSON.stringify(values(parent)) !== '["1","2","3","4","5"]' ||
+      parent.children[0] !== nodes[0] || parent.children[1] !== nodes[1] ||
+      parent.children[2] !== nodes[2]) {
+    throw new Error(`setDisplayed rebuilt a prefix out of order: ${values(parent)}`);
+  }
+  // Every row out, and every row back: with nothing left in the parent the
+  // anchor is the marker, and the rows still come back in table order.
+  for (let index = 0; index < 5; index += 1) region.setDisplayed(index, index + 1, false);
+  if (values(parent).length !== 0 || parent.children.length !== 1) {
+    throw new Error("setDisplayed did not empty the parent");
+  }
+  for (let index = 0; index < 5; index += 1) region.setDisplayed(index, index + 1, true);
+  if (JSON.stringify(values(parent)) !== '["1","2","3","4","5"]' ||
+      nodes.some((node, index) => parent.children[index] !== node)) {
+    throw new Error(`setDisplayed refilled the parent out of order: ${values(parent)}`);
+  }
+  // insertAt while rows are out: the new row goes between the *displayed*
+  // rows its table position names, at the front, in the middle and at the end.
+  for (const [index, key] of [[0, 1], [2, 3], [4, 5]]) region.setDisplayed(index, key, false);
+  region.insertAt(0, [9, "i"], context);
+  region.insertAt(3, [8, "h"], context);
+  region.insertAt(7, [7, "g"], context);
+  if (JSON.stringify(values(parent)) !== '["9","2","8","4","7"]') {
+    throw new Error(`insertAt misplaced a row past the rows a filter took out: ${values(parent)}`);
+  }
+  // ...and the table still reads in table order once they come back.
+  for (const [index, key] of [[1, 1], [4, 3], [6, 5]]) region.setDisplayed(index, key, true);
+  if (JSON.stringify(values(parent)) !== '["9","1","2","8","3","4","5","7"]') {
+    throw new Error(`setDisplayed lost the order an insert left: ${values(parent)}`);
+  }
+  // removeAt and removeMany take rows that are out as readily as rows that are
+  // in, and the survivors keep their display state.
+  for (const [index, key] of [[1, 1], [4, 3], [6, 5]]) region.setDisplayed(index, key, false);
+  region.removeAt(1, 1, context);
+  region.removeMany([[3, 3], [4, 4]], context);
+  if (JSON.stringify(values(parent)) !== '["9","2","8","7"]' ||
+      JSON.stringify(disposals.map((entry) => entry[0])) !== "[1,3,4]") {
+    throw new Error(`a removal past a filtered row went wrong: ${values(parent)}`);
+  }
+  // The reconcile runs over the whole table and gives the same rows back: the
+  // survivors that were out are out again, and the ones that were in kept
+  // their nodes through the placement.
+  const displayedNine = parent.children[0];
+  region.update([[5, "e"], [9, "i"], [2, "b"], [8, "h"], [7, "g"]], context);
+  if (JSON.stringify(values(parent)) !== '["9","2","8","7"]' ||
+      parent.children[0] !== displayedNine ||
+      JSON.stringify(region.instrumentation()) !== "[8,5,9,3]") {
+    throw new Error(`a reconcile did not preserve the filtered set: ${values(parent)}`);
+  }
+  // ...and the row it kept out is still the region's to put back, in the
+  // position the reconcile gave it.
+  region.setDisplayed(0, 5, true);
+  if (JSON.stringify(values(parent)) !== '["5","9","2","8","7"]') {
+    throw new Error(`a reconcile lost a filtered row's place: ${values(parent)}`);
+  }
+  // swapAt exchanges two positions when one of them is out: the displayed one
+  // moves to the place the table now gives it and the other stays out.
+  region.setDisplayed(2, 2, false);
+  region.swapAt(1, 2, [[5, "e"], [2, "b"], [9, "i"], [8, "h"], [7, "g"]], context);
+  if (JSON.stringify(values(parent)) !== '["5","9","8","7"]') {
+    throw new Error(`swapAt mishandled a filtered row: ${values(parent)}`);
+  }
+  region.setDisplayed(1, 2, true);
+  if (JSON.stringify(values(parent)) !== '["5","2","9","8","7"]') {
+    throw new Error(`swapAt left a filtered row without a place: ${values(parent)}`);
+  }
+  // A reconcile that retains nothing clears a parent it owns, filtered rows
+  // and all, and the region mounts a fresh table into it.
+  region.setDisplayed(3, 8, false);
+  region.update([[20, "t"], [21, "u"]], context);
+  if (JSON.stringify(values(parent)) !== '["20","21"]' || disposals.length !== 8) {
+    throw new Error(`a wholesale reconcile did not clear the filtered rows: ${values(parent)}`);
+  }
+  region.setDisplayed(0, 20, false);
+  region.dispose();
+  if (parent.children.length !== 0 || disposals.length !== 10) {
+    throw new Error("dispose left a filtered row behind");
+  }
+  region.setDisplayed(0, 20, true);
+  if (parent.children.length !== 0) throw new Error("setDisplayed ran after disposal");
+  if (mounts.length !== 10 || updates.some((entry) => entry[2] === undefined)) {
+    throw new Error("the display gate lost a callback");
+  }
+}
+
+{
   // An empty region registers each new key with one index insertion; the
   // repeated key may be far from its first occurrence and nothing is mounted.
   const parent = new FakeParent();

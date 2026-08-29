@@ -10,7 +10,7 @@ const manifest = JSON.parse(
 );
 if (
   manifest.module !== "TodoMVC.mjs" ||
-  manifest.runtimeAbi !== 19 ||
+  manifest.runtimeAbi !== 20 ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify([
     "list<record<TodoItem>>", "nat", "string", "int", "string", "string",
   ]) ||

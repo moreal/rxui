@@ -55,12 +55,14 @@ async function mountTwin(page) {
 // Seeds one `flag == "true"` row and one `flag == "false"` row into every
 // region, so each of the three filter tables has a hit and a miss to select
 // between.
-async function seedBoth(page) {
+async function seedBoth(page, displayed = [2, 2, 2]) {
   await page.getByRole("button", { name: "Seed on" }).click();
   await page.getByRole("button", { name: "Seed off" }).click();
-  await expect(page.locator("#left > li")).toHaveCount(2);
-  await expect(page.locator("#right > li")).toHaveCount(2);
-  await expect(page.locator("#solo > li")).toHaveCount(2);
+  // The counts are of *displayed* rows: since ADR-0102 a deselected row is
+  // not in its container, so a seed under an active filter shows fewer.
+  await expect(page.locator("#left > li")).toHaveCount(displayed[0]);
+  await expect(page.locator("#right > li")).toHaveCount(displayed[1]);
+  await expect(page.locator("#solo > li")).toHaveCount(displayed[2]);
 }
 
 // The trace slice has to be measured from inside the page: the mark is stashed
@@ -183,13 +185,12 @@ test("one state field drives both twin sweeps in one commit", async ({ page }) =
   // raises one changed bit that wakes two sweeps. The arm tables are
   // inverted, so the same field value hides complementary rows.
   await page.getByRole("button", { name: "Show on" }).click();
-  await expect(page.locator("#left > li").nth(0)).toBeVisible();
-  await expect(page.locator("#left > li").nth(1)).toBeHidden();
-  await expect(page.locator("#right > li").nth(0)).toBeHidden();
-  await expect(page.locator("#right > li").nth(1)).toBeVisible();
+  // ADR-0102: a deselected row leaves its own container, so each region's
+  // children *are* its own selection — three containers, three selections.
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0"]);
+  await expect(page.locator("#right .twin-label")).toHaveText(["R1"]);
   // `solo` reads `tone`, still `"all"`: it is not woken at all.
-  await expect(page.locator("#solo > li").nth(0)).toBeVisible();
-  await expect(page.locator("#solo > li").nth(1)).toBeVisible();
+  await expect(page.locator("#solo .twin-label")).toHaveText(["S0", "S1"]);
   // ADR-0080: the flip writes the canonical hash, so the browser answers with
   // one `hashchange` — an equal-value set-field commit. The window below is
   // widened over *both* commits to show that the echo wakes neither sweep.
@@ -228,14 +229,13 @@ test("a second field filters the third region alone", async ({ page }) => {
       counts: tx[5],
       evaluations: tx[8],
       metrics: globalThis.twinDispose.regionInstrumentation(),
-      hidden: globalThis.twinRows.map((row) => row.hidden),
+      displayed: globalThis.twinRows.map((row) => row.isConnected),
     };
   });
-  // ADR-0079: `tone` drives only `solo`'s sweep. The twins keep the `hidden`
-  // values their own field left them with, and neither is re-evaluated.
+  // ADR-0079: `tone` drives only `solo`'s sweep. The twins keep the selection
+  // their own field left them with, and neither is re-evaluated.
   await page.getByRole("button", { name: "Tone on" }).click();
-  await expect(page.locator("#solo > li").nth(0)).toBeVisible();
-  await expect(page.locator("#solo > li").nth(1)).toBeHidden();
+  await expect(page.locator("#solo .twin-label")).toHaveText(["S0"]);
   const after = await page.evaluate(() => {
     const tx = globalThis.twinDispose.instrumentation();
     return {
@@ -243,8 +243,7 @@ test("a second field filters the third region alone", async ({ page }) => {
       evaluations: tx[8],
       slice: tx[7].slice(globalThis.twinTraceLength),
       metrics: globalThis.twinDispose.regionInstrumentation(),
-      hidden: globalThis.twinRows.map((row) => row.hidden),
-      identical: globalThis.twinRows.every((row) => document.contains(row)),
+      displayed: globalThis.twinRows.map((row) => row.isConnected),
     };
   });
   expect(after.commits).toBe(before.commits + 1);
@@ -252,8 +251,7 @@ test("a second field filters the third region alone", async ({ page }) => {
   expect(occurrences(after.slice, "filter:left:evaluated")).toBe(0);
   expect(occurrences(after.slice, "filter:right:evaluated")).toBe(0);
   expect(after.evaluations).toBe(before.evaluations + 1);
-  expect(after.hidden).toEqual(before.hidden);
-  expect(after.identical).toBe(true);
+  expect(after.displayed).toEqual(before.displayed);
   expect(after.metrics).toEqual(before.metrics);
   // The unfiltered-by-`tone` twins keep their row count too.
   await expect(page.locator("#left-line")).toHaveText("2 left, 1 on");
@@ -267,8 +265,9 @@ test("a region touch alone wakes only that region's sweep", async ({ page }) => 
   // No field changes: `left`'s sweep wakes on its own touched flag, and the
   // twin sharing its filter field stays asleep.
   await page.getByRole("button", { name: "Add left" }).click();
-  await expect(page.locator("#left .twin-label")).toHaveText(["L0", "L1", "L2"]);
-  await expect(page.locator("#left > li").nth(2)).toBeVisible();
+  // The appended row carries `flag == "true"`, so the `on` selection takes
+  // it and the deselected L1 is still out (ADR-0102).
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0", "L2"]);
   const after = await readTrace(page);
   expect(occurrences(after.slice, "filter:left:evaluated")).toBe(1);
   expect(occurrences(after.slice, "filter:right:evaluated")).toBe(0);
@@ -278,12 +277,16 @@ test("a region touch alone wakes only that region's sweep", async ({ page }) => 
   const beforeRemoval = await markTrace(page);
   await page.locator("#left > li").first()
     .getByRole("button", { name: "Remove left" }).click();
-  await expect(page.locator("#left .twin-label")).toHaveText(["L1", "L2"]);
+  await expect(page.locator("#left .twin-label")).toHaveText(["L2"]);
   const afterRemoval = await readTrace(page);
   expect(occurrences(afterRemoval.slice, "filter:left:evaluated")).toBe(1);
   expect(occurrences(afterRemoval.slice, "filter:right:evaluated")).toBe(0);
   expect(occurrences(afterRemoval.slice, "filter:solo:evaluated")).toBe(0);
   expect(afterRemoval.evaluations).toBe(beforeRemoval.evaluations + 1);
+  // The table behind the selection is what the removal actually touched:
+  // clearing the filter shows the two survivors in table order.
+  await flipMode(page, "Show all", "#/");
+  await expect(page.locator("#left .twin-label")).toHaveText(["L1", "L2"]);
 });
 
 test("one transaction mixes a region touch with a shared filter change", async ({ page }) => {
@@ -295,12 +298,10 @@ test("one transaction mixes a region touch with a shared filter change", async (
   // changed bit — three sweeps, one commit, declaration order, once each.
   await page.getByRole("button", { name: "Stir" }).click();
   await expect(page.locator("#solo .twin-label")).toHaveText(["S0", "S1", "S2"]);
-  await expect(page.locator("#left > li").nth(0)).toBeVisible();
-  await expect(page.locator("#left > li").nth(1)).toBeHidden();
-  await expect(page.locator("#right > li").nth(0)).toBeHidden();
-  await expect(page.locator("#right > li").nth(1)).toBeVisible();
-  // `tone` is untouched, so `solo`'s own table still shows every row.
-  await expect(page.locator("#solo > li").nth(1)).toBeVisible();
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0"]);
+  await expect(page.locator("#right .twin-label")).toHaveText(["R1"]);
+  // `tone` is untouched, so `solo`'s own table still shows every row —
+  // which is why its three labels above are all three of them.
   // `stir` writes `mode`, so its commit writes the hash and the echo follows
   // — one more commit that wakes none of the three sweeps.
   await expect(page).toHaveURL(/#\/on$/);
@@ -340,7 +341,7 @@ test("a union literal only one twin declares seeds from the hash", async ({ page
     const { mount } = await import("/TwinLab.mjs");
     globalThis.twinDispose = mount(document.getElementById("app"));
   });
-  await seedBoth(page);
+  await seedBoth(page, [2, 1, 2]);
   // ADR-0080: `"mixed"` is named by `right`'s arm table alone. The route's
   // sealed literal set is the declared default plus the *union* of every
   // filter table over `mode`, so `#/mixed` is a legal hash on the strength of
@@ -348,13 +349,10 @@ test("a union literal only one twin declares seeds from the hash", async ({ page
   // rejected purely because `left` is declared first. At runtime the region
   // that names the literal filters, and the twin that does not falls through
   // to show-all, which is exactly what its own arm chain already does.
-  await expect(page.locator("#right > li").nth(0)).toBeVisible();
-  await expect(page.locator("#right > li").nth(1)).toBeHidden();
-  await expect(page.locator("#left > li").nth(0)).toBeVisible();
-  await expect(page.locator("#left > li").nth(1)).toBeVisible();
+  await expect(page.locator("#right .twin-label")).toHaveText(["R0"]);
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0", "L1"]);
   // `solo` reads `tone`; the routed field never reaches it.
-  await expect(page.locator("#solo > li").nth(0)).toBeVisible();
-  await expect(page.locator("#solo > li").nth(1)).toBeVisible();
+  await expect(page.locator("#solo .twin-label")).toHaveText(["S0", "S1"]);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });
@@ -369,10 +367,8 @@ test("one hashchange wakes both twin sweeps and writes the hash once", async ({ 
   await page.evaluate(() => {
     location.hash = "#/off";
   });
-  await expect(page.locator("#left > li").nth(0)).toBeHidden();
-  await expect(page.locator("#left > li").nth(1)).toBeVisible();
-  await expect(page.locator("#right > li").nth(0)).toBeVisible();
-  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  await expect(page.locator("#left .twin-label")).toHaveText(["L1"]);
+  await expect(page.locator("#right .twin-label")).toHaveText(["R0"]);
   const after = await readTrace(page);
   expect(after.commits).toBe(before.commits + 1);
   expect(after.slice).toContain("event:route:mode:off");
@@ -393,10 +389,8 @@ test("one hashchange wakes both twin sweeps and writes the hash once", async ({ 
   await page.evaluate(() => {
     location.hash = "#/mixed";
   });
-  await expect(page.locator("#left > li").nth(0)).toBeVisible();
-  await expect(page.locator("#left > li").nth(1)).toBeVisible();
-  await expect(page.locator("#right > li").nth(0)).toBeVisible();
-  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0", "L1"]);
+  await expect(page.locator("#right .twin-label")).toHaveText(["R0"]);
   const afterMixed = await readTrace(page);
   expect(afterMixed.commits).toBe(beforeMixed.commits + 1);
   expect(afterMixed.slice).toContain("event:route:mode:mixed");
@@ -410,13 +404,13 @@ test("a row update drains beside the filter sweep at region index 1", async ({ p
   await mountTwin(page);
   await seedBoth(page);
   await flipMode(page, "Show on", "#/on");
-  // Under `"on"` `right` keeps the `flag == "false"` rows, so R1 alone shows.
-  await expect(page.locator("#right > li").nth(0)).toBeHidden();
-  await expect(page.locator("#right > li").nth(1)).toBeVisible();
+  // Under `"on"` `right` keeps the `flag == "false"` rows, so R1 alone is in
+  // the container (ADR-0102) and is the container's only child.
+  await expect(page.locator("#right .twin-label")).toHaveText(["R1"]);
   const before = await page.evaluate(() => {
     const tx = globalThis.twinDispose.instrumentation();
     globalThis.twinTraceLength = tx[7].length;
-    globalThis.twinRow = document.querySelectorAll("#right > li")[1];
+    globalThis.twinRow = document.querySelectorAll("#right > li")[0];
     return {
       commits: tx[1],
       evaluations: tx[8],
@@ -427,9 +421,9 @@ test("a row update drains beside the filter sweep at region index 1", async ({ p
   // one commit drains the pending row through `updateAt` and then re-selects
   // it — a drain beside a filter sweep at region index *1*, where the two had
   // never met (Toggle Lab and Mix Lab only ever pair them at index 0).
-  await page.locator("#right > li").nth(1)
-    .getByRole("checkbox", { name: "Flag right" }).check();
-  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  await page.locator("#right > li").nth(0)
+    .getByRole("checkbox", { name: "Flag right" }).click();
+  await expect(page.locator("#right > li")).toHaveCount(0);
   const after = await readTrace(page);
   const flag = await page.evaluate(
     () => globalThis.twinRow.querySelector(".twin-flag").textContent,
@@ -456,6 +450,10 @@ test("a row update drains beside the filter sweep at region index 1", async ({ p
   ]);
   expect(after.metrics[0]).toEqual(before.metrics[0]);
   expect(after.metrics[2]).toEqual(before.metrics[2]);
+  // The drained row is out of the container, still the region's, and comes
+  // back the same node when the filter selects it again.
+  expect(await page.evaluate(() => globalThis.twinRow.isConnected)).toBe(false);
+  await flipMode(page, "Show off", "#/off");
   const identical = await page.evaluate(
     () => document.querySelectorAll("#right > li")[1] === globalThis.twinRow,
   );
@@ -472,11 +470,16 @@ test("a row write outside the filter subject drains without waking the sweep",
   async ({ page }) => {
   await mountTwin(page);
   await seedBoth(page);
+  // Held while every row is still in the container, because the flip below
+  // takes one of them out of it (ADR-0102) and out of every locator with it.
+  await page.evaluate(() => {
+    globalThis.twinAll = Array.from(document.querySelectorAll("#left > li"));
+  });
   await flipMode(page, "Show on", "#/on");
-  // Under `"on"` `left` keeps the `flag == "true"` rows, so L0 shows and L1
-  // is hidden. `mark` writes `label`, which no arm of `left`'s table reads.
-  await expect(page.locator("#left > li").nth(0)).toBeVisible();
-  await expect(page.locator("#left > li").nth(1)).toBeHidden();
+  // Under `"on"` `left` keeps the `flag == "true"` rows, so L0 is in the
+  // container and L1 is out of it. `mark` writes `label`, which no arm of
+  // `left`'s table reads.
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0"]);
   const before = await page.evaluate(() => {
     const tx = globalThis.twinDispose.instrumentation();
     globalThis.twinTraceLength = tx[7].length;
@@ -486,7 +489,7 @@ test("a row write outside the filter subject drains without waking the sweep",
       counts: tx[5],
       evaluations: tx[8],
       metrics: globalThis.twinDispose.regionInstrumentation(),
-      hidden: globalThis.twinRows.map((row) => row.hidden),
+      displayed: globalThis.twinRows.map((row) => row.isConnected),
     };
   });
   // ADR-0082: the drain queues a position, so the region *is* touched — but
@@ -514,37 +517,40 @@ test("a row write outside the filter subject drains without waking the sweep",
   expect(after.counts).toBe(before.counts);
   // The counts on screen are still the ones the last structural commit left.
   await expect(page.locator("#left-line")).toHaveText("2 left, 1 on");
-  // The selection is exactly where the last sweep left it, on both rows.
+  // The selection is exactly where the last sweep left it, on the row the
+  // drain touched: still displayed, still the same node.
   const marked = await page.evaluate(() => ({
-    hidden: globalThis.twinRows.map((row) => row.hidden),
+    displayed: globalThis.twinRows.map((row) => row.isConnected),
     identical: globalThis.twinRows.every((row) => document.contains(row)),
   }));
-  expect(marked.hidden).toEqual(before.hidden);
+  expect(marked.displayed).toEqual(before.displayed);
   expect(marked.identical).toBe(true);
-  // The same holds for the row the filter is *hiding*: the retained-row
-  // update re-renders its cells and no sweep re-asserts `hidden`, so the
-  // property the last sweep wrote survives the drain. The click is
-  // programmatic because the row is hidden.
+  // ADR-0102 closes the other half of this case rather than answering it: a
+  // deselected row is not in the container, and the delegated listener is,
+  // so nothing can drain a row the filter is not showing. The same
+  // programmatic click that used to reach the hidden L1 now reaches a node
+  // outside the document and moves nothing at all.
   const beforeHidden = await markTrace(page);
+  expect(await page.evaluate(() =>
+    globalThis.twinAll.map((row) => row.isConnected))).toEqual([true, false]);
   await page.evaluate(() => {
-    document.querySelectorAll("#left > li")[1]
-      .querySelector(".twin-marks button").click();
+    globalThis.twinAll[1].querySelector(".twin-marks button").click();
   });
-  await expect(page.locator("#left .twin-label").nth(1)).toHaveText("L1*");
+  await page.waitForTimeout(50);
   const afterHidden = await readTrace(page);
-  expect(occurrences(afterHidden.slice, "region:left:updateAt")).toBe(1);
+  expect(afterHidden.commits).toBe(beforeHidden.commits);
+  expect(occurrences(afterHidden.slice, "region:left:updateAt")).toBe(0);
   expect(occurrences(afterHidden.slice, "filter:left:evaluated")).toBe(0);
   expect(afterHidden.evaluations).toBe(beforeHidden.evaluations);
   expect(afterHidden.counts).toBe(beforeHidden.counts);
-  await expect(page.locator("#left > li").nth(1)).toBeHidden();
   // The twins' shared field and the unrelated region are untouched, and a
   // structural touch afterwards still wakes the sweep and re-selects every
-  // row — the marked labels included.
+  // row — the marked label included.
   expect(occurrences(afterHidden.slice, "filter:right:evaluated")).toBe(0);
   expect(occurrences(afterHidden.slice, "filter:solo:evaluated")).toBe(0);
   const beforeAppend = await markTrace(page);
   await page.getByRole("button", { name: "Add left" }).click();
-  await expect(page.locator("#left .twin-label")).toHaveText(["L0*", "L1*", "L2"]);
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0*", "L2"]);
   const afterAppend = await readTrace(page);
   expect(occurrences(afterAppend.slice, "filter:left:evaluated")).toBe(1);
   expect(afterAppend.evaluations).toBe(beforeAppend.evaluations + 1);
@@ -552,9 +558,9 @@ test("a row write outside the filter subject drains without waking the sweep",
   // the appended row is a `flag == "true"` one, so both texts move.
   expect(afterAppend.counts).toBe(beforeAppend.counts + 2);
   await expect(page.locator("#left-line")).toHaveText("3 left, 2 on");
-  await expect(page.locator("#left > li").nth(0)).toBeVisible();
-  await expect(page.locator("#left > li").nth(1)).toBeHidden();
-  await expect(page.locator("#left > li").nth(2)).toBeVisible();
+  // The whole table, with the deselected row back at its own position.
+  await flipMode(page, "Show all", "#/");
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0*", "L1", "L2"]);
 });
 
 test("flipping back restores every region without remounting a row", async ({ page }) => {
@@ -567,15 +573,16 @@ test("flipping back restores every region without remounting a row", async ({ pa
     return globalThis.twinDispose.regionInstrumentation();
   });
   await flipMode(page, "Show off", "#/off");
-  await expect(page.locator("#left > li").nth(0)).toBeHidden();
-  await expect(page.locator("#left > li").nth(1)).toBeVisible();
-  await expect(page.locator("#right > li").nth(0)).toBeVisible();
-  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  await expect(page.locator("#left .twin-label")).toHaveText(["L1"]);
+  await expect(page.locator("#right .twin-label")).toHaveText(["R0"]);
   await flipMode(page, "Show all", "#/");
   await page.getByRole("button", { name: "Tone all" }).click();
-  await expect(page.locator("#left > li").nth(1)).toBeVisible();
-  await expect(page.locator("#right > li").nth(0)).toBeVisible();
-  await expect(page.locator("#solo > li").nth(1)).toBeVisible();
+  // Every row is back, each at its own table position — the rows the two
+  // flips took out are re-inserted, not remounted, and none of them arrived
+  // at an end (ADR-0102).
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0", "L1"]);
+  await expect(page.locator("#right .twin-label")).toHaveText(["R0", "R1"]);
+  await expect(page.locator("#solo .twin-label")).toHaveText(["S0", "S1"]);
   const after = await page.evaluate(() => ({
     metrics: globalThis.twinDispose.regionInstrumentation(),
     identical: globalThis.twinRows.every((row) => document.contains(row)),
@@ -605,7 +612,7 @@ test("a route flip persists nothing and a row touch writes no hash", async ({ pa
   // of the field both twins filter on cannot reach it — two sweeps run, the
   // hash is rewritten, and the stored string is untouched.
   await page.getByRole("button", { name: "Show on" }).click();
-  await expect(page.locator("#right > li").nth(0)).toBeHidden();
+  await expect(page.locator("#right .twin-label")).toHaveText(["R1"]);
   await expect(page).toHaveURL(/#\/on$/);
   await expect
     .poll(() => page.evaluate(() => globalThis.twinDispose.instrumentation()[1]))
@@ -622,9 +629,9 @@ test("a route flip persists nothing and a row touch writes no hash", async ({ pa
   // touched flag into one storageSet and changes no state field, so the
   // route write block never opens and the URL stays where the flip left it.
   const beforeToggle = await markTrace(page);
-  await page.locator("#right > li").nth(1)
-    .getByRole("checkbox", { name: "Flag right" }).check();
-  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  await page.locator("#right > li").nth(0)
+    .getByRole("checkbox", { name: "Flag right" }).click();
+  await expect(page.locator("#right > li")).toHaveCount(0);
   const toggled = await readTrace(page);
   expect(toggled.commits).toBe(beforeToggle.commits + 1);
   expect(occurrences(toggled.slice, "storage:right:write")).toBe(1);
@@ -652,9 +659,7 @@ test("a routed literal filters the rows its own hydration mounted", async ({ pag
   // commit's own sweep applies the routed literal to the rows it just
   // mounted — no second commit, and no hash write, because the routed field
   // never changed inside that transaction.
-  await expect(page.locator("#right .twin-label")).toHaveText(["R0", "R1"]);
-  await expect(page.locator("#right > li").nth(0)).toBeVisible();
-  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  await expect(page.locator("#right .twin-label")).toHaveText(["R0"]);
   // Persistence is per region, exactly as filters and counts are: the two
   // unpersisted regions mount empty even though one of them shares the
   // routed field.
@@ -717,9 +722,11 @@ test("the filter sweep writes exactly the rows whose selection moved (ADR-0086)"
   // `left` hides its `flag == "false"` row and `right`, whose table is
   // inverted, hides its `flag == "true"` one.
   const beforeFlip = await markTrace(page);
+  await page.evaluate(() => {
+    globalThis.twinLeft = Array.from(document.querySelectorAll("#left > li"));
+  });
   await flipMode(page, "Show on", "#/on");
-  await expect(page.locator("#left > li").nth(0)).toBeVisible();
-  await expect(page.locator("#left > li").nth(1)).toBeHidden();
+  await expect(page.locator("#left .twin-label")).toHaveText(["L0"]);
   const afterFlip = await readTrace(page);
   expect(writtenCounts(afterFlip.slice, "left")).toEqual([1]);
   expect(writtenCounts(afterFlip.slice, "right")).toEqual([1]);
@@ -732,31 +739,36 @@ test("the filter sweep writes exactly the rows whose selection moved (ADR-0086)"
   const beforeRemove = await page.evaluate(() => {
     const tx = globalThis.twinDispose.instrumentation();
     globalThis.twinTraceLength = tx[7].length;
-    globalThis.twinSurvivor = document.querySelectorAll("#left > li")[1];
+    globalThis.twinSurvivor = globalThis.twinLeft[1];
     return { writes: tx[9], evaluations: tx[8] };
   });
   await page.locator("#left > li").nth(0)
     .getByRole("button", { name: "Remove left" }).click();
-  await expect(page.locator("#left > li")).toHaveCount(1);
+  await expect(page.locator("#left > li")).toHaveCount(0);
   const afterRemove = await readTrace(page);
   expect(writtenCounts(afterRemove.slice, "left")).toEqual([0]);
   expect(occurrences(afterRemove.slice, "filter:left:evaluated")).toBe(1);
   expect(occurrences(afterRemove.slice, "dom:filter:left:write")).toBe(0);
   expect(afterRemove.evaluations).toBe(beforeRemove.evaluations + 1);
   expect(afterRemove.writes).toBe(beforeRemove.writes);
-  const survivor = await page.evaluate(() => ({
-    same: document.querySelectorAll("#left > li")[0] === globalThis.twinSurvivor,
-    hidden: globalThis.twinSurvivor.hidden,
-  }));
-  expect(survivor).toEqual({ same: true, hidden: true });
+  // The survivor is out of the container and comes back as itself when the
+  // filter selects it: a `remove` rebuilt the array around unchanged tuples,
+  // so the cell and the detached node still agree and the sweep writes
+  // nothing (ADR-0102 does not change that — it changes what a write is).
+  expect(await page.evaluate(() => globalThis.twinSurvivor.isConnected)).toBe(false);
+  await flipMode(page, "Show off", "#/off");
+  expect(await page.evaluate(
+    () => document.querySelectorAll("#left > li")[0] === globalThis.twinSurvivor,
+  )).toBe(true);
+  await flipMode(page, "Show on", "#/on");
   // A row event that writes the filter's own subject moves exactly its own
   // row, and the two per-row caches show up side by side in one commit: the
   // ADR-0085 cell re-encodes one row and this one rewrites one row's
   // `hidden`, while the other row pays neither.
   const beforeToggle = await markTrace(page);
-  await page.locator("#right > li").nth(1)
+  await page.locator("#right > li").nth(0)
     .getByRole("checkbox", { name: "Flag right" }).click();
-  await expect(page.locator("#right > li").nth(1)).toBeHidden();
+  await expect(page.locator("#right > li")).toHaveCount(0);
   const afterToggle = await readTrace(page);
   expect(writtenCounts(afterToggle.slice, "right")).toEqual([1]);
   expect(afterToggle.slice).toContain("storage:right:encode:1");
@@ -771,8 +783,8 @@ test("the filter sweep writes exactly the rows whose selection moved (ADR-0086)"
   await page.evaluate(() => {
     location.hash = "#/off";
   });
-  await expect(page.locator("#right > li").nth(0)).toBeVisible();
-  await expect(page.locator("#left > li").nth(0)).toBeVisible();
+  await expect(page.locator("#right .twin-label")).toHaveText(["R0", "R1"]);
+  await expect(page.locator("#left .twin-label")).toHaveText(["L1"]);
   const beforeMixed = await markTrace(page);
   await page.evaluate(() => {
     location.hash = "#/mixed";
@@ -788,6 +800,6 @@ test("the filter sweep writes exactly the rows whose selection moved (ADR-0086)"
   expect(afterMixed.evaluations).toBe(beforeMixed.evaluations + 2);
   expect(afterMixed.writes).toBe(beforeMixed.writes);
   expect(afterMixed.metrics).toEqual(beforeMixed.metrics);
-  await expect(page.locator("#right > li").nth(0)).toBeVisible();
-  await expect(page.locator("#left > li").nth(0)).toBeVisible();
+  await expect(page.locator("#right .twin-label")).toHaveText(["R0", "R1"]);
+  await expect(page.locator("#left .twin-label")).toHaveText(["L1"]);
 });

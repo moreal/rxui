@@ -13,7 +13,7 @@ if (
   mixManifest.module !== "MixLab.mjs" ||
   typeof mixManifest.graphHash !== "string" ||
   mixManifest.graphHash.length === 0 ||
-  mixManifest.runtimeAbi !== 19 ||
+  mixManifest.runtimeAbi !== 20 ||
   JSON.stringify(mixManifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(mixManifest.stateSlots) !== JSON.stringify(["int", "string"]) ||
   mixManifest.sourceCount !== 2 ||
@@ -105,13 +105,13 @@ for (const required of [
   // end in the one shared mount-scope array identifier (ADR-0077), and each
   // region's count refs and cache are its own arrays, sized by its own cells.
   "const childInventory = [child_off_0];",
-  "const regions = [[region_0, [], 0, false, [], [count_text_10, count_text_12], [0, 0], node_13, childInventory, [], 0, [0]], [region_1, [], 0, false, [], [count_text_25], [0], childInventory, [], 0]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_10, count_text_12], [0, 0], childInventory, [], 0, [0]], [region_1, [], 0, false, [], [count_text_25], [0], childInventory, [], 0]];",
   // The reconcile and drain forward each region's own slot as the child
   // context, so every mount path — appends, broadcasts, and the ADR-0063
   // hydration that rides the same dirty-flag commit — pushes into the shared
   // inventory through a per-region slot number.
-  "regions[0][0][\"update\"](regions[0][1], regions[0][8]);",
-  "regions[0][0][\"updateAt\"](pending_row, regions[0][1][pending_row], regions[0][8]);",
+  "regions[0][0][\"update\"](regions[0][1], regions[0][7]);",
+  "regions[0][0][\"updateAt\"](pending_row, regions[0][1][pending_row], regions[0][7]);",
   "regions[1][0][\"update\"](regions[1][1], regions[1][7]);",
   // ADR-0077: the broadcast writes every retained row's `done` in place and
   // raises the dirty flag — the reconcile retains every key, so it re-renders
@@ -125,7 +125,7 @@ for (const required of [
   // ADR-0086: `crew` is filtered *and* persisted, so its displayed-state cell
   // sits at slot 5, behind three declared fields and the ADR-0085
   // serialization cell at slot 4, and the navigation is paid per written row.
-  "      const filter_read_0 = [0];\n      const filter_written_0 = [0];\n      const filter_at_0 = [0];\n      if (!(filter_dirty_0 || changed[1])) {\n        for (const filter_position_0 of filter_moved_0) {\n          const filter_moved_row_0 = regions[0][1][filter_position_0];\n          const filter_moved_next_0 = state[1] === \"active\" ? filter_moved_row_0[2] !== \"false\" : state[1] === \"done\" ? filter_moved_row_0[2] !== \"true\" : false;\n          if (filter_moved_row_0[5] !== filter_moved_next_0) {\n            filter_moved_row_0[5] = filter_moved_next_0;\n            setProperty(childAt(regions[0][7], filter_position_0), \"hidden\", filter_moved_next_0);\n            filter_written_0[0] += 1;\n          }\n          filter_read_0[0] += 1;\n        }\n        filter_at_0[0] = regions[0][1][\"length\"] - filter_added_0;\n      }\n      while (filter_at_0[0] < regions[0][1][\"length\"]) {\n        const filter_row_0 = regions[0][1][filter_at_0[0]];\n        const filter_next_0 = state[1] === \"active\" ? filter_row_0[2] !== \"false\" : state[1] === \"done\" ? filter_row_0[2] !== \"true\" : false;\n        if (filter_row_0[5] !== filter_next_0) {\n          filter_row_0[5] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_at_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_read_0[0] += 1;\n        filter_at_0[0] += 1;\n      }",
+  "",
   // ADR-0078: the count sweep distributes by region record — crew's two cells
   // fill its own two-slot refs and cache, pins' single cell its own one-slot
   // pair, and the trace labels carry the region name with a region-local
@@ -195,7 +195,7 @@ for (const required of [
   // only its own record, so the two record themselves independently in one
   // transaction — crew's `drop_clean_1` names crew's three slots.
   "  tx[7][\"push\"](\"event:stowDone\");\n  regions[1][1][\"push\"]([regions[1][2], $lrx_event_4_append_0_0(state[0], state[1]), null]);\n  regions[1][2] += 1;\n  regions[1][9] += 1;\n  tx[7][\"push\"](\"region:pins:append\");",
-  "  const drop_clean_1 = regions[0][9][\"length\"] === 0 && regions[0][4][\"length\"] === 0 && regions[0][10] === 0;",
+  "  const drop_clean_1 = regions[0][8][\"length\"] === 0 && regions[0][4][\"length\"] === 0 && regions[0][9] === 0;",
   "  regions[0][1] = kept_1;\n  if (!drop_clean_1) {\n    regions[0][3] = true;\n  }\n  tx[7][\"push\"](\"region:crew:removeIf\");",
   // ADR-0092: one key search serves the whole module. Both regions' dispatch
   // functions call the same helper on their own row table, and neither
@@ -214,9 +214,9 @@ for (const required of [
   // they walk the row table once through one shared cell; the row total
   // beside them is a `length` read and joins no pass, and each slot keeps
   // its own cache, compare, write, label and counter.
-  "    if (regions[0][3]) {\n      regions[0][11][0] = 0;\n      for (const count_row_0 of regions[0][1]) {\n        if (count_row_0[2] === \"true\") {\n          regions[0][11][0] += 1;\n        }\n      }\n      tx[7][\"push\"](\"predicate:crew:read:\" + regions[0][1][\"length\"]);\n    }",
-  "      const count_next_0_0 = regions[0][11][0];",
-  "      const attr_next_0 = regions[0][11][0] === 0;",
+  "    if (regions[0][3]) {\n      regions[0][10][0] = 0;\n      for (const count_row_0 of regions[0][1]) {\n        if (count_row_0[2] === \"true\") {\n          regions[0][10][0] += 1;\n        }\n      }\n      tx[7][\"push\"](\"predicate:crew:read:\" + regions[0][1][\"length\"]);\n    }",
+  "      const count_next_0_0 = regions[0][10][0];",
+  "      const attr_next_0 = regions[0][10][0] === 0;",
   "      const count_next_0_1 = regions[0][1][\"length\"];",
 ]) {
   if (!mixSource.includes(required)) {

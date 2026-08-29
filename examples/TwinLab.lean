@@ -9,16 +9,14 @@ persisted region out of the three — so the generated module is a direct
 reading of the per-region filter contract:
 
 - `left` carries two count cells, so its record is `[handle, rows, nextKey,
-  dirty, pending, countRefs, countCache, container]` — the two count slots
-  hold arrays of two — and its filter container rides slot 7.
-- `right` carries no count, so its record is `[handle, rows, nextKey,
-  dirty, pending, container]` and the *same* container rides slot 5.
-  The container slot is `5 + counts?2`, computed inside the per-region
-  loop from that region's own feature set; two filtered regions therefore
-  read different slot numbers out of records of different widths, and
-  nothing about the filter feature is component-wide.
-- `solo` also has no count, so its container is at slot 5 too — but its
-  filter is driven by a *different* state field, which is what separates
+  dirty, pending, countRefs, countCache]` — the two count slots hold arrays
+  of two — while `right` and `solo` carry none and stop at `pending`.
+  Filtering adds no record slot at all since ADR-0102: it used to add one
+  holding the container element, for the sweep to navigate `childAt` from,
+  and the region handle has had the container since it was constructed.
+  What is still per region rather than component-wide is everything else
+  below — each sweep's own walk, its own wake guard, and its own arm table.
+- `solo` is filtered by a *different* state field, which is what separates
   the two axes below.
 
 `left` and `right` are the twins: both are filtered by `mode`, so one
@@ -28,9 +26,9 @@ commit. Their arm tables are deliberately inverted — `left` shows the
 "false"` ones — so a single flip hides complementary rows in the two
 regions, which no shared table or hoisted temporary could produce. Each
 sweep allocates its own scan and row temporaries — both suffixed with the
-region index — and navigates `childAt` from its own container slot, so the
-two walks never touch each other's container or row table, and they run in
-*region declaration order* inside the one commit.
+region index — and writes through its own region handle, so the two walks
+never touch each other's container or row table, and they run in *region
+declaration order* inside the one commit.
 
 `solo` is the control: filtered by `tone`, it wakes on `changed[2]` and
 on its own region-touch flag alone. A `mode` flip emits no `solo` scan

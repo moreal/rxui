@@ -46,13 +46,14 @@ The ADR-0051 filter view selects which rows are displayed:
 when "completed" (done == "true")` maps the `filter` state literals to
 row-field equality predicates, and the unmatched `"all"` shows every row.
 The commit sweep applies the table after the reconcile and drain — whenever
-the region was touched or `filter` changed — by writing each row root's
-`hidden` property through the existing `setProperty` export, navigating
-`childAt(container, i)` from the container element recorded in the region
-record's filter slot. Rows never mount or dispose on a filter change, so
-row identity, focus, and the region metrics stay untouched, and the counts
-keep reading the full row table — `items-left` is filter-independent by
-construction. Still no host change and no runtime ABI bump.
+the region was touched or `filter` changed — through the region handle's
+`setDisplayed(position, key, displayed)`, which takes a deselected row out
+of the container and puts it back at its table position (ADR-0102; ADR-0101
+priced writing `hidden` on it instead and this is 8.3× on the real flip at
+ten thousand rows). Rows never mount or dispose on a filter change, so row
+identity, focus, and the region metrics stay untouched, and the counts keep
+reading the full row table — `items-left` is filter-independent by
+construction.
 
 The ADR-0052 key-branched row event closes the editor's keyboard loop:
 `row items keys (pressed : String) := when "Enter" (…) then when "Escape"

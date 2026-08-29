@@ -145,7 +145,17 @@ function monotoneKeys(items, count) {
 // context) mounts one row into a position and shifts the rest, and
 // removeAt(index, key, context) disposes one retained row and shifts the rest,
 // and removeMany(drops, context) does the same for an ascending set of them in
-// one pass, all without re-rendering anything else.
+// one pass, all without re-rendering anything else; setDisplayed(index, key,
+// displayed) takes one retained row out of the parent or puts it back where
+// its position says, without disposing it.
+// A row taken out by setDisplayed is still in the row table, so the table's
+// positions and the parent's children stop being the same list (ADR-0102).
+// Every other entry point is written against that identity, so each restores
+// it for itself: the anchors below are displayed anchors, and the reconcile
+// puts the whole table back into the parent before it runs and takes the same
+// rows out again after. A row is displayed exactly when its node is in the
+// parent -- nothing here caches what the DOM already says -- and hiddenRows is
+// only the O(1) test for whether any of that work is needed at all.
 // The key index (entries) exists only after an update needed it (a retained
 // key away from its position, or keys that are not monotone) and until an
 // update retains nothing.
@@ -156,9 +166,55 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
   let current = [];
   let stamp = 0;
   let disposed = false;
+  let hiddenRows = 0;
+  // The node a row that is not in the parent goes before once it is: after the
+  // nearest displayed row ahead of it, and otherwise before the first
+  // displayed row behind it, or before the marker. Backwards first because a
+  // sweep walks the table upward, which makes that neighbour the row it just
+  // placed -- so showing k rows costs one walk of the table, not k of them.
+  function displayAnchor(index) {
+    for (let ahead = index - 1; ahead >= 0; ahead -= 1) {
+      const node = current[ahead].node;
+      if (node.parentNode !== null) return node.nextSibling;
+    }
+    return insertAnchor(index + 1);
+  }
+  // The same node for a position no row holds yet: everything before index is
+  // already in place, so only the first displayed row at or after it matters.
+  function insertAnchor(index) {
+    for (let behind = index; behind < current.length; behind += 1) {
+      const node = current[behind].node;
+      if (node.parentNode !== null) return node;
+    }
+    return marker;
+  }
+  // Puts every row setDisplayed took out back at its table position and
+  // returns them, so a caller can undo it. One descending pass carries the
+  // anchor, so it costs one walk of the table however many rows are out.
+  function restoreDisplayed() {
+    if (hiddenRows === 0) return [];
+    const restored = [];
+    let before = marker;
+    for (let index = current.length - 1; index >= 0; index -= 1) {
+      const entry = current[index];
+      if (entry.node.parentNode === null) {
+        parent.insertBefore(entry.node, before);
+        restored.push(entry);
+      }
+      before = entry.node;
+    }
+    return restored;
+  }
   return {
     update(items, context) {
       if (disposed) return;
+      // ADR-0102: the reconcile's prefix and suffix scans, its
+      // longest-increasing placement and its owned-parent bulk clear all read
+      // the parent's children as the row table, so the rows a filter took out
+      // go back first and the survivors among them come out again after. The
+      // set is unchanged by the round trip, which is what a retained node
+      // keeping its own display state means.
+      const restored = restoreDisplayed();
       const count = items.length;
       const previous = current;
       const previousCount = previous.length;
@@ -237,6 +293,16 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
         metrics[2] += placeInOrder(parent, marker, previous, kept, next, count);
       }
       current = next;
+      if (restored.length !== 0) {
+        hiddenRows = 0;
+        for (let index = 0; index < restored.length; index += 1) {
+          const entry = restored[index];
+          if (entry.stamp === stamp) {
+            hiddenRows += 1;
+            detach(entry.node);
+          }
+        }
+      }
     },
     updateAt(index, item, context) {
       if (disposed) return;
@@ -259,13 +325,31 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
         throw mismatchedKey(first, highItem?.[0]);
       }
       if (high.key !== lowItem[0]) throw mismatchedKey(second, lowItem[0]);
-      const adjacent = second === first + 1;
-      const after = current[second + 1];
-      parent.insertBefore(high.node, low.node);
-      if (!adjacent) parent.insertBefore(low.node, after === undefined ? marker : after.node);
       current[first] = high;
       current[second] = low;
-      metrics[2] += adjacent ? 1 : 2;
+      if (hiddenRows === 0) {
+        const adjacent = second === first + 1;
+        const after = current[second + 1];
+        parent.insertBefore(high.node, low.node);
+        if (!adjacent) parent.insertBefore(low.node, after === undefined ? marker : after.node);
+        metrics[2] += adjacent ? 1 : 2;
+      } else {
+        // Neither node is necessarily where its old position said, and one of
+        // them may not be in the parent at all, so each displayed node is
+        // taken out and placed at the anchor its new position names.
+        const highShown = high.node.parentNode !== null;
+        const lowShown = low.node.parentNode !== null;
+        if (highShown) detach(high.node);
+        if (lowShown) detach(low.node);
+        if (highShown) {
+          parent.insertBefore(high.node, displayAnchor(first));
+          metrics[2] += 1;
+        }
+        if (lowShown) {
+          parent.insertBefore(low.node, displayAnchor(second));
+          metrics[2] += 1;
+        }
+      }
       updateItem(high.handle, lowItem, first, context);
       updateItem(low.handle, highItem, second, context);
       metrics[1] += 2;
@@ -289,8 +373,7 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       const handle = mountItem(item, index, context);
       const entry = { key, handle, node: null, stamp, pos: -1 };
       entry.node = rootItem ? rootItem(handle) : handle;
-      parent.insertBefore(entry.node,
-        index < current.length ? current[index].node : marker);
+      parent.insertBefore(entry.node, insertAnchor(index));
       current.splice(index, 0, entry);
       if (entries !== null) entries.set(key, entry);
       metrics[0] += 1;
@@ -305,6 +388,7 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       if (entry === undefined || entry.key !== key) throw mismatchedKey(index, key);
       current.splice(index, 1);
       disposeItem(entry.handle, key, context);
+      if (entry.node.parentNode === null) hiddenRows -= 1;
       detach(entry.node);
       if (entries !== null) entries.delete(key);
       metrics[3] += 1;
@@ -339,6 +423,7 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       for (let index = 0; index < count; index += 1) {
         const entry = current[drops[index][0]];
         disposeItem(entry.handle, entry.key, context);
+        if (entry.node.parentNode === null) hiddenRows -= 1;
         if (!wholesale) detach(entry.node);
         if (entries !== null) entries.delete(entry.key);
       }
@@ -360,6 +445,26 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       }
       metrics[3] += count;
     },
+    // The retained row at index, whose key must be key (LRX-REGION-003
+    // otherwise), leaves the parent or goes back into it at the position the
+    // row table gives it. It keeps its handle, its node, its listeners and
+    // every property written into it either way, and no callback runs: this
+    // is a filter's selection, not a change to the row. A row already in the
+    // asked-for state is not touched, so the call is idempotent and the
+    // caller's own displayed-state cache decides how often it is made.
+    setDisplayed(index, key, displayed) {
+      if (disposed) return;
+      const entry = current[index];
+      if (entry === undefined || entry.key !== key) throw mismatchedKey(index, key);
+      if ((entry.node.parentNode !== null) === displayed) return;
+      if (displayed) {
+        hiddenRows -= 1;
+        parent.insertBefore(entry.node, displayAnchor(index));
+      } else {
+        hiddenRows += 1;
+        detach(entry.node);
+      }
+    },
     instrumentation() {
       return snapshot(metrics);
     },
@@ -374,6 +479,7 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       }
       entries = null;
       current = [];
+      hiddenRows = 0;
       detach(marker);
     },
   };

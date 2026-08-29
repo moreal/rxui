@@ -377,10 +377,12 @@ private def regionHasChildRef (region : RegionSpec) : Bool :=
   !region.template.childRefs.isEmpty
 
 /-- The record slot of one child-composing region's live children inventory
-(ADR-0075): behind the base five slots, the ADR-0050 count slots, and the
-ADR-0051 filter slot, mirroring the record construction. -/
-private def regionChildSlot (hasCounts hasFilter : Bool) : Nat :=
-  5 + (if hasCounts then 2 else 0) + (if hasFilter then 1 else 0)
+(ADR-0075): behind the base five slots and the ADR-0050 count slots,
+mirroring the record construction. ADR-0051 used to put a filtered region's
+container element in between, for the sweep to navigate `childAt` from;
+ADR-0102 gave that navigation to the host, so the slot went with it. -/
+private def regionChildSlot (hasCounts : Bool) : Nat :=
+  5 + (if hasCounts then 2 else 0)
 
 /-- Whether some path takes rows out of one region by position, and so
 whether it carries the ADR-0097 drops queue: a sealed single-row removal —
@@ -396,8 +398,8 @@ private def regionRemovesRows (spec : ComponentSpec Γ) (region : RegionSpec) : 
 
 /-- The record slot of one region's ADR-0097 drops queue: behind the ADR-0075
 inventory, so adding it moves no slot any earlier ADR sealed. -/
-private def regionDropSlot (hasCounts hasFilter hasChild : Bool) : Nat :=
-  regionChildSlot hasCounts hasFilter + (if hasChild then 1 else 0)
+private def regionDropSlot (hasCounts hasChild : Bool) : Nat :=
+  regionChildSlot hasCounts + (if hasChild then 1 else 0)
 
 /-- Whether some component event appends a row to one region (ADR-0098), the
 ADR-0056 key arms included. The ADR-0063 hydration path also pushes rows, but
@@ -409,8 +411,8 @@ private def regionAppendsRows (spec : ComponentSpec Γ) (region : RegionSpec) : 
 /-- The record slot of one region's ADR-0098 append counter: the record's
 last slot, behind the ADR-0097 drops queue, present exactly when some
 component event appends into the region. -/
-private def regionAppendSlot (hasCounts hasFilter hasChild hasDrops : Bool) : Nat :=
-  regionDropSlot hasCounts hasFilter hasChild + (if hasDrops then 1 else 0)
+private def regionAppendSlot (hasCounts hasChild hasDrops : Bool) : Nat :=
+  regionDropSlot hasCounts hasChild + (if hasDrops then 1 else 0)
 
 /-- The ADR-0097/0100 drops-queue slot of every region some path removes rows
 from by position, by region name, laid out exactly as the record construction
@@ -420,7 +422,6 @@ private def regionDropSlots (checked : CheckedComponent Γ) : List (String × Na
     if regionRemovesRows checked.spec region then
       some (region.name, regionDropSlot
         (checked.view.regionCounts.any (·.region == region.name))
-        (checked.spec.filters.toList.any (·.region == region.name))
         (regionHasChildRef region))
     else none
 
@@ -433,7 +434,6 @@ private def regionAppendSlots (checked : CheckedComponent Γ) : List (String × 
     if regionAppendsRows checked.spec region then
       some (region.name, regionAppendSlot
         (checked.view.regionCounts.any (·.region == region.name))
-        (checked.spec.filters.toList.any (·.region == region.name))
         (regionHasChildRef region) (regionRemovesRows checked.spec region))
     else none
 
@@ -455,9 +455,9 @@ private def regionPredicateCells (checked : CheckedComponent Γ) (regionName : S
 /-- The record slot of one region's ADR-0099 predicate accumulator: the
 record's last slot, behind the ADR-0098 append counter, present exactly when
 the region has a predicate cell to hold. -/
-private def regionPredicateSlot (hasCounts hasFilter hasChild hasDrops hasAppends : Bool) :
+private def regionPredicateSlot (hasCounts hasChild hasDrops hasAppends : Bool) :
     Nat :=
-  regionAppendSlot hasCounts hasFilter hasChild hasDrops + (if hasAppends then 1 else 0)
+  regionAppendSlot hasCounts hasChild hasDrops + (if hasAppends then 1 else 0)
 
 /-- One region's ADR-0099 accumulator slot and cells, or `none` when it has no
 predicate aggregate. Laid out exactly as the record construction lays it. -/
@@ -467,8 +467,7 @@ private def regionPredicateCellsAt? (checked : CheckedComponent Γ) (region : Re
   if cells.isEmpty then none
   else
     let hasCounts := checked.view.regionCounts.any (·.region == region.name)
-    let hasFilter := checked.spec.filters.toList.any (·.region == region.name)
-    some (regionPredicateSlot hasCounts hasFilter (regionHasChildRef region)
+    some (regionPredicateSlot hasCounts (regionHasChildRef region)
       (regionRemovesRows checked.spec region)
       (regionAppendsRows checked.spec region), cells)
 
@@ -1247,7 +1246,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     before the drain below empties it. -/
     let dropSlot? : Option Nat :=
       if regionRemovesRows checked.spec region then
-        some (regionDropSlot (!counts.isEmpty) filter?.isSome (regionHasChildRef region))
+        some (regionDropSlot (!counts.isEmpty) (regionHasChildRef region))
       else none
     /- The ADR-0098 append counter, read here for the same reason: an append
     that counts itself instead of raising the dirty bit is still "the row set
@@ -1255,7 +1254,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     reads it before the drain empties it. -/
     let appendSlot? : Option Nat :=
       if regionAppendsRows checked.spec region then
-        some (regionAppendSlot (!counts.isEmpty) filter?.isSome
+        some (regionAppendSlot (!counts.isEmpty)
           (regionHasChildRef region) (regionRemovesRows checked.spec region))
       else none
     let structuralExpr : Expr :=
@@ -1473,7 +1472,7 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     reconcile and drain forward it so the row mount callback pushes and the
     row dispose callback splices; other regions keep the null context. -/
     let rowContext := if regionHasChildRef region then
-        regionEntry regions regionIndex (regionChildSlot (!counts.isEmpty) filter?.isSome)
+        regionEntry regions regionIndex (regionChildSlot (!counts.isEmpty))
       else Expr.literal .null
     /- The ADR-0097/0100 removal drain, ahead of the reconcile. Every removal
     already knows the position it took its row out of — ADR-0092's key-ordered
@@ -1587,20 +1586,31 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
 
     ADR-0086: the selection is compared against the row's own displayed-state
     cell — `rowFilterSlot?`, behind the ADR-0085 serialization cell — and only
-    a row whose value moved is navigated to and written. The sweep is the one
-    writer of a row root's `hidden` (row scope has no `hidden` selection), and
-    the cell is keyed on row identity, so a rebuild of the row array carries
-    every survivor's cell along with its untouched DOM node. Navigation stays
-    `childAt(container, i)` — the region owns its whole container and rows
-    precede the anchor marker in `items` order, and the container element
-    rides the record's filter slot — but it is now paid per *written* row
-    rather than per row. The written count rides one commit-time trace entry
-    beside ADR-0085's encode count; the shared DOM-write counter and its trace
-    take the ADR-0045 evaluate-compare-write shape and fire only when the
-    sweep wrote something. -/
+    a row whose value moved is written. The sweep is the one writer of a row's
+    display state (row scope has no `hidden` selection), and the cell is keyed
+    on row identity, so a rebuild of the row array carries every survivor's
+    cell along with its untouched DOM node.
+
+    ADR-0102: what the write *is* changed. A row the filter deselects used to
+    be navigated to by `childAt(container, i)` and given `hidden`, which left
+    it in the container as a layout-less sibling — and ADR-0101 measured what
+    that costs the browser: `21.2 + 4.25e-5·k·R` ms of style recalc, 1 100 ms
+    for five thousand adjacent rows of ten thousand. The row now leaves the
+    container instead, through the handle's `setDisplayed(position, key,
+    displayed)`, which is 11× on that flip's whole round trip and 23× when
+    every row is deselected, because a row that is not in the document has no
+    siblings to skip past. The position is the row's position in the row
+    table, which is what the host addresses too, and the key beside it is the
+    same LRX-REGION-003 check `removeAt` and `removeMany` carry — the host
+    owns the identity of table position with *container child* position from
+    here on, which is what ADR-0102 restates.
+
+    The written count rides one commit-time trace entry beside ADR-0085's
+    encode count; the shared DOM-write counter and its trace take the ADR-0045
+    evaluate-compare-write shape and fire only when the sweep wrote
+    something. -/
     if let some filter := filter? then
       let filterFlag ← wakeIdent regionIndex (filterWakes.head?.getD .touched)
-      let filterSlot := 5 + (if counts.isEmpty then 0 else 2)
       let cursor ← Ident.checked s!"filter_at_{regionIndex}"
       let filterRow ← Ident.checked s!"filter_row_{regionIndex}"
       let next ← Ident.checked s!"filter_next_{regionIndex}"
@@ -1621,19 +1631,19 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
         (Expr.literal (.boolean false))
       /- ADR-0099: one row's visit — bind it, select it from the sealed table,
       and write only if its ADR-0086 displayed-state cell moved. The position
-      is the row's position in the row table, which is also its position among
-      the container's children, because the drains above have already made the
-      two agree. -/
+      is the row's position in the row table, which the drains above have
+      already made current; ADR-0102 leaves it to the host to turn that into a
+      place among the container's children, because a filter that detaches
+      rows is exactly what makes the two stop being the same list. -/
       let visit := fun (row next : Ident) (at' : Expr) => [
         Stmt.const row (.index (regionEntry regions regionIndex 1) at'),
         .const next (hiddenExpr row),
         .ifThen (.unary .not (.binary .eq
             (.index (.ident row) (uint shownSlot)) (.ident next))) (.ofList [
           .assign (.index (.ident row) (uint shownSlot)) (.ident next),
-          .expr <| call runtime.setProperty [
-            call runtime.childAt [regionEntry regions regionIndex filterSlot, at'],
-            .literal (.string "hidden"), .ident next
-          ],
+          .expr <| .call
+            (.index (regionEntry regions regionIndex 0) (.literal (.string "setDisplayed")))
+            (.ofList [at', .index (.ident row) (uint 0), .unary .not (.ident next)]),
           .assign (.index (.ident written) (uint 0))
             (.binary .add (.index (.ident written) (uint 0)) (uint 1))
         ]),
@@ -2895,12 +2905,11 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
   positions in and its appends count themselves into, computed exactly as the
   record construction lays them out. -/
   let hasCounts := checked.view.regionCounts.any (·.region == region.name)
-  let hasFilter := checked.spec.filters.toList.any (·.region == region.name)
   let hasChild := regionHasChildRef region
-  let dropSlot := regionDropSlot hasCounts hasFilter hasChild
+  let dropSlot := regionDropSlot hasCounts hasChild
   let appendSlot? : Option Nat :=
     if regionAppendsRows checked.spec region then
-      some (regionAppendSlot hasCounts hasFilter hasChild
+      some (regionAppendSlot hasCounts hasChild
         (regionRemovesRows checked.spec region))
     else none
   /- ADR-0099: the accumulator slot and cells this region's row writes and
@@ -3244,22 +3253,14 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
             message := s!"checked region {region.name} was never mounted"
           }
       /- Regions with counts carry two extra region-local slots — the count
-      text refs and the numeric count cache, both in view order (ADR-0050) —
-      and filtered regions one more holding the container element, so the
-      commit sweep can navigate to row roots from the context alone
-      (ADR-0051). -/
+      text refs and the numeric count cache, both in view order (ADR-0050).
+      A filtered region used to carry one more holding the container element,
+      for the ADR-0051 sweep to navigate `childAt` from; ADR-0102 moved that
+      navigation into the region handle, which knows the container already,
+      so the slot is gone and every slot behind it moved down by one. -/
       let counts := checked.view.regionCounts.filter (·.region == region.name)
       let countRefs ← counts.mapM fun count => do
         pure (Expr.ident (← nodeAt dom.nodes count.path))
-      let containerRef ← if checked.spec.filters.toList.any (·.region == region.name) then do
-          let reference ← match checked.view.regionRefs.find? (·.name == region.name) with
-            | some reference => pure reference
-            | none => .error {
-                code := "LRX-BE-032"
-                message := s!"checked region {region.name} was never mounted"
-              }
-          pure [Expr.ident (← nodeAt dom.nodes reference.path.dropLast)]
-        else pure []
       /- The ADR-0097 drops queue and the ADR-0098 append counter are the
       record's *last* two slots, in that order, so a region that removes or
       appends rows adds its cells behind the ADR-0075 inventory and every
@@ -3286,7 +3287,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
         Expr.array (.ofList (counts.map fun count => match count.label with
           | none => uint 0
           | some (_, other) => .literal (.string other)))
-      ]) ++ containerRef ++
+      ]) ++
         (if regionHasChildRef region then [Expr.ident childInventory] else []) ++
         dropQueue ++ appendCount ++ predicateCells)
     mountBody := mountBody ++ [

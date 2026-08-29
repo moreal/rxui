@@ -176,17 +176,40 @@ back to the bit is corrected rather than doubled. The ADR-0051 filter sweep
 narrows the same way: it visits the ADR-0043 pending positions and the
 ADR-0098 appended tail, or `[0, length)` when the bit rose or the filter's
 own state field changed. Those positions are exactly as valid as the drains
-that consume them — `childAt(container, i)` addresses the container's *i*-th
-child, and only after the drains do the row table and the host agree — so the
-three values the narrow path needs are snapshotted beside the wake flags,
-before the drains empty what they name. Both sweeps report the number of rows
-they read, as `predicate:{region}:read:{n}` and `filter:{region}:read:{n}`. A
-filtered row is *hidden*, never detached, and that is what keeps the
-identity: were the sweep to remove a filtered row from the container,
-`childAt(container, i)`, `insertAt`'s `entries[position].node` anchor and
-`ownsWholeParent`'s one-write clear would all stop addressing the same row.
-ADR-0101 priced the alternative at 76× on the browser side and declined it
-for exactly that reason.
+that consume them — only after the drains do the row table and the host
+agree — so the three values the narrow path needs are snapshotted beside the
+wake flags, before the drains empty what they name. Both sweeps report the
+number of rows they read, as `predicate:{region}:read:{n}` and
+`filter:{region}:read:{n}`.
+
+A deselected row is **detached**, not hidden (ADR-0102). ADR-0101 priced the
+difference — the browser charges `21.2 + 4.25e-5 · k · R` ms to hide `k` rows
+in runs of `R`, and a row that is not in the document is in no run at all —
+and the round trip measures 11.99× at ten thousand rows with five thousand
+deselected. What that costs is the identity of row-table position with
+container-child position, which the sweep used to rely on through
+`childAt(container, i)` and which `insertAt`'s anchor and `ownsWholeParent`'s
+one-write clear rely on still. The identity is not abandoned; it is moved
+into the host, which is the only place that can hold both halves of it. The
+sweep now calls `setDisplayed(position, key, displayed)` on the region
+handle, the record's filter slot holding the container element is gone with
+the navigation that needed it, and every other entry point restores the
+identity for itself: `insertAt` anchors on the first *displayed* row at or
+after its position, `removeAt` and `removeMany` detach a row that is already
+out as a no-op and lose the owned-parent bulk clear while any row is out, and
+`update` puts the whole table back into the container before it reconciles
+and takes the same survivors out again after — so `placeInOrder`, the
+longest-increasing placement and the bulk clear all still read the container's
+children as the row table, for the whole of the one call that needs to. A row
+is displayed exactly when its node is in the container, so the host caches
+nothing the DOM does not already say.
+
+Two things follow that a reader should not have to discover. A row root's
+`hidden` property is no longer written by anything, so a `hidden` selection
+in row scope would have no conflict to resolve and still does not exist. And
+a deselected row is unreachable: the delegated listener is on the container,
+so nothing dispatches for a row the filter is not showing — which is what a
+user could already do, and is now what a script can do too.
 The ADR-0063 write-back keeps walking every row, because two thirds of its
 cost is the bytes of a payload that is the whole table by contract and the
 only layout that would narrow it costs 7.2 µs per key.

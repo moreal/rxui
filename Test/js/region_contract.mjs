@@ -57,6 +57,7 @@ const SURFACE = {
     insertAt: { 1: "row" },
     removeAt: {},
     removeMany: { 0: "list" },
+    setDisplayed: {},
     instrumentation: {},
     dispose: {},
   },

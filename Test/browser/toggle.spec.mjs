@@ -582,20 +582,21 @@ test("an append under an active filter takes the sweep's selection (ADR-0098)", 
   await add.click();
   await page.locator("#items > li").nth(0).getByRole("checkbox", { name: "Toggle item" }).check();
   await page.getByRole("button", { name: "Show completed" }).click();
-  await expect(page.locator("#items > li").nth(0)).toBeVisible();
-  await expect(page.locator("#items > li").nth(1)).toBeHidden();
-  // The ADR-0051 filter sweep navigates childAt(container, i) by row-table
-  // position, so it must run after the drain has put the new row in the host
-  // at exactly the position the table holds it. A fresh row is not done, so
-  // under "completed" it mounts and is hidden in the same commit.
+  // ADR-0102: the container holds the rows the filter selected and nothing
+  // else, so the deselected row is not hidden in it — it is not in it.
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0"]);
+  // The ADR-0051 filter sweep addresses rows by row-table position, so it
+  // must run after the drain has put the new row in the host at exactly the
+  // position the table holds it. A fresh row is not done, so under
+  // "completed" it mounts and leaves the container in the same commit.
   await add.click();
-  await expect(page.locator("#items > li")).toHaveCount(3);
-  await expect(page.locator("#items > li").nth(2)).toBeHidden();
-  await expect(page.locator("#items > li").nth(2).locator(".item-label"))
-    .toHaveText("Item 2", { useInnerText: false });
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0"]);
   await expect(page.locator("#items-left")).toHaveText("2 items left of 3");
   await page.getByRole("button", { name: "Show all" }).click();
-  await expect(page.locator("#items > li").nth(2)).toBeVisible();
+  await expect(page.locator("#items > li .item-label"))
+    .toHaveText(["Item 0", "Item 1", "Item 2"]);
   // The stored value carries the appended row, so the write-back woke too.
   const stored = await page.evaluate(() =>
     globalThis.localStorage.getItem("leanrx-toggle-lab.items"));
@@ -624,28 +625,28 @@ test("the filter view hides exactly the non-matching rows with identity and metr
   });
   const before = await regionMetrics(page);
   await page.getByRole("button", { name: "Show active" }).click();
-  // The filter sweep writes each row root's hidden property only: every row
-  // keeps its DOM node and the region metrics do not move at all — no
-  // mounts, updates, moves, or disposals.
-  await expect(page.locator("#items > li")).toHaveCount(3);
-  await expect(page.locator("#items > li").nth(0)).toBeHidden();
-  await expect(page.locator("#items > li").nth(1)).toBeVisible();
-  await expect(page.locator("#items > li").nth(2)).toBeVisible();
+  // ADR-0102: the sweep takes each deselected row *out of the container*
+  // rather than writing `hidden` on it, so the container's children are the
+  // displayed set. Every row keeps its DOM node and the region metrics do
+  // not move at all — no mounts, updates, moves, or disposals.
+  await expect(page.locator("#items > li")).toHaveCount(2);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1", "Item 2"]);
   // items-left counts the full row table: the displayed set follows the
   // filter while the counts stay filter-independent (ADR-0050/0051).
   await expect(page.locator("#items-left")).toHaveText("2 items left of 3");
   expect(await regionMetrics(page)).toEqual(before);
-  const retained = await page.evaluate(() =>
-    globalThis.firstRow === document.querySelector("#items > li"),
-  );
-  expect(retained).toBe(true);
-  // Show completed flips the displayed set; Show all reveals every retained
-  // row again — the same nodes throughout.
+  // The deselected row is the same node, still the region's, merely out of
+  // the document — not a disposal and not a remount.
+  expect(await page.evaluate(() => globalThis.firstRow.isConnected)).toBe(false);
+  // Show completed flips the displayed set; Show all puts every retained row
+  // back in table order — the same nodes throughout.
   await page.getByRole("button", { name: "Show completed" }).click();
-  await expect(page.locator("#items > li").nth(0)).toBeVisible();
-  await expect(page.locator("#items > li").nth(1)).toBeHidden();
-  await expect(page.locator("#items > li").nth(2)).toBeHidden();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0"]);
+  expect(await page.evaluate(() =>
+    globalThis.firstRow === document.querySelector("#items > li"))).toBe(true);
   await page.getByRole("button", { name: "Show all" }).click();
+  await expect(page.locator("#items > li .item-label"))
+    .toHaveText(["Item 0", "Item 1", "Item 2"]);
   for (const row of await page.locator("#items > li").all()) {
     await expect(row).toBeVisible();
   }
@@ -658,29 +659,87 @@ test("the filter view hides exactly the non-matching rows with identity and metr
   expect(accessibility.violations).toEqual([]);
 });
 
+test("a deselected row leaves the container and comes back the same node (ADR-0102)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).check();
+  // Hold every row node and put some state into the one about to leave: a
+  // detached row keeps its properties, which is the whole reason the sweep
+  // may take it out instead of disposing it.
+  await page.evaluate(() => {
+    globalThis.rows = Array.from(document.querySelectorAll("#items > li"));
+    globalThis.rows[1].querySelector(".item-label").scrollLeft = 0;
+  });
+  const before = await regionMetrics(page);
+  await page.getByRole("button", { name: "Show active" }).click();
+  // The container's children are the selection, in table order, and nothing
+  // in it carries `hidden`: the row is gone from the document, not styled
+  // out of it (ADR-0101 priced the difference at 76× on the flip).
+  await expect(page.locator("#items > li")).toHaveCount(2);
+  await expect(page.locator("#items > li[hidden]")).toHaveCount(0);
+  expect(await page.evaluate(() => globalThis.rows.map((row) => row.isConnected)))
+    .toEqual([true, false, true]);
+  // Not one region metric moved: a selection is not a mount, an update, a
+  // placement or a disposal.
+  expect(await regionMetrics(page)).toEqual(before);
+  // The sweep read every row and wrote exactly the one whose ADR-0086 cell
+  // moved — the trace counts rows, so it says so without reading the DOM.
+  const trace = await page.evaluate(() => globalThis.toggleDispose.instrumentation()[7]);
+  expect(trace).toContain("filter:items:read:3");
+  expect(trace).toContain("filter:items:written:1");
+  // While it is out, the region cannot dispatch for it: the delegated
+  // listener is on the container, and the row is not in the container, so
+  // nothing bubbles to it. A synthetic click on the row's own Remove button
+  // — which would dispose the row outright if it were delivered — moves
+  // nothing at all.
+  const storedBefore = await page.evaluate(() =>
+    localStorage.getItem("leanrx-toggle-lab.items"));
+  await page.evaluate(() =>
+    globalThis.rows[1].querySelector("[aria-label='Remove item']").click());
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => localStorage.getItem("leanrx-toggle-lab.items")))
+    .toBe(storedBefore);
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 3");
+  // Back in: the same node object, at its own table position rather than at
+  // either end, with the checkbox state it left with.
+  await page.getByRole("button", { name: "Show all" }).click();
+  expect(await page.evaluate(() => {
+    const shown = Array.from(document.querySelectorAll("#items > li"));
+    return shown.length === 3 && shown.every((row, index) => row === globalThis.rows[index]);
+  })).toBe(true);
+  await expect(page.locator("#items > li").nth(1)
+    .getByRole("checkbox", { name: "Toggle item" })).toBeChecked();
+  expect(await regionMetrics(page)).toEqual(before);
+});
+
 test("a row update that changes the predicated field re-applies the filter live (ADR-0051)", async ({ page }) => {
   await mountToggle(page);
   const add = page.getByRole("button", { name: "Add item" });
   await add.click();
   await add.click();
   await page.getByRole("button", { name: "Show active" }).click();
-  await expect(page.locator("#items > li").nth(0)).toBeVisible();
-  await expect(page.locator("#items > li").nth(1)).toBeVisible();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0", "Item 1"]);
   // The delegated toggle drains through updateAt (pending, not dirty); the
-  // filter sweep still sees the touched region and hides the row that just
-  // left the active set.
-  await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).check();
-  await expect(page.locator("#items > li").nth(1)).toBeHidden();
-  await expect(page.locator("#items > li").nth(0)).toBeVisible();
+  // filter sweep still sees the touched region and takes the row that just
+  // left the active set out of the container (ADR-0102).
+  await page.locator("#items > li").nth(1)
+    .getByRole("checkbox", { name: "Toggle item" }).click();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0"]);
   await expect(page.locator("#items-left")).toHaveText("1 item left of 2");
-  // Under the completed filter the same row is the visible one; unchecking
-  // it hides it again from the completed set.
+  // Under the completed filter the same row is the displayed one; unchecking
+  // it takes it out of the completed set, and the sweep's re-insert puts the
+  // other row back at its own table position rather than at either end.
   await page.getByRole("button", { name: "Show completed" }).click();
-  await expect(page.locator("#items > li").nth(1)).toBeVisible();
-  await expect(page.locator("#items > li").nth(0)).toBeHidden();
-  await page.locator("#items > li").nth(1).getByRole("checkbox", { name: "Toggle item" }).uncheck();
-  await expect(page.locator("#items > li").nth(1)).toBeHidden();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
+  await page.locator("#items > li").nth(0)
+    .getByRole("checkbox", { name: "Toggle item" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(0);
   await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
+  await page.getByRole("button", { name: "Show all" }).click();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0", "Item 1"]);
 });
 
 test("appended rows take their visibility inside the appending commit (ADR-0051)", async ({ page }) => {
@@ -693,15 +752,15 @@ test("appended rows take their visibility inside the appending commit (ADR-0051)
     .evaluate((button) => button.click());
   const add = page.getByRole("button", { name: "Add item" });
   await add.click();
-  // The append raises the touched flag, so the fresh row mounts and is
-  // hidden by the same commit's filter sweep — it never flashes visible.
-  await expect(page.locator("#items > li")).toHaveCount(1);
-  await expect(page.locator("#items > li").nth(0)).toBeHidden();
+  // The append raises the touched flag, so the fresh row mounts and is taken
+  // back out by the same commit's filter sweep — it never flashes visible.
+  await expect(page.locator("#items > li")).toHaveCount(0);
   await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
   // The broadcast moves every row into the completed set: the dirty
-  // reconcile and the filter sweep compose in one transaction.
+  // reconcile — which puts the whole table back into the container before it
+  // runs (ADR-0102) — and the filter sweep compose in one transaction.
   await page.getByRole("button", { name: "Complete all" }).click();
-  await expect(page.locator("#items > li").nth(0)).toBeVisible();
+  await expect(page.locator("#items > li")).toHaveCount(1);
   await expect(page.locator("#items-left")).toHaveText("0 items left of 1");
 });
 
@@ -714,13 +773,14 @@ test("broadcasts and removals compose with an active filter (ADR-0051)", async (
   await page.locator("#items > li").nth(0).getByRole("checkbox", { name: "Toggle item" }).check();
   await page.getByRole("button", { name: "Show active" }).click();
   await page.getByRole("button", { name: "Complete all" }).click();
-  // Every row left the active set: all hidden, none disposed.
-  await expect(page.locator("#items > li")).toHaveCount(3);
-  for (const row of await page.locator("#items > li").all()) {
-    await expect(row).toBeHidden();
-  }
+  // Every row left the active set: the container is empty and nothing was
+  // disposed — the rows are still the region's, just out of the document.
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  expect((await regionMetrics(page))[3]).toBe(0);
   await expect(page.locator("#items-left")).toHaveText("0 items left of 3");
   await page.getByRole("button", { name: "Show completed" }).click();
+  await expect(page.locator("#items > li .item-label"))
+    .toHaveText(["Item 0", "Item 1", "Item 2"]);
   for (const row of await page.locator("#items > li").all()) {
     await expect(row).toBeVisible();
   }
@@ -1835,19 +1895,17 @@ test("the hash seeds the filter at mount (ADR-0063)", async ({ page }) => {
   await add.click();
   await add.click();
   // The mount seed folded "#/completed" into the filter slot before the DOM
-  // mounted, so the appending commit's filter sweep hides the fresh active
-  // rows immediately — and the counts stay filter-independent.
-  await expect(page.locator("#items > li")).toHaveCount(2);
-  await expect(page.locator("#items > li:visible")).toHaveCount(0);
+  // mounted, so the appending commit's filter sweep takes the fresh active
+  // rows straight back out (ADR-0102) — and the counts stay
+  // filter-independent, because they count the row table.
+  await expect(page.locator("#items > li")).toHaveCount(0);
   await expect(page.locator("#items-left")).toHaveText("2 items left of 2");
-  // Toggling a filter-hidden row done keeps the seeded filter live: the
-  // done row joins the completed set and becomes visible (the synthetic
-  // click reaches the delegated listener — the dispatch, not the
-  // affordance, carries the contract).
-  await page.locator("#items > li").first()
-    .getByRole("checkbox", { name: "Toggle item", includeHidden: true })
-    .evaluate((box) => box.click());
-  await expect(page.locator("#items > li:visible")).toHaveCount(1);
+  // The seeded filter stays live across a transaction that rebuilds the
+  // table: the broadcast moves both rows into the completed set and the
+  // sweep puts them back into the container in the same commit.
+  await page.getByRole("button", { name: "Complete all" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(2);
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 2");
 });
 
 test("an unknown hash keeps the declared default at mount (ADR-0063)", async ({ page }) => {
@@ -1876,8 +1934,8 @@ test("hashchange dispatches the filter set-field transaction (ADR-0063)", async 
   await page.evaluate(() => {
     location.hash = "#/active";
   });
-  await expect(page.locator("#items > li").first()).toBeHidden();
-  await expect(page.locator("#items > li").nth(1)).toBeVisible();
+  await expect(page.locator("#items > li")).toHaveCount(1);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
   await expect(page.locator("#items-left")).toHaveText("1 item left of 2");
   const trace = await page.evaluate(() => globalThis.toggleDispose.instrumentation()[7]);
   expect(trace).toContain("event:route:filter:active");
@@ -1887,6 +1945,7 @@ test("hashchange dispatches the filter set-field transaction (ADR-0063)", async 
     location.hash = "#/bogus";
   });
   await expect(page.locator("#items > li:visible")).toHaveCount(2);
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 0", "Item 1"]);
 });
 
 test("filter buttons write the canonical hash flip-only with no echo loop (ADR-0063)", async ({ page }) => {
@@ -1999,9 +2058,11 @@ test("a filter change alone persists nothing; one storageSet per region touch (A
   expect(await page.evaluate(() => localStorage.getItem("leanrx-toggle-lab.items")))
     .toBe("Item 0,Item 0,false,view");
   // A row toggle is a region touch: exactly one more storageSet, carrying
-  // the flipped done field.
+  // the flipped done field. Under "active" the row is displayed until the
+  // toggle takes it out, so the click reaches it before the sweep runs.
   await page.locator("#items > li").first()
-    .getByRole("checkbox", { name: "Toggle item" }).check();
+    .getByRole("checkbox", { name: "Toggle item" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(0);
   const toggled = await page.evaluate(() => globalThis.toggleDispose.instrumentation());
   expect(count(toggled, "storage:items:write")).toBe(2);
   expect(await page.evaluate(() => localStorage.getItem("leanrx-toggle-lab.items")))
@@ -2677,22 +2738,21 @@ test("every row-table mutation keeps the table key-ordered, and the key search f
   expect(await ordered("broadcast")).toEqual([2, 3, 4]);
 
   // Cell 8, a filter sweep in the same commit as a drain — the other cell the
-  // exchange was owed. `Show active` leaves every done row hidden; untoggling
-  // one drains its `updateAt` and re-runs the sweep in that same commit, and
-  // the row the search resolved is the row that reappears.
-  await page.getByRole("button", { name: "Show active" }).click();
-  await expect(page.locator("#items > li:not([hidden])")).toHaveCount(0);
-  // The row is hidden, so the click is delivered directly rather than through
-  // Playwright's actionability check — the dispatch path is the same
-  // delegated listener either way.
-  await page.evaluate(() => {
-    document.querySelectorAll("#items > li")[1]
-      .querySelector("input[type=checkbox]").click();
-  });
-  expect(await ordered("filter sweep with a drain")).toEqual([2, 3, 4]);
-  await expect(page.locator("#items > li:not([hidden])")).toHaveCount(1);
-  expect(await page.locator("#items > li:not([hidden])").evaluate((row) => row.$lrxKey)).toBe(3);
+  // exchange was owed. `Show completed` displays every done row; untoggling
+  // the middle one drains its `updateAt` and re-runs the sweep in that same
+  // commit, and ADR-0102 takes the row the search resolved out of the
+  // container. What the displayed rows are is now a *subsequence* of the
+  // table, so the invariant this test guards has to hold of the subsequence
+  // too — a search that resolved a neighbour would take the wrong row out.
+  await page.getByRole("button", { name: "Show completed" }).click();
+  expect(await ordered("filter with every row displayed")).toEqual([2, 3, 4]);
+  await page.locator("#items > li").nth(1)
+    .getByRole("checkbox", { name: "Toggle item" }).click();
+  expect(await ordered("filter sweep with a drain")).toEqual([2, 4]);
   await page.getByRole("button", { name: "Show all" }).click();
+  expect(await ordered("filter cleared")).toEqual([2, 3, 4]);
+  expect(await page.locator("#items > li").nth(1)
+    .evaluate((row) => row.$lrxKey)).toBe(3);
 
   // Cell 9, the ADR-0050 predicate removal: `clearCompleted` still rebuilds
   // the array behind a kept-filter — ADR-0092 left it alone, because a

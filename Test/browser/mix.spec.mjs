@@ -158,24 +158,33 @@ test("filtering hides row roots without disposing or muting their badges", async
     metrics: globalThis.mixDispose.regionInstrumentation()[0],
     count: globalThis.mixDispose.children.length,
   }));
-  // ADR-0076: the filter sweep writes `hidden` on row roots by container
-  // index — the Badge lives inside the row root, so the row hides as one
-  // unit and the child is neither disposed nor spliced.
+  // ADR-0076/0102: the filter sweep takes a deselected row root out of the
+  // container — the Badge lives inside the row root, so the row leaves as
+  // one unit and the child is neither disposed nor spliced. The child
+  // inventory is region state, not DOM state, so it does not move either.
+  await page.evaluate(() => {
+    globalThis.crewRows = Array.from(document.querySelectorAll("#crew > li"));
+    globalThis.crewBadge = document.querySelectorAll("#crew .badge")[0];
+  });
   await page.getByRole("button", { name: "Show active" }).click();
-  await expect(page.locator("#crew > li").first()).toBeHidden();
-  await expect(page.locator("#crew > li").nth(1)).toBeVisible();
+  await expect(page.locator("#crew > li")).toHaveCount(1);
   const hidden = await page.evaluate(() => ({
     metrics: globalThis.mixDispose.regionInstrumentation()[0],
     count: globalThis.mixDispose.children.length,
-    badgeAttached: document.contains(document.querySelectorAll("#crew .badge")[0]),
+    connected: globalThis.crewRows.map((row) => row.isConnected),
+    badgeInsideRow: globalThis.crewRows[0].contains(globalThis.crewBadge),
   }));
   expect(hidden.metrics).toEqual(before.metrics);
   expect(hidden.count).toBe(before.count);
-  expect(hidden.badgeAttached).toBe(true);
-  // Unhiding restores the same row and the same badge instance — state
+  expect(hidden.connected).toEqual([false, true]);
+  expect(hidden.badgeInsideRow).toBe(true);
+  // Reselecting restores the same row and the same badge instance — state
   // intact, no mounts, no disposals.
   await page.getByRole("button", { name: "Show all" }).click();
-  await expect(page.locator("#crew > li").first()).toBeVisible();
+  await expect(page.locator("#crew > li")).toHaveCount(2);
+  expect(await page.evaluate(
+    () => document.querySelectorAll("#crew > li")[0] === globalThis.crewRows[0],
+  )).toBe(true);
   await expect(page.locator("#crew .badge-text").first()).toHaveText("Hits: 1");
   const restored = await page.evaluate(() =>
     globalThis.mixDispose.regionInstrumentation()[0],

@@ -6818,3 +6818,134 @@ closed**, one by a wash and one by a mechanism nobody had named, and what
 they leave is the detach lowering: 76× at ten thousand rows, priced, and
 costing the region's positional identity, which is a host round with an ABI
 event in it rather than a sweep round.
+
+## A deselected row leaves its container (ADR-0102)
+
+### What was built
+
+ADR-0101's one open question, taken. The ADR-0051 filter sweep stops writing
+`hidden` on a row root reached by `childAt(container, i)` and calls the keyed
+region handle's new `setDisplayed(index, key, displayed)`, which takes the row
+out of its container or puts it back at the position the row table gives it.
+`runtimeAbi` moves 19 → 20, the region record's ADR-0051 filter slot — the
+container element the sweep used to navigate from — is gone, and every entry
+point of `createKeyedRegion` restores for itself the identity of row-table
+position with container-child position that a detached row breaks.
+
+### What broke or surprised
+
+**The 76× was half a flip.** ADR-0101 timed the hide direction and timed it on
+a contiguous prefix pulled with `remove()` and put back before one anchor. The
+round trip is the number that decides this, and the *show* direction turns out
+to be a wash: putting five thousand rows back costs 84 ms of forced style and
+layout whether they were hidden or detached, because what costs is that five
+thousand elements start rendering again. So the win is entirely on the hide
+side — 1 096 ms as layout-less siblings against 3.9 ms as absent ones — and
+the round trip is 11.7× rather than 76×.
+
+**The anchor search would have eaten the whole win.** Re-showing `k` rows is
+`k` `insertBefore` calls, and the obvious anchor — the first *still-displayed*
+row after the position — is an O(N) forward scan exactly when a long run is
+out, which is the case worth optimising. It costs 98 ms at ten thousand rows
+with five thousand out and **383 ms** with every row out, more than the
+1 096 ms it was meant to save. Scanning *backward* for the nearest
+already-displayed row is O(1) amortised against an ascending sweep — after the
+sweep places row `i`, row `i+1` finds it immediately — at 1.62 ms and 3.15 ms,
+and it ties a batched descending pass over the whole table without the sweep
+having to hand the host a batch. The export stayed one call per row because of
+that measurement and not by preference.
+
+**A deselected row is unreachable, and two gates were relying on it not
+being.** The delegated listener is on the container, so nothing dispatches for
+a row the filter is not showing. Toggle Lab and Twin Lab each had a test that
+drove a *hidden* row with a synthetic click — legal before, since the node was
+still in the container — and both now drive the row through a filter that
+shows it. One of them was rewritten into the witness for the new fact instead:
+a click on a detached row's own Remove button, which would dispose the row if
+it were delivered, moves nothing at all.
+
+**`check()` and `uncheck()` deadlock on a row that deselects itself.** Three
+browser tests hung for thirty seconds each: Playwright's `check()` re-reads the
+state through a locator, and `#items > li` nth(i) no longer resolves to the
+same row once the toggle has taken it out of the container, so the action
+retried forever against a neighbour. `.click()` is the dispatch either way and
+does not re-read.
+
+**A synthetic click still flips a detached checkbox.** The first version of the
+ADR-0102 witness clicked the detached row's own checkbox to show that nothing
+dispatched — and the input's `checked` property flipped locally anyway, so the
+"state survives the round trip" assertion three lines later failed on a claim
+that was true. The witness drives a button now, which has no state of its own.
+
+**The probe anchors rotted for the third round running, in a new way.** Not a
+rename this time: removing the record's filter slot moved the ADR-0097 drops
+queue, the ADR-0098 append counter and the ADR-0099 accumulator down one each,
+so `removeDrain`'s anchor named the wrong slot, `reconcile`'s close half named
+another, and the exact-count assertion caught both — one at zero-of-sixteen and
+one at zero-on-the-close-side. The two drivers needed the same shift, and
+`driver2`'s `container()` had become the drops queue.
+
+### Performance observations
+
+Framework-free, Toggle Lab's row shape, both directions timed write-and-forced
+apart, the container re-asserted whole and in table order at every cell:
+
+| N/k | shape | hide | show | round |
+| --- | --- | ---: | ---: | ---: |
+| 10 000 / 1 000 prefix | `hidden` | 53.5 | 22.6 | 76.09 |
+| | detach | 9.9 | 22.7 | **32.58** |
+| 10 000 / 5 000 prefix | `hidden` | 1 097.4 | 85.0 | 1 182.41 |
+| | detach | 15.1 | 86.1 | **101.15** |
+| 10 000 / 5 000 spread | `hidden` | 24.9 | 87.2 | 112.12 |
+| | detach | 16.5 | 84.0 | **100.50** |
+| 10 000 / all | `hidden` | 4 363.1 | 180.9 | 4 544.06 |
+| | detach | 22.0 | 175.5 | **197.50** |
+
+Paired with ABBA inside every pass against an A/A control of 0.912–1.048×, the
+same eight cells read **1.03–21.62×** and none loses. The real emission, two
+dists with a second baseline page as the control at 0.907–1.103× — wider
+because the flip carries the ADR-0063 write-back, exactly as ADR-0098 found —
+reads **19.97×** with every row deselected, **8.26×** at 10 000/5 000
+contiguous, 2.96× / 1.86× / 1.67× at the smaller contiguous cells, and
+1.09–1.12× at the three scattered and small cells, which is inside that band.
+
+### Compiler and gate work
+
+`runtimeAbi` 19 → 20 with twenty-six mechanical references — the version
+constant, seventeen artifact gates, six Lean backend tests, the scalar
+manifest string and the CLI doctor line — plus `setDisplayed: {}` in the
+ADR-0094 contract surface, which is the rule (`H3`) that makes a new host
+export an ABI event. The host gate gains a `setDisplayed` section: a row out of
+the middle and back at its own position, idempotence in both directions, the
+key and range rejections, a whole prefix and then the whole table out and back
+in ascending order, `insertAt` at the front, middle and tail past rows that are
+out, `removeAt`/`removeMany` across them, a reconcile that gives the same
+selection back with the survivors' nodes intact, `swapAt` with one side out, a
+wholesale reconcile that clears them, and disposal. Twenty-one browser tests
+were rewritten to assert the new contract — nine in Toggle Lab, eleven in Twin
+Lab and one in Mix Lab, all of them saying that the container's children *are*
+the selection — and one was added.
+
+**The size baseline moves**: the benchmark backend inlines the whole keyed
+host, so `main.mjs` grows 9 345 → 10 351 raw (+10.8%, brotli 3 400 → 3 638,
+gzip 3 751 → 4 032) for an export it never calls. **Three generated modules
+change** — Toggle, Mix and Twin, exactly the three labs with a filter. Toggle
+Lab's is **58 bytes smaller** (201 336 → 201 278), because the record lost a
+slot and the sweep lost a `childAt` call at each of its thirty-two sites; Mix
+Lab's grows 23 bytes and Twin Lab's 273, where the slot arithmetic saves less
+than the row key the new call carries costs. Every other generated module is
+byte-identical; `leanrx_region.mjs` changes in the eight bundles that ship it
+(Branch, Grid, Issue Browser, Mix, Nest, Todo, Toggle, Twin), 15 658 → 20 644
+bytes; every manifest changes by the `runtimeAbi` field alone, plus `graphHash`
+where the module text moved; and the graph JSONs of the labs whose Lean doc
+comments this round rewrote move by source position metadata only.
+BENCHMARK.md is untouched.
+
+### Follow-up issue or commit
+
+`feat(component): take a filtered row out of its container (ADR-0102)` — the
+host, the emission, the ABI bump, the gates, the ADR, the DECISIONS.md row and
+this record. **ADR-0101 OQ1 is closed.** What it leaves is the other half of
+the flip: the show direction is now the largest term at 84 ms for five thousand
+rows and 172 ms for ten thousand, identical in both shapes, and nothing in this
+round touched it.

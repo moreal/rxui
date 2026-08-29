@@ -58,12 +58,13 @@ children: `persist crew := "leanrx-mix-lab.crew"` hydrates through the
 ordinary dirty-flag transaction, so the shared commit sweep's reconcile
 mounts each hydrated row's Badge at its cell, stashes it on the row root,
 and pushes it into the inventory — hydrated rows are full citizens of the
-child vocabulary. Filtering never disposes children: the ADR-0051 sweep
-writes each row root's `hidden` property by `childAt(container, i)`
-navigation — row roots are the container's only element children (the
-Badge mounts *inside* the `<li>`, never as a container sibling), so the
-index math is untouched and a hidden row's Badge stays mounted with its
-state intact — row identity is preserved across filter flips. Counts and
+child vocabulary. Filtering never disposes children: the ADR-0051/0102 sweep
+takes a deselected row root out of the container through the region
+handle's `setDisplayed` — the Badge mounts *inside* the `<li>`, never as a
+container sibling, so the row leaves as one unit and a deselected row's
+Badge stays mounted with its state intact, and the child inventory is
+region state rather than DOM state so nothing splices it — row identity is
+preserved across filter flips. Counts and
 the region-subject selections stay row-table-scoped: `{count crew}`,
 `{count crew (done == "true")}`, the `hidden={count crew == 0}` list
 wrapper, and the clear-done affordance all read the row table, never the
