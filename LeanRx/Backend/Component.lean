@@ -1329,7 +1329,17 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     a user can produce; putting the joined string on the region record instead
     was measured at 1.5-2.3x and declined because a position-keyed cache owes
     seven invalidation sites where this identity-keyed one owes two, and a
-    disagreeing cell is a wrong string in storage rather than a stale pixel. -/
+    disagreeing cell is a wrong string in storage rather than a stale pixel.
+
+    ADR-0096 prices what is left and closes it. The two segments are not one
+    floor: the `storageSet` is 5 us plus 0.85 ns per byte with no row term,
+    the `join` is about 18 ns per row with a byte term an order of magnitude
+    smaller, and they read as 35% each only because a Toggle Lab row is 24.8
+    bytes and the crossover is 23. So a host export taking the segment array
+    (0.99x-1.01x) or the row table itself (1.03x-1.10x) wins nothing worth an
+    ABI event -- the same N segments and the same bytes cross either way --
+    and the shape below stays: one array, one join, one call, and no framing
+    in the payload beyond the separators the encoding needs. -/
     if let some persist := persist? then
       let persistFlag ← wakeIdent regionIndex (persistWakes.head?.getD .touched)
       let rows ← Ident.checked s!"persist_rows_{regionIndex}"

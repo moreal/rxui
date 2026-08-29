@@ -5957,3 +5957,135 @@ follows a table across calls inside one module, and a module is where it
 stops — a table handed to an *import* is rejected rather than followed, which
 is safe and is also the whole of the answer until an emission wants to pass a
 row table between modules.
+
+## The store costs bytes and the join costs rows (ADR-0096)
+
+### What was built
+
+ADR-0087 left one sentence standing: `storageSet` and the `join` are the
+floor at 35% each, and the only exit it could name was "a storage host that
+takes something other than one string — which would be an ABI question, not a
+codegen one." Five ADRs handed that forward untouched. This round answered it,
+and the answer was not in the ABI.
+
+The first job was arithmetic. ADR-0088 fused the predicate scans and ADR-0092
+replaced the key scan with a binary search, so the denominator ADR-0087
+divided by no longer exists. Re-derived against the shipped emission — the
+same ablation ladder, interleaved by variant, three repetitions, every rung
+checked to leave a byte-identical row table — a 10 000-row `toggle` reads
+37.7% `storageSet`, 40.5% `join`, 6.2% push loop, 15.7% everything else.
+
+Two rows the earlier survey did not have then said more than the shares did.
+A **`retype` commit is 99.8% persistence**: ADR-0082's drain-scoped wake
+leaves the predicate pass, the filter sweep and the hidden scan all asleep for
+a keystroke, and the write-back is the one sweep that can never narrow because
+it reads every field, so it is the *only* O(N) work a keystroke does. And a
+**single-row structural commit is 5.7–5.9 ms**, of which this whole axis is at
+most 10%.
+
+The finding came from varying the payload *density* rather than the row count.
+Two cells carrying nearly the same bytes — 223 KB in a thousand rows, 248 KB
+in ten thousand — separate the segments outright: the `storageSet` barely
+moves (0.2115 → 0.2335) while the `join` moves 6.6× (0.0380 → 0.2508). Probed
+on their own, `setItem` is **5.0 µs of fixed cost plus 0.85 ns per byte, with
+no row term at all**, and `join` is **~18 ns per row plus ~0.1 ns per byte**
+(a 53× spread for a 1.2× byte spread when the payload is held fixed). They
+cross at about 23 bytes per row. A Toggle Lab row is 24.8 bytes. "35% each"
+was a coincidence of one component's row width, and the 223-byte row confirms
+it from the other side at 5.6 : 1.
+
+Then the exit was **built rather than argued**, three ways, each with a real
+host export beside the existing ones: the host joining the segment array
+(H1, 0.99×–1.01×), the host roping the caller's row table with no array and no
+push (H2a, 1.03×–1.10×), and the host arraying and joining it (H2b,
+0.98×–1.03×). All twelve cells wrote a byte-identical payload. H1 *is* OQ1 as
+phrased, and it is worth nothing, because the join's cost is N segments of
+pointer work and the host walks the same N. H2a's best cell buys the 6–8% push
+loop and asks for the row tuple's slot layout in the ABI — the layout ADR-0085
+and ADR-0086 each extended without an ABI event.
+
+So what landed is a cost contract rather than a change: the payload is the
+component's own bytes, the two levers are narrower rows and fewer rows, and
+neither is one the compiler can pull because a field's value is an opaque
+string it may not shorten.
+
+### What broke or surprised
+
+Three things.
+
+The `retype` row was the surprise. ADR-0087 measured 5.7% "everything else" on
+a retype; this ladder measures 0.2%. Nothing changed in the emission between
+them — the drain wake was already there. What changed is that this round drove
+the commit through the region dispatch, where the wake flags are per action,
+instead of through an event whose flags are uniform. ADR-0086 OQ1's warning
+about differenced ladders now has a second instance and a wider form: a share
+is only valid against the emission *and the workload* it was measured on.
+
+The second is that the ABI candidate that wins the most is the one nobody
+proposed. OQ1 asked about a host taking something other than a string, meaning
+the join; measured, moving the join is exactly 1.00×. The only thing worth
+anything is deleting the emission's array, which is the segment the ladder
+prices at 6% and the segment ADR-0087 already declined as B1.
+
+The third is the size of what is *not* this axis. A single-row `remove` with
+the entire persistence sweep deleted still costs 4.95 ms where a `toggle`
+costs 0.097 ms. `createKeyedRegion`'s `update` re-runs the generated per-row
+update callback on every retained row — about six DOM operations times N —
+for a one-row change that ADR-0092's key-ordered table has already located.
+`removeAt` has been in the host since ADR-0026 and the component backend has
+never emitted it. That is now the largest unnarrowed cost in a generated
+commit and it replaces OQ1.
+
+One process note: the ladder cannot resolve segments inside a structural
+commit at all — `remove`'s `join` differences *negative*, because a 5 ms term
+that drifts across remounts swamps a 0.2 ms one. Those two rows are reported
+as a bound and nothing more.
+
+### Performance observations
+
+The shipped emission is unchanged, so there is nothing to re-measure. The
+ladder at Toggle Lab, ms per commit, median of medians:
+
+| rows | payload | commit | emitted | −`storageSet` | −`join` | −sweep |
+| ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| 10 000 | 248 KB | `toggle` | 0.6198 | 0.3862 | 0.1355 | 0.0973 |
+| 10 000 | 248 KB | `retype` | 0.5060 | 0.2685 | 0.0395 | 0.0010 |
+| 10 000 | 248 KB | `remove` | 5.7215 | 5.1520 | 5.3570 | 4.9540 |
+| 10 000 | 248 KB | `append` | 5.9420 | 5.7995 | 5.3025 | 4.5630 |
+| 1 000 | 22.8 KB | `toggle` | 0.0565 | 0.0355 | 0.0158 | 0.0140 |
+| 100 | 2.1 KB | `toggle` | 0.0122 | 0.0050 | 0.0030 | 0.0017 |
+| 1 000 | 223 KB | `toggle` | 0.2675 | 0.0560 | 0.0180 | 0.0142 |
+
+`setItem` on its own, ns per call: 5033 at 0 bytes, 6533 at 1 K, 14133 at
+10 K, 37533 at 25 K, 95333 at 100 K, 217750 at 250 K, 419750 at 500 K. The
+5.0 µs + 0.85 ns/byte model predicts the ladder out of sample at all three row
+counts (6.8 against 7.2 µs, 24.4 against 21.0, 215.6 against 233.5).
+
+The three ABI candidates against the shipped emission:
+
+| candidate | 10k `toggle` | 10k `retype` | 1k `toggle` | 1k, 223 B rows |
+| --- | ---: | ---: | ---: | ---: |
+| host joins the segment array | 0.99× | 1.01× | 1.01× | 1.01× |
+| host ropes the row table | 1.06× | 1.10× | 1.01× | 1.04× |
+| host arrays and joins the table | 1.03× | 1.03× | 1.01× | 0.98× |
+
+BENCHMARK.md stands unre-measured and every artifact is byte-identical, the
+benchmark size gate and every manifest included — the js-framework-benchmark
+backend is hand-written and persists nothing.
+
+### Follow-up issue or commit
+
+The two witnesses were broken three ways: a per-row position index in the
+payload (red on Toggle Lab's framing identity), a second chunk key beside the
+declared one, and a chunked *second* region on the two-region component — the
+last two red on the key set alone, where every declared value still reads
+correct and nothing else in the suite notices.
+
+`feat(component): price a persisted region's payload and close the ABI exit
+(ADR-0096)` — the cost contract in `PersistSpec`, the backend sweep's
+rationale, the language guide's persistence section, Toggle Lab's
+no-framing-tax witness, Mix Lab's exactly-two-keys witness, the ADR, the
+DECISIONS.md row, and this record. **ADR-0087 OQ1 is closed**, and with
+ADR-0088 having closed OQ2 and ADR-0092 OQ3, the whole of that line is closed.
+What replaces it is one size larger: the keyed region host reconciles the
+whole table for a one-row structural change.

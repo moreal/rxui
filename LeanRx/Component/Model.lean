@@ -297,7 +297,25 @@ Nesting coalesces the commit and not the flush: transactions nested through
 the `tx[0]` depth counter produce one commit and therefore one write. The
 consequence a per-task flush would take away is that a tab closed at any
 moment loses nothing a returned dispatch wrote, so no component that persists
-a region owes an unload hook or a lost-write recovery path. -/
+a region owes an unload hook or a lost-write recovery path.
+
+What that write costs is also written down (ADR-0096). Per region-touching
+transaction, per persisted region the transaction touched, the commit pays
+about 5 µs of fixed `storageSet` cost, about 0.85 ns per byte of that region's
+table, and about 18 ns per row to join it — the host term is a function of
+bytes with no row term, the join is a function of rows with a byte term an
+order of magnitude smaller, and the two are equal only at about twenty-three
+bytes per row. The payload is the component's own bytes: the encoding adds
+one field separator between each pair of a row's declared fields and one row
+separator between rows, and nothing else -- no per-row key, position index,
+length prefix or version tag. Both terms are therefore the component's to
+control by making rows narrower or fewer; the emitter can do neither, because a field's value is an
+opaque string it may not shorten. Moving the join or the whole sweep behind a
+host export was measured at 0.99x-1.10x and declined (there is nothing to win:
+the same N segments and the same bytes cross either way), and writing part of
+the table under chunked keys would withdraw the visibility sentence above,
+since `localStorage` has no multi-key transaction and another tab could
+observe one chunk of a commit and not the next. -/
 structure PersistSpec where
   region : String
   key : String

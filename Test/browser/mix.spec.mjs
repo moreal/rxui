@@ -506,6 +506,39 @@ test("two persisted regions hydrate and save under their own keys", async ({ pag
   expect(afterMember.pins).toBe("Pin B");
 });
 
+test("two persisted regions hold exactly two keys, one whole table each (ADR-0096)", async ({ page }) => {
+  // ADR-0096: `storageSet` costs about five microseconds of fixed call plus
+  // about 0.85 ns per byte, so a component pays the fixed part once per
+  // *persisted region it touched* and the byte part once per byte of that
+  // region's table. Both halves of that model rest on the same structural
+  // fact, which is what this pins on the two-region component: the origin
+  // holds one key per declared persist item, and each key's value is that
+  // region's whole table. Chunking a table across several keys is the only
+  // remaining way to write fewer bytes per commit, and it would show up
+  // right here as a third key.
+  await page.goto(origin);
+  await page.evaluate(async () => {
+    localStorage.setItem("leanrx-mix-lab.crew", "Alpha,true,Tag A");
+    localStorage.setItem("leanrx-mix-lab.pins", "Pin A;Pin B");
+    const { mount } = await import("/MixLab.mjs");
+    globalThis.mixDispose = mount(document.getElementById("app"));
+  });
+  await expect(page.locator("#crew > li .crew-label")).toHaveText(["Alpha"]);
+  await page.getByRole("button", { name: "Add member" }).click();
+  await page.locator("#pins > li").first()
+    .getByRole("button", { name: "Remove pin" }).click();
+  const observed = await page.evaluate(() => ({
+    keys: Object.keys(localStorage).sort(),
+    crew: localStorage.getItem("leanrx-mix-lab.crew"),
+    pins: localStorage.getItem("leanrx-mix-lab.pins"),
+  }));
+  expect(observed.keys).toEqual(["leanrx-mix-lab.crew", "leanrx-mix-lab.pins"]);
+  // Each value is the region's whole table: every row, in order, and the
+  // rows of the other region nowhere in it.
+  expect(observed.crew).toBe("Alpha,true,Tag A;Member 0,false,Tag 0");
+  expect(observed.pins).toBe("Pin B");
+});
+
 test("one chained event drains both regions in one commit", async ({ page }) => {
   await mountMix(page);
   const add = page.getByRole("button", { name: "Add member" });

@@ -2023,6 +2023,64 @@ test("the store is current at the end of every commit, not of the task (ADR-0087
   ]);
 });
 
+test("a persisted region's payload is the component's own bytes (ADR-0096)", async ({ page }) => {
+  await mountToggle(page);
+  // ADR-0096 measured the two segments ADR-0087 left as the floor and found
+  // they are not the same kind of cost. The `join` is per *row* (~11.5 ns of
+  // segment work, barely byte-sensitive); `storageSet` is per *byte* (~5 us
+  // of fixed call cost plus ~0.85 ns per byte, flat in the row count). They
+  // looked equal at 35% each only because Toggle Lab's row happens to be
+  // about twenty-five bytes. So every byte in this value is paid on every
+  // region-touching commit for as long as the region lives, and the two
+  // properties that keep those bytes the component's own — one key, and no
+  // framing beyond the separators the encoding needs — are pinned here.
+  const draft = page.getByRole("textbox", { name: "New todo" });
+  await draft.fill("milk, eggs; 100%");
+  await draft.press("Enter");
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.locator("#items > li").first()
+    .getByRole("checkbox", { name: "Toggle item" }).check();
+
+  const observed = await page.evaluate(() => ({
+    keys: Object.keys(localStorage).sort(),
+    stored: localStorage.getItem("leanrx-toggle-lab.items"),
+  }));
+
+  // The fields the two rows carry, escaped the way ADR-0063 seals it. The
+  // first row's label exercises all three escapes, so the expansion is
+  // counted rather than hidden.
+  const escape = (value) =>
+    value.split("%").join("%25").split(",").join("%2C").split(";").join("%3B");
+  const fields = [
+    ["milk, eggs; 100%", "milk, eggs; 100%", "true", "view"],
+    ["Item 0", "Item 0", "false", "view"],
+  ];
+  expect(observed.stored)
+    .toBe(fields.map((row) => row.map(escape).join(",")).join(";"));
+
+  // No framing tax: the payload is the escaped fields plus three field
+  // separators per row and one row separator between rows, and nothing else.
+  // There is no per-row key (hydration reassigns keys from the region's own
+  // counter), no position index, no length prefix, no version tag and no
+  // chunk header — every one of which a position-keyed or chunked store
+  // would want, and every one of which would be charged at ~0.85 ns per byte
+  // on every commit forever.
+  const payload = fields.reduce(
+    (total, row) => total + row.reduce((n, field) => n + escape(field).length, 0),
+    0,
+  );
+  expect(observed.stored.length)
+    .toBe(payload + fields.length * 3 + (fields.length - 1));
+
+  // One key per persisted region, and the region's whole table is that one
+  // key's value. Splitting it into chunks would make a single-row edit cost
+  // one chunk instead of the table, which is the only way left to write
+  // fewer bytes per commit; ADR-0096 declines it because a reader in another
+  // tab could then observe a torn table between two chunk writes, which is
+  // exactly the visibility ADR-0087 contracted away.
+  expect(observed.keys).toEqual(["leanrx-toggle-lab.items"]);
+});
+
 test("one commit walks a region's row table once per wake class (ADR-0088)", async ({ page }) => {
   await mountToggle(page);
 

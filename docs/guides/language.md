@@ -915,7 +915,32 @@ Nesting coalesces the commit and not the flush: transactions nested through
 the transaction depth counter produce one commit and therefore one write.
 The consequence a per-task flush would take away is that a tab closed at any
 moment loses nothing a returned dispatch wrote, so no component that persists
-a region owes an unload hook or a lost-write recovery path. The item shape — a declared region name, exactly one literal
+a region owes an unload hook or a lost-write recovery path.
+
+*What* that write costs is written down too (ADR-0096), because it is the
+component's to control and not the compiler's. Per region-touching
+transaction, per persisted region the transaction touched, a commit pays
+about 5 µs of fixed `storageSet` cost, about 0.85 ns per byte of that
+region's table, and about 18 ns per row to join it. The two are different
+functions, not two halves of one floor: the host term has no row component
+(it is handed a string, and a string is all it knows) and the join term has a
+byte component an order of magnitude smaller, so they are equal only at about
+twenty-three bytes per row and diverge in either direction from there. The
+payload is the component's own bytes — the encoding adds one field separator
+between each pair of a row's declared fields and one row separator between
+rows and nothing else, so there is no per-row key, position index, length
+prefix or version tag being paid for — which means the two levers are
+*narrower rows* and *fewer rows*, and neither is one the compiler can pull,
+since a field's value is an opaque
+string it may not shorten. A component persisting several regions pays the
+fixed term once per region a commit touched, not once per transaction. Moving
+the join, or the whole sweep, behind a host export that takes the segment
+array or the row table was measured at 0.99×–1.10× and declined: the same N
+segments and the same bytes cross the boundary either way. Writing part of
+the table under chunked keys is the only shape that writes fewer bytes per
+commit, and it would withdraw the visibility sentence above — `localStorage`
+has no multi-key transaction, so another tab could observe one chunk of a
+commit and not the next. The item shape — a declared region name, exactly one literal
 storage key — is `LRX-ELAB-129`; one persist item per region, keys distinct
 across the component, each nonempty and on a declared region, is
 `LRX-TYPE-118` (two items on one region, or two regions sharing one key,
