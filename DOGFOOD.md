@@ -5708,3 +5708,125 @@ and two acceptances over the real Toggle Lab module, the public
 record. **ADR-0092 OQ1 is closed**; its replacement is narrower and named
 in the new ADR — the host side, which R1 lets a table reach and the audit
 stops at.
+
+## The host does not disturb the array it is handed (ADR-0094)
+
+### What was built
+
+ADR-0093 audits every module the component backend emits and wrote down
+where it stops: R1 lets a row table reach `createKeyedRegion`'s handle
+and `$lrx_row_seek`, and the audit ends at the call. On the far side is
+`runtime/leanrx_region.mjs`, which holds `current.splice(index, 1)`,
+`current[first] = high` and `previous[kept] = entry` — each of them the
+right thing to do to the host's own entry array and a catastrophe on the
+caller's table, since ADR-0092's binary search is exact only while that
+table stays strictly ascending in `row[0]`. In the source the two are the
+same statement. Only what the identifier is bound to says which array was
+disturbed.
+
+This round pays that open question with a **contract test** rather than a
+rule over the host's text. `Test/js/region_contract.mjs` hands each host
+a frozen copy of every caller array and keeps it registered for the life
+of the process, re-verifying its length, its element identities and every
+row's key slot after each later call. Four rules under one code,
+`LRX-HOST-001`: H1 the array crosses frozen and stays frozen, H2 the key
+slot is snapshotted, H3 the handle surface is closed, H4 the surface must
+actually be exercised. The wiring is three lines in
+`Test/js/region_runtime.mjs` — each host imported under a private name,
+the public name rebound to a guarded constructor — so all fifteen region
+constructions and both fuzz loops already in that file run behind the
+guard, and one new case plays the two real caller shapes: the component
+backend's monotone-counter table (asserted ascending and re-searched by a
+mirror of the generated `$lrx_row_seek` after every host call) and the
+benchmark's own array through `swapAt` and `removeAt`.
+
+### What broke or surprised
+
+**"A rule over the host source" was the wrong prescription, and
+ADR-0093's own reasoning says why.** That ADR named a source rule as the
+cheapest thing that would close the gap. It is not checkable: the
+question is what an identifier is *bound to*, so answering it statically
+needs a JavaScript AST and a binding analysis. The emitter has a Lean AST
+only because it builds one; `runtime/*.mjs` is hand-written text the repo
+cannot parse. A regex over the host would be the second checker in a
+vocabulary that does not exist — the exact ground on which ADR-0093
+declined narrowing the emission helpers. A freeze answers the same
+question by running it, and it follows the reference wherever it goes,
+under whatever name.
+
+**The asymmetry with ADR-0093's rejection of a running witness is the
+closed surface, not the running.** ADR-0093 refused to let a nine-cell
+browser gate be the primary check because the emission that breaks the
+order is the emission nobody wrote a cell for. That argument does not
+transfer, because the emission surface is *open* — a new path appears
+whenever the backend learns an action — while the host surface is pinned
+to an ABI event: a new export changes what generated modules import, so
+it moves `runtimeAbi` and takes an ADR. H3 nails the guard to that event
+by spelling the surface out, so a new export fails the gate until
+somebody classifies its arguments. Five array-taking methods across
+three hosts is not a sample of the surface; it is the surface.
+
+**Freezing the caller's own array would have tested the wrong thing.**
+Both caller shapes reuse their array between calls — the backend pushes
+onto `regions[r][1]` across transactions, the benchmark splices its rows
+around `swapAt` — so the guard hands over a stand-in that keeps length,
+order and every row object's identity. The residue is stated rather than
+hidden: the contract proves the host does not disturb *the array it is
+handed*, and in this gate that array is an identical copy.
+
+**Rows had to cross unfrozen, and that is a finding about ADR-0085/0086.**
+Freezing rows is strictly stronger and would have been a lie: a host
+forwards each row to generated callbacks that write the per-row
+serialization and display cache slots, so a gate green on its own
+callbacks would have pinned a contract the composite violates. Only slot
+0 is the order's business; H2 covers slot 0 by snapshot.
+
+**One bypass does not throw, and it is the silent one.** `Reflect.set`
+and `Reflect.defineProperty` fail *silently* on a frozen array — the
+mutation would not happen in the gate and would happen in production,
+where nothing is frozen. That is the single hole in H1, and it closes
+with one regex beside the `new Proxy` / `eval(` / `innerHTML` ban that
+was already in the gate. A ban on names is affordable exactly where an
+analysis of bindings is not.
+
+**The vacuity mode of a wrapper is that it wraps nothing.** ADR-0093's
+audit fails safe because a blinded recogniser makes the real emission
+fail a different rule. A wrapper has no such luck: neutered, it is
+invisible. H4 exists for that one failure mode, and it is the rule that
+made `guardHost` returning the raw handle come back red instead of green.
+
+### Performance observations
+
+`node Test/js/region_runtime.mjs` goes from 0.116 s to 0.415 s — 1 401
+arrays guarded across the six array-taking entry points and 1 967 sweeps,
+both dominated by the 400-round placement fuzz and the 600-round
+monotone-key fuzz — inside one of twenty gates in `scripts/check.sh`.
+Zero output bytes and no ABI move: nothing under `runtime/` or `LeanRx/`
+changes, so every generated module and every bundled host file is
+byte-identical, pinned by the codegen gate's double-generate `diff -ru`
+and each artifact test's manifest assertion, and `runtimeAbi` stays 17.
+The benchmark size gate, its manifest and BENCHMARK.md are untouched.
+
+Witness matrix, all nine expectations met: the host broken six ways — a
+reversed table, a table stashed and spliced three calls later, a row
+replaced by an equal-keyed copy after the call is otherwise done, a
+re-keyed row at `updateAt`, an exchanged pair at `swapAt`, and a new
+`sortByKey` export — each red under its named rule, three of them as a
+`TypeError` thrown at the offending host line; and the guard broken twice
+— deleting H1 makes the equal-keyed replacement pass (so H1 was the only
+thing catching it), and neutering `guardHost` fails H4 naming all six
+unexercised entry points.
+
+### Follow-up issue or commit
+
+`feat(runtime): pin the region hosts to a caller-array order contract
+(ADR-0094)` — the four-rule guard and its `LRX-HOST-001` diagnostic, the
+three-line rebinding that puts the existing region suite behind it, the
+two-caller-shape case, the reflective-write ban in
+`check_region_runtime.sh`, the internals doc, the ADR, the DECISIONS.md
+row, and this record. **ADR-0093 OQ1 is closed for the handle**; what
+survives is narrower and named in the new ADR — `$lrx_row_seek`'s body,
+where the table stops being spelled `regions[r][1]` and is checked by
+neither side. That one was confirmed by injection rather than by reading:
+with `rows["sort"]()` as the helper's first statement, Toggle Lab emits
+the sort into its bundle and the generator exits zero.

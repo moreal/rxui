@@ -51,6 +51,25 @@ Conditional replacement, positional suffix ownership, keyed identity/reorder,
 duplicate-key fail-before-mutation, copied instrumentation, and idempotent
 disposal run against a deterministic fake DOM before browser dogfood.
 
+A region host never disturbs the array it is handed (ADR-0094). `update(items,
+…)` takes the caller's table, `updateAt(…, row, …)` one of its rows, and
+`swapAt(…, items, …)` a target order; the `splice`, the two-slot exchange and
+the positional removal a host performs are all on its own entry array, and none
+of the three hosts writes, reorders, resizes, re-keys or retains a caller's.
+That matters beyond tidiness because ADR-0092's generated `$lrx_row_seek`
+resolves a dispatching key by binary search over `regions[r][1]` itself, which
+is exact only while the table stays strictly ascending in `row[0]`, and
+ADR-0093's audit stops at the call. The contract is checked rather than
+reviewed: `Test/js/region_contract.mjs` hands every host a frozen copy of each
+caller array and re-verifies its length, its element identities, and every
+row's key slot after each later call, and the whole region suite runs behind
+that guard. Violations report `LRX-HOST-001` with the rule, the host, and the
+method named. The handle surface is closed by the same guard, so a new host
+export — the event that already moves `runtimeAbi` — must declare which of its
+arguments are caller arrays before the gate is green. Rows themselves cross
+unfrozen on purpose: a host forwards them to generated callbacks that own the
+ADR-0085 and ADR-0086 cache slots, and only slot 0 is the order's business.
+
 Keyed placement is minimal. After validating the whole target, updating
 retained rows, mounting new rows, and disposing removed rows, the host trims
 the unchanged prefix and suffix of the retained order and moves only the

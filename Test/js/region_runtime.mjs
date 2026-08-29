@@ -1,10 +1,19 @@
-import { createKeyedRegion } from "../../runtime/leanrx_region.mjs";
+import { createKeyedRegion as keyedHost } from "../../runtime/leanrx_region.mjs";
 import {
-  createConditionalRegion,
-  createPositionalRegion,
+  createConditionalRegion as conditionalHost,
+  createPositionalRegion as positionalHost,
 } from "../../runtime/leanrx_unkeyed_region.mjs";
-import { createDeltaKeyedRegion } from "../../runtime/leanrx_delta_region.mjs";
+import { createDeltaKeyedRegion as deltaHost } from "../../runtime/leanrx_delta_region.mjs";
 import { makeDisposer } from "../../runtime/leanrx_dom.mjs";
+import { assertHostContractExercised, guardHost } from "./region_contract.mjs";
+
+// ADR-0094: every region below is the real host behind the order contract
+// guard, so all of this file doubles as the host-side gate. The bindings keep
+// their names, which is also what `create.name` reports downstream.
+const createKeyedRegion = (...args) => guardHost("keyed", keyedHost(...args));
+const createDeltaKeyedRegion = (...args) => guardHost("delta", deltaHost(...args));
+const createPositionalRegion = (...args) => guardHost("positional", positionalHost(...args));
+const createConditionalRegion = (...args) => guardHost("conditional", conditionalHost(...args));
 
 class FakeNode {
   constructor(value) {
@@ -1072,5 +1081,107 @@ function values(parent) {
   }
   region.dispose();
 }
+
+{
+  // ADR-0094: the two caller shapes, played against the guarded host in the
+  // sequence each real caller uses. The component backend hands its row table
+  // to `update` and one of its rows to `updateAt`, and depends on that table
+  // still being strictly ascending in slot 0 afterwards, because
+  // `$lrx_row_seek` resolves a dispatching key by binary search over exactly
+  // it. The hand-written js-framework-benchmark hands a target order to
+  // `swapAt` and drives `removeAt`, and splices its own array around both.
+  const seek = (rows, key) => {
+    let low = 0;
+    let high = rows.length;
+    let found = -1;
+    while (low < high) {
+      const span = low + high;
+      const middle = (span - span % 2) / 2;
+      const probe = rows[middle][0];
+      if (probe === key) {
+        found = middle;
+        low = high;
+      }
+      if (probe < key) low = middle + 1;
+      if (key < probe) high = middle;
+    }
+    return found;
+  };
+
+  const parent = new FakeParent();
+  const region = createKeyedRegion(
+    parent,
+    (item) => [new FakeNode(`${item[0]}:${item[1]}`)],
+    (handle, item) => { handle[0].value = `${item[0]}:${item[1]}`; },
+    () => {},
+    (handle) => handle[0],
+  );
+  const table = [];
+  const counter = [0];
+  const append = (label) => {
+    table.push([counter[0], label]);
+    counter[0] += 1;
+  };
+  const checkOrder = (stage) => {
+    for (let index = 1; index < table.length; index += 1) {
+      if (!(table[index - 1][0] < table[index][0])) {
+        throw new Error(`${stage}: the row table stopped ascending in slot 0`);
+      }
+    }
+    for (let index = 0; index < table.length; index += 1) {
+      if (seek(table, table[index][0]) !== index) {
+        throw new Error(`${stage}: key ${table[index][0]} no longer resolves to position ${index}`);
+      }
+    }
+  };
+  for (const label of ["a", "b", "c", "d", "e"]) append(label);
+  region.update(table);
+  checkOrder("after update");
+  const drained = seek(table, 3);
+  region.updateAt(drained, table[drained], null);
+  checkOrder("after updateAt");
+  table.splice(seek(table, 1), 1);
+  region.update(table);
+  checkOrder("after a sealed single-row removal");
+  append("f");
+  region.update(table);
+  checkOrder("after an append past the removal");
+  if (JSON.stringify(values(parent)) !== '["0:a","2:c","3:d","4:e","5:f"]') {
+    throw new Error(`the component caller shape diverged: ${JSON.stringify(values(parent))}`);
+  }
+  region.dispose();
+
+  const benchParent = new FakeParent();
+  const bench = createKeyedRegion(
+    benchParent,
+    (item) => [new FakeNode(`${item[1]}`)],
+    (handle, item) => { handle[0].value = `${item[1]}`; },
+    () => {},
+    (handle) => handle[0],
+  );
+  const items = [];
+  for (let index = 1; index <= 6; index += 1) items.push([index, `row ${index}`]);
+  bench.update(items);
+  const movesBefore = bench.instrumentation()[2];
+  const swapped = items.slice();
+  [swapped[1], swapped[4]] = [swapped[4], swapped[1]];
+  bench.swapAt(1, 4, swapped);
+  items[1] = swapped[1];
+  items[4] = swapped[4];
+  if (bench.instrumentation()[2] !== movesBefore + 2 ||
+      JSON.stringify(values(benchParent)) !== JSON.stringify(items.map((item) => item[1]))) {
+    throw new Error(`the benchmark caller shape diverged after swapAt: ${JSON.stringify(values(benchParent))}`);
+  }
+  bench.removeAt(2, items[2][0]);
+  items.splice(2, 1);
+  bench.update(items);
+  if (JSON.stringify(values(benchParent)) !== JSON.stringify(items.map((item) => item[1])) ||
+      JSON.stringify(items.map((item) => item[0])) !== "[1,5,4,2,6]") {
+    throw new Error(`the benchmark caller shape diverged after removeAt: ${JSON.stringify(items)}`);
+  }
+  bench.dispose();
+}
+
+assertHostContractExercised();
 
 console.log("dynamic region runtime contract passed");

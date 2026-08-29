@@ -757,6 +757,14 @@ kept-filter rebuild. Nothing an author writes can trip it — it is a rule
 about the emitter, not about the language — and it costs no output bytes and
 under a millisecond per module.
 
+The other side of that call is checked as well (ADR-0094). A region host
+never writes, reorders, resizes, re-keys or retains the array it is handed:
+`update` takes the caller's table, `updateAt` one of its rows, and every
+`splice` a host performs is on its own entry array. The region-runtime gate
+proves it by handing each host a frozen copy of every caller array and
+re-verifying its order and every key slot after each later call, reporting
+`LRX-HOST-001` with the rule, the host and the method named.
+
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
 **union** of every filter table over that field, not the first-declared
