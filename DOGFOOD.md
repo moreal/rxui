@@ -6089,3 +6089,153 @@ DECISIONS.md row, and this record. **ADR-0087 OQ1 is closed**, and with
 ADR-0088 having closed OQ2 and ADR-0092 OQ3, the whole of that line is closed.
 What replaces it is one size larger: the keyed region host reconciles the
 whole table for a one-row structural change.
+
+## A removal removes one row (ADR-0097)
+
+### What was built
+
+ADR-0096 handed forward one sentence: a one-row structural commit costs
+5.7–5.9 ms at ten thousand rows because `createKeyedRegion`'s `update`
+re-runs the generated row-update callback on every retained row, and
+`removeAt` has been on the handle since ADR-0026 with no caller. This round
+measured that claim into pieces and paid the half of it that is sealed.
+
+The measurement came first, and it changed what the fix had to be. Splitting
+`update` into its four internal phases — key validation, the mount/update
+loop, the disposal compaction, `placeInOrder` — says the cost is one loop and
+nothing else. At ten thousand rows a `remove` spends 4.25–4.74 ms in the
+`updateItem` loop, which is 93–97% of `update` and 75–81% of the whole commit,
+linear at about 0.45 µs per retained row. Key validation is 0.07–0.25 ms,
+disposal 0.03, and `placeInOrder` **0.02** — for a removal the placement is
+already free, because its prefix and suffix scans meet immediately and it
+moves nothing. Whatever else one might have suspected of the reconcile, the
+answer was the six DOM operations the row callback performs, times N.
+
+So the emission keeps the position it already had. ADR-0092's key search
+resolves the dispatching row; the `remove` action and every ADR-0053 guard hit
+now queue `[position, key]` in the region record's last slot instead of
+raising the dirty bit, and the commit sweep drains the queue through
+`removeAt`. The slot is last, behind the ADR-0075 inventory, so nothing
+ADR-0050, ADR-0051 or ADR-0075 sealed moves — which is why four of the five
+changed modules have exactly one changed line in their record.
+
+Three obligations travel with taking the dirty bit away, and each is
+discharged where it can be read. The wake flags — `region_touched`,
+`region_structural`, every ADR-0084 drain class — read the queue beside the
+dirty bit, because a removal is a structural change however it is recorded.
+The drain runs *before* the reconcile rather than instead of it, so a
+transaction that also appends still reconciles over a table and a host that
+already agree, and before the ADR-0051 filter sweep, which navigates
+`childAt(container, i)` by row-table position. And a removal that finds the
+ADR-0043 pending queue non-empty falls back to the dirty bit, because the
+splice would shift a position already queued.
+
+Two removals were declined, and for different reasons. `removeIf` — the
+component-event predicate removal — has an unbounded row count, and the case
+where it clears everything is the one the reconcile handles in bulk
+(`textContent = ""` on an owned parent); choosing between them needs a
+threshold this round did not measure. `append` has no host counterpart at all:
+mounting a row is `update`'s alone, so serving it is a new export and an ABI
+bump. Its price is now recorded rather than guessed — 4.35 ms of a 6.99 ms
+commit, the same shape just deleted from the removal side.
+
+### What broke or surprised
+
+Three things.
+
+The pending-queue interaction is the one that would have been missed. A splice
+shifts every later position down by one, so a position already queued for the
+`updateAt` drain stops naming the row it was read from — and it would *not*
+throw, because the drain re-reads `regions[r][1][p]` and the host's entries
+have been shifted the same way, so the two agree about a key while both name
+the wrong row. Today it cannot happen (exactly one action branch runs per
+dispatch and every commit empties the queue), which is precisely the kind of
+whole-language invariant ADR-0093 was written because ADR-0092 left to review.
+So it is a branch in the emission instead: one length comparison, provably
+dead now, correct under any future mixing.
+
+The subtlest deliberate break is the wake flag, not the position. Deleting
+`|| regions[0][8]["length"] !== 0` from `region_structural_0` leaves every row
+in the DOM exactly right and every removal working; what stops is the counts,
+the emptiness sweeps and the write-back noticing. It goes red on seven tests
+including both new witnesses. The off-by-one position is louder but easier —
+the host's own `LRX-REGION-003 key 1 is not at position 2` fires before any
+callback, which is the run-time half of the position contract.
+
+The third is that the two ADR-0053/0054 guard-hit witnesses had to *change*,
+not just pass. They asserted `disposals + 1` **and** `updates + 1` — one
+survivor re-rendered — which was the reconcile's signature and is now a
+regression check. They assert `updates + 0`.
+
+### Performance observations
+
+Toggle Lab, Chromium, rows seeded through the ADR-0063 hydration path, five to
+nine repetitions per cell, median of medians, `performance.now()` at 5 µs
+under cross-origin isolation. Milliseconds per commit; `update` and the phases
+inside it are from the same run:
+
+| rows | action | commit | `update` | validate | `updateItem` | dispose | place |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 000 | `remove` @front | 5.495 | 4.540 | 0.250 | 4.250 | 0.030 | 0.025 |
+| 10 000 | `remove` @middle | 5.620 | 4.760 | 0.140 | 4.555 | 0.030 | 0.025 |
+| 10 000 | `remove` @back | 5.820 | 4.870 | 0.070 | 4.740 | 0.040 | 0.020 |
+| 10 000 | `commit` guard | 6.620 | 5.090 | 0.240 | 4.780 | 0.035 | 0.020 |
+| 10 000 | `keys` guard | 9.110 | 8.425 | 0.150 | 7.045 | 1.005 | 0.015 |
+| 10 000 | `removeIf` | 6.080 | 4.735 | 0.185 | 4.485 | 0.030 | 0.020 |
+| 10 000 | `append` | 6.985 | 4.520 | 0.130 | 4.350 | 0.025 | 0.020 |
+| 10 000 | `toggle` | 0.785 | — | — | — | — | — |
+| 1 000 | `remove` @middle | 0.555 | 0.450 | 0.020 | 0.425 | 0.005 | 0.005 |
+| 100 | `remove` @middle | 0.070 | 0.045 | 0.005 | 0.035 | 0.005 | 0.000 |
+
+After, on the same harness — `update` is not entered at all, so the whole
+column is zero and what remains is the counts, the filter sweep and the
+write-back:
+
+| rows | action | before | after |
+| ---: | --- | ---: | ---: |
+| 10 000 | `remove` @front/@middle/@back | 5.50 / 5.62 / 5.82 | 1.14 / 0.72 / 1.07 |
+| 10 000 | `commit` guard @front/@middle/@back | 7.95 / 6.62 / 5.38 | 0.98 / 1.03 / 0.74 |
+| 10 000 | `keys` guard @front/@middle/@back | 9.87 / 9.11 / 10.19 | 1.81 / 1.46 / 1.84 |
+| 1 000 | `remove` @front/@middle/@back | 0.63 / 0.56 / 0.52 | 0.21 / 0.18 / 0.17 |
+| 100 | `remove` @front/@middle/@back | 0.090 / 0.070 / 0.070 | 0.060 / 0.030 / 0.030 |
+
+The bench is paired: both variants in one browser process, the leader
+alternated across seven passes, medians of per-cell medians. The machine
+carried a load average above 20 throughout, which inflates both sides, so the
+ratio is the number to read:
+
+| rows | `remove` | guard hits | `removeIf` | `append` | `toggle` |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 000 | 3.46×–4.11× | 3.72×–4.29× | 1.09× | 1.00× | 0.95× |
+| 1 000 | 3.28×–3.41× | 2.93×–3.63× | 0.98× | 1.04× | 1.00× |
+
+The region instrumentation is the deterministic half of the same statement:
+five single-row removals over a ten-thousand-row region moved
+`[mounts, updates, moves, disposals]` by `[0, 49985, 0, 5]` and now move it by
+`[0, 0, 0, 5]`, while `removeIf` still moves it by `[0, 49990, 0, 5]`.
+
+Five generated modules change and they are exactly the five labs that declare
+a removing row action — Branch, Mix, Nest, Toggle, Twin. Regenerating every
+lab on both sides and comparing file by file, every other generated file is
+byte-identical, every bundled host file is byte-identical, and so is every
+manifest including the five that changed: no field moves and `runtimeAbi`
+stays 17. The js-framework-benchmark size gate and baseline are untouched —
+that backend is hand-written and has called `removeAt` since ADR-0026.
+
+### Follow-up issue or commit
+
+The witnesses were broken three ways, all against the real emission: the drain
+naming a position one past the one the splice took (13 red, the host's own
+`LRX-REGION-003` first); the structural wake flag forgetting the queue (7 red,
+and the only break where every row still renders correctly); and a drain that
+empties the queue without calling the host (12 red).
+
+`feat(component): drain a sealed single-row removal through removeAt
+(ADR-0097)` — the queue slot and the drain in `LeanRx/Backend/Component.lean`,
+`RowAction.removesRow` in `LeanRx/View/Model.lean`, the five labs' artifact
+expectations, two new Toggle Lab witnesses beside the two ADR-0053/0054 ones
+that changed, the language guide's reconcile paragraph, the dynamic-regions
+internals note, the ADR, the DECISIONS.md row, and this record. **ADR-0096
+OQ1 is closed on its removal half.** What it leaves is the other half: an
+`append` still hands the whole table to `update` for one new row, and closing
+that is an ABI event rather than a codegen one.

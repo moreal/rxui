@@ -776,6 +776,29 @@ proves it by handing each host a frozen copy of every caller array and
 re-verifying its order and every key slot after each later call, reporting
 `LRX-HOST-001` with the rule, the host and the method named.
 
+With the search gone, what is left of a one-row structural commit is the
+reconcile itself, and for a removal it is now skipped (ADR-0097). A sealed
+single-row removal — the `remove` action, an ADR-0053 guard hit — used to
+raise the region's dirty flag, and the commit sweep answered it by handing the
+whole table to `update`, which re-runs the generated row-update callback on
+every *retained* row: about six DOM operations times N, 4.3–4.7 ms of a 5.5 ms
+commit at ten thousand rows, where the key validation, the disposal and
+`placeInOrder` together are under 0.3 ms. The dispatch already knows which
+position it removed, so it now queues `[position, key]` in the region record's
+last slot and the commit sweep drains it through the region handle's
+`removeAt` — one disposal, one detach, and every survivor's DOM node and
+row-update callback left alone. A single-row removal at ten thousand rows is
+**2.9×–4.3×** faster and the host's update counter does not move at all. Three
+things travel with it. The drain runs *before* the reconcile, not instead of
+it, so a transaction that also appends still reconciles. It runs before the
+filter sweep, which navigates by row-table position and needs the DOM back in
+step. And every wake flag that read the dirty bit as "the row set moved" reads
+the queue beside it, so the counts, the emptiness sweeps, the filter table and
+the write-back still run on a removal. Two removals keep the reconcile on
+purpose: an `update … remove` predicate removal, whose row count is unbounded
+and whose all-rows case the reconcile clears in bulk, and `append`, which has
+no host counterpart because mounting a row is `update`'s alone.
+
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
 **union** of every filter table over that field, not the first-declared
@@ -1027,9 +1050,10 @@ A row stage may carry a *remove-if guard* (ADR-0053):
 `row region event := if field == "literal" then remove else
 (set field (expr), …)` — and the same `if` shape inside a `when` key arm —
 compares one row field against one string literal when the event dispatches.
-A guard hit removes the dispatching row through the same kept-filter and
-dirty reconcile the sealed `remove` action uses; a miss commits the
-else-steps exactly as an unguarded stage does. This is what makes TodoMVC's
+A guard hit removes the dispatching row through the same positional
+`removeAt` drain the sealed `remove` action uses (ADR-0097), reusing the
+position its own stage already resolved; a miss commits the else-steps
+exactly as an unguarded stage does. This is what makes TodoMVC's
 destroy-on-empty-commit expressible: guard both commit paths with
 `draft == ""` and an empty draft's Enter (or OK click) destroys the row
 while a nonempty draft commits. The guard is the whole predicate language —

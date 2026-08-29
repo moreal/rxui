@@ -55,17 +55,17 @@ for (const required of [
   // ADR-0081: `right` is now persisted, and this line is the proof that
   // persistence adds no region-record slot — the six-slot record and the
   // container at 5 are byte-for-byte what ADR-0080 pinned.
-  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_24], [0, 0], node_26], [region_1, [], 0, false, [], node_27], [region_2, [], 0, false, [], node_28]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_24], [0, 0], node_26, []], [region_1, [], 0, false, [], node_27, []], [region_2, [], 0, false, [], node_28, []]];",
   // Each region's wake flag is its own, read before the reconcile consumes
   // the dirty bit and the pending positions.
-  "    const region_touched_1 = regions[1][3] || regions[1][4][\"length\"] !== 0;",
-  "    const region_touched_2 = regions[2][3] || regions[2][4][\"length\"] !== 0;",
+  "    const region_touched_1 = regions[1][3] || regions[1][6][\"length\"] !== 0 || regions[1][4][\"length\"] !== 0;",
+  "    const region_touched_2 = regions[2][3] || regions[2][6][\"length\"] !== 0 || regions[2][4][\"length\"] !== 0;",
   // ADR-0083: `left`'s only drain path writes `label`; its filter arms and
   // its predicate count read `flag`, and its row total reads no field at
   // all. Every sweep over the region is therefore disjoint from the drain,
   // so `left` declares *only* the structural flag — the flag set is derived
   // per region from the read sets, not fixed by the feature list.
-  "    const region_structural_0 = regions[0][3];",
+  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0;",
   // ADR-0079, axis one — two filtered regions: two scans with their own
   // `filter_scan_{i}` / `filter_row_{i}` identifiers, each navigating
   // `childAt` from *its own* container slot, so neither walk can reach the
@@ -107,7 +107,7 @@ for (const required of [
   // predicate count reads `flag`, so a `mark` drain (which writes `label`)
   // asks neither. The two counts agree on their flag, so they share one
   // block rather than growing a second guard.
-  "    const region_structural_0 = regions[0][3];\n    if (region_structural_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:left:0:evaluated\");",
+  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0;\n    if (region_structural_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:left:0:evaluated\");",
   "      tx[7][\"push\"](\"count:left:1:evaluated\");\n      const count_scan_0_1 = [0];",
   "const region_off_1_change = listenDelegatedCells(node_27, \"change\", state, context, $lrx_region_1_dispatch, [\"\", \"\", \"toggle\"]);",
   // ADR-0080, axis one — a route over the *shared* filter field. The sealed
@@ -149,7 +149,7 @@ for (const required of [
   // ...while the canonical hash write rides `changed[1]` in the commit
   // prologue, ahead of *every* region block — the first region wake flag in
   // the commit is the statement that follows it.
-  "      tx[7][\"push\"](\"route:mode:write\");\n    }\n    const region_structural_0 = regions[0][3];",
+  "      tx[7][\"push\"](\"route:mode:write\");\n    }\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0;",
   // Mount seeds the routed field from the hash before the DOM exists and
   // hydrates the persisted region after the listeners are wired, so the
   // hydrate transaction's own sweep applies the routed literal to the rows

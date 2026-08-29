@@ -105,7 +105,7 @@ for (const required of [
   // end in the one shared mount-scope array identifier (ADR-0077), and each
   // region's count refs and cache are its own arrays, sized by its own cells.
   "const childInventory = [child_off_0];",
-  "const regions = [[region_0, [], 0, false, [], [count_text_10, count_text_12], [0, 0], node_13, childInventory], [region_1, [], 0, false, [], [count_text_25], [0], childInventory]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_10, count_text_12], [0, 0], node_13, childInventory, []], [region_1, [], 0, false, [], [count_text_25], [0], childInventory, []]];",
   // The reconcile and drain forward each region's own slot as the child
   // context, so every mount path — appends, broadcasts, and the ADR-0063
   // hydration that rides the same dirty-flag commit — pushes into the shared

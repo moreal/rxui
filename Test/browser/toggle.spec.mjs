@@ -309,6 +309,102 @@ test("clearing completed disposes exactly the done rows (ADR-0050)", async ({ pa
   await expect(page.locator("#items-left")).toHaveText("1 item left of 1");
 });
 
+test("a sealed single-row removal reconciles nothing (ADR-0097)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  for (let index = 0; index < 5; index += 1) await add.click();
+  await page.evaluate(() => {
+    globalThis.survivors = [...document.querySelectorAll("#items > li")]
+      .filter((_, index) => index !== 2);
+  });
+  const before = await regionMetrics(page);
+  const beforeTrace = await page.evaluate(() =>
+    globalThis.toggleDispose.instrumentation()[7].length);
+  // The ✕ button on the middle row. ADR-0092 already resolved its position
+  // by binary search; ADR-0097 keeps that position and hands it to the
+  // region handle's `removeAt` at commit.
+  await page.locator("#items > li").nth(2).getByRole("button", { name: "Remove item" }).click();
+  await expect(page.locator("#items > li .item-label"))
+    .toHaveText(["Item 0", "Item 1", "Item 3", "Item 4"]);
+  // Every survivor keeps the exact DOM node it had, on both sides of the
+  // hole: `removeAt` shifts positions without touching nodes.
+  const retained = await page.evaluate(() =>
+    globalThis.survivors.every((node, index) =>
+      node === document.querySelectorAll("#items > li")[index]));
+  expect(retained).toBe(true);
+  const after = await regionMetrics(page);
+  // [mounts, updates, moves, disposals]: one disposal and nothing else. The
+  // reconcile would have re-run the generated row-update callback on all
+  // four survivors; this is the whole axis, read off the host's own counters.
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1]);
+  expect(after[2]).toBe(before[2]);
+  expect(after[3]).toBe(before[3] + 1);
+  const trace = await page.evaluate((from) =>
+    globalThis.toggleDispose.instrumentation()[7].slice(from), beforeTrace);
+  expect(trace.filter((entry) => entry === "region:items:removeAt").length).toBe(1);
+  expect(trace.filter((entry) => entry === "region:items:update").length).toBe(0);
+  // The removal is a structural change however it is recorded, so every
+  // sweep the row set can move still ran in the same commit: the counts, the
+  // filter table, and the persistence write-back.
+  expect(trace.filter((entry) => entry === "count:items:2:evaluated").length).toBe(1);
+  expect(trace.filter((entry) => entry === "filter:items:evaluated").length).toBe(1);
+  expect(trace.filter((entry) => entry === "storage:items:write").length).toBe(1);
+  await expect(page.locator("#items-left")).toHaveText("4 items left of 4");
+
+  // The contrast, in the same component: the ADR-0050 predicate removal
+  // takes an unbounded number of rows and keeps the reconcile, so it still
+  // updates every survivor.
+  await page.locator("#items > li").nth(0).getByRole("checkbox", { name: "Toggle item" }).check();
+  const beforeClear = await regionMetrics(page);
+  const clearFrom = await page.evaluate(() =>
+    globalThis.toggleDispose.instrumentation()[7].length);
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(3);
+  const afterClear = await regionMetrics(page);
+  expect(afterClear[3]).toBe(beforeClear[3] + 1);
+  expect(afterClear[1]).toBe(beforeClear[1] + 3);
+  const clearTrace = await page.evaluate((from) =>
+    globalThis.toggleDispose.instrumentation()[7].slice(from), clearFrom);
+  expect(clearTrace.filter((entry) => entry === "region:items:update").length).toBe(1);
+  expect(clearTrace.filter((entry) => entry === "region:items:removeAt").length).toBe(0);
+});
+
+test("removing every row one at a time never reconciles and empties the region (ADR-0097)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  for (let index = 0; index < 4; index += 1) await add.click();
+  const before = await regionMetrics(page);
+  const from = await page.evaluate(() =>
+    globalThis.toggleDispose.instrumentation()[7].length);
+  // Front, back, then what is left: the drain's position is whatever the key
+  // search resolved at the time, so no order is special to it.
+  for (const nth of [0, 2, 1, 0]) {
+    await page.locator("#items > li").nth(nth)
+      .getByRole("button", { name: "Remove item" }).click();
+  }
+  await expect(page.locator("#items > li")).toHaveCount(0);
+  const after = await regionMetrics(page);
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1]);
+  expect(after[2]).toBe(before[2]);
+  expect(after[3]).toBe(before[3] + 4);
+  const trace = await page.evaluate((start) =>
+    globalThis.toggleDispose.instrumentation()[7].slice(start), from);
+  expect(trace.filter((entry) => entry === "region:items:removeAt").length).toBe(4);
+  expect(trace.filter((entry) => entry === "region:items:update").length).toBe(0);
+  // The emptied region takes the ADR-0058 visibility sweep and the ADR-0063
+  // write-back exactly as the reconcile left it, and a fresh append after a
+  // drained region still mounts through the reconcile.
+  await expect(page.locator("#items")).toBeHidden();
+  await expect(page.locator("#items-left")).toHaveText("0 items left of 0");
+  const afterEmpty = await page.evaluate(() =>
+    globalThis.localStorage.getItem("leanrx-toggle-lab.items"));
+  expect(afterEmpty).toBe("");
+  await add.click();
+  await expect(page.locator("#items > li .item-label")).toHaveText(["Item 4"]);
+});
+
 test("dblclick outside the label cell dispatches nothing", async ({ page }) => {
   await mountToggle(page);
   await page.getByRole("button", { name: "Add item" }).click();
@@ -528,8 +624,8 @@ test("Enter on an empty draft removes the row through the remove-if guard (ADR-0
   const before = await regionMetrics(page);
   // The guard equality runs against the row the key scan resolved: the
   // empty draft hits `draft == ""`, so the Enter arm removes the row —
-  // TodoMVC's destroy-on-empty-commit — through the same kept-filter and
-  // dirty reconcile the ✕ button uses.
+  // TodoMVC's destroy-on-empty-commit — through the same ADR-0097 `removeAt`
+  // drain the ✕ button uses.
   await editor.press("Enter");
   await expect(page.locator("#items > li")).toHaveCount(1);
   await expect(page.locator("#items > li .item-label")).toHaveText(["Item 1"]);
@@ -542,11 +638,12 @@ test("Enter on an empty draft removes the row through the remove-if guard (ADR-0
   expect(retained).toBe(true);
   const after = await regionMetrics(page);
   // [mounts, updates, moves, disposals]: the guard hit queues no updateAt of
-  // its own — the removal rides the same dirty reconcile as the ✕ button,
-  // which disposes the dispatching row and re-renders the one retained
-  // survivor. Never a mount, never a move.
+  // its own, and since ADR-0097 it queues no reconcile either — the removal
+  // rides `removeAt`, which disposes the dispatching row and leaves the
+  // survivor's generated row-update callback unrun. One disposal and nothing
+  // else: never a mount, never a move, and now never an update.
   expect(after[0]).toBe(before[0]);
-  expect(after[1]).toBe(before[1] + 1);
+  expect(after[1]).toBe(before[1]);
   expect(after[2]).toBe(before[2]);
   expect(after[3]).toBe(before[3] + 1);
 });
@@ -613,10 +710,10 @@ test("Enter on a whitespace-only draft removes the row through the trimmed guard
   expect(retained).toBe(true);
   const after = await regionMetrics(page);
   // [mounts, updates, moves, disposals]: the trimmed guard hit rides the
-  // same dirty reconcile as the raw guard — one disposal, one survivor
-  // update, never a mount or a move.
+  // same ADR-0097 drain as the raw guard — one disposal and nothing else,
+  // never a mount, a move, or a survivor update.
   expect(after[0]).toBe(before[0]);
-  expect(after[1]).toBe(before[1] + 1);
+  expect(after[1]).toBe(before[1]);
   expect(after[2]).toBe(before[2]);
   expect(after[3]).toBe(before[3] + 1);
 });

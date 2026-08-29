@@ -120,7 +120,13 @@ without an update callback; a backend uses them when it can show that the
 exchange or removal changes no other row's payload (for `removeAt`, that no
 row's payload depends on its position). `removeAt` unregisters the key only
 while an index exists; validation always fails before any callback or DOM
-mutation.
+mutation. Since ADR-0097 the component backend shows exactly that for a
+sealed single-row removal — the `remove` row action and every ADR-0053
+remove-if guard hit — and emits `removeAt` for it: the dispatch queues the
+position ADR-0092's key search already resolved and the commit sweep drains
+the queue before the reconcile, so the host's `update` is not entered and no
+retained row's update callback runs. A component-event predicate removal and
+an append still reconcile.
 
 TodoMVC begins from a private pure `Todo.State` and closed `Todo.Msg` update
 algebra. Add/toggle/delete/filter/edit/clear operations are total and preserve

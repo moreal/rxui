@@ -249,9 +249,9 @@ private def regionRowsMutate (broadcasts : List String) (region : RegionSpec) : 
 event that writes them (ADR-0084): each declared `row` update stage's
 assignment targets, the ADR-0052 key arms unioned under their event, paired
 with the action literal `listenDelegatedCells` dispatches that event under.
-A `remove` action — and an ADR-0053 guard hit — raises the dirty flag
-instead of queueing a position, and so does a broadcast (ADR-0050), so
-neither is a drain path. An event that assigns nothing is dropped: it queues
+A `remove` action — and an ADR-0053 guard hit — queues a *removal* into the
+ADR-0097 drops slot instead of a position into this one, and a broadcast
+(ADR-0050) raises the dirty flag, so neither is a drain path. An event that assigns nothing is dropped: it queues
 a position whose `updateAt` rewrites the row it read. The list is empty
 exactly when the record's pending slot can never receive a position. -/
 private def regionEventWrites (region : RegionSpec) : List (String × List Nat) :=
@@ -385,6 +385,20 @@ private def regionHasChildRef (region : RegionSpec) : Bool :=
 ADR-0051 filter slot, mirroring the record construction. -/
 private def regionChildSlot (hasCounts hasFilter : Bool) : Nat :=
   5 + (if hasCounts then 2 else 0) + (if hasFilter then 1 else 0)
+
+/-- Whether one region declares a sealed single-row removal — the `remove`
+action or an ADR-0053 remove-if guard — and so carries the ADR-0097 drops
+queue. A component-event predicate removal (ADR-0050 `remove items (…)`) is
+*not* one of these: its row count is data-dependent, so it keeps the
+reconcile. -/
+private def regionRemovesRows (region : RegionSpec) : Bool :=
+  region.events.toList.any (·.action.removesRow)
+
+/-- The record slot of one region's ADR-0097 drops queue: the record's last
+slot, behind the ADR-0075 inventory, so adding it moves no slot any earlier
+ADR sealed. -/
+private def regionDropSlot (hasCounts hasFilter hasChild : Bool) : Nat :=
+  regionChildSlot hasCounts hasFilter + (if hasChild then 1 else 0)
 
 /-- The regions one component persists, by name (ADR-0063). A persisted
 region's rows carry the ADR-0085 serialization cache cell; every other
@@ -1013,14 +1027,29 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     let wakes := countWakes ++ hiddenWakes ++ filterWakes ++ persistWakes
     let touched ← wakeIdent regionIndex .touched
     let structural ← wakeIdent regionIndex .structural
+    /- The ADR-0097 drops queue, for regions that declare a sealed single-row
+    removal. A queued position is a structural change the record now records
+    positionally instead of as a bit, so every flag that read the dirty bit
+    as "the row set moved" reads the queue beside it — and reads it here,
+    before the drain below empties it. -/
+    let dropSlot? : Option Nat :=
+      if regionRemovesRows region then
+        some (regionDropSlot (!counts.isEmpty) filter?.isSome (regionHasChildRef region))
+      else none
+    let structuralExpr : Expr := match dropSlot? with
+      | none => regionEntry regions regionIndex 3
+      | some slot => .binary .or (regionEntry regions regionIndex 3)
+          (.unary .not (.binary .eq
+            (.index (regionEntry regions regionIndex slot) (.literal (.string "length")))
+            (uint 0)))
     if wakes.contains .touched then
       /- The touched flag serves every sweep every drain path can move: the
       count sweep (ADR-0050), the filter sweep (ADR-0051), the empty-region
       visibility sweep (ADR-0058), and the persistence sweep (ADR-0063). It
-      is read before the reconcile and drain below consume the dirty flag
-      and the pending positions. -/
+      is read before the reconcile and the two drains below consume the dirty
+      flag, the queued removals and the pending positions. -/
       commitBody := commitBody ++ [
-        .const touched (.binary .or (regionEntry regions regionIndex 3)
+        .const touched (.binary .or structuralExpr
           (.unary .not (.binary .eq
             (.index (regionEntry regions regionIndex 4) (.literal (.string "length")))
             (uint 0))))
@@ -1029,20 +1058,20 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
       /- Read before the reconcile below clears the dirty bit, exactly as the
       touched flag is (ADR-0082). -/
       commitBody := commitBody ++ [
-        .const structural (regionEntry regions regionIndex 3)
+        .const structural structuralExpr
       ]
     for (actions, classIndex) in classes.zipIdx do
       if wakes.contains (.drain classIndex) then
-        /- One drain class (ADR-0084): the region was structurally dirty, or
-        this dispatch queued a position *and* the action it ran is one of the
-        row events whose stage writes a field the class reads. Exactly one
-        action branch runs per dispatch, so the conjunction is the precise
-        "a drain that could move these sweeps happened", not an
-        approximation of it. -/
+        /- One drain class (ADR-0084): the region moved structurally — the
+        dirty bit or, since ADR-0097, a queued removal — or this dispatch
+        queued a position *and* the action it ran is one of the row events
+        whose stage writes a field the class reads. Exactly one action branch
+        runs per dispatch, so the conjunction is the precise "a drain that
+        could move these sweeps happened", not an approximation of it. -/
         let action ← Ident.checked "action"
         let flag ← wakeIdent regionIndex (.drain classIndex)
         commitBody := commitBody ++ [
-          .const flag (.binary .or (regionEntry regions regionIndex 3)
+          .const flag (.binary .or structuralExpr
             (.binary .and
               (.unary .not (.binary .eq
                 (.index (regionEntry regions regionIndex 4) (.literal (.string "length")))
@@ -1210,7 +1239,10 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     keeps clean regions out of the sweep entirely (ADR-0041). A structurally
     dirty reconcile re-runs every retained row, so it drops pending update
     positions unrendered; an update-only transaction drains them through
-    `updateAt` instead (ADR-0043). -/
+    `updateAt` instead (ADR-0043), and since ADR-0097 a removal-only
+    transaction drains them through `removeAt`. What still raises the dirty
+    bit is what the reconcile is the right shape for: an append, an ADR-0050
+    broadcast or predicate removal, a hydrate. -/
     /- The row-scoped child context (ADR-0075): a child-composing region's
     record carries the live children inventory in its last slot, and the
     reconcile and drain forward it so the row mount callback pushes and the
@@ -1218,6 +1250,36 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     let rowContext := if regionHasChildRef region then
         regionEntry regions regionIndex (regionChildSlot (!counts.isEmpty) filter?.isSome)
       else Expr.literal .null
+    /- The ADR-0097 removal drain, ahead of the reconcile. A sealed single-row
+    removal already knows the position it took the row out of — ADR-0092's
+    key-ordered table resolved it, and the `remove` action's own search or the
+    guard's stage stands on it — so the region handle's `removeAt` disposes,
+    detaches and shifts exactly that row and leaves every survivor's DOM node
+    and generated row-update callback alone. Positions are queued and drained
+    in the order the row table was spliced, so each one is still the row's
+    position in the host's entries when its turn comes, and `removeAt`'s
+    LRX-REGION-003 key check is what says so at run time.
+
+    The drain runs before the reconcile rather than instead of it: a
+    transaction that also appended or broadcast still reconciles, over a
+    table and a host that already agree about the removals. It runs before
+    the ADR-0051 filter sweep because that sweep navigates
+    `childAt(container, i)` by row-table position, and only after the drain
+    do the two agree again. -/
+    if let some slot := dropSlot? then
+      let droppedRow ← Ident.checked "dropped_row"
+      commitBody := commitBody ++ [.ifThen (.unary .not <| .binary .eq
+          (.index (regionEntry regions regionIndex slot) (.literal (.string "length")))
+          (uint 0)) <| .ofList [
+        .forOf droppedRow (regionEntry regions regionIndex slot) (.ofList [
+          .expr <| .call
+            (.index (regionEntry regions regionIndex 0) (.literal (.string "removeAt")))
+            (.ofList [.index (.ident droppedRow) (uint 0),
+              .index (.ident droppedRow) (uint 1), rowContext]),
+          pushTrace tx s!"region:{region.name}:removeAt"
+        ]),
+        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint slot)) (.array .nil)
+      ]]
     commitBody := commitBody ++ [.ifThen (regionEntry regions regionIndex 3) <| .ofList ([
       .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
         (.literal (.boolean false)),
@@ -2329,39 +2391,63 @@ private def regionSeeksRows (region : RegionSpec) : Bool :=
   !region.events.isEmpty
 
 /-- The row removal sequence of one dispatch branch: drop the dispatching
-key's row out of the row table, mark the region dirty for the reconcile, and
-push the region trace. Shared by the sealed `remove` action and the guard hit
-of an ADR-0053 guarded stage.
+key's row out of the row table, queue the position it left for the commit
+sweep's ADR-0097 `removeAt` drain, and push the region trace. Shared by the
+sealed `remove` action and the guard hit of an ADR-0053 guarded stage.
 
 ADR-0092: the row leaves by `splice` at its resolved position, which keeps
 the survivors in their order and so keeps the table key-ordered. The guard
 hit already stands inside its stage's resolved position and passes it in, so
 it splices unconditionally; the sealed `remove` action runs its own key
-search and splices only on a hit. Neither the dirty flag nor the trace is
-conditional on the key being present, exactly as the filter rebuild they
-replace left them. -/
+search and splices only on a hit. The trace stays unconditional, exactly as
+the filter rebuild it replaced left it; the *queue* cannot be, because a miss
+has no position to queue — and a miss now wakes no sweep either, which is
+right, since a key the table does not hold changed nothing.
+
+ADR-0097's invalidation obligation, discharged here and stated as code: the
+splice shifts every later position down by one, so a position this same
+transaction already queued for the ADR-0043 `updateAt` drain would no longer
+name the row it was read from. Exactly one action branch runs per dispatch
+and every commit empties that queue, so the pending queue is provably empty
+here today; rather than rest a whole-language invariant on that, a removal
+that finds it non-empty falls back to the dirty bit, and the reconcile —
+which re-renders every retained row and drops the queue — is correct
+whatever the mixture was. Regions with no update action have no such queue
+and no such branch. -/
 private def rowRemoveStmts (regions tx key : Ident) (regionIndex : Nat)
+    (dropSlot : Nat) (hasPending : Bool)
     (position? : Option Expr) (regionName eventName : String) :
     Except Error (List Stmt) := do
   let cursor ← Ident.checked "drop"
+  let queued ← Ident.checked "drop_queued"
   let splice (position : Expr) : Stmt :=
     .expr <| .call
       (.index (regionEntry regions regionIndex 1) (.literal (.string "splice")))
       (.ofList [position, uint 1])
+  let push (position : Expr) : Stmt :=
+    .expr <| .call
+      (.index (regionEntry regions regionIndex dropSlot) (.literal (.string "push")))
+      (.ofList [.array (.ofList [position, .ident key])])
+  let queue (position : Expr) : List Stmt :=
+    if hasPending then [
+      .const queued (.binary .eq
+        (.index (regionEntry regions regionIndex 4) (.literal (.string "length"))) (uint 0)),
+      .ifThen (.ident queued) (.ofList [push position]),
+      .ifThen (.unary .not (.ident queued)) (.ofList [
+        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+          (.literal (.boolean true))
+      ])
+    ] else [push position]
   let drop ← match position? with
-    | some position => pure [splice position]
+    | some position => pure (splice position :: queue position)
     | none => do
         let position : Expr := .ident cursor
         pure [
           .const cursor (← rowSeekCall regions key regionIndex),
           .ifThen (.unary .not (.binary .eq position (.unary .neg (uint 1)))) <|
-            .ofList [splice position]
+            .ofList (splice position :: queue position)
         ]
-  pure (drop ++ [
-    .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
-      (.literal (.boolean true)),
-    pushTrace tx s!"region:{regionName}:{eventName}"
-  ])
+  pure (drop ++ [pushTrace tx s!"region:{regionName}:{eventName}"])
 
 /-- The ADR-0043 scan-evaluate-assign-queue sequence of one row stage:
 resolve the dispatching row by the ADR-0092 key search (`scan` is the
@@ -2374,8 +2460,8 @@ equality against the resolved row: a guard hit runs the removal sequence
 instead — no field write and no queued position — and a miss commits the
 assignments exactly as an unguarded stage does. -/
 private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
-    (serialSlot? : Option Nat) (regionName eventName : String) (payloadExpr : Expr)
-    (stage : RowStage) : Except Error (List Stmt) := do
+    (dropSlot : Nat) (serialSlot? : Option Nat) (regionName eventName : String)
+    (payloadExpr : Expr) (stage : RowStage) : Except Error (List Stmt) := do
   let assignments := stage.assignments
   let scan ← Ident.checked "scan"
   let rowItem ← Ident.checked "row_item"
@@ -2408,7 +2494,7 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
           trimmed subject wraps it in the sealed trim emission. -/
           .const rowGuard (fieldPredicateJs rowItem noPayload guard),
           .ifThen (.ident rowGuard) (.ofList
-            (← rowRemoveStmts regions tx key regionIndex
+            (← rowRemoveStmts regions tx key regionIndex dropSlot true
               (some (.ident scan)) regionName eventName)),
           .ifThen (.unary .not (.ident rowGuard)) (.ofList applyStmts)
         ]
@@ -2436,14 +2522,21 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
   let regions ← Ident.checked "regions"
   let tx ← Ident.checked "tx"
   let serialSlot? := rowSerialSlot? (persistedRegionNames checked.spec) region
+  /- ADR-0097: the record slot this region's removals queue their positions
+  in, computed exactly as the record construction lays it out. -/
+  let dropSlot := regionDropSlot
+    (checked.view.regionCounts.any (·.region == region.name))
+    (checked.spec.filters.toList.any (·.region == region.name))
+    (regionHasChildRef region)
+  let hasPending := regionHasUpdates region
   let mut writes : List Stmt := []
   for event in region.events do
     match event.action with
     | .remove =>
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
-            (.ofList (← rowRemoveStmts regions tx key regionIndex none
-              region.name event.name))
+            (.ofList (← rowRemoveStmts regions tx key regionIndex dropSlot hasPending
+              none region.name event.name))
         ]
     | .update stage =>
         /- The ADR-0043 scan-evaluate-assign-queue sequence. A typed row
@@ -2461,7 +2554,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
           else noPayload
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
-            (.ofList (← rowUpdateApplyStmts regions tx key regionIndex serialSlot?
+            (.ofList (← rowUpdateApplyStmts regions tx key regionIndex dropSlot serialSlot?
               region.name event.name payloadExpr stage))
         ]
     | .keySelect arms =>
@@ -2475,7 +2568,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
         for (keyLiteral, stage) in arms do
           armStmts := armStmts ++ [
             .ifThen (.binary .eq (.ident eventKey) (.literal (.string keyLiteral)))
-              (.ofList (← rowUpdateApplyStmts regions tx key regionIndex serialSlot?
+              (.ofList (← rowUpdateApplyStmts regions tx key regionIndex dropSlot serialSlot?
                 region.name event.name noPayload stage))
           ]
         writes := writes ++ [
@@ -2760,7 +2853,9 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     dirty, pending]`. Keys are region-owned monotone safe integers
     (ADR-0027/0029), so uniqueness holds by construction; `pending` holds the
     positions an update-only transaction drains through `updateAt`
-    (ADR-0043). -/
+    (ADR-0043), and a region that declares a sealed single-row removal
+    carries one more slot, last, holding the `[position, key]` pairs a
+    removal-only transaction drains through `removeAt` (ADR-0097). -/
     let regionRecords ← checked.spec.regions.toList.mapM fun region => do
       let handle ← match dom.regionHandles.find? (·.1 == region.name) with
         | some entry => pure entry.2
@@ -2785,6 +2880,11 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
               }
           pure [Expr.ident (← nodeAt dom.nodes reference.path.dropLast)]
         else pure []
+      /- The ADR-0097 drops queue is the record's *last* slot, so a region
+      that removes rows adds one cell behind the ADR-0075 inventory and every
+      slot index an earlier ADR sealed stays where it was. -/
+      let dropQueue : List Expr :=
+        if regionRemovesRows region then [Expr.array .nil] else []
       pure <| Expr.array <| .ofList ([
         Expr.ident handle, .array .nil, uint 0, .literal (.boolean false), .array .nil
       ] ++ (if counts.isEmpty then [] else [
@@ -2796,7 +2896,8 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           | none => uint 0
           | some (_, other) => .literal (.string other)))
       ]) ++ containerRef ++
-        (if regionHasChildRef region then [Expr.ident childInventory] else []))
+        (if regionHasChildRef region then [Expr.ident childInventory] else []) ++
+        dropQueue)
     mountBody := mountBody ++ [
       .const regions (.array (.ofList regionRecords))
     ]

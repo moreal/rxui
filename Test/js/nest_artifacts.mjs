@@ -141,7 +141,7 @@ for (const required of [
   "const region_off_0_keydown = listenDelegatedCells(node_9, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"record\", \"\", \"\", \"\"]);",
   "regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1]), $lrx_event_1_append_0_1(state[0], state[1]), $lrx_event_1_append_0_2(state[0], state[1]), $lrx_event_1_append_0_3(state[0], state[1])]);",
   "setKey(row_0, item[0]);",
-  "const regions = [[region_0, [], 0, false, [], childInventory]];",
+  "const regions = [[region_0, [], 0, false, [], childInventory, []]];",
   // ADR-0043: the mark dispatch mutates the retained item in place and the
   // commit sweep drains exactly the pending positions through updateAt.
   "const row_next_0 = row_item[2] + \" ★\";",

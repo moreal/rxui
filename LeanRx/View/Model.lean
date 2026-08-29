@@ -285,6 +285,15 @@ def RowAction.hasGuard : RowAction → Bool
   | .update stage => stage.removeIf.isSome
   | .keySelect arms => arms.any (·.2.removeIf.isSome)
 
+/-- Whether the action can take the dispatching row out of the table: the
+sealed `remove` action, or the hit side of an ADR-0053 remove-if guard on any
+stage. Exactly the actions whose emission queues a position for the ADR-0097
+`removeAt` drain — an action that only assigns never shortens the table. -/
+def RowAction.removesRow : RowAction → Bool
+  | .remove => true
+  | .update stage => stage.removeIf.isSome
+  | .keySelect arms => arms.any (·.2.removeIf.isSome)
+
 /-- Whether any row expression of the stage — assignment right-hand side or
 guard subject — uses the ADR-0054 trim unary, for the manifest feature
 stamp. -/
