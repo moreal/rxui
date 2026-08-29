@@ -1251,7 +1251,16 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     cell `rowSerialSlot?` puts behind the declared fields. The sweep encodes
     exactly the rows whose cell a write staled and reads the rest back, and
     reports the number it encoded as one trace entry, so the cache is
-    observable without a counter and without an entry per row. -/
+    observable without a counter and without an entry per row.
+
+    ADR-0087 seals the flush point itself: the `storageSet` stays inside the
+    commit, so the store is current the moment the dispatch returns. Deferring
+    it to one flush per task was measured to save `(1 - 1/N) * (join +
+    storageSet)` for N dispatches in a task, and N is 1 for every interaction
+    a user can produce; putting the joined string on the region record instead
+    was measured at 1.5-2.3x and declined because a position-keyed cache owes
+    seven invalidation sites where this identity-keyed one owes two, and a
+    disagreeing cell is a wrong string in storage rather than a stale pixel. -/
     if let some persist := persist? then
       let persistFlag ← wakeIdent regionIndex (persistWakes.head?.getD .touched)
       let rows ← Ident.checked s!"persist_rows_{regionIndex}"

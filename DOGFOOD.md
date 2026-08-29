@@ -4954,3 +4954,123 @@ persistence push/join loop is now the largest thing in a cached commit; the
 four predicate scans still each run their own O(N) pass over one row table in
 one commit (4.7%, a codegen question rather than a contract one); and the
 key→position scan is still O(N) and is now 4% of the smaller commit.
+
+## The store is current at the end of every commit (ADR-0087)
+
+### What was built
+
+ADR-0086 left persistence alone at the top of a cached commit and named two
+segments. This round priced both proposals against the shipped emission and
+sealed the one thing the measurement actually established: the *flush point*.
+No generated module changed.
+
+The ladder — hand-edited copies of the generated Toggle Lab module, 400
+single-row dispatches over one seeded 10 000-row region, median of five
+runs — first corrected the premise it was asked to work from. ADR-0086 OQ1
+priced the persistence push loop at 0.301 ms by differencing a ladder whose
+rungs still carried the uncached filter sweep. Measured on its own against
+the shipped emission it is **0.040 ms**, 6.0% of a `toggle` commit and the
+smallest of the four segments — a fifteenth of the number the round was
+launched to attack. What is left is two nearly equal host-shaped costs:
+`storageSet` at 35.5% and the `join` at 34.9%, with the same shares at 1000
+rows and the same two at 43% each on a `retype`.
+
+Both axes were then measured rather than argued.
+
+**Per-task flush.** Deferring the `join` and `storageSet` out of all sixteen
+emitted commit blocks and flushing every N dispatches traces the curve
+`L2 + (join + storageSet)/N` to three digits: 0.675 ms at N = 1, 0.316 at
+N = 4, 0.199 at N = 400. Deferral does not make the flush cheaper, it makes
+it rarer — and N is 1. A generated component reaches a transaction only
+through a listener `mount` registered, every listener dispatches one
+transaction, nested transactions already coalesce through `tx[0]`, and the
+platform delivers one user event per task. The 3.4× at N = 400 is a property
+of the measuring loop, not of any program a user can drive.
+
+**The segment array on the region record.** As proposed — segments on the
+record, joined per commit — it is worth 1.05× on `toggle` and 1.10× on
+`retype`, which is exactly the 0.040 ms the ladder priced, because the `join`
+it was meant to remove is still there. Pushing it further, to a joined string
+spliced in place, answers the goal's O(1) question with a **no**: position
+gives the segment index, but splicing needs the byte offset, which is a
+prefix sum over segment lengths that every row edit invalidates. Accumulating
+it on the spot is O(position), and the result is a real 1.52× / 2.30× that is
+still O(N) — a cheap O(N) replacing an expensive one.
+
+Three contract-free emission shapes were tried first, on the theory that the
+`join` might be beatable for free: accumulating with `+` in the sweep loop
+(0.656), index-assigning into a preallocated array (0.668), and `map` then
+`join` (0.675) against the shipped 0.6705. All inside the noise band.
+`Array.join` is already the right shape.
+
+So the round sealed a **keep**, and wrote down the contract that makes it a
+choice rather than a habit: the `storageSet` runs inside the commit,
+synchronously, before the dispatch returns; a read of the key from the same
+task after a dispatch sees what that commit wrote; N dispatches in one task
+write N times; and a tab closed at any moment loses nothing a returned
+dispatch wrote, so no persisting component owes an unload hook.
+
+### What broke or surprised
+
+Two things.
+
+The first is the 0.301 → 0.040 ms correction. It is not a measurement error
+so much as a warning about the method these last three ADRs have leaned on:
+a differenced ladder attributes cost *in the presence of the other rungs*,
+and ADR-0086's own change removed a rung that was inflating the one it
+priced. A segment share is only valid against the emission it was measured
+on, and re-deriving it after every landing is now the cost of using the
+ladder at all.
+
+The second was that the deferral variant costs nothing when it buys nothing:
+at N = 1 it measures 0.675 against the shipped 0.6705, `queueMicrotask`
+included. There was no performance argument against axis A — only a contract
+one. That is what made writing the visibility contract the deliverable
+instead of a footnote, because the alternative was to accept a real 3.4× on
+a synthetic burst and silently make every intermediate store value
+unobservable.
+
+One process note: patching a generated module for the survey means fixing
+*every* commit block, and the drain branches too. B1/B2's first `retype`
+numbers were measured against a segment array the retype branch never
+updated — a variant that writes a stale string quickly and means nothing.
+Every variant is now checked to write a byte-identical stored string against
+the shipped emission over a mixed toggle/retype sequence whose fields carry
+all three escaped separators, before any of its timings are believed.
+
+### Performance observations
+
+The shipped emission is unchanged, so there is nothing to re-measure. The
+survey's ladder at 10 000 rows, 400 dispatches, median of five runs, ms per
+commit:
+
+| variant | `toggle` | `retype` |
+| --- | ---: | ---: |
+| the emitted commit | 0.6705 | 0.5310 |
+| without the `storageSet` call | 0.4325 | 0.3022 |
+| without the `join` | 0.1983 | 0.0690 |
+| without the persistence sweep | 0.1583 | 0.0302 |
+
+and the two candidates against it:
+
+| variant | `toggle` | | `retype` | |
+| --- | ---: | ---: | ---: | ---: |
+| the emitted sweep | 0.6705 | | 0.5310 | |
+| segments on the record, joined per commit | 0.6398 | 1.05× | 0.4885 | 1.10× |
+| + the joined string spliced by offset | 0.4412 | 1.52× | 0.2313 | 2.30× |
+| per-task flush, one dispatch per task | 0.6750 | 1.00× | 0.5420 | 0.98× |
+| per-task flush, 400 dispatches per task | 0.1995 | 3.4× | 0.0720 | 7.4× |
+
+BENCHMARK.md stands unre-measured and every artifact is byte-identical, the
+benchmark size gate and every manifest included — the js-framework-benchmark
+backend is hand-written and persists nothing.
+
+### Follow-up issue or commit
+
+`feat(component): seal the per-commit store visibility contract (ADR-0087)` —
+the `PersistSpec` contract text, the backend sweep's rationale, the language
+guide's persistence section, the Toggle Lab same-task burst witness, the
+deferral-primitive ban across the three persisted labs' artifact gates, the
+ADR, and this record. Open: `storageSet` and the `join` are the floor at 35%
+each and neither narrows under identity keying; the four predicate scans are
+still unshared; and the key→position scan is still O(N) per dispatch.

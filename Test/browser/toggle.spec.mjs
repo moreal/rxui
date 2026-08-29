@@ -1955,3 +1955,70 @@ test("the serialization cache re-encodes exactly the rows a write staled (ADR-00
   expect(await now()).toEqual([2]);
   expect(await stored()).toBe("raw%25,raw%25,false,view;b,b,true,view");
 });
+
+test("the store is current at the end of every commit, not of the task (ADR-0087)", async ({ page }) => {
+  await mountToggle(page);
+  const count = (tx, label) => tx[7].filter((entry) => entry === label).length;
+  const instrumentation = () =>
+    page.evaluate(() => globalThis.toggleDispose.instrumentation());
+  const before = await instrumentation();
+
+  // Three dispatches inside *one* task: the clicks are synchronous, so the
+  // browser never gets a turn between them. This is the shape a per-task
+  // flush would have collapsed into a single join and a single storageSet
+  // (ADR-0087 measured that at 3.4x on ten thousand rows) — and the shape
+  // that would have left every intermediate value unobservable. Under the
+  // per-commit contract each re-read, taken before the next click, already
+  // sees what the commit that just returned wrote.
+  const seen = await page.evaluate(() => {
+    const button = Array.from(document.querySelectorAll("button"))
+      .find((node) => node.textContent === "Add item");
+    const observed = [];
+    for (let index = 0; index < 3; index += 1) {
+      button.click();
+      observed.push(localStorage.getItem("leanrx-toggle-lab.items"));
+    }
+    return observed;
+  });
+  expect(seen).toEqual([
+    "Item 0,Item 0,false,view",
+    "Item 0,Item 0,false,view;Item 1,Item 1,false,view",
+    "Item 0,Item 0,false,view;Item 1,Item 1,false,view;Item 2,Item 2,false,view",
+  ]);
+
+  // One commit per dispatch and one write per commit: nothing was coalesced
+  // across the burst, and no write is still pending now that the task ended.
+  const burst = await instrumentation();
+  expect(count(burst, "transaction:commit") - count(before, "transaction:commit")).toBe(3);
+  expect(count(burst, "storage:items:write") - count(before, "storage:items:write")).toBe(3);
+
+  // A filter click in the same task as an append still writes exactly once:
+  // the flush rides the region touch, not the task, so the untouched-region
+  // commit contributes no write and the store is byte-identical across it.
+  const mixed = await page.evaluate(() => {
+    const button = (label) => Array.from(document.querySelectorAll("button"))
+      .find((node) => node.textContent === label);
+    button("Add item").click();
+    const afterAppend = localStorage.getItem("leanrx-toggle-lab.items");
+    button("Show active").click();
+    return [afterAppend, localStorage.getItem("leanrx-toggle-lab.items")];
+  });
+  expect(mixed[1]).toBe(mixed[0]);
+  // The hash write's echo dispatch lands in a later task and touches no
+  // region either, so the whole mixed task is one write.
+  await page.waitForTimeout(100);
+  const settled = await instrumentation();
+  expect(count(settled, "storage:items:write") - count(burst, "storage:items:write")).toBe(1);
+
+  // What the contract buys: a tab closed at any point in either task loses
+  // nothing a returned dispatch wrote. A remount hydrates all four rows out
+  // of the store without any flush having been owed to unload.
+  await page.reload();
+  await page.evaluate(async () => {
+    const { mount } = await import("/ToggleLab.mjs");
+    globalThis.toggleDispose = mount(document.getElementById("app"));
+  });
+  await expect(page.locator("#items > li .item-label")).toHaveText([
+    "Item 0", "Item 1", "Item 2", "Item 3",
+  ]);
+});

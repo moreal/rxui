@@ -814,7 +814,19 @@ the empty region. One `storageSet` rides the region-touch sweep per
 region-touching transaction — the ADR-0050/0051/0058 shared touched flag —
 so a filter change alone touches nothing and therefore persists nothing, and
 a transaction touching one of two persisted regions rewrites that region's
-key alone. The item shape — a declared region name, exactly one literal
+key alone. *When* that write lands is a contract and not an implementation
+detail (ADR-0087): the `storageSet` runs inside the commit sweep,
+synchronously, before the dispatch that opened the transaction returns, and
+nothing is deferred, batched, or coalesced across transactions. So a read of
+the key — by hydration, by another component, by another tab, or by the same
+task immediately after a dispatch — observes what the last completed commit
+wrote; N dispatches inside one task (a synchronous `click()` burst, say)
+write N times, and a re-read between any two of them sees the earlier one.
+Nesting coalesces the commit and not the flush: transactions nested through
+the transaction depth counter produce one commit and therefore one write.
+The consequence a per-task flush would take away is that a tab closed at any
+moment loses nothing a returned dispatch wrote, so no component that persists
+a region owes an unload hook or a lost-write recovery path. The item shape — a declared region name, exactly one literal
 storage key — is `LRX-ELAB-129`; one persist item per region, keys distinct
 across the component, each nonempty and on a declared region, is
 `LRX-TYPE-118` (two items on one region, or two regions sharing one key,

@@ -273,7 +273,20 @@ keys (ADR-0078). Mount hydrates through the existing append path from one
 `storageGet` per persisted region, in declaration order (a missing, empty, or
 wrong-arity value mounts that region empty, fail closed), and one `storageSet`
 rides each region's own region-touch sweep per region-touching transaction;
-serialization lives in generated code, so the host moves strings only. -/
+serialization lives in generated code, so the host moves strings only.
+
+The flush point is a contract, not an implementation detail (ADR-0087): the
+`storageSet` runs inside the commit sweep, synchronously, before the dispatch
+that opened the transaction returns, and nothing is deferred, batched, or
+coalesced across transactions. A read of the key — by hydration, by another
+component, by another tab, or by the same task immediately after a dispatch —
+observes what the last completed commit wrote, so N dispatches inside one task
+write N times and a re-read between any two of them sees the earlier one.
+Nesting coalesces the commit and not the flush: transactions nested through
+the `tx[0]` depth counter produce one commit and therefore one write. The
+consequence a per-task flush would take away is that a tab closed at any
+moment loses nothing a returned dispatch wrote, so no component that persists
+a region owes an unload hook or a lost-write recovery path. -/
 structure PersistSpec where
   region : String
   key : String

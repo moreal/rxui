@@ -41,7 +41,14 @@ if (
 }
 
 const source = await readFile(path.join(directory, "ToggleLab.mjs"), "utf8");
-for (const banned of ["currentObserver", "new Proxy", "eval(", "Function("]) {
+// ADR-0087 seals the flush point: a persisted region's storageSet runs inside
+// the commit, so the store is current the moment the dispatch returns. The
+// deferral primitives a per-task flush would need are banned outright, so the
+// emission cannot acquire a flush point behind the contract's back.
+for (const banned of [
+  "currentObserver", "new Proxy", "eval(", "Function(",
+  "queueMicrotask", "setTimeout", "requestAnimationFrame", "Promise",
+]) {
   if (source.includes(banned)) {
     throw new Error(`generated Toggle Lab contains ${banned}`);
   }

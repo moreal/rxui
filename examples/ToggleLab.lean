@@ -314,7 +314,27 @@ around the same tuples, so the survivors' cells are still valid — while
 hydration encodes the whole table, which is exactly what normalizes a
 hand-edited stored value. The stored string is byte-identical to what the
 uncached sweep wrote, no region record slot moved, and once more: no host
-change and no runtime ABI bump. -/
+change and no runtime ABI bump.
+
+The ADR-0087 visibility contract is the last thing this lab witnesses about
+persistence, and it is a contract rather than a change: the `storageSet`
+rides the commit sweep, so the store is current the moment the dispatch that
+opened the transaction returns. Three synchronous `Add item` clicks are three
+dispatches inside one task — the shape a per-task flush would have collapsed
+into a single `join` and a single `storageSet` — and a `localStorage` read
+taken between them already sees what the commit that just returned wrote:
+one row, then two, then three, with three `storage:items:write` entries
+beside three `transaction:commit`. A filter click in that same task adds a
+commit and no write, because the flush rides the region touch and not the
+task, and the hash echo landing in a later task adds neither. What the
+contract buys is what a deferred flush would have taken away: a tab closed at
+any point loses nothing a returned dispatch wrote, so a remount hydrates
+every row the burst persisted and no component that persists a region owes an
+unload hook. Nothing in the emission changed — the round measured a per-task
+flush at 1.00× on the only workload a user can drive, and a joined-string
+cache on the region record at 1.52× against seven invalidation sites and two
+record slots, and declined both. Once more: no host change and no runtime ABI
+bump. -/
 
 namespace LeanRxExamples.ToggleLab
 
