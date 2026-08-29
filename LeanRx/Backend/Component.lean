@@ -314,14 +314,10 @@ duplicates dropped so two sweeps that wake on the same events share a flag. -/
 private def dedupClasses (values : List (List String)) : List (List String) :=
   (values.foldl (fun acc value => if acc.contains value then acc else value :: acc) []).reverse
 
-/-- The distinct wake flags of one region's predicate scans, in emission
-order (ADR-0088): the grouping key of a shared predicate pass. -/
-private def dedupWakes (values : List WakeFlag) : List WakeFlag :=
-  (values.foldl (fun acc value => if acc.contains value then acc else value :: acc) []).reverse
-
-/-- The distinct field equalities inside one shared predicate pass, in
-emission order (ADR-0088): two slots spelling the same predicate share one
-accumulator, two spelling different ones share the traversal. -/
+/-- The distinct field equalities one region's sealed aggregates read, in
+emission order (ADR-0088, ADR-0099): two slots spelling the same predicate
+share one accumulator cell, two spelling different ones share the record
+slot that holds them. -/
 private def dedupPredicates (values : List (Nat × String)) : List (Nat × String) :=
   (values.foldl (fun acc value => if acc.contains value then acc else value :: acc) []).reverse
 
@@ -423,6 +419,67 @@ private def regionAppendSlots (checked : CheckedComponent Γ) : List (String × 
         (checked.view.regionCounts.any (·.region == region.name))
         (checked.spec.filters.toList.any (·.region == region.name))
         (regionHasChildRef region) (regionRemovesRows region))
+    else none
+
+/-- The distinct field predicates one region's sealed aggregates read
+(ADR-0099): its ADR-0050 predicate counts and its ADR-0059/0060
+predicate-count selections, deduplicated in view order — exactly the cells
+the ADR-0088 shared pass accumulated, now the region's own state instead of
+a commit-local scan. A region whose aggregates are all row totals has none,
+and its record keeps the length it had. -/
+private def regionPredicateCells (checked : CheckedComponent Γ) (regionName : String) :
+    List (Nat × String) :=
+  dedupPredicates <|
+    (checked.view.regionCounts.filter (·.region == regionName)).filterMap (·.predicate)
+      ++ (checked.view.attrSelects.filterMap fun mounted =>
+            if mounted.select.regionSubject? == some regionName then
+              mounted.select.regionPredicate?
+            else none)
+
+/-- The record slot of one region's ADR-0099 predicate accumulator: the
+record's last slot, behind the ADR-0098 append counter, present exactly when
+the region has a predicate cell to hold. -/
+private def regionPredicateSlot (hasCounts hasFilter hasChild hasDrops hasAppends : Bool) :
+    Nat :=
+  regionAppendSlot hasCounts hasFilter hasChild hasDrops + (if hasAppends then 1 else 0)
+
+/-- One region's ADR-0099 accumulator slot and cells, or `none` when it has no
+predicate aggregate. Laid out exactly as the record construction lays it. -/
+private def regionPredicateCellsAt? (checked : CheckedComponent Γ) (region : RegionSpec) :
+    Option (Nat × List (Nat × String)) :=
+  let cells := regionPredicateCells checked region.name
+  if cells.isEmpty then none
+  else
+    let hasCounts := checked.view.regionCounts.any (·.region == region.name)
+    let hasFilter := checked.spec.filters.toList.any (·.region == region.name)
+    some (regionPredicateSlot hasCounts hasFilter (regionHasChildRef region)
+      (regionRemovesRows region) (regionAppendsRows checked.spec region), cells)
+
+/-- Every region's ADR-0099 accumulator slot and cells, by region name, for
+the write sites that carry a region name rather than a spec. -/
+private def regionPredicateSlots (checked : CheckedComponent Γ) :
+    List (String × Nat × List (Nat × String)) :=
+  checked.spec.regions.toList.filterMap fun region =>
+    (regionPredicateCellsAt? checked region).map fun (slot, cells) =>
+      (region.name, slot, cells)
+
+/-- Move one region's ADR-0099 accumulator by one for every cell the row
+satisfies (ADR-0099). `fields?` restricts the cells to those an emitting
+site's write set can move; `none` is every cell, which is what an append and
+a removal owe. Reading the row twice per cell costs a site that runs once
+per moved row what the pass it replaces cost per row in the table. -/
+private def predicateStep (regions : Ident) (regionIndex slot : Nat)
+    (cells : List (Nat × String)) (fields? : Option (List Nat))
+    (row : Expr) (add : Bool) : List Stmt :=
+  cells.zipIdx.filterMap fun ((field, equals), cellIndex) =>
+    if (fields?.map (·.contains field)).getD true then
+      let cell : Expr := .index (regionEntry regions regionIndex slot) (uint cellIndex)
+      some <| Stmt.ifThen
+        (.binary .eq (.index row (uint (field + 1))) (.literal (.string equals)))
+        (.ofList [
+          .assign (.index (regionEntry regions regionIndex slot) (uint cellIndex))
+            (.binary (if add then .add else .sub) cell (uint 1))
+        ])
     else none
 
 /-- The regions one component persists, by name (ADR-0063). A persisted
@@ -658,6 +715,7 @@ private def regionBroadcastStmts (regions tx : Ident) (regionSpecs : Array Regio
 private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
     (regionSpecs : Array RegionSpec) (persisted filtered : List String)
     (appendSlots : List (String × Nat))
+    (predicateSlots : List (String × Nat × List (Nat × String)))
     (eventNames : List String) (valueCount eventIndex : Nat) :
     Update Γ → Nat → Except Error (Nat × List Stmt)
   | .set field _ _, writeIndex => do
@@ -715,13 +773,29 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
             .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
               (.literal (.boolean true))
           ]
+      /- ADR-0099: a region with a predicate aggregate takes the new row's
+      contribution into its accumulator here — one increment per cell the row
+      satisfies, read back off the tail the push just extended rather than
+      out of a name, so the ADR-0093 audit still sees the literal-with-the-
+      region's-own-key it demands of every push. A region with no predicate
+      aggregate emits none of this and keeps its module byte-identical. -/
+      let increment : List Stmt ←
+        match (predicateSlots.find? (·.1 == regionName)).map (·.2) with
+        | none => pure []
+        | some (slot, cells) => do
+            let appended ← Ident.checked s!"appended_{writeIndex}"
+            pure (.const appended (.index (regionEntry regions regionIndex 1)
+                (.binary .sub
+                  (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))
+                  (uint 1)))
+              :: predicateStep regions regionIndex slot cells none (.ident appended) true)
       pure (writeIndex + 1, [
         .expr <| .call (.index (regionEntry regions regionIndex 1) (.literal (.string "push")))
           (.ofList [.array (.ofList
             (regionEntry regions regionIndex 2 :: fieldCalls ++ fresh))]),
         .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 2))
           (.binary .add (regionEntry regions regionIndex 2) (uint 1))
-      ] ++ record ++ [
+      ] ++ increment ++ record ++ [
         pushTrace tx s!"region:{regionName}:append"
       ])
   | .regionBroadcast regionName assignments _, writeIndex => do
@@ -759,11 +833,11 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
       ])
   | .sequence first second, writeIndex => do
       let (writeIndex, first) ← updateStatements evaluators context state tx regions
-        regionSpecs persisted filtered appendSlots eventNames valueCount eventIndex
-        first writeIndex
+        regionSpecs persisted filtered appendSlots predicateSlots eventNames valueCount
+        eventIndex first writeIndex
       let (writeIndex, second) ← updateStatements evaluators context state tx regions
-        regionSpecs persisted filtered appendSlots eventNames valueCount eventIndex
-        second writeIndex
+        regionSpecs persisted filtered appendSlots predicateSlots eventNames valueCount
+        eventIndex second writeIndex
       pure (writeIndex, first ++ second)
 
 private def anyChanged (changed : Ident) (deps : List Nat) : Expr :=
@@ -1103,6 +1177,23 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
       | none => withDrops
       | some slot => .binary .or withDrops
           (.unary .not (.binary .eq (regionEntry regions regionIndex slot) (uint 0)))
+    /- ADR-0099: the row-scoped filter sweep's three snapshots, taken here for
+    the same reason every flag above is — the drains below empty exactly what
+    they name. `filter_dirty` is the bit the reconcile is about to clear;
+    `filter_moved` is the ADR-0043 pending array, which the drain *replaces*
+    rather than empties, so holding the old reference keeps the positions;
+    `filter_added` is the ADR-0098 count the append drain zeroes. -/
+    let filterDirty ← Ident.checked s!"filter_dirty_{regionIndex}"
+    let filterMoved ← Ident.checked s!"filter_moved_{regionIndex}"
+    let filterAdded ← Ident.checked s!"filter_added_{regionIndex}"
+    if filter?.isSome then
+      commitBody := commitBody ++
+        [.const filterDirty (regionEntry regions regionIndex 3)] ++
+        (if regionHasUpdates region then
+          [Stmt.const filterMoved (regionEntry regions regionIndex 4)] else []) ++
+        (match appendSlot? with
+          | none => []
+          | some slot => [Stmt.const filterAdded (regionEntry regions regionIndex slot)])
     if wakes.contains .touched then
       /- The touched flag serves every sweep every drain path can move: the
       count sweep (ADR-0050), the filter sweep (ADR-0051), the empty-region
@@ -1139,53 +1230,53 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
                 (uint 0)))
               (anyAction action actions)))
         ]
-    /- The shared predicate pass (ADR-0088): a region's ADR-0050 predicate
-    counts and ADR-0059/0060 predicate-count selections each ran their own
-    `for…of` over the same row table in the same commit. Group them by the
-    ADR-0083/0084 wake flag they already read, and a class with two or more
-    of them traverses the table once, accumulating one cell per *distinct*
-    predicate — two spellings of the same field equality share a cell, and
-    two different equalities share the pass. Nothing crosses a class
-    boundary: a pass runs under exactly the flag its members read, so a
-    narrow class is never dragged awake by a wide one. A predicate-free total
-    reads `length` and never joins a pass, and the ADR-0051 filter sweep and
-    ADR-0063 persistence sweep run after the reconcile and stay where they
-    are. Each slot keeps its own cache, compare, write, label, and counter —
-    what is shared is the traversal, not the cache. -/
-    let scanUses : List (WakeFlag × Nat × String) :=
-      (counts.zip countWakes).filterMap (fun (count, wake) =>
-        count.predicate.map fun (field, equals) => (wake, field, equals))
-      ++ (hiddens.zip hiddenWakes).filterMap (fun (entry, wake) =>
-        entry.1.select.regionPredicate?.map fun (field, equals) => (wake, field, equals))
-    let sharedWakes : List WakeFlag :=
-      (dedupWakes (scanUses.map (·.1))).filter fun wake =>
-        (scanUses.filter (·.1 == wake)).length > 1
-    let mut sharedCells : List ((WakeFlag × Nat × String) × Ident) := []
-    let mut sharedCellCount := 0
-    for (wake, passIndex) in sharedWakes.zipIdx do
-      let predicates := dedupPredicates <| (scanUses.filter (·.1 == wake)).map fun use =>
-        (use.2.1, use.2.2)
-      let row ← Ident.checked s!"share_row_{regionIndex}_{passIndex}"
-      let mut declarations : List Stmt := []
+    /- The predicate accumulator (ADR-0099), which is what became of the
+    ADR-0088 shared pass. A region's ADR-0050 predicate counts and its
+    ADR-0059/0060 predicate-count selections used to walk the table once per
+    wake class per commit, for a transaction that moved one row. They now
+    read cells the region *keeps*: every path that moves a row by name — an
+    ADR-0098 append, an ADR-0097 removal, an ADR-0043 field write — moves the
+    cells at its own site, and every path that rebuilds the table wholesale
+    raises the dirty bit and is rescanned here.
+
+    The rescan is guarded on the dirty bit alone, not on any sweep's wake
+    flag: the cells are region state, so they must be true whether or not
+    something reads them this commit. It runs before the reconcile clears the
+    bit, and assigns rather than adds, so a site that moved a cell earlier in
+    the same transaction and then fell back to the bit is corrected rather
+    than doubled. One loop over the table fills every cell, which is
+    ADR-0088's traversal sharing surviving in the one place a traversal is
+    still owed. -/
+    let predicate? := regionPredicateCellsAt? checked region
+    let mut predicateCell? : Option (Nat × List (Nat × String)) := none
+    if let some (slot, cells) := predicate? then
+      predicateCell? := some (slot, cells)
+      let row ← Ident.checked s!"count_row_{regionIndex}"
+      let mut resetStmts : List Stmt := []
       let mut passBody : List Stmt := []
-      for (field, equals) in predicates do
-        let cell ← Ident.checked s!"share_scan_{regionIndex}_{sharedCellCount}"
-        sharedCellCount := sharedCellCount + 1
-        sharedCells := sharedCells ++ [((wake, field, equals), cell)]
-        declarations := declarations ++ [Stmt.const cell (.array (.ofList [uint 0]))]
+      for ((field, equals), cellIndex) in cells.zipIdx do
+        resetStmts := resetStmts ++ [Stmt.assign
+          (.index (regionEntry regions regionIndex slot) (uint cellIndex)) (uint 0)]
         passBody := passBody ++ [Stmt.ifThen
           (fieldPredicateJs row noPayload (.ofField field equals)) <| .ofList [
-            .assign (.index (.ident cell) (uint 0))
-              (.binary .add (.index (.ident cell) (uint 0)) (uint 1))
+            .assign (.index (regionEntry regions regionIndex slot) (uint cellIndex))
+              (.binary .add
+                (.index (regionEntry regions regionIndex slot) (uint cellIndex)) (uint 1))
           ]]
-      let flag ← wakeIdent regionIndex wake
-      commitBody := commitBody ++ declarations ++ [
-        .ifThen (.ident flag) <| .ofList [
-          .forOf row (regionEntry regions regionIndex 1) (.ofList passBody)
-        ]
+      commitBody := commitBody ++ [
+        .ifThen (regionEntry regions regionIndex 3) <| .ofList (resetStmts ++ [
+          .forOf row (regionEntry regions regionIndex 1) (.ofList passBody),
+          pushTraceExpr tx (.binary .add
+            (.literal (.string s!"predicate:{region.name}:read:"))
+            (.index (regionEntry regions regionIndex 1) (.literal (.string "length"))))
+        ])
       ]
-    let sharedCell? := fun (wake : WakeFlag) (field : Nat) (equals : String) =>
-      (sharedCells.find? fun entry => entry.1 == (wake, field, equals)).map (·.2)
+    /- Every predicate aggregate now reads its accumulator cell; the local
+    scan each one used to fall back to is gone with the pass (ADR-0099). -/
+    let predicateAt? := fun (field : Nat) (equals : String) =>
+      predicateCell?.bind fun (slot, cells) =>
+        (cells.zipIdx.find? fun entry => entry.1 == (field, equals)).map fun entry =>
+          Expr.index (regionEntry regions regionIndex slot) (uint entry.2)
     unless counts.isEmpty do
       let mut countRuns : List (Ident × List Stmt) := []
       for ((count, slot), wake) in counts.zipIdx.zip countWakes do
@@ -1196,22 +1287,12 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           | none => pure [Stmt.const next
               (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))]
           | some (field, equals) => do
-              if let some cell := sharedCell? wake field equals then
-                pure [Stmt.const next (.index (.ident cell) (uint 0))]
-              else
-                let scan ← Ident.checked s!"count_scan_{regionIndex}_{slot}"
-                let row ← Ident.checked s!"count_row_{regionIndex}_{slot}"
-                pure [
-                  Stmt.const scan (.array (.ofList [uint 0])),
-                  .forOf row (regionEntry regions regionIndex 1) (.ofList [
-                    .ifThen (fieldPredicateJs row noPayload
-                        (.ofField field equals)) <| .ofList [
-                      .assign (.index (.ident scan) (uint 0))
-                        (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
-                    ]
-                  ]),
-                  .const next (.index (.ident scan) (uint 0))
-                ]
+              let some cell := predicateAt? field equals
+                | .error {
+                    code := "LRX-BE-037"
+                    message := s!"count predicate lost its accumulator cell: {region.name}"
+                  }
+              pure [Stmt.const next cell]
         /- A label count selects one of its two static strings from the
         recomputed count against the one literal (ADR-0062); the cache slot
         and the `setText` write then carry the selected string instead of
@@ -1262,25 +1343,13 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
               (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))
               (uint 0))]
           | some (field, equals) => do
-              if let some cell := sharedCell? wake field equals then
-                pure [Stmt.const next
-                  (.binary .eq (.index (.ident cell) (uint 0)) (uint 0))]
-              else
-                let scan ← Ident.checked
-                  s!"{mounted.select.name}_scan_{regionIndex}_{attrIndex}"
-                let row ← Ident.checked
-                  s!"{mounted.select.name}_row_{regionIndex}_{attrIndex}"
-                pure [
-                  Stmt.const scan (.array (.ofList [uint 0])),
-                  .forOf row (regionEntry regions regionIndex 1) (.ofList [
-                    .ifThen (fieldPredicateJs row noPayload
-                        (.ofField field equals)) <| .ofList [
-                      .assign (.index (.ident scan) (uint 0))
-                        (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
-                    ]
-                  ]),
-                  .const next (.binary .eq (.index (.ident scan) (uint 0)) (uint 0))
-                ]
+              let some cell := predicateAt? field equals
+                | .error {
+                    code := "LRX-BE-037"
+                    message :=
+                      s!"selection predicate lost its accumulator cell: {region.name}"
+                  }
+              pure [Stmt.const next (.binary .eq cell (uint 0))]
         let flag ← wakeIdent regionIndex wake
         hiddenRuns := hiddenRuns ++ [(flag, [
           incrementAt tx 8,
@@ -1435,40 +1504,80 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     if let some filter := filter? then
       let filterFlag ← wakeIdent regionIndex (filterWakes.head?.getD .touched)
       let filterSlot := 5 + (if counts.isEmpty then 0 else 2)
-      let scan ← Ident.checked s!"filter_scan_{regionIndex}"
+      let cursor ← Ident.checked s!"filter_at_{regionIndex}"
       let filterRow ← Ident.checked s!"filter_row_{regionIndex}"
       let next ← Ident.checked s!"filter_next_{regionIndex}"
+      let movedRow ← Ident.checked s!"filter_moved_row_{regionIndex}"
+      let movedNext ← Ident.checked s!"filter_moved_next_{regionIndex}"
+      let position ← Ident.checked s!"filter_position_{regionIndex}"
       let written ← Ident.checked s!"filter_written_{regionIndex}"
+      let read ← Ident.checked s!"filter_read_{regionIndex}"
       let shownSlot := region.fields.size + 1 + (if persist?.isSome then 1 else 0)
-      let hiddenExpr := filter.arms.foldr
+      let length : Expr :=
+        .index (regionEntry regions regionIndex 1) (.literal (.string "length"))
+      let hiddenExpr := fun (row : Ident) => filter.arms.foldr
         (fun (equals, predicate) acc =>
           Expr.conditional
             (.binary .eq (stateAt state filter.field.index) (.literal (.string equals)))
-            (.unary .not (fieldPredicateJs filterRow noPayload predicate))
+            (.unary .not (fieldPredicateJs row noPayload predicate))
             acc)
         (Expr.literal (.boolean false))
+      /- ADR-0099: one row's visit — bind it, select it from the sealed table,
+      and write only if its ADR-0086 displayed-state cell moved. The position
+      is the row's position in the row table, which is also its position among
+      the container's children, because the drains above have already made the
+      two agree. -/
+      let visit := fun (row next : Ident) (at' : Expr) => [
+        Stmt.const row (.index (regionEntry regions regionIndex 1) at'),
+        .const next (hiddenExpr row),
+        .ifThen (.unary .not (.binary .eq
+            (.index (.ident row) (uint shownSlot)) (.ident next))) (.ofList [
+          .assign (.index (.ident row) (uint shownSlot)) (.ident next),
+          .expr <| call runtime.setProperty [
+            call runtime.childAt [regionEntry regions regionIndex filterSlot, at'],
+            .literal (.string "hidden"), .ident next
+          ],
+          .assign (.index (.ident written) (uint 0))
+            (.binary .add (.index (.ident written) (uint 0)) (uint 1))
+        ]),
+        .assign (.index (.ident read) (uint 0))
+          (.binary .add (.index (.ident read) (uint 0)) (uint 1))
+      ]
+      /- The narrow path: the rows a transaction moved are the ADR-0043
+      pending positions and the ADR-0098 appended tail, and nothing else can
+      have moved a row's selection — a removal takes its row out and shifts
+      survivors whose values did not change, and a state change is the
+      `changed` disjunct below. A dirty transaction rebuilt the table
+      wholesale, so it walks all of it: the full sweep is the tail walk with
+      the whole table as the tail. -/
+      let narrow : Expr :=
+        .unary .not (.binary .or (.ident filterDirty) (arrayAt changed filter.field.index))
+      let pendingWalk : List Stmt :=
+        if regionHasUpdates region then
+          [.forOf position (.ident filterMoved) (.ofList (visit movedRow movedNext
+            (.ident position)))]
+        else []
+      let tailStart : Expr := match appendSlot? with
+        | none => length
+        | some _ => .binary .sub length (.ident filterAdded)
       commitBody := commitBody ++ [.ifThen
         (.binary .or (.ident filterFlag) (arrayAt changed filter.field.index)) <| .ofList [
           incrementAt tx 8,
           pushTrace tx s!"filter:{region.name}:evaluated",
-          .const scan (.array (.ofList [uint 0])),
+          .const read (.array (.ofList [uint 0])),
           .const written (.array (.ofList [uint 0])),
-          .forOf filterRow (regionEntry regions regionIndex 1) (.ofList [
-            .const next hiddenExpr,
-            .ifThen (.unary .not (.binary .eq
-                (.index (.ident filterRow) (uint shownSlot)) (.ident next))) (.ofList [
-              .assign (.index (.ident filterRow) (uint shownSlot)) (.ident next),
-              .expr <| call runtime.setProperty [
-                call runtime.childAt [regionEntry regions regionIndex filterSlot,
-                  .index (.ident scan) (uint 0)],
-                .literal (.string "hidden"), .ident next
-              ],
-              .assign (.index (.ident written) (uint 0))
-                (.binary .add (.index (.ident written) (uint 0)) (uint 1))
-            ]),
-            .assign (.index (.ident scan) (uint 0))
-              (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
-          ]),
+          .const cursor (.array (.ofList [uint 0])),
+          .ifThen narrow (.ofList (pendingWalk ++ [
+            .assign (.index (.ident cursor) (uint 0)) tailStart
+          ])),
+          .whileLoop (.binary .lt (.index (.ident cursor) (uint 0)) length) (.ofList (
+            visit filterRow next (.index (.ident cursor) (uint 0)) ++ [
+              .assign (.index (.ident cursor) (uint 0))
+                (.binary .add (.index (.ident cursor) (uint 0)) (uint 1))
+            ])),
+          pushTraceExpr tx (.binary .add
+            (.literal (.string s!"filter:{region.name}:read:"))
+            (.index (.ident read) (uint 0))),
           pushTraceExpr tx (.binary .add
             (.literal (.string s!"filter:{region.name}:written:"))
             (.index (.ident written) (uint 0))),
@@ -1568,7 +1677,8 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
   let regions ← Ident.checked "regions"
   let (_, writes) ← updateStatements evaluators context state tx regions
     checked.spec.regions (persistedRegionNames checked.spec)
-    (filteredRegionNames checked.spec) (regionAppendSlots checked) eventNames
+    (filteredRegionNames checked.spec) (regionAppendSlots checked)
+    (regionPredicateSlots checked) eventNames
     checked.spec.values.size eventIndex event.update 0
   transactionShell checked evaluators runtime (← eventName eventIndex)
     #[context, ignored] event.name writes (skipIf? := event.guard?.map (skipGuardExpr state))
@@ -1653,7 +1763,8 @@ private def keyEventFunctions (checked : CheckedComponent Γ) (evaluators : Eval
   for (arm, armIndex) in event.arms.zipIdx do
     let (_, writes) ← updateStatements evaluators context state tx regions
       checked.spec.regions (persistedRegionNames checked.spec)
-      (filteredRegionNames checked.spec) (regionAppendSlots checked) eventNames
+      (filteredRegionNames checked.spec) (regionAppendSlots checked)
+      (regionPredicateSlots checked) eventNames
       checked.spec.values.size (bodyIndex + armIndex) arm.update 0
     let armFn ← keyArmName eventIndex armIndex
     functions := functions ++ [← transactionShell checked evaluators runtime armFn
@@ -2530,6 +2641,7 @@ branch zeroes the counter. The two guards read as one conjunction, and a
 region that neither updates nor appends emits neither. -/
 private def rowRemoveStmts (regions tx key : Ident) (regionIndex : Nat)
     (dropSlot : Nat) (hasPending : Bool) (appendSlot? : Option Nat)
+    (predicate? : Option (Nat × List (Nat × String)))
     (position? : Option Expr) (regionName eventName : String) :
     Except Error (List Stmt) := do
   let cursor ← Ident.checked "drop"
@@ -2560,14 +2672,25 @@ private def rowRemoveStmts (regions tx key : Ident) (regionIndex : Nat)
             (.literal (.boolean true))
         ])
       ]
+  /- ADR-0099: the row leaves the table, so it leaves the region's predicate
+  accumulator too — one decrement per cell it satisfied, read out of the row
+  the splice is about to drop. A removal that falls back to the dirty bit
+  below has decremented already, and the commit's rescan assigns rather than
+  adds, so the fallback is not owed a second thought. -/
+  let decrement (position : Expr) : List Stmt :=
+    match predicate? with
+    | none => []
+    | some (slot, cells) =>
+        predicateStep regions regionIndex slot cells none
+          (.index (regionEntry regions regionIndex 1) position) false
   let drop ← match position? with
-    | some position => pure (splice position :: queue position)
+    | some position => pure (decrement position ++ splice position :: queue position)
     | none => do
         let position : Expr := .ident cursor
         pure [
           .const cursor (← rowSeekCall regions key regionIndex),
           .ifThen (.unary .not (.binary .eq position (.unary .neg (uint 1)))) <|
-            .ofList (splice position :: queue position)
+            .ofList (decrement position ++ splice position :: queue position)
         ]
   pure (drop ++ [pushTrace tx s!"region:{regionName}:{eventName}"])
 
@@ -2583,6 +2706,7 @@ instead — no field write and no queued position — and a miss commits the
 assignments exactly as an unguarded stage does. -/
 private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
     (dropSlot : Nat) (appendSlot? : Option Nat)
+    (predicate? : Option (Nat × List (Nat × String)))
     (serialSlot? : Option Nat) (regionName eventName : String)
     (payloadExpr : Expr) (stage : RowStage) : Except Error (List Stmt) := do
   let assignments := stage.assignments
@@ -2601,7 +2725,22 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
   serialization cell, so the write-back re-encodes one row and reads the
   other N-1 out of the cache. The guard-hit removal below writes no field and
   therefore stales nothing — the survivors it keeps are byte-identical. -/
-  let applyStmts := evaluateStmts ++ assignStmts ++ staleRowSerial rowItem serialSlot? ++ [
+  /- ADR-0099: a field write moves the region's predicate accumulator by the
+  difference between what the row contributed before and what it contributes
+  after — emitted only for the cells this stage's write set can move, which
+  is the same read/write meet ADR-0084 already computes for the wake flags.
+  The decrement reads the old tuple, so it sits behind the right-hand side
+  evaluations and ahead of the assignments. -/
+  let writtenFields := assignments.map (·.1)
+  let (decrement, increment) : List Stmt × List Stmt := match predicate? with
+    | none => ([], [])
+    | some (slot, cells) =>
+        (predicateStep regions regionIndex slot cells (some writtenFields)
+            (.ident rowItem) false,
+          predicateStep regions regionIndex slot cells (some writtenFields)
+            (.ident rowItem) true)
+  let applyStmts := evaluateStmts ++ decrement ++ assignStmts ++ increment
+    ++ staleRowSerial rowItem serialSlot? ++ [
     .expr <| .call
       (.index (regionEntry regions regionIndex 4) (.literal (.string "push")))
       (.ofList [.ident scan]),
@@ -2618,7 +2757,7 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
           .const rowGuard (fieldPredicateJs rowItem noPayload guard),
           .ifThen (.ident rowGuard) (.ofList
             (← rowRemoveStmts regions tx key regionIndex dropSlot true appendSlot?
-              (some (.ident scan)) regionName eventName)),
+              predicate? (some (.ident scan)) regionName eventName)),
           .ifThen (.unary .not (.ident rowGuard)) (.ofList applyStmts)
         ]
   pure [
@@ -2656,6 +2795,9 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
     if regionAppendsRows checked.spec region then
       some (regionAppendSlot hasCounts hasFilter hasChild (regionRemovesRows region))
     else none
+  /- ADR-0099: the accumulator slot and cells this region's row writes and
+  removals maintain, absent for a region with no predicate aggregate. -/
+  let predicate? := regionPredicateCellsAt? checked region
   let hasPending := regionHasUpdates region
   let mut writes : List Stmt := []
   for event in region.events do
@@ -2664,7 +2806,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
             (.ofList (← rowRemoveStmts regions tx key regionIndex dropSlot hasPending
-              appendSlot? none region.name event.name))
+              appendSlot? predicate? none region.name event.name))
         ]
     | .update stage =>
         /- The ADR-0043 scan-evaluate-assign-queue sequence. A typed row
@@ -2683,7 +2825,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
             (.ofList (← rowUpdateApplyStmts regions tx key regionIndex dropSlot
-              appendSlot? serialSlot? region.name event.name payloadExpr stage))
+              appendSlot? predicate? serialSlot? region.name event.name payloadExpr stage))
         ]
     | .keySelect arms =>
         /- The ADR-0052 key-branched selection: one `eventKey` equality per
@@ -2697,7 +2839,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
           armStmts := armStmts ++ [
             .ifThen (.binary .eq (.ident eventKey) (.literal (.string keyLiteral)))
               (.ofList (← rowUpdateApplyStmts regions tx key regionIndex dropSlot
-                appendSlot? serialSlot? region.name event.name noPayload stage))
+                appendSlot? predicate? serialSlot? region.name event.name noPayload stage))
           ]
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
@@ -3018,6 +3160,14 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
         if regionRemovesRows region then [Expr.array .nil] else []
       let appendCount : List Expr :=
         if regionAppendsRows checked.spec region then [uint 0] else []
+      /- The ADR-0099 predicate accumulator is the record's last slot, one
+      zeroed cell per distinct predicate the region's aggregates read: an
+      empty region satisfies none of them, and every path that changes a row
+      either moves the cells or raises the dirty bit the commit rescans on. -/
+      let predicateCells : List Expr :=
+        match regionPredicateCellsAt? checked region with
+        | none => []
+        | some (_, cells) => [Expr.array (.ofList (cells.map fun _ => uint 0))]
       pure <| Expr.array <| .ofList ([
         Expr.ident handle, .array .nil, uint 0, .literal (.boolean false), .array .nil
       ] ++ (if counts.isEmpty then [] else [
@@ -3030,7 +3180,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           | some (_, other) => .literal (.string other)))
       ]) ++ containerRef ++
         (if regionHasChildRef region then [Expr.ident childInventory] else []) ++
-        dropQueue ++ appendCount)
+        dropQueue ++ appendCount ++ predicateCells)
     mountBody := mountBody ++ [
       .const regions (.array (.ofList regionRecords))
     ]

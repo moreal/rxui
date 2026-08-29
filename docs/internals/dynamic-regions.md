@@ -145,6 +145,30 @@ still reconcile; the hydration deliberately, because its rows arrive as a whole
 table into an empty region, where the reconcile clears and refills an owned
 parent detached.
 
+ADR-0099 takes the last of the commit's full-table walks off the same two
+signals. The region record's final slot holds one accumulator cell per
+distinct field equality the region's ADR-0050 counts and ADR-0059/0060
+selections read, and each cell is moved where a row moves — an append adds
+the tail row's contribution, a removal subtracts the dropped row's ahead of
+the `splice`, a row stage subtracts the old tuple's and adds the new one for
+exactly the cells its own write set can reach. Everything that rebuilds the
+table wholesale raises the dirty bit, and one rescan refills every cell from
+the table; the rescan is guarded on that bit *alone* and never on a sweep's
+wake flag, because the cells are region state rather than a sweep's cache,
+and it assigns rather than adds, so a path that moved a cell and then fell
+back to the bit is corrected rather than doubled. The ADR-0051 filter sweep
+narrows the same way: it visits the ADR-0043 pending positions and the
+ADR-0098 appended tail, or `[0, length)` when the bit rose or the filter's
+own state field changed. Those positions are exactly as valid as the drains
+that consume them — `childAt(container, i)` addresses the container's *i*-th
+child, and only after the drains do the row table and the host agree — so the
+three values the narrow path needs are snapshotted beside the wake flags,
+before the drains empty what they name. Both sweeps report the number of rows
+they read, as `predicate:{region}:read:{n}` and `filter:{region}:read:{n}`.
+The ADR-0063 write-back keeps walking every row, because two thirds of its
+cost is the bytes of a payload that is the whole table by contract and the
+only layout that would narrow it costs 7.2 µs per key.
+
 TodoMVC begins from a private pure `Todo.State` and closed `Todo.Msg` update
 algebra. Add/toggle/delete/filter/edit/clear operations are total and preserve
 monotonic unique natural keys; empty titles are rejected on add and delete the

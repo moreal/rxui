@@ -105,7 +105,7 @@ for (const required of [
   // end in the one shared mount-scope array identifier (ADR-0077), and each
   // region's count refs and cache are its own arrays, sized by its own cells.
   "const childInventory = [child_off_0];",
-  "const regions = [[region_0, [], 0, false, [], [count_text_10, count_text_12], [0, 0], node_13, childInventory, [], 0], [region_1, [], 0, false, [], [count_text_25], [0], childInventory, [], 0]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_10, count_text_12], [0, 0], node_13, childInventory, [], 0, [0]], [region_1, [], 0, false, [], [count_text_25], [0], childInventory, [], 0]];",
   // The reconcile and drain forward each region's own slot as the child
   // context, so every mount path — appends, broadcasts, and the ADR-0063
   // hydration that rides the same dirty-flag commit — pushes into the shared
@@ -125,7 +125,7 @@ for (const required of [
   // ADR-0086: `crew` is filtered *and* persisted, so its displayed-state cell
   // sits at slot 5, behind three declared fields and the ADR-0085
   // serialization cell at slot 4, and the navigation is paid per written row.
-  "      const filter_scan_0 = [0];\n      const filter_written_0 = [0];\n      for (const filter_row_0 of regions[0][1]) {\n        const filter_next_0 = state[1] === \"active\" ? filter_row_0[2] !== \"false\" : state[1] === \"done\" ? filter_row_0[2] !== \"true\" : false;\n        if (filter_row_0[5] !== filter_next_0) {\n          filter_row_0[5] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_scan_0[0] += 1;\n      }",
+  "      const filter_read_0 = [0];\n      const filter_written_0 = [0];\n      const filter_at_0 = [0];\n      if (!(filter_dirty_0 || changed[1])) {\n        for (const filter_position_0 of filter_moved_0) {\n          const filter_moved_row_0 = regions[0][1][filter_position_0];\n          const filter_moved_next_0 = state[1] === \"active\" ? filter_moved_row_0[2] !== \"false\" : state[1] === \"done\" ? filter_moved_row_0[2] !== \"true\" : false;\n          if (filter_moved_row_0[5] !== filter_moved_next_0) {\n            filter_moved_row_0[5] = filter_moved_next_0;\n            setProperty(childAt(regions[0][7], filter_position_0), \"hidden\", filter_moved_next_0);\n            filter_written_0[0] += 1;\n          }\n          filter_read_0[0] += 1;\n        }\n        filter_at_0[0] = regions[0][1][\"length\"] - filter_added_0;\n      }\n      while (filter_at_0[0] < regions[0][1][\"length\"]) {\n        const filter_row_0 = regions[0][1][filter_at_0[0]];\n        const filter_next_0 = state[1] === \"active\" ? filter_row_0[2] !== \"false\" : state[1] === \"done\" ? filter_row_0[2] !== \"true\" : false;\n        if (filter_row_0[5] !== filter_next_0) {\n          filter_row_0[5] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_at_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_read_0[0] += 1;\n        filter_at_0[0] += 1;\n      }",
   // ADR-0078: the count sweep distributes by region record — crew's two cells
   // fill its own two-slot refs and cache, pins' single cell its own one-slot
   // pair, and the trace labels carry the region name with a region-local
@@ -210,9 +210,9 @@ for (const required of [
   // they walk the row table once through one shared cell; the row total
   // beside them is a `length` read and joins no pass, and each slot keeps
   // its own cache, compare, write, label and counter.
-  "    const share_scan_0_0 = [0];\n    if (region_touched_0) {\n      for (const share_row_0_0 of regions[0][1]) {\n        if (share_row_0_0[2] === \"true\") {\n          share_scan_0_0[0] += 1;\n        }\n      }\n    }",
-  "      const count_next_0_0 = share_scan_0_0[0];",
-  "      const attr_next_0 = share_scan_0_0[0] === 0;",
+  "    if (regions[0][3]) {\n      regions[0][11][0] = 0;\n      for (const count_row_0 of regions[0][1]) {\n        if (count_row_0[2] === \"true\") {\n          regions[0][11][0] += 1;\n        }\n      }\n      tx[7][\"push\"](\"predicate:crew:read:\" + regions[0][1][\"length\"]);\n    }",
+  "      const count_next_0_0 = regions[0][11][0];",
+  "      const attr_next_0 = regions[0][11][0] === 0;",
   "      const count_next_0_1 = regions[0][1][\"length\"];",
 ]) {
   if (!mixSource.includes(required)) {

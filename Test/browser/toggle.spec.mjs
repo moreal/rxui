@@ -2259,21 +2259,26 @@ test("a persisted region's payload is the component's own bytes (ADR-0096)", asy
   expect(observed.keys).toEqual(["leanrx-toggle-lab.items"]);
 });
 
-test("one commit walks a region's row table once per wake class (ADR-0088)", async ({ page }) => {
+test("a commit walks a region's row table only when the transaction rebuilt it (ADR-0099)", async ({ page }) => {
   await mountToggle(page);
 
-  // The instrument: a counting `Symbol.iterator` on Array.prototype, installed
-  // around one synchronous dispatch and removed before the page gets a turn.
-  // It counts only traversals of *this region's row table* — an array whose
-  // first element is a seven-cell row tuple `[key, label, draft, done, mode,
-  // serial, shown]` behind a numeric key — so the pending-position array, the
-  // hydration split and the region runtime's entry list stay invisible to it.
-  // What it returns is exactly "how many times did this dispatch walk the
-  // rows", which is the quantity ADR-0088 is about.
-  const walks = (source) =>
+  // Two instruments, read together. The first is ADR-0088's: a counting
+  // `Symbol.iterator` on Array.prototype, installed around one synchronous
+  // dispatch and removed before the page gets a turn, which counts only
+  // traversals of *this region's row table* — an array whose first element is
+  // a seven-cell row tuple `[key, label, draft, done, mode, serial, shown]`
+  // behind a numeric key. The second is the emission's own: the ADR-0099
+  // `predicate:items:read:` and `filter:items:read:` trace entries, which
+  // report how many rows each of those two sweeps actually looked at. The
+  // first says "did a loop run", the second says "over how many rows", and a
+  // sweep can only be honest about the second if it is honest about the first.
+  const probe = (source) =>
     page.evaluate((code) => {
       const original = Array.prototype[Symbol.iterator];
       let counted = 0;
+      // `instrumentation()` hands back a copy, so the cursor is a length, not
+      // a reference to the live trace.
+      const before = globalThis.toggleDispose.instrumentation()[7].length;
       Array.prototype[Symbol.iterator] = function counting() {
         const head = this[0];
         if (Array.isArray(head) && head.length === 7 && typeof head[0] === "number") {
@@ -2286,7 +2291,11 @@ test("one commit walks a region's row table once per wake class (ADR-0088)", asy
       } finally {
         Array.prototype[Symbol.iterator] = original;
       }
-      return counted;
+      return {
+        walks: counted,
+        reads: globalThis.toggleDispose.instrumentation()[7].slice(before)
+          .filter((entry) => entry.includes(":read:")),
+      };
     }, source);
 
   const clickButton = (label) =>
@@ -2297,67 +2306,162 @@ test("one commit walks a region's row table once per wake class (ADR-0088)", asy
   await page.getByRole("button", { name: "Add item" }).click();
   await expect(page.locator("#items > li")).toHaveCount(3);
 
-  // A `toggle` on three rows, not ten thousand. The drain-class-0 sweeps
-  // share one pass over the two `done` predicates (1) — before ADR-0088 that
-  // was four separate passes, two counts and two selections, three of them
-  // spelling the identical `done == "false"`; and the ADR-0051 filter sweep
-  // and the ADR-0063 persistence sweep follow the reconcile with one walk
-  // each (2, 3). Seven before ADR-0088, four after it, three now: ADR-0092
-  // took the dispatch's key resolution off the row table entirely, and every
-  // label, counter, cache and write is still unmoved.
-  expect(await walks('document.querySelectorAll("#items input[type=checkbox]")[0].click();')).toBe(3);
+  // A `toggle` on three rows. Before ADR-0099 this walked three times — the
+  // shared predicate pass, the filter sweep and the write-back — for a change
+  // that moved one row. The predicate pass is gone: the row event moved the
+  // accumulator cells at its own site, so nothing here recomputes them. The
+  // filter sweep is still here and still evaluates, but over the *one* row the
+  // ADR-0043 pending queue names, and its `hidden` did not move because the
+  // filter is `all`. What is left to walk is the write-back, which reads every
+  // field of every row and can therefore never narrow.
+  expect(await probe('document.querySelectorAll("#items input[type=checkbox]")[0].click();'))
+    .toEqual({ walks: 1, reads: ["filter:items:read:1"] });
 
-  // ADR-0084's control: a keystroke inside a row editor writes `draft`, which
-  // no predicate scan reads, so the commit runs no pass at all and the
-  // write-back is the *only* walk left. Two before ADR-0092, one now — this
-  // is the commit where the key search's share is largest, and the survey
-  // measured `retype` accordingly.
-  await page.locator("#items > li .item-label").first().dblclick();
-  expect(await walks(`
+  // ADR-0084's control, unchanged: `mode` is nothing the filter table reads,
+  // so a `dblclick` wakes neither the filter sweep nor — since ADR-0099 — any
+  // predicate pass, and the write-back is the commit's only walk. The editing
+  // hint still re-evaluates; it just reads a cell instead of a loop.
+  expect(await probe('document.querySelectorAll("#items .item-label")[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));'))
+    .toEqual({ walks: 1, reads: [] });
+
+  // A keystroke inside the row editor writes `draft`, which nothing but the
+  // write-back reads.
+  expect(await probe(`
     const editor = document.querySelector("#items input[aria-label='Item editor']");
     editor.value = "typed";
     editor.dispatchEvent(new Event("input", { bubbles: true }));
-  `)).toBe(1);
+  `)).toEqual({ walks: 1, reads: [] });
   await page.keyboard.press("Escape");
 
-  // The contract's edge, and the whole reason the pass is keyed on the wake
-  // class: the editing hint reads `mode`, so it sits in drain class 1. A
-  // `dblclick` wakes that class and nothing else, so the hint evaluates
-  // through its *own* loop (1) while the drain-class-0 pass stays asleep, and
-  // the write-back follows (2). Fusing the two classes into one pass would
-  // have dragged the wider class awake here — the survey priced that widening
-  // at 40% of the opportunity.
-  expect(await walks('document.querySelectorAll("#items .item-label")[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));')).toBe(2);
-  await page.keyboard.press("Escape");
+  // A filter click is the case that keeps the full sweep, and the reason it
+  // has to: the selected literal moved, so *every* row's selection can have
+  // moved with it, and the sweep says so by reading all three. It touches no
+  // region, so the write-back sleeps and no `for`-of runs at all — the sweep
+  // walks its rows by index now, which is what makes the narrow path possible.
+  expect(await probe(clickButton("Show active")))
+    .toEqual({ walks: 0, reads: ["filter:items:read:3"] });
+  expect(await probe(clickButton("Show all")))
+    .toEqual({ walks: 0, reads: ["filter:items:read:3"] });
 
-  // A filter click touches no region, so no count and no selection wakes: the
-  // filter sweep is the commit's only walk. It is not a fusion target either —
-  // it runs after the reconcile, where a shared pass cannot follow it.
-  expect(await walks(clickButton("Show active"))).toBe(1);
-  await page.getByRole("button", { name: "Show all" }).click();
+  // An append is a structural change that moves one row, and the filter sweep
+  // reads exactly it: the ADR-0098 counter says how many rows the table gained
+  // and the sweep starts its cursor there. Three walks before ADR-0099, one
+  // now, and the one is the write-back.
+  expect(await probe(clickButton("Add item")))
+    .toEqual({ walks: 1, reads: ["filter:items:read:1"] });
 
-  // Outside the region's own dispatch function no class can be told apart, so
-  // every predicate scan reads the touched flag and all five collapse into one
-  // pass. An append walks the shared pass (1), the filter sweep (2) and the
-  // persistence sweep (3); before ADR-0088 it walked seven.
-  expect(await walks(clickButton("Add item"))).toBe(3);
+  // A broadcast is the case that keeps everything, and the reason it has to:
+  // it writes every row and raises the dirty bit, so the accumulator cells are
+  // recomputed from scratch (the rescan, over four rows) and the filter sweep
+  // reads all four. Its own write loop is the third walk.
+  expect(await probe(clickButton("Complete all")))
+    .toEqual({ walks: 3, reads: ["predicate:items:read:4", "filter:items:read:4"] });
 
-  // A broadcast adds its own write loop over the rows ahead of the same three.
-  expect(await walks(clickButton("Complete all"))).toBe(4);
+  // A removal takes its row out and shifts the survivors, whose selections did
+  // not change and whose DOM nodes were never touched — so the filter sweep
+  // wakes, finds nothing moved, and reads *zero* rows. The accumulator lost the
+  // dropped row's contribution at the splice.
+  expect(await probe('document.querySelectorAll("#items button[aria-label=\'Remove item\']")[1].click();'))
+    .toEqual({ walks: 1, reads: ["filter:items:read:0"] });
 
-  // ADR-0092's other half: the sealed removal no longer rebuilds the row
-  // array behind a walk, it searches and splices. A ✕ is structural, so
-  // inside the region's own dispatch both wake classes fire: the
-  // drain-class-0 `done` pass (1) and the drain-class-1 editing-hint pass
-  // (2), then the reconcile-following filter sweep (3) and write-back (4).
-  // Five before ADR-0092, four now, and the fifth was the kept-filter.
-  expect(await walks('document.querySelectorAll("#items button[aria-label=\'Remove item\']")[1].click();')).toBe(4);
-
-  // The instrument left nothing behind, and every slot still agrees with the
-  // DOM: what the pass shares is the traversal, never the cache.
+  // The instruments left nothing behind, and every cell still agrees with the
+  // DOM: what the accumulator replaces is the traversal, never the answer.
   await expect(page.locator("#items-left strong")).toHaveText("0");
   await expect(page.locator("#toggle-all")).toBeChecked();
   await expect(page.locator("#items > li")).toHaveCount(3);
+});
+
+test("the predicate accumulator survives every path that can move a row (ADR-0099)", async ({ page }) => {
+  // The accumulator is region state, so a single missed site is a footer that
+  // is wrong forever rather than a pixel that is stale for one frame. This
+  // walks every path that can move a row — append, toggle, edit-commit,
+  // single-row removal, guard-hit removal, broadcast, predicate removal and
+  // the ADR-0063 hydration — and after each one checks the three cells against
+  // the row table recomputed from scratch, which is what the cells claim to be.
+  const agrees = async () => {
+    const verdict = await page.evaluate(() => {
+      // The truth is read off the DOM, not off the record: the three cells are
+      // `done == "false"`, `done == "true"` and `mode == "edit"`, and each of
+      // them is visible as a rendered row property.
+      const rows = Array.from(document.querySelectorAll("#items > li"));
+      const box = (row) => row.querySelector(".item-toggle input");
+      const truth = [
+        rows.filter((row) => !box(row).checked).length,
+        rows.filter((row) => box(row).checked).length,
+        rows.filter((row) => row.childNodes[1].firstChild.tagName === "INPUT").length,
+      ];
+      return {
+        truth,
+        // Every consumer of a cell, in one read: the `items left` count and
+        // its ADR-0062 label (cell 0), the clear-completed button's
+        // `hiddenIfEmpty` (cell 1), the toggle-all box's `checkedIfEmpty`
+        // (cell 0 again, the shared spelling), and the editing hint (cell 2).
+        left: Number(document.querySelector("#items-left strong").textContent),
+        toggleAll: document.querySelector("#toggle-all").checked,
+        clearHidden: Array.from(document.querySelectorAll("button"))
+          .find((node) => node.textContent === "Clear completed").hidden,
+        hintHidden: document.querySelector("#edit-hint").hidden,
+      };
+    });
+    expect(verdict.left).toBe(verdict.truth[0]);
+    expect(verdict.toggleAll).toBe(verdict.truth[0] === 0);
+    expect(verdict.clearHidden).toBe(verdict.truth[1] === 0);
+    expect(verdict.hintHidden).toBe(verdict.truth[2] === 0);
+    return verdict.truth;
+  };
+
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await add.click();
+  expect(await agrees()).toEqual([3, 0, 0]);
+
+  await page.locator("#items input[type=checkbox]").first().click();
+  expect(await agrees()).toEqual([2, 1, 0]);
+
+  await page.locator("#items > li .item-label").nth(1).dblclick();
+  expect(await agrees()).toEqual([2, 1, 1]);
+
+  // A commit with a non-empty draft writes `mode` back to `view`.
+  await page.locator("#items input[aria-label='Item editor']").fill("kept");
+  await page.locator("#items > li").nth(1).getByRole("button", { name: "Commit item" }).click();
+  expect(await agrees()).toEqual([2, 1, 0]);
+
+  // A guard hit: an empty draft turns the same commit into a removal.
+  await page.locator("#items > li .item-label").nth(1).dblclick();
+  await page.locator("#items input[aria-label='Item editor']").fill("");
+  await page.locator("#items > li").nth(1).getByRole("button", { name: "Commit item" }).click();
+  expect(await agrees()).toEqual([1, 1, 0]);
+
+  // The sealed single-row removal.
+  await page.locator("#items > li").first().getByRole("button", { name: "Remove item" }).click();
+  expect(await agrees()).toEqual([1, 0, 0]);
+
+  await add.click();
+  await add.click();
+  expect(await agrees()).toEqual([3, 0, 0]);
+
+  // The broadcast and the predicate removal both rebuild through the dirty
+  // bit, so both are answered by the rescan rather than by a delta.
+  await page.getByRole("button", { name: "Complete all" }).click();
+  expect(await agrees()).toEqual([0, 3, 0]);
+  await page.getByRole("button", { name: "Clear completed" }).click();
+  expect(await agrees()).toEqual([0, 0, 0]);
+
+  // Hydration is the last path, and the one with no delta at all: it pushes a
+  // whole table and raises the bit.
+  await add.click();
+  await add.click();
+  await page.locator("#items input[type=checkbox]").first().click();
+  expect(await agrees()).toEqual([1, 1, 0]);
+  await page.reload();
+  await page.evaluate(async () => {
+    const { mount } = await import("/ToggleLab.mjs");
+    globalThis.toggleDispose = mount(document.getElementById("app"));
+  });
+  await expect(page.locator("#items > li")).toHaveCount(2);
+  expect(await agrees()).toEqual([1, 1, 0]);
 });
 
 test("every row-table mutation keeps the table key-ordered, and the key search follows it (ADR-0092)", async ({ page }) => {

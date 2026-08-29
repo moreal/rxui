@@ -58,7 +58,7 @@ for (const required of [
   // ADR-0097/0098: all three regions remove and append, so each record grows
   // the drops queue and then the append counter, in that order, at its own
   // end — which is why no earlier slot index moved.
-  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_24], [0, 0], node_26, [], 0], [region_1, [], 0, false, [], node_27, [], 0], [region_2, [], 0, false, [], node_28, [], 0]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_24], [0, 0], node_26, [], 0, [0]], [region_1, [], 0, false, [], node_27, [], 0], [region_2, [], 0, false, [], node_28, [], 0]];",
   // Each region's wake flag is its own, read before the reconcile consumes
   // the dirty bit and the pending positions.
   "    const region_touched_1 = regions[1][3] || regions[1][6][\"length\"] !== 0 || regions[1][7] !== 0 || regions[1][4][\"length\"] !== 0;",
@@ -74,12 +74,12 @@ for (const required of [
   // `childAt` from *its own* container slot, so neither walk can reach the
   // other's container or row table. The two inline arm tables are inverted,
   // so one field value hides complementary rows in the two regions.
-  "      const filter_scan_0 = [0];\n      const filter_written_0 = [0];\n      for (const filter_row_0 of regions[0][1]) {\n        const filter_next_0 = state[1] === \"on\" ? filter_row_0[2] !== \"true\" : state[1] === \"off\" ? filter_row_0[2] !== \"false\" : false;\n        if (filter_row_0[3] !== filter_next_0) {\n          filter_row_0[3] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_scan_0[0] += 1;\n      }",
+  "      const filter_read_0 = [0];\n      const filter_written_0 = [0];\n      const filter_at_0 = [0];\n      if (!(filter_dirty_0 || changed[1])) {\n        for (const filter_position_0 of filter_moved_0) {\n          const filter_moved_row_0 = regions[0][1][filter_position_0];\n          const filter_moved_next_0 = state[1] === \"on\" ? filter_moved_row_0[2] !== \"true\" : state[1] === \"off\" ? filter_moved_row_0[2] !== \"false\" : false;\n          if (filter_moved_row_0[3] !== filter_moved_next_0) {\n            filter_moved_row_0[3] = filter_moved_next_0;\n            setProperty(childAt(regions[0][7], filter_position_0), \"hidden\", filter_moved_next_0);\n            filter_written_0[0] += 1;\n          }\n          filter_read_0[0] += 1;\n        }\n        filter_at_0[0] = regions[0][1][\"length\"] - filter_added_0;\n      }\n      while (filter_at_0[0] < regions[0][1][\"length\"]) {\n        const filter_row_0 = regions[0][1][filter_at_0[0]];\n        const filter_next_0 = state[1] === \"on\" ? filter_row_0[2] !== \"true\" : state[1] === \"off\" ? filter_row_0[2] !== \"false\" : false;\n        if (filter_row_0[3] !== filter_next_0) {\n          filter_row_0[3] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_at_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_read_0[0] += 1;\n        filter_at_0[0] += 1;\n      }",
   // ADR-0080: `right` names one literal (`"mixed"`) its twin does not. The
   // two chains stay independent — `left`'s chain has no `"mixed"` test at
   // all, so under that literal `left` falls through to show-all.
-  "      const filter_scan_1 = [0];\n      const filter_written_1 = [0];\n      for (const filter_row_1 of regions[1][1]) {\n        const filter_next_1 = state[1] === \"on\" ? filter_row_1[2] !== \"false\" : state[1] === \"off\" ? filter_row_1[2] !== \"true\" : state[1] === \"mixed\" ? filter_row_1[2] !== \"true\" : false;\n        if (filter_row_1[4] !== filter_next_1) {\n          filter_row_1[4] = filter_next_1;\n          setProperty(childAt(regions[1][5], filter_scan_1[0]), \"hidden\", filter_next_1);\n          filter_written_1[0] += 1;\n        }\n        filter_scan_1[0] += 1;\n      }",
-  "      const filter_scan_2 = [0];\n      const filter_written_2 = [0];\n      for (const filter_row_2 of regions[2][1]) {\n        const filter_next_2 = state[2] === \"on\" ? filter_row_2[2] !== \"true\" : false;\n        if (filter_row_2[3] !== filter_next_2) {\n          filter_row_2[3] = filter_next_2;\n          setProperty(childAt(regions[2][5], filter_scan_2[0]), \"hidden\", filter_next_2);\n          filter_written_2[0] += 1;\n        }\n        filter_scan_2[0] += 1;\n      }",
+  "      const filter_read_1 = [0];\n      const filter_written_1 = [0];\n      const filter_at_1 = [0];\n      if (!(filter_dirty_1 || changed[1])) {\n        for (const filter_position_1 of filter_moved_1) {\n          const filter_moved_row_1 = regions[1][1][filter_position_1];\n          const filter_moved_next_1 = state[1] === \"on\" ? filter_moved_row_1[2] !== \"false\" : state[1] === \"off\" ? filter_moved_row_1[2] !== \"true\" : state[1] === \"mixed\" ? filter_moved_row_1[2] !== \"true\" : false;\n          if (filter_moved_row_1[4] !== filter_moved_next_1) {\n            filter_moved_row_1[4] = filter_moved_next_1;\n            setProperty(childAt(regions[1][5], filter_position_1), \"hidden\", filter_moved_next_1);\n            filter_written_1[0] += 1;\n          }\n          filter_read_1[0] += 1;\n        }\n        filter_at_1[0] = regions[1][1][\"length\"] - filter_added_1;\n      }\n      while (filter_at_1[0] < regions[1][1][\"length\"]) {\n        const filter_row_1 = regions[1][1][filter_at_1[0]];\n        const filter_next_1 = state[1] === \"on\" ? filter_row_1[2] !== \"false\" : state[1] === \"off\" ? filter_row_1[2] !== \"true\" : state[1] === \"mixed\" ? filter_row_1[2] !== \"true\" : false;\n        if (filter_row_1[4] !== filter_next_1) {\n          filter_row_1[4] = filter_next_1;\n          setProperty(childAt(regions[1][5], filter_at_1[0]), \"hidden\", filter_next_1);\n          filter_written_1[0] += 1;\n        }\n        filter_read_1[0] += 1;\n        filter_at_1[0] += 1;\n      }",
+  "      const filter_read_2 = [0];\n      const filter_written_2 = [0];\n      const filter_at_2 = [0];\n      if (!(filter_dirty_2 || changed[2])) {\n        filter_at_2[0] = regions[2][1][\"length\"] - filter_added_2;\n      }\n      while (filter_at_2[0] < regions[2][1][\"length\"]) {\n        const filter_row_2 = regions[2][1][filter_at_2[0]];\n        const filter_next_2 = state[2] === \"on\" ? filter_row_2[2] !== \"true\" : false;\n        if (filter_row_2[3] !== filter_next_2) {\n          filter_row_2[3] = filter_next_2;\n          setProperty(childAt(regions[2][5], filter_at_2[0]), \"hidden\", filter_next_2);\n          filter_written_2[0] += 1;\n        }\n        filter_read_2[0] += 1;\n        filter_at_2[0] += 1;\n      }\n      tx[7][\"push\"](\"filter:solo:read:\" + filter_read_2[0]);\n      tx[7][\"push\"](\"filter:solo:written:\" + filter_written_2[0]);\n      if (filter_written_2[0] !== 0) {\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:filter:solo:write\");\n      }\n    }\n    tx[1] += 1;\n    tx[7][\"push\"](\"transaction:commit\");\n  }",
   // ADR-0079, axis two — two filters over one state field: `left` and
   // `right` both wake on `changed[1]`, `solo` only on `changed[2]`. Each
   // guard names exactly one region's flag and exactly one field's bit, and
@@ -110,8 +110,8 @@ for (const required of [
   // predicate count reads `flag`, so a `mark` drain (which writes `label`)
   // asks neither. The two counts agree on their flag, so they share one
   // block rather than growing a second guard.
-  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;\n    if (region_structural_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:left:0:evaluated\");",
-  "      tx[7][\"push\"](\"count:left:1:evaluated\");\n      const count_scan_0_1 = [0];",
+  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;\n    if (regions[0][3]) {\n      regions[0][10][0] = 0;\n      for (const count_row_0 of regions[0][1]) {\n        if (count_row_0[2] === \"true\") {\n          regions[0][10][0] += 1;\n        }\n      }\n      tx[7][\"push\"](\"predicate:left:read:\" + regions[0][1][\"length\"]);\n    }\n    if (region_structural_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:left:0:evaluated\");",
+  "      tx[7][\"push\"](\"count:left:1:evaluated\");\n      const count_next_0_1 = regions[0][10][0];",
   "const region_off_1_change = listenDelegatedCells(node_27, \"change\", state, context, $lrx_region_1_dispatch, [\"\", \"\", \"toggle\"]);",
   // ADR-0080, axis one — a route over the *shared* filter field. The sealed
   // literal set is the declared default plus the union of both tables over
@@ -152,7 +152,7 @@ for (const required of [
   // ...while the canonical hash write rides `changed[1]` in the commit
   // prologue, ahead of *every* region block — the first region wake flag in
   // the commit is the statement that follows it.
-  "      tx[7][\"push\"](\"route:mode:write\");\n    }\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;",
+  "      tx[7][\"push\"](\"route:mode:write\");\n    }\n    const filter_dirty_0 = regions[0][3];\n    const filter_moved_0 = regions[0][4];\n    const filter_added_0 = regions[0][9];\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;",
   // Mount seeds the routed field from the hash before the DOM exists and
   // hydrates the persisted region after the listeners are wired, so the
   // hydrate transaction's own sweep applies the routed literal to the rows
@@ -168,7 +168,8 @@ for (const banned of [
   "$lrx_region_2_dispatch",
   "count_next_1_",
   "count_next_2_",
-  "filter_scan_3",
+  "filter_at_3",
+  "filter_read_3",
   // ADR-0080: the union rule seals the literal set for *validation* only —
   // it never merges the tables. `left` declares no `"mixed"` arm, so no
   // `filter_row_0` test for it may appear, and no second route item or

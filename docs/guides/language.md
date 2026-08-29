@@ -435,7 +435,7 @@ TodoMVC's "1 item left" grammar is a text position beside the number. The
 label mounts as its `else` string (an empty region counts zero, and zero
 differs from one), joins the count inventory as one more slot recomputed by
 the same region-touch sweep — riding its own count's read set, and since
-ADR-0088 its own count's *pass* — and writes the selected string through the
+ADR-0099 its own count's accumulator *cell* — and writes the selected string through the
 same `setText` export only on a flip — an equal-selection commit is evaluate-only, and a filter change
 alone recomputes nothing. The surface is sealed: the comparison literal is
 one and the branches are two static string literals (`LRX-ELAB-127` on any
@@ -707,25 +707,48 @@ nonzero, exactly as an attribute selection's does. On a 10 000-row region a
 row toggle's commit drops from 2.47 ms to 0.76 ms; a whole-table flip, where
 the cache elides nothing, costs about 8% more.
 
-What is left after those two caches is the *number of walks*, and it is
-grouped rather than cached (ADR-0088). Every `{count region (field ==
-"literal")}` and every `hidden=`/`checked={count region (field == "literal")
-== 0}` over one region is a predicate scan, and two of them share one walk of
-the row table exactly when they read the same wake flag — the flag their own
-read sets already select. Inside a shared walk each *distinct* field equality
-gets one accumulator, so two positions spelling `done == "false"` share a
-cell while a `done == "true"` beside them shares only the traversal. Nothing
-fuses across a wake class: the pass runs under exactly its class's flag, so a
-selection ADR-0084 kept out of a `toggle` is not dragged back in by a
-neighbour that woke. A predicate-free `{count region}` is a `length` read,
-not a scan, and joins no walk; the filter sweep and the persistence
-write-back run after the reconcile and stay their own walks. What is shared
-is the traversal and never the cache — every slot keeps its own cache cell,
-compare, write, label and counter, in the order it had them — so this is
-invisible except in time and in how many times a commit touched the rows. On
-a 10 000-row region a row toggle's commit drops from 0.74 ms to 0.61 ms and
-walks the table four times instead of seven; a keystroke, which enters no
-pass at all, is unchanged.
+What is left after those two caches is the *number of rows a commit walks*,
+and since ADR-0099 that is the number of rows the transaction moved. Every
+`{count region (field == "literal")}` and every `hidden=`/`checked={count
+region (field == "literal") == 0}` over one region is a field predicate;
+ADR-0088 made the ones sharing a wake flag share one walk of the table, and
+ADR-0099 keeps the sharing and removes the walk. The region record's last
+slot holds one **accumulator cell per distinct field equality** — two
+positions spelling `done == "false"` still share a cell, a `done == "true"`
+beside them takes its own — and each cell is moved where a row moves: an
+`append` adds the new row's contribution, a `remove` or a remove-if guard hit
+subtracts the dropped row's, and a row stage subtracts what the old tuple
+contributed and adds what the new one does, for exactly the cells its own
+write set can reach. A keystroke that writes `draft` moves nothing, because
+no predicate reads `draft`.
+
+Everything that rebuilds the table wholesale — a broadcast, an
+`update … remove` predicate removal, a hydration — raises the dirty bit
+instead, and one rescan in the commit refills every cell from the table. That
+rescan is guarded on the dirty bit *alone* and never on a sweep's wake flag,
+because the cells are region state that has to be true whether or not
+something reads them this commit, and it *assigns* rather than adds, so a
+path that moved a cell and then raised the bit is corrected rather than
+doubled. A predicate-free `{count region}` is a `length` read and was never a
+scan at all.
+
+The filter sweep narrows the same way (ADR-0099). It visits the rows the
+ADR-0043 pending queue names and the rows the ADR-0098 append counter counted
+onto the tail — or the whole table, when the dirty bit rose or the filter's
+own state field changed and every row's side can therefore have moved. A
+removal needs no visit: it takes its row out and shifts survivors whose
+fields did not change and whose DOM nodes were never touched. The sweep says
+so out loud, as `filter:{region}:read:{n}` beside its `written` entry, and
+the rescan says the same as `predicate:{region}:read:{n}`.
+
+The persistence write-back is the one sweep that keeps walking every row, and
+that is a decision rather than a gap: two thirds of its cost is the bytes of
+a payload that is the whole table by contract, and the storage layout that
+would make it row-scoped — one key per row — costs 7.2 µs per key, which
+turns a broadcast over 10 000 rows from 0.66 ms into 71.65 ms. On a
+10 000-row region an `append`, a `remove` and a `toggle` commit are 1.31×,
+1.31× and 1.23× faster than before ADR-0099, a keystroke is unchanged, and
+what is left of all three is the write-back.
 
 The last of those walks to go is the dispatch's own (ADR-0092). A row event
 starts by resolving the delegated key to a position, and it no longer reads
@@ -819,6 +842,17 @@ run on an append. Hydration keeps the reconcile on purpose: its rows arrive as
 a whole table into an empty region, where the bulk path refills a *detached*
 parent — 6.8 ms of placement at ten thousand rows that ten thousand connected
 inserts would not match.
+
+With the reconcile gone from both single-row paths, what is left of a
+structural commit is the sweeps, and ADR-0099 narrows two of the three — the
+predicate accumulator and the row-scoped filter sweep described above. A
+ten-thousand-row `append`, `remove` and `toggle` commit are a further 1.31×,
+1.31× and 1.23× faster; a keystroke, which was already asleep for both, is
+unchanged. What is left of all three is the persistence write-back, and the
+last number worth knowing about a ten-thousand-row list is that the whole
+commit is about 8% of the click: the dispatch returns in 0.86 ms and the
+style and layout it dirties cost 9.5 ms more, which is the browser's and not
+the compiler's.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the

@@ -166,6 +166,13 @@ index exists the caller owns key freshness, exactly as it owns the shape of the
 `items` array `update` reconciles. See
 [ADR-0098](../adr/0098-positional-row-insertion.md).
 
+No ABI moves for ADR-0099, but the *region record* gains a final slot: the
+predicate accumulator, one cell per distinct field equality the region's
+sealed aggregates read, present only when it has one. It sits behind the
+ADR-0098 append counter, so every slot an earlier ADR sealed stays where it
+was, and a region whose aggregates are all row totals keeps the record length
+it had. See [ADR-0099](../adr/0099-row-scoped-commit-sweeps.md).
+
 ABI 14 adds `nextText(node)` to the DOM host: the Text node that follows
 `node` in document order (descendants first), or `null`, through one shared
 `TreeWalker(SHOW_TEXT)` whose `currentNode` is the last returned node; it does

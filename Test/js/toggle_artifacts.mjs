@@ -145,7 +145,7 @@ for (const required of [
   // agree, so they share one block. The first append still reveals wrapper,
   // toggle-all, and footer in one commit and draining the region re-hides
   // all three in one commit; a row edit no longer re-asks any of them.
-  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const attr_next_1 = share_scan_0_1[0] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n    }\n    if (region_structural_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:2:hidden:evaluated\");\n      const attr_next_2 = regions[0][1][\"length\"] === 0;\n      const attr_changed_2 = attrCache[2] !== attr_next_2;\n      if (attr_changed_2) {\n        attrCache[2] = attr_next_2;\n        setProperty(attrRefs[2], \"hidden\", attr_next_2);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:2:hidden:write\");\n      }\n    }\n    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:3:checked:evaluated\");\n      const attr_next_3 = share_scan_0_0[0] === 0;\n      const attr_changed_3 = attrCache[3] !== attr_next_3;\n      if (attr_changed_3) {\n        attrCache[3] = attr_next_3;\n        setProperty(attrRefs[3], \"checked\", attr_next_3);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:3:checked:write\");\n      }\n    }\n    if (region_structural_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:4:hidden:evaluated\");\n      const attr_next_4 = regions[0][1][\"length\"] === 0;\n      const attr_changed_4 = attrCache[4] !== attr_next_4;\n      if (attr_changed_4) {\n        attrCache[4] = attr_next_4;\n        setProperty(attrRefs[4], \"hidden\", attr_next_4);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:4:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:5:hidden:evaluated\");\n      const attr_next_5 = regions[0][1][\"length\"] === 0;\n      const attr_changed_5 = attrCache[5] !== attr_next_5;\n      if (attr_changed_5) {\n        attrCache[5] = attr_next_5;\n        setProperty(attrRefs[5], \"hidden\", attr_next_5);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:5:hidden:write\");\n      }\n    }",
+  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:1:hidden:evaluated\");\n      const attr_next_1 = regions[0][10][1] === 0;\n      const attr_changed_1 = attrCache[1] !== attr_next_1;\n      if (attr_changed_1) {\n        attrCache[1] = attr_next_1;\n        setProperty(attrRefs[1], \"hidden\", attr_next_1);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:1:hidden:write\");\n      }\n    }\n    if (region_structural_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:2:hidden:evaluated\");\n      const attr_next_2 = regions[0][1][\"length\"] === 0;\n      const attr_changed_2 = attrCache[2] !== attr_next_2;\n      if (attr_changed_2) {\n        attrCache[2] = attr_next_2;\n        setProperty(attrRefs[2], \"hidden\", attr_next_2);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:2:hidden:write\");\n      }\n    }\n    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:3:checked:evaluated\");\n      const attr_next_3 = regions[0][10][0] === 0;\n      const attr_changed_3 = attrCache[3] !== attr_next_3;\n      if (attr_changed_3) {\n        attrCache[3] = attr_next_3;\n        setProperty(attrRefs[3], \"checked\", attr_next_3);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:3:checked:write\");\n      }\n    }\n    if (region_structural_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:4:hidden:evaluated\");\n      const attr_next_4 = regions[0][1][\"length\"] === 0;\n      const attr_changed_4 = attrCache[4] !== attr_next_4;\n      if (attr_changed_4) {\n        attrCache[4] = attr_next_4;\n        setProperty(attrRefs[4], \"hidden\", attr_next_4);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:4:hidden:write\");\n      }\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:5:hidden:evaluated\");\n      const attr_next_5 = regions[0][1][\"length\"] === 0;\n      const attr_changed_5 = attrCache[5] !== attr_next_5;\n      if (attr_changed_5) {\n        attrCache[5] = attr_next_5;\n        setProperty(attrRefs[5], \"hidden\", attr_next_5);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:5:hidden:write\");\n      }\n    }",
   "    if (changed[2]) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:0:disabled:evaluated\");\n      const attr_next_0 = state[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      const attr_changed_0 = attrCache[0] !== attr_next_0;\n      if (attr_changed_0) {\n        attrCache[0] = attr_next_0;\n        setProperty(attrRefs[0], \"disabled\", attr_next_0);\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:attr:0:disabled:write\");\n      }\n    }",
   // The attr slots ride behind the prop slots; the region record follows
   // them (ADR-0045), so the context carries eleven slots.
@@ -168,14 +168,14 @@ for (const required of [
   // commits the trimmed assignment sequence.
   // ADR-0092: a guard hit already stands on a resolved position, so it
   // splices at `scan[1]` unconditionally — no second search, and no rebuild.
-  "      if (scan !== -1) {\n        const row_item = regions[0][1][scan];\n        const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n        if (row_guard) {\n          regions[0][1][\"splice\"](scan, 1);\n          const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n          if (drop_queued) {\n            regions[0][8][\"push\"]([scan, key]);\n          }\n          if (!drop_queued) {\n            regions[0][3] = true;\n          }\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n        if (!row_guard) {\n          const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_2 = \"view\";\n          row_item[1] = row_next_0;\n          row_item[2] = row_next_1;\n          row_item[4] = row_next_2;\n          row_item[5] = null;\n          regions[0][4][\"push\"](scan);\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n      }\n    }\n    if (eventKey === \"Escape\") {",
-  "        const row_next_0 = row_item[1];\n        const row_next_1 = \"view\";\n        row_item[2] = row_next_0;",
+  "      if (scan !== -1) {\n        const row_item = regions[0][1][scan];\n        const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n        if (row_guard) {\n          if (regions[0][1][scan][3] === \"false\") {\n            regions[0][10][0] -= 1;\n          }\n          if (regions[0][1][scan][3] === \"true\") {\n            regions[0][10][1] -= 1;\n          }\n          if (regions[0][1][scan][4] === \"edit\") {\n            regions[0][10][2] -= 1;\n          }\n          regions[0][1][\"splice\"](scan, 1);\n          const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n          if (drop_queued) {\n            regions[0][8][\"push\"]([scan, key]);\n          }\n          if (!drop_queued) {\n            regions[0][3] = true;\n          }\n          tx[7][\"push\"](\"region:items:keys\");",
+  "        const row_next_0 = row_item[1];\n        const row_next_1 = \"view\";\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] -= 1;\n        }\n        row_item[2] = row_next_0;\n        row_item[4] = row_next_1;\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] += 1;\n        }",
   // The ADR-0053 guarded commit with the ADR-0054 trim contract: the OK
   // button's action branch carries the same trimmed guard equality, trimmed
   // label commit, and removal sequence — destroy-on-whitespace-commit
   // through both commit paths, with the Escape revert arm unguarded and
   // untrimmed.
-  "      const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      if (row_guard) {\n        regions[0][1][\"splice\"](scan, 1);\n        const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n        if (drop_queued) {\n          regions[0][8][\"push\"]([scan, key]);\n        }\n        if (!drop_queued) {\n          regions[0][3] = true;\n        }\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_2 = \"view\";\n        row_item[1] = row_next_0;\n        row_item[2] = row_next_1;\n        row_item[4] = row_next_2;\n        row_item[5] = null;\n        regions[0][4][\"push\"](scan);\n        tx[7][\"push\"](\"region:items:commit\");\n      }",
+  "      const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      if (row_guard) {\n        if (regions[0][1][scan][3] === \"false\") {\n          regions[0][10][0] -= 1;\n        }\n        if (regions[0][1][scan][3] === \"true\") {\n          regions[0][10][1] -= 1;\n        }\n        if (regions[0][1][scan][4] === \"edit\") {\n          regions[0][10][2] -= 1;\n        }\n        regions[0][1][\"splice\"](scan, 1);\n        const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n        if (drop_queued) {\n          regions[0][8][\"push\"]([scan, key]);\n        }\n        if (!drop_queued) {\n          regions[0][3] = true;\n        }\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_2 = \"view\";\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] -= 1;\n        }\n        row_item[1] = row_next_0;\n        row_item[2] = row_next_1;\n        row_item[4] = row_next_2;\n        if (row_item[4] === \"edit\") {\n          regions[0][10][2] += 1;\n        }\n        row_item[5] = null;\n        regions[0][4][\"push\"](scan);\n        tx[7][\"push\"](\"region:items:commit\");",
   // ADR-0092: the key search is one module-level helper, shared by every
   // region and every branch, and `scan` is the position it returns. The loop
   // is the one `while` the emitter models: the window is half-open, the
@@ -188,7 +188,7 @@ for (const required of [
   // write, the ADR-0085 stale and the ADR-0043 queued position are all
   // unmoved — only the resolution of `scan` changed, from an O(N) walk to
   // one O(log N) call.
-  "  if (action === \"toggle\") {\n    const scan = $lrx_row_seek(regions[0][1], key);\n    if (scan !== -1) {\n      const row_item = regions[0][1][scan];\n      const row_next_0 = checked ? \"true\" : \"false\";\n      row_item[3] = row_next_0;\n      row_item[5] = null;\n      regions[0][4][\"push\"](scan);\n      tx[7][\"push\"](\"region:items:toggle\");\n    }",
+  "  if (action === \"toggle\") {\n    const scan = $lrx_row_seek(regions[0][1], key);\n    if (scan !== -1) {\n      const row_item = regions[0][1][scan];\n      const row_next_0 = checked ? \"true\" : \"false\";\n      if (row_item[3] === \"false\") {\n        regions[0][10][0] -= 1;\n      }\n      if (row_item[3] === \"true\") {\n        regions[0][10][1] -= 1;\n      }\n      row_item[3] = row_next_0;\n      if (row_item[3] === \"false\") {\n        regions[0][10][0] += 1;\n      }\n      if (row_item[3] === \"true\") {\n        regions[0][10][1] += 1;\n      }\n      row_item[5] = null;\n      regions[0][4][\"push\"](scan);\n      tx[7][\"push\"](\"region:items:toggle\");\n    }",
   // The delegated checked boolean lowers to the "true"/"false" string
   // payload inside the toggle action branch (ADR-0049).
   "      const row_next_0 = checked ? \"true\" : \"false\";",
@@ -246,7 +246,7 @@ for (const required of [
   // ADR-0085: the invalidation is total because the cache is keyed on row
   // *identity*. The two paths that write a field stale the cell they wrote —
   // the ADR-0043 row stage, once per drained row...
-  "      row_item[3] = row_next_0;\n      row_item[5] = null;\n      regions[0][4][\"push\"](scan);",
+  "      row_item[3] = row_next_0;\n      if (row_item[3] === \"false\") {\n        regions[0][10][0] += 1;\n      }\n      if (row_item[3] === \"true\") {\n        regions[0][10][1] += 1;\n      }\n      row_item[5] = null;\n      regions[0][4][\"push\"](scan);\n      tx[7][\"push\"](\"region:items:toggle\");",
   // ...and the ADR-0050/0061 broadcast, once per row, the only O(N)
   // invalidation in the emission.
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n    row_item[5] = null;\n  }",
@@ -264,7 +264,7 @@ for (const required of [
   // have shifted. The `-1` branch is unreachable from a mounted row's own
   // button and is emitted anyway; an absent key now changes nothing at all
   // but the trace, because there is no position to queue.
-  "    const drop = $lrx_row_seek(regions[0][1], key);\n    if (drop !== -1) {\n      regions[0][1][\"splice\"](drop, 1);\n      const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n      if (drop_queued) {\n        regions[0][8][\"push\"]([drop, key]);\n      }\n      if (!drop_queued) {\n        regions[0][3] = true;\n      }\n    }\n    tx[7][\"push\"](\"region:items:remove\");",
+  "    const drop = $lrx_row_seek(regions[0][1], key);\n    if (drop !== -1) {\n      if (regions[0][1][drop][3] === \"false\") {\n        regions[0][10][0] -= 1;\n      }\n      if (regions[0][1][drop][3] === \"true\") {\n        regions[0][10][1] -= 1;\n      }\n      if (regions[0][1][drop][4] === \"edit\") {\n        regions[0][10][2] -= 1;\n      }\n      regions[0][1][\"splice\"](drop, 1);\n      const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n      if (drop_queued) {\n        regions[0][8][\"push\"]([drop, key]);\n      }\n      if (!drop_queued) {\n        regions[0][3] = true;\n      }\n    }",
   // The ADR-0097 drain, ahead of the reconcile and ahead of the ADR-0051
   // filter sweep that navigates by row-table position: one `removeAt` per
   // queued pair, in the order the table was spliced, and the queue is
@@ -274,7 +274,7 @@ for (const required of [
   // ADR-0098: the append is a tail push that counts itself in the record's
   // last slot instead of raising the dirty bit, so the reconcile the count
   // replaced never runs for it.
-  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_0_append_0_0(state[0], state[1], state[2]), $lrx_event_0_append_0_1(state[0], state[1], state[2]), $lrx_event_0_append_0_2(state[0], state[1], state[2]), $lrx_event_0_append_0_3(state[0], state[1], state[2]), null, null]);\n  regions[0][2] += 1;\n  regions[0][9] += 1;\n  tx[7][\"push\"](\"region:items:append\");",
+  "    oldSources[0] = state[0];\n    oldSources[1] = state[1];\n    oldSources[2] = state[2];\n  }\n  tx[0] += 1;\n  tx[7][\"push\"](\"event:addItem\");\n  regions[0][1][\"push\"]([regions[0][2], $lrx_event_0_append_0_0(state[0], state[1], state[2]), $lrx_event_0_append_0_1(state[0], state[1], state[2]), $lrx_event_0_append_0_2(state[0], state[1], state[2]), $lrx_event_0_append_0_3(state[0], state[1], state[2]), null, null]);\n  regions[0][2] += 1;\n  const appended_0 = regions[0][1][regions[0][1][\"length\"] - 1];\n  if (appended_0[3] === \"false\") {\n    regions[0][10][0] += 1;\n  }",
   // The ADR-0098 drain, after the reconcile and before the ADR-0043 pending
   // drain and the ADR-0051 filter sweep, both of which address rows by
   // row-table position. The cursor starts at the first counted row and walks
@@ -303,7 +303,7 @@ for (const required of [
   // The ADR-0062 label count joins the count slots: its ref sits between
   // the predicate count and the total in view order, and its cache slot
   // mounts as the else string — the mounted DOM text of the empty region.
-  "const regions = [[region_0, [], 0, false, [], [count_text_19, count_text_20, count_text_22], [0, \" items left\", 0], node_14, [], 0]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_19, count_text_20, count_text_22], [0, \" items left\", 0], node_14, [], 0, [0, 0, 0]]];",
   // The broadcast writes every row from the sealed row expression and raises
   // the dirty flag; the predicate removal keeps the non-matching rows.
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n    row_item[5] = null;\n  }\n  regions[0][3] = true;",
@@ -339,8 +339,8 @@ for (const required of [
   // navigated to by childAt and written. The written count rides one
   // commit-time trace entry, and the shared DOM-write counter takes the
   // ADR-0045 evaluate-compare-write shape: it fires only when a row moved.
-  "      const filter_scan_0 = [0];\n      const filter_written_0 = [0];\n      for (const filter_row_0 of regions[0][1]) {\n        const filter_next_0 = state[1] === \"active\" ? filter_row_0[3] !== \"false\" : state[1] === \"completed\" ? filter_row_0[3] !== \"true\" : false;\n        if (filter_row_0[6] !== filter_next_0) {\n          filter_row_0[6] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_scan_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_scan_0[0] += 1;\n      }",
-  "      tx[7][\"push\"](\"filter:items:written:\" + filter_written_0[0]);\n      if (filter_written_0[0] !== 0) {\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:filter:items:write\");\n      }",
+  "      const filter_read_0 = [0];\n      const filter_written_0 = [0];\n      const filter_at_0 = [0];\n      if (!(filter_dirty_0 || changed[1])) {\n        for (const filter_position_0 of filter_moved_0) {\n          const filter_moved_row_0 = regions[0][1][filter_position_0];\n          const filter_moved_next_0 = state[1] === \"active\" ? filter_moved_row_0[3] !== \"false\" : state[1] === \"completed\" ? filter_moved_row_0[3] !== \"true\" : false;\n          if (filter_moved_row_0[6] !== filter_moved_next_0) {\n            filter_moved_row_0[6] = filter_moved_next_0;\n            setProperty(childAt(regions[0][7], filter_position_0), \"hidden\", filter_moved_next_0);\n            filter_written_0[0] += 1;\n          }\n          filter_read_0[0] += 1;\n        }\n        filter_at_0[0] = regions[0][1][\"length\"] - filter_added_0;\n      }\n      while (filter_at_0[0] < regions[0][1][\"length\"]) {\n        const filter_row_0 = regions[0][1][filter_at_0[0]];\n        const filter_next_0 = state[1] === \"active\" ? filter_row_0[3] !== \"false\" : state[1] === \"completed\" ? filter_row_0[3] !== \"true\" : false;\n        if (filter_row_0[6] !== filter_next_0) {\n          filter_row_0[6] = filter_next_0;\n          setProperty(childAt(regions[0][7], filter_at_0[0]), \"hidden\", filter_next_0);\n          filter_written_0[0] += 1;\n        }\n        filter_read_0[0] += 1;\n        filter_at_0[0] += 1;\n      }",
+  "      tx[7][\"push\"](\"filter:items:read:\" + filter_read_0[0]);\n      tx[7][\"push\"](\"filter:items:written:\" + filter_written_0[0]);\n      if (filter_written_0[0] !== 0) {\n        tx[9] += 1;\n        tx[7][\"push\"](\"dom:filter:items:write\");\n      }",
   // ADR-0084 splits the drain wake by row event inside the region's own
   // dispatch function, which is the only transaction function that can tell
   // one drain path from another: its `action` argument names the row event
@@ -350,37 +350,37 @@ for (const required of [
   // counts, the two predicate selections and the filter table read; `edit`,
   // `commit` and `keys` write `mode`, which the editing hint reads; `retype`
   // writes `draft`, which nothing but the persistence write-back reads — so
-  // a keystroke inside a row editor lands in neither class.
-  "    const region_touched_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0;\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;\n    const region_drain_0_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0 && action === \"toggle\";\n    const region_drain_0_1 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0 && (action === \"edit\" || action === \"commit\" || action === \"keys\");\n    const share_scan_0_0 = [0];\n    const share_scan_0_1 = [0];\n    if (region_drain_0_0) {\n      for (const share_row_0_0 of regions[0][1]) {\n        if (share_row_0_0[3] === \"false\") {\n          share_scan_0_0[0] += 1;\n        }\n        if (share_row_0_0[3] === \"true\") {\n          share_scan_0_1[0] += 1;\n        }\n      }\n    }\n    if (region_drain_0_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:items:0:evaluated\");",
-  "    if (region_drain_0_1) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:6:hidden:evaluated\");\n      const hidden_scan_0_6 = [0];\n      for (const hidden_row_0_6 of regions[0][1]) {\n        if (hidden_row_0_6[4] === \"edit\") {",
+  // a keystroke inside a row editor lands in neither class. ADR-0099 adds the
+  // three snapshots the row-scoped filter sweep reads *before* the drains
+  // below empty what they name, and the accumulator rescan behind them.
+  "    const filter_dirty_0 = regions[0][3];\n    const filter_moved_0 = regions[0][4];\n    const filter_added_0 = regions[0][9];\n    const region_touched_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0;\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;\n    const region_drain_0_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0 && action === \"toggle\";\n    const region_drain_0_1 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0 && (action === \"edit\" || action === \"commit\" || action === \"keys\");\n    if (regions[0][3]) {\n      regions[0][10][0] = 0;\n      regions[0][10][1] = 0;\n      regions[0][10][2] = 0;\n      for (const count_row_0 of regions[0][1]) {\n        if (count_row_0[3] === \"false\") {\n          regions[0][10][0] += 1;\n        }\n        if (count_row_0[3] === \"true\") {\n          regions[0][10][1] += 1;\n        }\n        if (count_row_0[4] === \"edit\") {\n          regions[0][10][2] += 1;\n        }\n      }\n      tx[7][\"push\"](\"predicate:items:read:\" + regions[0][1][\"length\"]);\n    }\n    if (region_drain_0_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:items:0:evaluated\");\n      const count_next_0_0 = regions[0][10][0];",
+  "    }\n    if (region_drain_0_1) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:6:hidden:evaluated\");\n      const attr_next_6 = regions[0][10][2] === 0;\n      const attr_changed_6 = attrCache[6] !== attr_next_6;",
   "    if (region_drain_0_0 || changed[1]) {",
   // The persistence write-back reads every field, so no class can narrow it:
   // it keeps the region-wide touched flag even in the dispatch function.
   "      regions[0][4] = [];\n    }\n    if (region_drain_0_0 || changed[1]) {",
   "    if (region_touched_0) {\n      const persist_rows_0 = [];",
-  // ADR-0088: the region's predicate scans are grouped by the ADR-0083/0084
-  // wake flag they already read, and a class holding two or more of them
-  // walks the row table once, accumulating one cell per *distinct* field
-  // equality. Outside the region's own dispatch function every sweep reads
-  // the touched flag, so all five predicate scans — the two `done == "false"`
-  // counts, the `done == "true"` clear-completed subject, the
-  // `done == "false"` toggle-all subject and the `mode == "edit"` editing
-  // hint — become one pass over three cells, and the two spellings of
-  // `done == "false"` share cell 0.
-  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;\n    const share_scan_0_0 = [0];\n    const share_scan_0_1 = [0];\n    const share_scan_0_2 = [0];\n    if (region_touched_0) {\n      for (const share_row_0_0 of regions[0][1]) {\n        if (share_row_0_0[3] === \"false\") {\n          share_scan_0_0[0] += 1;\n        }\n        if (share_row_0_0[3] === \"true\") {\n          share_scan_0_1[0] += 1;\n        }\n        if (share_row_0_0[4] === \"edit\") {\n          share_scan_0_2[0] += 1;\n        }\n      }\n    }",
-  // Inside the dispatch function the classes split, and the pass splits with
-  // them: drain class 0 (`toggle`, which writes `done`) carries one pass over
-  // two cells, and the editing hint keeps its own loop under drain class 1
-  // rather than being dragged awake by the wider class. Nothing crosses a
-  // class boundary — that is the whole contract, and the survey priced the
-  // widening at 40% of the opportunity.
-  "    if (region_drain_0_1) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:6:hidden:evaluated\");\n      const hidden_scan_0_6 = [0];\n      for (const hidden_row_0_6 of regions[0][1]) {\n        if (hidden_row_0_6[4] === \"edit\") {\n          hidden_scan_0_6[0] += 1;\n        }\n      }\n      const attr_next_6 = hidden_scan_0_6[0] === 0;",
+  // ADR-0099: the pass ADR-0088 shared is now a region record slot. Slot 10
+  // holds one cell per *distinct* field equality the region's aggregates
+  // read — the two spellings of `done == "false"` still share cell 0, the
+  // `done == "true"` clear-completed subject takes cell 1 and the
+  // `mode == "edit"` editing hint cell 2 — and the only surviving traversal
+  // recomputes them from scratch when a transaction rebuilt the table. It is
+  // guarded on the dirty bit *alone*, not on any sweep's wake flag: the cells
+  // are region state, so they have to be true whether or not something reads
+  // them this commit, and this block is byte-identical in all sixteen
+  // transaction functions for exactly that reason.
+  "    const region_touched_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0;\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;\n    if (regions[0][3]) {\n      regions[0][10][0] = 0;\n      regions[0][10][1] = 0;\n      regions[0][10][2] = 0;\n      for (const count_row_0 of regions[0][1]) {\n        if (count_row_0[3] === \"false\") {\n          regions[0][10][0] += 1;\n        }\n        if (count_row_0[3] === \"true\") {\n          regions[0][10][1] += 1;\n        }\n        if (count_row_0[4] === \"edit\") {\n          regions[0][10][2] += 1;\n        }\n      }\n      tx[7][\"push\"](\"predicate:items:read:\" + regions[0][1][\"length\"]);\n    }",
+  // The editing hint kept its ADR-0084 drain class and lost its loop: what
+  // the wake flag now gates is the compare and the DOM write, which is all it
+  // was ever worth.
+  "    if (region_touched_0) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:6:hidden:evaluated\");\n      const attr_next_6 = regions[0][10][2] === 0;\n      const attr_changed_6 = attrCache[6] !== attr_next_6;",
   // A predicate-free total is a `length` read, not a scan: it joins no pass.
   "      const count_next_0_2 = regions[0][1][\"length\"];",
   // Each slot keeps its own cache, compare, write, label and counter — what
   // is shared is the traversal, not the cache.
-  "      const count_next_0_0 = share_scan_0_0[0];",
-  "      const count_next_0_1 = share_scan_0_0[0];",
+  "      const count_next_0_0 = regions[0][10][0];",
+  "      const count_next_0_1 = regions[0][10][0];",
 ]) {
   if (!source.includes(required)) {
     throw new Error(`generated Toggle Lab is missing ${required}`);

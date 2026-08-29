@@ -6397,3 +6397,139 @@ row, and this record. **ADR-0097 OQ1 is closed.** What it leaves is the
 per-commit O(N) sweeps: with the reconcile gone from both single-row paths,
 what is left of a structural commit at ten thousand rows is three full-table
 walks for a change that touched one row.
+
+## A commit walks the rows a transaction moved (ADR-0099)
+
+### What was built
+
+ADR-0098 closed by naming three full-table sweeps that a single-row commit
+still runs: the ADR-0088 predicate pass, the ADR-0051 filter sweep and the
+ADR-0063 write-back. This round measured them, folded two, and declined the
+third with the number that says why.
+
+The measurement had to come first and it inverted the question. Probes
+inserted mechanically into the *generated* Toggle Lab module — one around
+every loop over a row table, one around the `join`, one around the
+`storageSet`, one around the whole commit — split a ten-thousand-row commit
+into segments. The two sweeps the round was asked to fold are **23%** of an
+`append` and 25% of a `remove`; the one it was asked to *justify keeping* is
+**74%** of the append, 84% of a `toggle` and 99.6% of a `retype`. The
+opportunity was real and it was not where the question put it.
+
+The harness also moved a boundary, which is worth recording because it makes
+two rounds' numbers comparable again. The probe measures the commit body, and
+that reads 0.89 ms at ten thousand rows where ADR-0097 and ADR-0098 reported
+five and eleven. Both are right about their own boundary: a single-row
+append's dispatch *returns* in **0.86 ms**, and forcing the style and layout
+it dirtied to completion costs **10.37 ms**. The commit is about 8% of what a
+user waits for on a click into a ten-thousand-row list; the rest is the
+browser laying the list out, which nothing in this line of ADRs reaches.
+
+ADR-0096's cost model was re-verified by varying the row count and the byte
+count independently, which its own Toggle-Lab-shaped data could not do.
+`storageSet` is **0.6–1.1 ns per byte with no row term at all** — a
+thousand-segment 385 kB payload and a ten-thousand-segment 250 kB payload
+cost in proportion to their bytes — which confirms 0.85 ns/byte. The `join`
+splits **≈10 ns per row plus ≈0.39 ns per byte**: half the row term and four
+times the byte term the collinear fit attributed, and at Toggle Lab's 30.7
+bytes per row the two are within a few percent of each other, which is
+exactly why the collinear fit landed where it did.
+
+What lands is two folds. The **predicate accumulator** is what became of
+ADR-0088's shared pass: one cell per distinct field equality in the region
+record's last slot, moved at every site that moves a row by name — an append
+adds the tail row's contribution, a removal subtracts the dropped row's ahead
+of the `splice`, a row stage subtracts the old tuple's and adds the new one
+for exactly the cells its own write set can move, which is the read/write
+meet ADR-0084 already computes for the wake flags. Every path that rebuilds
+the table wholesale raises the dirty bit and gets one rescan. Two properties
+keep it honest rather than clever: the rescan is guarded on the **dirty bit
+alone**, not on any sweep's wake flag, because the cells are region state and
+have to be true whether anything reads them or not — which is why the block
+is byte-identical in all sixteen transaction functions; and it **assigns**
+rather than accumulates, so a site that applied a delta and then fell back to
+the bit is corrected rather than doubled.
+
+The **row-scoped filter sweep** visits the ADR-0043 pending positions and the
+ADR-0098 appended tail, or the whole table when the dirty bit rose or the
+filter's own state field changed. The full sweep is the tail walk with the
+whole table as the tail, which is how the emission spells it — one cursor,
+seeded at `length - n` or at `0`. Nothing else can move a row's selection: a
+removal shifts survivors whose fields did not change and whose nodes were
+never touched, so it reads *zero* rows and the trace says so.
+
+The **write-back keeps its N**, and this is the part worth remembering. Two
+thirds of it is bytes, and the payload is the whole table by contract. The
+row third needs a *positionally*-keyed cache, which ADR-0087 already priced
+at 1.5–2.3× and declined because a disagreeing cell is a wrong string in
+storage rather than a stale pixel — and neither ADR-0097 nor ADR-0098 changes
+that objection. And the one storage layout that would make it row-scoped was
+built and measured: one key per row makes a single-row change **0.015 ms**
+against the whole table's 0.235, a 16× win, and it is wrong by two orders of
+magnitude, because `setItem` costs **7.2 µs per call** regardless of size.
+Writing ten thousand keys is **71.65 ms**, and Toggle Lab has two toolbar
+buttons that write every row: a broadcast would go from 0.66 ms to 71.65 ms.
+The whole-table write is flat in the number of rows a transaction changed,
+and against a store with a per-call floor that flatness is the whole value.
+
+### What it cost
+
+Paired A/B, twelve passes, ABBA inside every cell, every node lookup hoisted
+out of the timed step. At ten thousand rows: `append` **1.31×**, five
+successive appends **1.33×**, `remove` **1.31×**, `toggle` **1.23×**; at one
+thousand, 1.29×, 1.40× and 1.19×. The three controls are the three cases the
+decision keeps — `retype` 0.98×, the filter flip 1.01×, the broadcast 1.04× —
+and all three sit inside the harness's own bias floor.
+
+That floor was established before anything was read. The **A/A control** —
+the same dist against a byte copy of itself — read 0.951–1.041× across all
+sixteen cells. Getting there took two harness fixes worth more than the
+ratios they enabled. The first was ADR-0098's ABBA ordering, inherited. The
+second was mine: `step()` was calling `querySelectorAll` inside the timed
+loop, so every 10 000-row cell was measuring a 3.4 ms DOM query with the
+commit hiding inside it, and the A/B read 1.03× on a cell that actually moved
+1.31×. A paired harness with a clean A/A control still lies if both sides pay
+the same large constant — the control cannot see it, because the control is a
+ratio.
+
+### Compiler and gate work
+
+No host change, so `runtimeAbi` stays 18, every manifest is byte-identical,
+the ADR-0094 host surface is untouched, and the js-framework-benchmark size
+gate does not move — that backend has its own emission and never sees this
+one. Three generated modules change and they are exactly the three labs with
+a predicate aggregate or a filter: Toggle, Mix and Twin.
+
+One emission choice was made by the ADR-0093 audit rather than by taste. The
+natural way to take an appended row's contribution is to bind the pushed
+literal to a name; R2 requires a push's argument to *be* an array literal
+headed by the region's own key counter, so the row is read back off the
+table's tail instead — an element read, which the audit already follows as a
+row binding. The audit caught it as `LRX-BE-036` on the first build, which is
+the audit doing exactly what ADR-0093 built it for.
+
+### Follow-up issue or commit
+
+The witness is a count of *rows*, not of loops. Two new trace entries —
+`predicate:{region}:read:{n}`, absent whenever the accumulator answered, and
+`filter:{region}:read:{n}` beside the existing `written` — read together with
+ADR-0088's `Symbol.iterator` walk counter pin every case at three rows: a
+`toggle` walks once and reads one row where it walked three, a filter click
+walks *zero* times and reads all three, an `append` reads one, a broadcast
+walks three and reads four twice, and a removal reads **zero**. A second test
+drives every path in the accumulator's invalidation matrix — append, toggle,
+edit, a commit with a draft, a guard-hit removal, a sealed removal, a
+broadcast, a predicate removal and a hydration across a reload — and after
+each one checks all three cells against the row set recomputed from the
+**DOM**, through the four selections that consume them. A stored accumulator
+fails by being wrong forever rather than stale for a frame, and that is the
+test that would see it.
+
+`feat(component): fold a commit's sweeps onto the rows a transaction moved
+(ADR-0099)` — the accumulator slot, its deltas at four emission sites and its
+rescan, the row-scoped filter sweep and its three snapshots in
+`LeanRx/Backend/Component.lean`, the two read counters, three labs' artifact
+expectations, two rewritten browser witnesses, the guide's sweep paragraphs,
+both internals notes, the ADR, the DECISIONS.md row and this record.
+**ADR-0098 OQ1 is closed**, and what it leaves is one number: the 9.5 ms of
+layout that the whole commit is 8% of.
