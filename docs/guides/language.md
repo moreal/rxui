@@ -727,6 +727,24 @@ a 10 000-row region a row toggle's commit drops from 0.74 ms to 0.61 ms and
 walks the table four times instead of seven; a keystroke, which enters no
 pass at all, is unchanged.
 
+The last of those walks to go is the dispatch's own (ADR-0092). A row event
+starts by resolving the delegated key to a position, and it no longer reads
+the table to do it: a module carrying any row event emits one
+`$lrx_row_seek(rows, key)` helper — a binary search returning the position or
+`-1` — and every region and every branch calls it. Nothing maintains an index
+and no region record slot grew, because a row table is already **ordered by
+key**: keys come from the region's own `nextKey` counter, which only
+increases, they are written once when the row is pushed and never again, and
+every removal is order-preserving. That holds for the append, the hydration
+that pushes through the same path, every field write, every broadcast, both
+predicate removals and the filter sweep — so the "invalidation matrix" a key
+index would have owed is, for a search, a table of empty cells. A `remove`
+and a remove-if guard hit now `splice` at the resolved position instead of
+rebuilding the array behind a kept-filter; the guard hit reuses the position
+its own stage already resolved, so it searches once, not twice. On a
+10 000-row region a `toggle` walks the table **three** times and a keystroke
+**once** — the write-back alone.
+
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
 **union** of every filter table over that field, not the first-declared
@@ -969,7 +987,7 @@ expression vocabulary rather than a wider guard shape (any other guard
 subject expression is rejected). The guard field must be in bounds and a
 guarded plain event is payload-less (`LRX-VIEW-040`), with `LRX-ELAB-122`
 pinning the surface. The equality runs inside the generated dispatch
-function against the row the existing key scan resolved, so once more there
+function against the row the existing key search resolved, so once more there
 is no host change and no ABI bump:
 
 ```lean

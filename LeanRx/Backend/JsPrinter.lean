@@ -218,6 +218,13 @@ mutual
             "\n" ++ indent depth ++ "}"
         | .compact => "for(const " ++ binding.raw ++ " of " ++ renderedIterable ++ "){" ++
             String.join renderedBody ++ "}"
+  | .whileLoop condition body => do
+      let renderedCondition ← expr mode condition
+      let renderedBody ← block mode (if mode == .readable then depth + 1 else depth) body
+      pure <| match mode with
+        | .readable => indent depth ++ "while (" ++ renderedCondition ++ ") {\n" ++
+            String.intercalate "\n" renderedBody ++ "\n" ++ indent depth ++ "}"
+        | .compact => "while(" ++ renderedCondition ++ "){" ++ String.join renderedBody ++ "}"
   | .return value => do
       let rendered ← expr mode value
       pure <| match mode with

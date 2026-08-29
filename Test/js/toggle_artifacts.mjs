@@ -164,17 +164,31 @@ for (const required of [
   "  if (action === \"keys\") {\n    if (eventKey === \"Enter\") {",
   // The ADR-0053 remove-if guard on the Enter arm, with the ADR-0054 trim
   // contract: the guard equality and the committed label both evaluate the
-  // ASCII-trimmed draft against the row the key scan resolved; the hit runs
-  // the kept-filter removal the remove action uses, the miss commits the
-  // trimmed assignment sequence.
-  "      if (scan[1] !== -1) {\n        const row_item = regions[0][1][scan[1]];\n        const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n        if (row_guard) {\n          const kept_0 = [];\n          for (const row_entry of regions[0][1]) {\n            if (row_entry[0] !== key) {\n              kept_0[\"push\"](row_entry);\n            }\n          }\n          regions[0][1] = kept_0;\n          regions[0][3] = true;\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n        if (!row_guard) {\n          const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_2 = \"view\";\n          row_item[1] = row_next_0;\n          row_item[2] = row_next_1;\n          row_item[4] = row_next_2;\n          row_item[5] = null;\n          regions[0][4][\"push\"](scan[1]);\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n      }\n    }\n    if (eventKey === \"Escape\") {",
+  // ASCII-trimmed draft against the row the key search resolved; the miss
+  // commits the trimmed assignment sequence.
+  // ADR-0092: a guard hit already stands on a resolved position, so it
+  // splices at `scan[1]` unconditionally — no second search, and no rebuild.
+  "      if (scan !== -1) {\n        const row_item = regions[0][1][scan];\n        const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n        if (row_guard) {\n          regions[0][1][\"splice\"](scan, 1);\n          regions[0][3] = true;\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n        if (!row_guard) {\n          const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_2 = \"view\";\n          row_item[1] = row_next_0;\n          row_item[2] = row_next_1;\n          row_item[4] = row_next_2;\n          row_item[5] = null;\n          regions[0][4][\"push\"](scan);\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n      }\n    }\n    if (eventKey === \"Escape\") {",
   "        const row_next_0 = row_item[1];\n        const row_next_1 = \"view\";\n        row_item[2] = row_next_0;",
   // The ADR-0053 guarded commit with the ADR-0054 trim contract: the OK
   // button's action branch carries the same trimmed guard equality, trimmed
   // label commit, and removal sequence — destroy-on-whitespace-commit
   // through both commit paths, with the Escape revert arm unguarded and
   // untrimmed.
-  "      const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      if (row_guard) {\n        const kept_0 = [];\n        for (const row_entry of regions[0][1]) {\n          if (row_entry[0] !== key) {\n            kept_0[\"push\"](row_entry);\n          }\n        }\n        regions[0][1] = kept_0;\n        regions[0][3] = true;\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_2 = \"view\";\n        row_item[1] = row_next_0;\n        row_item[2] = row_next_1;\n        row_item[4] = row_next_2;\n        row_item[5] = null;\n        regions[0][4][\"push\"](scan[1]);\n        tx[7][\"push\"](\"region:items:commit\");\n      }",
+  "      const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      if (row_guard) {\n        regions[0][1][\"splice\"](scan, 1);\n        regions[0][3] = true;\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_2 = \"view\";\n        row_item[1] = row_next_0;\n        row_item[2] = row_next_1;\n        row_item[4] = row_next_2;\n        row_item[5] = null;\n        regions[0][4][\"push\"](scan);\n        tx[7][\"push\"](\"region:items:commit\");\n      }",
+  // ADR-0092: the key search is one module-level helper, shared by every
+  // region and every branch, and `scan` is the position it returns. The loop
+  // is the one `while` the emitter models: the window is half-open, the
+  // midpoint is floored with `(span - span % 2) / 2` so the arithmetic is
+  // exact at every array length, and a match closes the window by assigning
+  // `high` into `low`. No region record slot holds an index and no site
+  // maintains one — the row table is key-ordered by construction.
+  "function $lrx_row_seek(rows, key) {\n  const seek = [0, -1, rows[\"length\"]];\n  while (seek[0] < seek[2]) {\n    const seek_span = seek[0] + seek[2];\n    const seek_mid = (seek_span - seek_span % 2) / 2;\n    const seek_key = rows[seek_mid][0];\n    if (seek_key === key) {\n      seek[1] = seek_mid;\n      seek[0] = seek[2];\n    }\n    if (seek_key < key) {\n      seek[0] = seek_mid + 1;\n    }\n    if (key < seek_key) {\n      seek[2] = seek_mid;\n    }\n  }\n  return seek[1];\n}",
+  // The toggle branch entire: the found guard, the row binding, the field
+  // write, the ADR-0085 stale and the ADR-0043 queued position are all
+  // unmoved — only the resolution of `scan` changed, from an O(N) walk to
+  // one O(log N) call.
+  "  if (action === \"toggle\") {\n    const scan = $lrx_row_seek(regions[0][1], key);\n    if (scan !== -1) {\n      const row_item = regions[0][1][scan];\n      const row_next_0 = checked ? \"true\" : \"false\";\n      row_item[3] = row_next_0;\n      row_item[5] = null;\n      regions[0][4][\"push\"](scan);\n      tx[7][\"push\"](\"region:items:toggle\");\n    }",
   // The delegated checked boolean lowers to the "true"/"false" string
   // payload inside the toggle action branch (ADR-0049).
   "      const row_next_0 = checked ? \"true\" : \"false\";",
@@ -232,17 +246,21 @@ for (const required of [
   // ADR-0085: the invalidation is total because the cache is keyed on row
   // *identity*. The two paths that write a field stale the cell they wrote —
   // the ADR-0043 row stage, once per drained row...
-  "      row_item[3] = row_next_0;\n      row_item[5] = null;\n      regions[0][4][\"push\"](scan[1]);",
+  "      row_item[3] = row_next_0;\n      row_item[5] = null;\n      regions[0][4][\"push\"](scan);",
   // ...and the ADR-0050/0061 broadcast, once per row, the only O(N)
   // invalidation in the emission.
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n    row_item[5] = null;\n  }",
   // A fresh row is born unencoded, so the tuple shape never changes after
   // construction and the next write-back fills the cell.
   "$lrx_event_1_append_0_3(state[0], state[1], state[2]), null, null]);",
-  // A removal writes no field: the kept-filter rebuilds the row array around
-  // the same tuples, so every survivor's cell stays valid — no stale, and
-  // nothing re-encodes.
-  "    const kept_0 = [];\n    for (const row_entry of regions[0][1]) {\n      if (row_entry[0] !== key) {\n        kept_0[\"push\"](row_entry);\n      }\n    }\n    regions[0][1] = kept_0;\n    regions[0][3] = true;\n    tx[7][\"push\"](\"region:items:remove\");",
+  // A removal writes no field, so every survivor's serialization cell stays
+  // valid — no stale, and nothing re-encodes. ADR-0092 replaced the
+  // kept-filter rebuild with a key search and a `splice` at the resolved
+  // position: the same survivors, in the same order, without the O(N) walk.
+  // The `-1` branch is unreachable from a mounted row's own button and is
+  // emitted anyway, so an absent key changes nothing but the dirty flag and
+  // the trace, exactly as the rebuild left them.
+  "    const drop = $lrx_row_seek(regions[0][1], key);\n    if (drop !== -1) {\n      regions[0][1][\"splice\"](drop, 1);\n    }\n    regions[0][3] = true;\n    tx[7][\"push\"](\"region:items:remove\");",
   // The ADR-0063 mount hydration: one ordinary transaction whose writes
   // parse the stored value — arity mismatch fails the whole value closed to
   // the empty region — and push the parsed rows through the existing append

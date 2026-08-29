@@ -191,6 +191,13 @@ for (const required of [
   // order, crew before pins.
   "  tx[7][\"push\"](\"event:stowDone\");\n  regions[1][1][\"push\"]([regions[1][2], $lrx_event_4_append_0_0(state[0], state[1]), null]);\n  regions[1][2] += 1;\n  regions[1][3] = true;\n  tx[7][\"push\"](\"region:pins:append\");",
   "  regions[0][1] = kept_1;\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:crew:removeIf\");",
+  // ADR-0092: one key search serves the whole module. Both regions' dispatch
+  // functions call the same helper on their own row table, and neither
+  // carries a copy of it — the search belongs to the row-table *shape*, which
+  // is the same for every region, not to any one region's record.
+  "    const drop = $lrx_row_seek(regions[0][1], key);",
+  "    const scan = $lrx_row_seek(regions[0][1], key);",
+  "    const drop = $lrx_row_seek(regions[1][1], key);",
   // The Badge cells dispatch no delegated action — no carve-out needed.
   "const region_off_0 = listenDelegatedCells(node_13, \"click\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"remove\", \"\", \"\", \"\"]);",
   "const region_off_0_change = listenDelegatedCells(node_13, \"change\", state, context, $lrx_region_0_dispatch, [\"\", \"toggle\", \"\", \"\", \"\", \"\"]);",

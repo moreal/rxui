@@ -65,6 +65,32 @@ def run : IO Unit := do
   unless extendedSource ==
       "function evaluate(state){state[0]=2n;for(const item of state){item;}if(true){return [state[0],\"ok\"];}}export{evaluate};" do
     throw <| IO.userError s!"extended JavaScript AST golden changed: {extendedSource}"
+  -- ADR-0092's `while`: the one unbounded loop the emitter models. Its body
+  -- is a block like any other, so its `const`s indent and compact exactly as a
+  -- `for`-of body does, and the condition is printed at statement precedence.
+  let looping : Module :=
+    { declarations := #[.function {
+        name := evaluate
+        params := #[state]
+        body := #[
+          .whileLoop (.binary .lt (.index (.ident state) (.literal (.number 0)))
+              (.index (.ident state) (.literal (.number 1)))) <| .ofList [
+            .const item (.binary .div
+              (.binary .sub (.ident state) (.binary .rem (.ident state)
+                (.literal (.number 2)))) (.literal (.number 2))),
+            .assign (.index (.ident state) (.literal (.number 0))) (.ident item)
+          ]
+        ]
+      }]
+      exports := #[{ localName := evaluate, exportName := evaluate }] }
+  let loopingReadable ← print .readable looping
+  unless loopingReadable ==
+      "function evaluate(state) {\n  while (state[0] < state[1]) {\n    const item = (state - state % 2) / 2;\n    state[0] = item;\n  }\n}\nexport { evaluate };\n" do
+    throw <| IO.userError s!"readable while golden changed:\n{loopingReadable}"
+  let loopingCompact ← print .compact looping
+  unless loopingCompact ==
+      "function evaluate(state){while(state[0]<state[1]){const item=(state-state%2)/2;state[0]=item;}}export{evaluate};" do
+    throw <| IO.userError s!"compact while golden changed: {loopingCompact}"
   -- `!(a === b)` prints as `a !== b` and binds like an equality, so it is
   -- grouped where an equality would be and not otherwise.
   let negated : Module :=

@@ -2247,34 +2247,113 @@ private def regionDisposeFunction (hasChild : Bool) (name : Ident) :
     else [.return (.literal .null)]
   pure { name, params := #[row, key, context], body := body.toArray }
 
-/-- The row removal sequence of one dispatch branch: filter the dispatching
-key out of the row table, mark the region dirty for the reconcile, and push
-the region trace. Shared by the sealed `remove` action and the guard hit of
-an ADR-0053 guarded stage. -/
+/-- The ADR-0092 key search: one module-level helper, shared by every region
+and every dispatch branch, resolving a key to its position in a row table or
+to `-1`.
+
+The search is sound because a row table is *key-ordered* — every key is
+`regions[r][2]` at the moment its row is pushed and that counter only
+increases, slot 0 is never written again, and every removal keeps the
+survivors in place — so no site maintains anything for it and no region
+record slot holds an index. `seek` is the half-open window `[low, match,
+high]`; the midpoint is floored with `(span - span % 2) / 2` rather than a
+shift, so the arithmetic is exact at every array length JavaScript can
+represent. A match closes the window by assigning `high` into `low`, which is
+the loop's only other exit.
+
+One helper rather than one search per branch: a region with six row events
+would otherwise carry six copies of the same fifteen lines, and the emission
+grew by up to 12% when it did. -/
+private def rowSeekName : Except Error Ident := Ident.checked "$lrx_row_seek"
+
+private def rowSeekFunction : Except Error Function := do
+  let rows ← Ident.checked "rows"
+  let key ← Ident.checked "key"
+  let cursor ← Ident.checked "seek"
+  let span ← Ident.checked "seek_span"
+  let middle ← Ident.checked "seek_mid"
+  let found ← Ident.checked "seek_key"
+  let low : Expr := .index (.ident cursor) (uint 0)
+  let high : Expr := .index (.ident cursor) (uint 2)
+  pure {
+    name := ← rowSeekName
+    params := #[rows, key]
+    body := #[
+      .const cursor (.array (.ofList [
+        uint 0, .unary .neg (uint 1),
+        .index (.ident rows) (.literal (.string "length"))
+      ])),
+      .whileLoop (.binary .lt low high) <| .ofList [
+        .const span (.binary .add low high),
+        .const middle (.binary .div
+          (.binary .sub (.ident span) (.binary .rem (.ident span) (uint 2))) (uint 2)),
+        .const found (.index (.index (.ident rows) (.ident middle)) (uint 0)),
+        .ifThen (.binary .eq (.ident found) (.ident key)) <| .ofList [
+          .assign (.index (.ident cursor) (uint 1)) (.ident middle),
+          .assign (.index (.ident cursor) (uint 0)) high
+        ],
+        .ifThen (.binary .lt (.ident found) (.ident key)) <| .ofList [
+          .assign (.index (.ident cursor) (uint 0)) (.binary .add (.ident middle) (uint 1))
+        ],
+        .ifThen (.binary .lt (.ident key) (.ident found)) <| .ofList [
+          .assign (.index (.ident cursor) (uint 2)) (.ident middle)
+        ]
+      ],
+      .return (.index (.ident cursor) (uint 1))
+    ]
+  }
+
+/-- The call resolving one dispatching key against one region's row table. -/
+private def rowSeekCall (regions key : Ident) (regionIndex : Nat) : Except Error Expr := do
+  pure <| .call (.ident (← rowSeekName))
+    (.ofList [regionEntry regions regionIndex 1, .ident key])
+
+/-- Whether one region resolves a dispatching key at all — every declared row
+event does, whatever its action, so the helper is emitted exactly when some
+region declares one. -/
+private def regionSeeksRows (region : RegionSpec) : Bool :=
+  !region.events.isEmpty
+
+/-- The row removal sequence of one dispatch branch: drop the dispatching
+key's row out of the row table, mark the region dirty for the reconcile, and
+push the region trace. Shared by the sealed `remove` action and the guard hit
+of an ADR-0053 guarded stage.
+
+ADR-0092: the row leaves by `splice` at its resolved position, which keeps
+the survivors in their order and so keeps the table key-ordered. The guard
+hit already stands inside its stage's resolved position and passes it in, so
+it splices unconditionally; the sealed `remove` action runs its own key
+search and splices only on a hit. Neither the dirty flag nor the trace is
+conditional on the key being present, exactly as the filter rebuild they
+replace left them. -/
 private def rowRemoveStmts (regions tx key : Ident) (regionIndex : Nat)
-    (regionName eventName : String) : Except Error (List Stmt) := do
-  let kept ← Ident.checked s!"kept_{regionIndex}"
-  let rowEntry ← Ident.checked "row_entry"
-  pure [
-    .const kept (.array .nil),
-    .forOf rowEntry (regionEntry regions regionIndex 1) (.ofList [
-      .ifThen (.unary .not
-          (.binary .eq (.index (.ident rowEntry) (uint 0)) (.ident key))) <| .ofList [
-        .expr <| .call (.index (.ident kept) (.literal (.string "push")))
-          (.ofList [.ident rowEntry])
-      ]
-    ]),
-    .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 1))
-      (.ident kept),
+    (position? : Option Expr) (regionName eventName : String) :
+    Except Error (List Stmt) := do
+  let cursor ← Ident.checked "drop"
+  let splice (position : Expr) : Stmt :=
+    .expr <| .call
+      (.index (regionEntry regions regionIndex 1) (.literal (.string "splice")))
+      (.ofList [position, uint 1])
+  let drop ← match position? with
+    | some position => pure [splice position]
+    | none => do
+        let position : Expr := .ident cursor
+        pure [
+          .const cursor (← rowSeekCall regions key regionIndex),
+          .ifThen (.unary .not (.binary .eq position (.unary .neg (uint 1)))) <|
+            .ofList [splice position]
+        ]
+  pure (drop ++ [
     .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
       (.literal (.boolean true)),
     pushTrace tx s!"region:{regionName}:{eventName}"
-  ]
+  ])
 
 /-- The ADR-0043 scan-evaluate-assign-queue sequence of one row stage:
-resolve the dispatching row by key scan (`scan` is `[cursor, match]`),
-evaluate every right-hand side against the old tuple, write the targets, and
-queue the position for the commit sweep's `updateAt` drain. Shared by the
+resolve the dispatching row by the ADR-0092 key search (`scan` is the
+resolved position, or `-1`), evaluate every right-hand side against the old
+tuple, write the targets, and queue the position for the commit sweep's
+`updateAt` drain. Shared by the
 plain update action and each key arm of an ADR-0052 key-branched action. A
 stage with an ADR-0053 remove-if guard first evaluates the sealed field
 equality against the resolved row: a guard hit runs the removal sequence
@@ -2285,7 +2364,6 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
     (stage : RowStage) : Except Error (List Stmt) := do
   let assignments := stage.assignments
   let scan ← Ident.checked "scan"
-  let rowEntry ← Ident.checked "row_entry"
   let rowItem ← Ident.checked "row_item"
   let negativeOne : Expr := .unary .neg (uint 1)
   let mut evaluateStmts : List Stmt := []
@@ -2303,7 +2381,7 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
   let applyStmts := evaluateStmts ++ assignStmts ++ staleRowSerial rowItem serialSlot? ++ [
     .expr <| .call
       (.index (regionEntry regions regionIndex 4) (.literal (.string "push")))
-      (.ofList [.index (.ident scan) (uint 1)]),
+      (.ofList [.ident scan]),
     pushTrace tx s!"region:{regionName}:{eventName}"
   ]
   let foundStmts ← match stage.removeIf with
@@ -2316,23 +2394,14 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
           trimmed subject wraps it in the sealed trim emission. -/
           .const rowGuard (fieldPredicateJs rowItem noPayload guard),
           .ifThen (.ident rowGuard) (.ofList
-            (← rowRemoveStmts regions tx key regionIndex regionName eventName)),
+            (← rowRemoveStmts regions tx key regionIndex
+              (some (.ident scan)) regionName eventName)),
           .ifThen (.unary .not (.ident rowGuard)) (.ofList applyStmts)
         ]
   pure [
-    .const scan (.array (.ofList [uint 0, negativeOne])),
-    .forOf rowEntry (regionEntry regions regionIndex 1) (.ofList [
-      .ifThen (.binary .eq (.index (.ident rowEntry) (uint 0)) (.ident key)) <|
-        .ofList [
-          .assign (.index (.ident scan) (uint 1)) (.index (.ident scan) (uint 0))
-        ],
-      .assign (.index (.ident scan) (uint 0))
-        (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
-    ]),
-    .ifThen (.unary .not
-        (.binary .eq (.index (.ident scan) (uint 1)) negativeOne)) <| .ofList ([
-      .const rowItem (.index (regionEntry regions regionIndex 1)
-        (.index (.ident scan) (uint 1)))
+    .const scan (← rowSeekCall regions key regionIndex),
+    .ifThen (.unary .not (.binary .eq (.ident scan) negativeOne)) <| .ofList ([
+      .const rowItem (.index (regionEntry regions regionIndex 1) (.ident scan))
     ] ++ foundStmts)
   ]
 
@@ -2359,7 +2428,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
     | .remove =>
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
-            (.ofList (← rowRemoveStmts regions tx key regionIndex
+            (.ofList (← rowRemoveStmts regions tx key regionIndex none
               region.name event.name))
         ]
     | .update stage =>
@@ -2552,6 +2621,12 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       (← routeFunctions checked evaluators runtime route index defaultLiteral)
   let hydrateFunctions ← checked.spec.persists.toList.zipIdx.mapM fun (persist, index) =>
     hydrateFunction checked evaluators runtime persist index
+  /- The ADR-0092 key search, once per module and only when some region
+  declares a row event to resolve a key for. -/
+  let rowSeekDecl : List Decl ←
+    if checked.spec.regions.toList.any regionSeeksRows then
+      pure [Decl.function (← rowSeekFunction)]
+    else pure []
   let derivedInitial ← derivedOrder checked |>.mapM fun id => do
     pure (.assign (.index (.ident state) (uint id)) <|
       evaluatorCall (← evaluator evaluators s!"value:{id}") state valueCount)
@@ -2933,7 +3008,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       declarations := (evaluators.declarations ++ eventFunctions.map Decl.function ++
         typedEventFunctions.map Decl.function ++ keyFunctions.map Decl.function ++
         routeFunctionList.map Decl.function ++ hydrateFunctions.map Decl.function ++
-        regionFunctionDecls.map Decl.function ++ [
+        rowSeekDecl ++ regionFunctionDecls.map Decl.function ++ [
         Decl.function { name := mount, params := mountParams, body := mountBody.toArray }
       ]).toArray
       exports := #[{ localName := mount, exportName := mount }] }

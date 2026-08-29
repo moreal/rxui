@@ -105,6 +105,11 @@ mutual
     | expr (value : Expr)
     | ifThen (condition : Expr) (body : Block)
     | forOf (binding : Ident) (iterable : Expr) (body : Block)
+    /-- The one unbounded loop the emitter models. Its body declares its own
+    `const` bindings and its condition reads only names bound outside it, so
+    the only way a `whileLoop` terminates is by assigning to one of those —
+    which is exactly the ADR-0092 key search. -/
+    | whileLoop (condition : Expr) (body : Block)
     | return (value : Expr)
   deriving Repr, BEq
 
@@ -204,6 +209,7 @@ mutual
     | .ifThen condition body => exprBound bound condition && blockBound bound body
     | .forOf binding iterable body =>
         ¬bound.contains binding && exprBound bound iterable && blockBound (binding :: bound) body
+    | .whileLoop condition body => exprBound bound condition && blockBound bound body
     | .return value => exprBound bound value
 
   private def assignTargetBound (bound : List Ident) : AssignTarget → Bool

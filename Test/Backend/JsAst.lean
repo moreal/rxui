@@ -62,6 +62,40 @@ def run : IO Unit := do
   match validLoop.validate with
   | .ok _ => pure ()
   | .error error => throw <| IO.userError s!"valid for-of AST rejected: {error.code}"
+  -- ADR-0092's `while` binds nothing of its own: its condition and its body
+  -- are checked against the names already in scope, so a body `const` is
+  -- visible to later statements in the body and to nothing outside it.
+  let validWhile : Module :=
+    { declarations := #[.function {
+        name := evaluate
+        params := #[input]
+        body := #[
+          .whileLoop (.ident input) <| .ofList [
+            .const item (.ident input), .expr (.ident item)
+          ],
+          .return (.ident input)
+        ]
+      }]
+      exports := #[] }
+  match validWhile.validate with
+  | .ok _ => pure ()
+  | .error error => throw <| IO.userError s!"valid while AST rejected: {error.code}"
+  expectError "LRX-BE-018" ({
+    declarations := #[.function {
+      name := evaluate
+      params := #[]
+      body := #[.whileLoop (.ident item) <| .ofList [.expr (.literal .null)]]
+    }]
+    exports := #[]
+  } : Module).validate
+  expectError "LRX-BE-018" ({
+    declarations := #[.function {
+      name := evaluate
+      params := #[input]
+      body := #[.whileLoop (.ident input) <| .ofList [.expr (.ident item)]]
+    }]
+    exports := #[]
+  } : Module).validate
   expectError "LRX-BE-006" ({
     declarations := #[
       .function { name := evaluate, params := #[], body := #[.return (.literal .null)] },

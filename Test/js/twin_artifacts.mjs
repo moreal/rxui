@@ -138,7 +138,7 @@ for (const required of [
   // stales the first without touching the second...
   "  regions[1][1][\"push\"]([regions[1][2], $lrx_event_0_append_1_0(state[0], state[1], state[2]), $lrx_event_0_append_1_1(state[0], state[1], state[2]), null, null]);",
   "      persist_row_1[3] = persist_row_1[1]",
-  "      const row_next_0 = checked ? \"true\" : \"false\";\n      row_item[2] = row_next_0;\n      row_item[3] = null;\n      regions[1][4][\"push\"](scan[1]);",
+  "      const row_next_0 = checked ? \"true\" : \"false\";\n      row_item[2] = row_next_0;\n      row_item[3] = null;\n      regions[1][4][\"push\"](scan);",
   // ...while `left` and `solo` carry the displayed-state cell alone, at slot
   // 3, and `left`'s own row stage — which writes `label`, a field no filter
   // arm reads — stales nothing at all. No record slot moved for any of the

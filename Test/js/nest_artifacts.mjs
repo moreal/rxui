@@ -145,7 +145,7 @@ for (const required of [
   // ADR-0043: the mark dispatch mutates the retained item in place and the
   // commit sweep drains exactly the pending positions through updateAt.
   "const row_next_0 = row_item[2] + \" ★\";",
-  "regions[0][4][\"push\"](scan[1]);",
+  "regions[0][4][\"push\"](scan);",
   "regions[0][0][\"updateAt\"](pending_row, regions[0][1][pending_row], regions[0][5]);",
   // ADR-0046: typed row payloads lower to the delegated value/key argument
   // selected by the template binding kind.

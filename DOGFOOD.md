@@ -5512,3 +5512,108 @@ the DECISIONS.md row, and this record. **ADR-0090 OQ1 is closed by
 rejection and its option (c) by decision.** The id rule now has no open
 questions: every template the compiler instantiates more than once is
 policed, and single-mount ids remain the author's and the axe gate's.
+
+## A key resolves to its position by search (ADR-0092)
+
+### What was built
+
+Five ADRs in a row copied the same open question forward without moving
+it: the dispatch's key→position resolution walks the whole row table,
+and ADR-0088 had narrowed the charge to its sharpest form — *the only
+`O(N)` traversal in a `toggle` commit that no contract requires*. The
+exchange on offer was always a key→index map on the region record,
+against the append/removeAt/updateAt/broadcast/removeIf/filter-sweep/
+hydrate invalidation matrix.
+
+The round paid, and paid with something the question had not
+contemplated. The map's premise is that skipping the walk means
+*remembering* where a key lives, so every mutation owes the memory a
+maintenance step. But a row table is already **sorted by key**, and for
+reasons none of which was ever about searching: both `push` sites take
+`regions[r][2]` and then increment it, no emission assigns a row's slot 0
+after construction, every removal is order-preserving, and the component
+backend has no swap, no sort and no insert-at. So the seven-column
+invalidation matrix turned out to be a theorem about the emission with
+an empty cell in every column, and the resolution became one binary
+search over an order nobody maintains.
+
+The emission: one module-level `$lrx_row_seek(rows, key)` per module
+that declares any row event, shared by every region and every dispatch
+branch, returning the position or `-1`; `scan` at each row stage is now
+that position rather than a two-cell cursor; and the two single-key
+removals — the sealed `remove` and an ADR-0053 guard hit — `splice` at
+the resolved position instead of rebuilding the array behind a
+kept-filter, with the guard hit reusing the position its own stage
+already resolved rather than searching twice. `removeIf` keeps its
+rebuild: a predicate over every row is `O(N)` by contract.
+
+The emitter grew exactly one thing to make this expressible — `Stmt.whileLoop`,
+the AST's first loop that is not a `for`-of — used in one place, binding
+nothing, and covered by the module validator's existing unbound-name rule.
+No host export, so no ABI bump; no region record slot, so the slot
+convention is untouched for the fifth ADR running.
+
+### What broke or surprised
+
+**The measured verdict on the map is the opposite of "worth it, but
+expensive".** Built as a real rung — a `Map` at region record slot 8
+maintained at every structural site — it *ties* the search on every read
+path at both sizes, because an `O(1)` hash and a 13-probe search are the
+same measurement once a commit costs half a millisecond. Where it
+differs is the write path: on a remove-and-append churn it runs 5.4%
+slower than the **unmodified** emission at 10 000 rows, because every
+removal shifts every later position and the map must be rebuilt for it.
+The thing the five ADRs kept declining on grounds of review cost turns
+out to be declinable on grounds of speed.
+
+**Inlining the search was a 12% size regression, and the fix made the
+module smaller than it started.** The first working emission put the
+fifteen-line search in each of Toggle Lab's six row branches: +1848
+bytes on Toggle Lab, +12.5% on the small Branch Lab. Folding it into one
+generated helper turned that into −692 bytes on Toggle Lab and under
++0.5% everywhere else. The helper is *generated*, not a host export —
+that distinction is what keeps `runtimeAbi` at 17, and therefore keeps
+the hand-written js-framework-benchmark's manifest byte-identical.
+
+**No bitwise operator in the AST, and it did not matter.** `(lo + hi) >> 1`
+was unavailable and `(span - span % 2) / 2` replaced it, which is three
+more tokens and is exact at every array length JavaScript can represent
+instead of up to 2³¹ — a caveat not written is better than a caveat
+written down.
+
+**The first measurement round was contaminated and said so.** Running
+the browser gates beside the harness moved `toggle` at 10 000 rows from
+0.595 to 0.618 ms — larger than the effect being measured. The rerun
+interleaves the rungs *within* each load index rather than measuring one
+rung to completion at a time, so drift lands on all three equally; every
+number in the ADR comes from that paired run.
+
+### Performance observations
+
+Paired, generated-artifact measurements, medians of nine repetitions and
+seven loads: `retype` at 10 000 rows 0.5430 → 0.5088 ms (1.067×),
+`toggle` 0.6313 → 0.6095 (1.036×), and at 1 000 rows 1.033× and 1.041×.
+The gains are single-digit percentages and the reason is worth stating
+plainly: after ADR-0085‥0088 a commit is `storageSet`, the `join`, and
+two or three earned walks, so removing an unearned one buys 3–7% rather
+than a multiple. `retype` shows the most because ADR-0084 keeps a
+keystroke out of every predicate scan — the key walk was one of that
+commit's *two* walks and is now neither. The ADR-0088 counter reads 3 for
+a `toggle` (was 4), 1 for a `retype` (was 2), 2 for a `dblclick`, 4 for a
+✕ (was 5), with append, broadcast, filter click and `clearCompleted`
+unchanged. Five generated modules change and none by more than 0.4%;
+every `.graph.json`, every `.manifest.json` and the whole benchmark
+bundle are byte-identical, so the size gate and BENCHMARK.md stand
+unre-measured.
+
+### Follow-up issue or commit
+
+`feat(component): resolve a row key by search over the key-ordered table
+(ADR-0092)` — `Stmt.whileLoop` in the JS AST, printer and validator with
+its own goldens and unbound-name cases, the `$lrx_row_seek` helper and
+its emission condition, the searched update stage and the two spliced
+removals, the nine-cell invalidation-matrix browser gate, the updated
+ADR-0088 walk counts, the artifact pins in four labs, the language
+guide, the ADR, the DECISIONS.md row, and this record. **ADR-0084 OQ2,
+ADR-0085 OQ2, ADR-0086 OQ3, ADR-0087 OQ3 and ADR-0088 OQ1 are all
+closed.**
