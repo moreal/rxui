@@ -310,6 +310,17 @@ duplicates dropped so two sweeps that wake on the same events share a flag. -/
 private def dedupClasses (values : List (List String)) : List (List String) :=
   (values.foldl (fun acc value => if acc.contains value then acc else value :: acc) []).reverse
 
+/-- The distinct wake flags of one region's predicate scans, in emission
+order (ADR-0088): the grouping key of a shared predicate pass. -/
+private def dedupWakes (values : List WakeFlag) : List WakeFlag :=
+  (values.foldl (fun acc value => if acc.contains value then acc else value :: acc) []).reverse
+
+/-- The distinct field equalities inside one shared predicate pass, in
+emission order (ADR-0088): two slots spelling the same predicate share one
+accumulator, two spelling different ones share the traversal. -/
+private def dedupPredicates (values : List (Nat × String)) : List (Nat × String) :=
+  (values.foldl (fun acc value => if acc.contains value then acc else value :: acc) []).reverse
+
 private def classIndex? (classes : List (List String)) (actions : List String) : Option Nat :=
   (classes.zipIdx.find? fun entry => entry.1 == actions).map (·.2)
 
@@ -1034,6 +1045,53 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
                 (uint 0)))
               (anyAction action actions)))
         ]
+    /- The shared predicate pass (ADR-0088): a region's ADR-0050 predicate
+    counts and ADR-0059/0060 predicate-count selections each ran their own
+    `for…of` over the same row table in the same commit. Group them by the
+    ADR-0083/0084 wake flag they already read, and a class with two or more
+    of them traverses the table once, accumulating one cell per *distinct*
+    predicate — two spellings of the same field equality share a cell, and
+    two different equalities share the pass. Nothing crosses a class
+    boundary: a pass runs under exactly the flag its members read, so a
+    narrow class is never dragged awake by a wide one. A predicate-free total
+    reads `length` and never joins a pass, and the ADR-0051 filter sweep and
+    ADR-0063 persistence sweep run after the reconcile and stay where they
+    are. Each slot keeps its own cache, compare, write, label, and counter —
+    what is shared is the traversal, not the cache. -/
+    let scanUses : List (WakeFlag × Nat × String) :=
+      (counts.zip countWakes).filterMap (fun (count, wake) =>
+        count.predicate.map fun (field, equals) => (wake, field, equals))
+      ++ (hiddens.zip hiddenWakes).filterMap (fun (entry, wake) =>
+        entry.1.select.regionPredicate?.map fun (field, equals) => (wake, field, equals))
+    let sharedWakes : List WakeFlag :=
+      (dedupWakes (scanUses.map (·.1))).filter fun wake =>
+        (scanUses.filter (·.1 == wake)).length > 1
+    let mut sharedCells : List ((WakeFlag × Nat × String) × Ident) := []
+    let mut sharedCellCount := 0
+    for (wake, passIndex) in sharedWakes.zipIdx do
+      let predicates := dedupPredicates <| (scanUses.filter (·.1 == wake)).map fun use =>
+        (use.2.1, use.2.2)
+      let row ← Ident.checked s!"share_row_{regionIndex}_{passIndex}"
+      let mut declarations : List Stmt := []
+      let mut passBody : List Stmt := []
+      for (field, equals) in predicates do
+        let cell ← Ident.checked s!"share_scan_{regionIndex}_{sharedCellCount}"
+        sharedCellCount := sharedCellCount + 1
+        sharedCells := sharedCells ++ [((wake, field, equals), cell)]
+        declarations := declarations ++ [Stmt.const cell (.array (.ofList [uint 0]))]
+        passBody := passBody ++ [Stmt.ifThen
+          (fieldPredicateJs row noPayload (.ofField field equals)) <| .ofList [
+            .assign (.index (.ident cell) (uint 0))
+              (.binary .add (.index (.ident cell) (uint 0)) (uint 1))
+          ]]
+      let flag ← wakeIdent regionIndex wake
+      commitBody := commitBody ++ declarations ++ [
+        .ifThen (.ident flag) <| .ofList [
+          .forOf row (regionEntry regions regionIndex 1) (.ofList passBody)
+        ]
+      ]
+    let sharedCell? := fun (wake : WakeFlag) (field : Nat) (equals : String) =>
+      (sharedCells.find? fun entry => entry.1 == (wake, field, equals)).map (·.2)
     unless counts.isEmpty do
       let mut countRuns : List (Ident × List Stmt) := []
       for ((count, slot), wake) in counts.zipIdx.zip countWakes do
@@ -1044,19 +1102,22 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
           | none => pure [Stmt.const next
               (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))]
           | some (field, equals) => do
-              let scan ← Ident.checked s!"count_scan_{regionIndex}_{slot}"
-              let row ← Ident.checked s!"count_row_{regionIndex}_{slot}"
-              pure [
-                Stmt.const scan (.array (.ofList [uint 0])),
-                .forOf row (regionEntry regions regionIndex 1) (.ofList [
-                  .ifThen (fieldPredicateJs row noPayload
-                      (.ofField field equals)) <| .ofList [
-                    .assign (.index (.ident scan) (uint 0))
-                      (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
-                  ]
-                ]),
-                .const next (.index (.ident scan) (uint 0))
-              ]
+              if let some cell := sharedCell? wake field equals then
+                pure [Stmt.const next (.index (.ident cell) (uint 0))]
+              else
+                let scan ← Ident.checked s!"count_scan_{regionIndex}_{slot}"
+                let row ← Ident.checked s!"count_row_{regionIndex}_{slot}"
+                pure [
+                  Stmt.const scan (.array (.ofList [uint 0])),
+                  .forOf row (regionEntry regions regionIndex 1) (.ofList [
+                    .ifThen (fieldPredicateJs row noPayload
+                        (.ofField field equals)) <| .ofList [
+                      .assign (.index (.ident scan) (uint 0))
+                        (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
+                    ]
+                  ]),
+                  .const next (.index (.ident scan) (uint 0))
+                ]
         /- A label count selects one of its two static strings from the
         recomputed count against the one literal (ADR-0062); the cache slot
         and the `setText` write then carry the selected string instead of
@@ -1107,21 +1168,25 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
               (.index (regionEntry regions regionIndex 1) (.literal (.string "length")))
               (uint 0))]
           | some (field, equals) => do
-              let scan ← Ident.checked
-                s!"{mounted.select.name}_scan_{regionIndex}_{attrIndex}"
-              let row ← Ident.checked
-                s!"{mounted.select.name}_row_{regionIndex}_{attrIndex}"
-              pure [
-                Stmt.const scan (.array (.ofList [uint 0])),
-                .forOf row (regionEntry regions regionIndex 1) (.ofList [
-                  .ifThen (fieldPredicateJs row noPayload
-                      (.ofField field equals)) <| .ofList [
-                    .assign (.index (.ident scan) (uint 0))
-                      (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
-                  ]
-                ]),
-                .const next (.binary .eq (.index (.ident scan) (uint 0)) (uint 0))
-              ]
+              if let some cell := sharedCell? wake field equals then
+                pure [Stmt.const next
+                  (.binary .eq (.index (.ident cell) (uint 0)) (uint 0))]
+              else
+                let scan ← Ident.checked
+                  s!"{mounted.select.name}_scan_{regionIndex}_{attrIndex}"
+                let row ← Ident.checked
+                  s!"{mounted.select.name}_row_{regionIndex}_{attrIndex}"
+                pure [
+                  Stmt.const scan (.array (.ofList [uint 0])),
+                  .forOf row (regionEntry regions regionIndex 1) (.ofList [
+                    .ifThen (fieldPredicateJs row noPayload
+                        (.ofField field equals)) <| .ofList [
+                      .assign (.index (.ident scan) (uint 0))
+                        (.binary .add (.index (.ident scan) (uint 0)) (uint 1))
+                    ]
+                  ]),
+                  .const next (.binary .eq (.index (.ident scan) (uint 0)) (uint 0))
+                ]
         let flag ← wakeIdent regionIndex wake
         hiddenRuns := hiddenRuns ++ [(flag, [
           incrementAt tx 8,

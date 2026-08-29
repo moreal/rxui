@@ -5074,3 +5074,108 @@ deferral-primitive ban across the three persisted labs' artifact gates, the
 ADR, and this record. Open: `storageSet` and the `join` are the floor at 35%
 each and neither narrows under identity keying; the four predicate scans are
 still unshared; and the key→position scan is still O(N) per dispatch.
+
+## One region walks its rows once per wake class (ADR-0088)
+
+### What was built
+
+ADR-0086 OQ2, restated by ADR-0087 OQ2, was the last open item on the
+performance line and the only one that was codegen rather than contract: a
+Toggle Lab `toggle` commit walks the `items` row table six times, and three
+of those six spell the identical predicate `done == "false"`. This round
+built the rungs, measured them, and sealed the one the numbers picked.
+
+The rule that landed is **one pass per (region, wake class), one accumulator
+per distinct predicate inside it**. Every ADR-0050 predicate count and every
+ADR-0059/0060 predicate-count selection over a region is a predicate scan;
+two of them share a walk exactly when they read the same ADR-0083/0084 wake
+flag; two spelling the same field equality share a cell, two spelling
+different ones share only the traversal; and nothing crosses a class
+boundary. A predicate-free total is a `length` read and joins no walk. The
+filter sweep and the persistence write-back run after the reconcile and stay
+their own walks. A class with one member keeps its inline loop, so a
+component with no duplication emits exactly what it emitted before — which
+is why only two modules changed.
+
+The witness counts walks rather than milliseconds: a counting
+`Symbol.iterator` installed on `Array.prototype` around one synchronous
+dispatch, firing only on an array whose head is a seven-cell row tuple behind
+a numeric key. On three rows a `toggle` walks 4 where it walked 7, a `retype`
+walks 2, a `dblclick` walks 3 through the editing hint's *own* loop while the
+`toggle` class's pass stays asleep, a filter click walks 1, an append walks 3,
+and a broadcast walks 4. Running the same test against the pre-change bundle
+reports 7 against the expected 4, so the instrument measures the change and
+not itself.
+
+### What broke or surprised
+
+**The round's premise was inverted twice by its own measurements.** It was
+launched with a 1.11× ceiling for "fuse all five scans into one pass" and the
+prediction that the literal same-predicate proposal would come in under it.
+The same-predicate rung measures **1.155×**, *above* the quoted ceiling, and
+the best rung — one pass per wake class, which fuses *more* than the literal
+proposal but *less* than the ceiling — measures **1.209×**. The ceiling was
+low because it crossed a wake class boundary and paid for the crossing.
+
+**Fusing more is not monotonically better, and the wake class is where it
+turns.** Dragging the editing hint's `mode == "edit"` scan into the wide
+`toggle` class to make one pass out of five costs 0.040 ms at 10k: it gives
+back 40% of the whole opportunity and lands below the same-predicate rung. A
+fused pass must run whenever any member is awake, so a boundary crossed is a
+boundary erased, and ADR-0083/0084's narrowing is spent buying a traversal
+that was already cheap. The contract's conservative clause is also its fast
+one, which is rare enough to be the finding.
+
+**The generated modules got smaller.** Toggle Lab 176 528 → 169 042 bytes
+(−4.2%), Mix Lab 96 021 → 94 185 (−1.9%). One loop replaces N, so the
+faster emission is also the shorter one.
+
+**Only two modules changed, and Twin Lab was not one of them.** Its three
+regions carry at most one predicate scan per wake class each, so the
+grouping is a no-op there — a useful reminder that this rule pays only where
+a component actually asks the same question twice.
+
+One process note beyond ADR-0087's: variants must be checked for
+*observational* identity, not just a byte-identical stored string. Every rung
+here was compared against the shipped emission on the stored string, the
+whole trace, the `tx` counters and the rendered DOM over a mixed
+`toggle`/`retype`/`edit` sequence before any timing was believed — the trace
+comparison is what would have caught a fusion that reordered `evaluated`
+entries, which is precisely how the one-pass ceiling would have had to be
+built.
+
+### Performance observations
+
+10 000 and 1000 rows, 400 dispatches per timed loop, median of nine in-page
+repetitions and seven page loads, ms per commit:
+
+| rung | walks per `toggle` | 10k `toggle` | | 1000 `toggle` | |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| the emitted commit | 6 | 0.7355 | | 0.0733 | |
+| identical predicates share a pass | 4 | 0.6367 | 1.155× | 0.0650 | 1.127× |
+| one pass per wake class (shipped) | 3 | 0.6085 | 1.209× | 0.0640 | 1.145× |
+| + the narrow class dragged in | 3 | 0.6490 | 1.133× | 0.0683 | 1.073× |
+| + the two writer sweeps fused | 2 | 0.6045 | 1.199× | 0.0638 | 1.161× |
+
+`retype` is the control and is flat on every rung — 0.5365 → 0.5323 at 10k,
+0.0555 → 0.0553 at 1000 — because ADR-0084 keeps a keystroke out of every
+predicate scan. The shipped emission re-measured against the previous one
+lands at 0.6142 / 1.208× at 10k and 0.0642 / 1.144× at 1000, matching the
+hand-patched rung it was built from.
+
+BENCHMARK.md stands unre-measured and the benchmark size gate and every
+manifest are untouched — the js-framework-benchmark backend is hand-written
+and counts nothing.
+
+### Follow-up issue or commit
+
+`feat(component): walk a region's rows once per wake class (ADR-0088)` — the
+shared-pass emission and its two dedup helpers in the component backend, the
+Toggle Lab and Mix Lab artifact gates, the Toggle Lab traversal-counting
+witness, the language guide's aggregate and performance sections, the ADR,
+and this record. **This closes the ADR-0082‥0088 performance line**: every
+remaining segment of a commit is a host call, the price of a written-down
+contract, or already `O(written)`. Open: the key→position scan is still
+`O(N)` per dispatch and is now the only unearned `O(N)` walk left in a
+`toggle`, still owed the append/remove/broadcast/hydrate invalidation matrix
+ADR-0085 priced at 1.5× against seven invalidation sites.

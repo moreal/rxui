@@ -163,6 +163,15 @@ for (const required of [
   "const region_off_0_change = listenDelegatedCells(node_13, \"change\", state, context, $lrx_region_0_dispatch, [\"\", \"toggle\", \"\", \"\"]);",
   "const region_off_1 = listenDelegatedCells(node_27, \"click\", state, context, $lrx_region_1_dispatch, [\"\", \"remove\", \"\"]);",
   "disposer[\"children\"] = childInventory;",
+  // ADR-0088: `crew`'s ADR-0050 predicate count and its ADR-0059 hidden
+  // selection spell the same field equality and read the same wake flag, so
+  // they walk the row table once through one shared cell; the row total
+  // beside them is a `length` read and joins no pass, and each slot keeps
+  // its own cache, compare, write, label and counter.
+  "    const share_scan_0_0 = [0];\n    if (region_touched_0) {\n      for (const share_row_0_0 of regions[0][1]) {\n        if (share_row_0_0[2] === \"true\") {\n          share_scan_0_0[0] += 1;\n        }\n      }\n    }",
+  "      const count_next_0_0 = share_scan_0_0[0];",
+  "      const attr_next_0 = share_scan_0_0[0] === 0;",
+  "      const count_next_0_1 = regions[0][1][\"length\"];",
 ]) {
   if (!mixSource.includes(required)) {
     throw new Error(`generated Mix Lab is missing ${required}`);

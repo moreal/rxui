@@ -2022,3 +2022,93 @@ test("the store is current at the end of every commit, not of the task (ADR-0087
     "Item 0", "Item 1", "Item 2", "Item 3",
   ]);
 });
+
+test("one commit walks a region's row table once per wake class (ADR-0088)", async ({ page }) => {
+  await mountToggle(page);
+
+  // The instrument: a counting `Symbol.iterator` on Array.prototype, installed
+  // around one synchronous dispatch and removed before the page gets a turn.
+  // It counts only traversals of *this region's row table* — an array whose
+  // first element is a seven-cell row tuple `[key, label, draft, done, mode,
+  // serial, shown]` behind a numeric key — so the pending-position array, the
+  // hydration split and the region runtime's entry list stay invisible to it.
+  // What it returns is exactly "how many times did this dispatch walk the
+  // rows", which is the quantity ADR-0088 is about.
+  const walks = (source) =>
+    page.evaluate((code) => {
+      const original = Array.prototype[Symbol.iterator];
+      let counted = 0;
+      Array.prototype[Symbol.iterator] = function counting() {
+        const head = this[0];
+        if (Array.isArray(head) && head.length === 7 && typeof head[0] === "number") {
+          counted += 1;
+        }
+        return original.call(this);
+      };
+      try {
+        new Function(code)();
+      } finally {
+        Array.prototype[Symbol.iterator] = original;
+      }
+      return counted;
+    }, source);
+
+  const clickButton = (label) =>
+    `Array.from(document.querySelectorAll("button")).find((node) => node.textContent === ${JSON.stringify(label)}).click();`;
+
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByRole("button", { name: "Add item" }).click();
+  await expect(page.locator("#items > li")).toHaveCount(3);
+
+  // A `toggle` on three rows, not ten thousand. The dispatch resolves the row
+  // by its key scan (1); the drain-class-0 sweeps share one pass over the two
+  // `done` predicates (2) — before ADR-0088 that was four separate passes, two
+  // counts and two selections, three of them spelling the identical
+  // `done == "false"`; and the ADR-0051 filter sweep and the ADR-0063
+  // persistence sweep follow the reconcile with one walk each (3, 4). Seven
+  // before, four now, with every label, counter, cache and write unmoved.
+  expect(await walks('document.querySelectorAll("#items input[type=checkbox]")[0].click();')).toBe(4);
+
+  // ADR-0084's control, unmoved: a keystroke inside a row editor writes
+  // `draft`, which no predicate scan reads, so the commit runs no pass at all
+  // and the key scan and the write-back are the only two walks. This is why
+  // the survey measured `retype` flat at 1.00x across every fusion rung.
+  await page.locator("#items > li .item-label").first().dblclick();
+  expect(await walks(`
+    const editor = document.querySelector("#items input[aria-label='Item editor']");
+    editor.value = "typed";
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+  `)).toBe(2);
+  await page.keyboard.press("Escape");
+
+  // The contract's edge, and the whole reason the pass is keyed on the wake
+  // class: the editing hint reads `mode`, so it sits in drain class 1. A
+  // `dblclick` wakes that class and nothing else, so the hint evaluates
+  // through its *own* loop (2) while the drain-class-0 pass stays asleep.
+  // Fusing the two classes into one pass would have dragged the wider class
+  // awake here — the survey priced that widening at 40% of the opportunity.
+  expect(await walks('document.querySelectorAll("#items .item-label")[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));')).toBe(3);
+  await page.keyboard.press("Escape");
+
+  // A filter click touches no region, so no count and no selection wakes: the
+  // filter sweep is the commit's only walk. It is not a fusion target either —
+  // it runs after the reconcile, where a shared pass cannot follow it.
+  expect(await walks(clickButton("Show active"))).toBe(1);
+  await page.getByRole("button", { name: "Show all" }).click();
+
+  // Outside the region's own dispatch function no class can be told apart, so
+  // every predicate scan reads the touched flag and all five collapse into one
+  // pass. An append walks the shared pass (1), the filter sweep (2) and the
+  // persistence sweep (3); before ADR-0088 it walked seven.
+  expect(await walks(clickButton("Add item"))).toBe(3);
+
+  // A broadcast adds its own write loop over the rows ahead of the same three.
+  expect(await walks(clickButton("Complete all"))).toBe(4);
+
+  // The instrument left nothing behind, and every slot still agrees with the
+  // DOM: what the pass shares is the traversal, never the cache.
+  await expect(page.locator("#items-left strong")).toHaveText("0");
+  await expect(page.locator("#toggle-all")).toBeChecked();
+  await expect(page.locator("#items > li")).toHaveCount(4);
+});

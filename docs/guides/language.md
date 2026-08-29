@@ -414,9 +414,9 @@ compared against the one literal — renders one of two static strings, so
 TodoMVC's "1 item left" grammar is a text position beside the number. The
 label mounts as its `else` string (an empty region counts zero, and zero
 differs from one), joins the count inventory as one more slot recomputed by
-the same region-touch sweep with the same per-slot scan (no scan sharing),
-and writes the selected string through the same `setText` export only on a
-flip — an equal-selection commit is evaluate-only, and a filter change
+the same region-touch sweep — riding its own count's read set, and since
+ADR-0088 its own count's *pass* — and writes the selected string through the
+same `setText` export only on a flip — an equal-selection commit is evaluate-only, and a filter change
 alone recomputes nothing. The surface is sealed: the comparison literal is
 one and the branches are two static string literals (`LRX-ELAB-127` on any
 other threshold or a dynamic branch); every other conditional text stays
@@ -686,6 +686,26 @@ sweep reports what it wrote as `filter:{region}:written:{n}`, and its
 nonzero, exactly as an attribute selection's does. On a 10 000-row region a
 row toggle's commit drops from 2.47 ms to 0.76 ms; a whole-table flip, where
 the cache elides nothing, costs about 8% more.
+
+What is left after those two caches is the *number of walks*, and it is
+grouped rather than cached (ADR-0088). Every `{count region (field ==
+"literal")}` and every `hidden=`/`checked={count region (field == "literal")
+== 0}` over one region is a predicate scan, and two of them share one walk of
+the row table exactly when they read the same wake flag — the flag their own
+read sets already select. Inside a shared walk each *distinct* field equality
+gets one accumulator, so two positions spelling `done == "false"` share a
+cell while a `done == "true"` beside them shares only the traversal. Nothing
+fuses across a wake class: the pass runs under exactly its class's flag, so a
+selection ADR-0084 kept out of a `toggle` is not dragged back in by a
+neighbour that woke. A predicate-free `{count region}` is a `length` read,
+not a scan, and joins no walk; the filter sweep and the persistence
+write-back run after the reconcile and stay their own walks. What is shared
+is the traversal and never the cache — every slot keeps its own cache cell,
+compare, write, label and counter, in the order it had them — so this is
+invisible except in time and in how many times a commit touched the rows. On
+a 10 000-row region a row toggle's commit drops from 0.74 ms to 0.61 ms and
+walks the table four times instead of seven; a keystroke, which enters no
+pass at all, is unchanged.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
