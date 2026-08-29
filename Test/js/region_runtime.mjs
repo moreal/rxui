@@ -1053,6 +1053,96 @@ function values(parent) {
 }
 
 {
+  // insertAt mounts one row into a position and shifts the rest, without an
+  // update callback anywhere else: at the tail before the marker, at the
+  // front and in the middle before the row that holds the position now.
+  const parent = new FakeParent();
+  const mounts = [];
+  const updates = [];
+  const disposals = [];
+  const region = createKeyedRegion(
+    parent,
+    (item, index, context) => {
+      mounts.push([item[0], index, context]);
+      return [new FakeNode(`${item[0]}`)];
+    },
+    (handle, item, index, context) => { updates.push([item[0], index, context]); },
+    (handle, key, context) => { disposals.push([key, context]); },
+    (handle) => handle[0],
+  );
+  region.update([[1, "a"], [2, "b"], [3, "c"]]);
+  const nodes = parent.children.slice(0, 3);
+  const context = { tag: "insert" };
+  region.insertAt(3, [4, "d"], context);
+  if (JSON.stringify(values(parent)) !== '["1","2","3","4"]' ||
+      parent.children[3].parentNode !== parent || parent.children[4].value !== "leanrx:keyed" ||
+      updates.length !== 0 || disposals.length !== 0 ||
+      JSON.stringify(region.instrumentation()) !== "[4,0,4,0]") {
+    throw new Error(`insertAt at the tail did not mount exactly one row: ${values(parent)}`);
+  }
+  region.insertAt(0, [0, "z"], context);
+  region.insertAt(2, [9, "m"], context);
+  if (JSON.stringify(values(parent)) !== '["0","1","9","2","3","4"]' ||
+      parent.children[1] !== nodes[0] || updates.length !== 0 ||
+      JSON.stringify(region.instrumentation()) !== "[6,0,6,0]") {
+    throw new Error(`insertAt at the front and middle misplaced a row: ${values(parent)}`);
+  }
+  function expectInsertMismatch(index) {
+    const before = values(parent).join(",");
+    let failed = false;
+    try {
+      region.insertAt(index, [77, "x"], context);
+    } catch (error) {
+      failed = String(error).includes("LRX-REGION-003");
+    }
+    if (!failed || values(parent).join(",") !== before ||
+        JSON.stringify(region.instrumentation()) !== "[6,0,6,0]") {
+      throw new Error(`insertAt accepted the index ${index}`);
+    }
+  }
+  expectInsertMismatch(-1);
+  expectInsertMismatch(7);
+  expectInsertMismatch(1.5);
+  // The mount callback saw each row at the position it was inserted into and
+  // took the caller's context, and the rows the insert shifted kept their
+  // nodes untouched.
+  if (JSON.stringify(mounts.slice(3)) !==
+      '[[4,3,{"tag":"insert"}],[0,0,{"tag":"insert"}],[9,2,{"tag":"insert"}]]' ||
+      JSON.stringify(mounts.slice(0, 3).map((entry) => entry[1])) !== "[0,1,2]") {
+    throw new Error(`insertAt mounted at the wrong positions: ${JSON.stringify(mounts)}`);
+  }
+  if (parent.children[3] !== nodes[1] || parent.children[4] !== nodes[2]) {
+    throw new Error("insertAt disturbed the rows it shifted");
+  }
+  // A reorder builds the key index, and an insert past it registers its key
+  // there — so the next reorder retains the inserted row instead of mounting
+  // a second one for the same key.
+  region.update([[4, "d"], [0, "z"], [1, "a"], [9, "m"], [2, "b"], [3, "c"]]);
+  region.insertAt(6, [5, "e"], context);
+  const inserted = parent.children[6];
+  region.update([[5, "e"], [4, "d"], [0, "z"], [1, "a"], [9, "m"], [2, "b"], [3, "c"]]);
+  if (parent.children[0] !== inserted || values(parent).length !== 7 ||
+      JSON.stringify(region.instrumentation()) !== "[7,13,9,0]") {
+    throw new Error("insertAt left its key out of the index it found built");
+  }
+  // A key the index already holds is the duplicate the index can see.
+  let duplicate = false;
+  try {
+    region.insertAt(0, [4, "d"], context);
+  } catch (error) {
+    duplicate = String(error).includes("LRX-REGION-001");
+  }
+  if (!duplicate || values(parent).length !== 7) {
+    throw new Error("insertAt accepted a key the index already held");
+  }
+  region.dispose();
+  region.insertAt(0, [8, "h"], context);
+  if (parent.children.length !== 0 || disposals.length !== 7) {
+    throw new Error("insertAt ran after disposal");
+  }
+}
+
+{
   // An empty region registers each new key with one index insertion; the
   // repeated key may be far from its first occurrence and nothing is mounted.
   const parent = new FakeParent();
@@ -1085,7 +1175,8 @@ function values(parent) {
 {
   // ADR-0094: the two caller shapes, played against the guarded host in the
   // sequence each real caller uses. The component backend hands its row table
-  // to `update` and one of its rows to `updateAt`, and depends on that table
+  // to `update`, one of its rows to `updateAt` and its tail row to
+  // `insertAt`, and depends on that table
   // still being strictly ascending in slot 0 afterwards, because
   // `$lrx_row_seek` resolves a dispatching key by binary search over exactly
   // it. The hand-written js-framework-benchmark hands a target order to
@@ -1146,7 +1237,27 @@ function values(parent) {
   append("f");
   region.update(table);
   checkOrder("after an append past the removal");
-  if (JSON.stringify(values(parent)) !== '["0:a","2:c","3:d","4:e","5:f"]') {
+  // The same append drained positionally: the tail row of the table crosses
+  // as one row, and the table it came out of is not handed over at all.
+  append("g");
+  region.insertAt(table.length - 1, table[table.length - 1], null);
+  checkOrder("after an append drained through insertAt");
+  // ADR-0098's drain for a transaction that appended more than once: a cursor
+  // from `length - n` walking upward, so every insert addresses a host that
+  // already holds every row before it. One `regionAppend` per event per region
+  // is all any lab writes today, so this shape has no caller — the emission
+  // produces it by construction and this is where it is exercised.
+  for (const label of ["h", "i", "j"]) append(label);
+  for (let cursor = table.length - 3; cursor < table.length; cursor += 1) {
+    region.insertAt(cursor, table[cursor], null);
+  }
+  checkOrder("after a three-row append drained through insertAt");
+  if (JSON.stringify(values(parent)) !==
+      '["0:a","2:c","3:d","4:e","5:f","6:g","7:h","8:i","9:j"]') {
+    throw new Error(`the multi-row drain shape diverged: ${JSON.stringify(values(parent))}`);
+  }
+  if (JSON.stringify(values(parent).slice(0, 6)) !==
+      '["0:a","2:c","3:d","4:e","5:f","6:g"]') {
     throw new Error(`the component caller shape diverged: ${JSON.stringify(values(parent))}`);
   }
   region.dispose();

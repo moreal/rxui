@@ -553,9 +553,11 @@ test("one chained event drains both regions in one commit", async ({ page }) => 
     return { commits: tx[1], length: tx[7].length };
   });
   // ADR-0078: `append pins (…) then remove crew (…) then set added (…)`
-  // raises both dirty flags inside one transaction; the commit sweep then
-  // drains them in region declaration order, crew before pins, regardless of
-  // the order the event touched them.
+  // moves both regions inside one transaction; the commit sweep then drains
+  // them in region declaration order, crew before pins, regardless of the
+  // order the event touched them. Since ADR-0098 the two take different
+  // paths in the same sweep: the unbounded predicate removal keeps crew's
+  // reconcile, and pins' single appended row rides `insertAt`.
   await page.getByRole("button", { name: "Stow done" }).click();
   await expect(page.locator("#crew > li .crew-label")).toHaveText(["Member 1"]);
   await expect(page.locator("#pins .pin-note")).toHaveText(["Stowed 2"]);
@@ -576,11 +578,14 @@ test("one chained event drains both regions in one commit", async ({ page }) => 
   // Event order: pins append before the crew removal.
   expect(after.slice.indexOf("region:pins:append"))
     .toBeLessThan(after.slice.indexOf("region:crew:removeIf"));
-  // Sweep order: crew reconcile and write-back before pins'.
+  // Sweep order: crew's reconcile and write-back before pins'.
   expect(after.slice.indexOf("region:crew:update"))
-    .toBeLessThan(after.slice.indexOf("region:pins:update"));
+    .toBeLessThan(after.slice.indexOf("region:pins:insertAt"));
   expect(after.slice.indexOf("storage:crew:write"))
     .toBeLessThan(after.slice.indexOf("storage:pins:write"));
+  // Pins never reconciles: one row entered it, and one row is what mounts.
+  expect(after.slice.filter((event) => event === "region:pins:update")).toHaveLength(0);
+  expect(after.slice.filter((event) => event === "region:pins:insertAt")).toHaveLength(1);
   // One removal, one mount: the static seed, the surviving member's run of
   // three, and the pin.
   expect(after.children).toBe(5);

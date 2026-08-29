@@ -6239,3 +6239,161 @@ internals note, the ADR, the DECISIONS.md row, and this record. **ADR-0096
 OQ1 is closed on its removal half.** What it leaves is the other half: an
 `append` still hands the whole table to `update` for one new row, and closing
 that is an ABI event rather than a codegen one.
+
+## An append mounts one row (ADR-0098)
+
+### What was built
+
+ADR-0097 closed with a sentence it could not act on: `append` was declined
+"for want of a host export", because nothing on the keyed handle mounts a row
+except `update`. This round built the export, which made it the first ABI move
+since ADR-0063.
+
+The measurement came first again, and this time it decided two things rather
+than one. Splitting `update` into its four phases for an *append* says the
+cost is the same loop ADR-0097 found on a removal, from the other end of the
+table: at ten thousand rows a single-row append spends 5.200 ms in the
+`updateItem` loop — 96.6% of `update`, 46% of the whole commit, about 0.52 µs
+per retained row — the generated row callback run on all ten thousand retained
+rows to mount one new one. `placeInOrder` is **0.035 ms**, so the placement
+is already free at *both* ends: the prefix scan matches every retained row and
+one `insertBefore` follows. Key validation is 0.105, and it is a scan the append
+does not need at all — the new key is the first not at its previous position,
+so `monotoneKeys` walks all ten thousand and one items to answer a question a
+positional insert never asks.
+
+The second thing it decided is what to leave alone. Run the same split on the
+ADR-0063 hydration and the shape inverts: nothing is retained, so the loop is
+the *mount* loop, and the placement is no longer free but **6.765 ms**, because
+`rebuild` detaches the owned parent, refills it, and re-attaches it once. Ten
+thousand connected `insertBefore` calls do not match that. Hydration keeps the
+reconcile because it was measured, not because it was overlooked — the same
+sentence ADR-0097 wrote about `removeIf`, now with the number behind it.
+
+So `insertAt(index, item, context)` joins the handle and completes the
+`updateAt`/`swapAt`/`removeAt` family. It is positional rather than
+append-only because the position is what the caller already knows and can
+therefore be *checked against*: an index outside `[0, current.length]`, or a
+non-integer, is `LRX-REGION-003` before any callback or DOM mutation, exactly
+as `removeAt`'s key check is.
+
+One thing the measurement could not do is vary the batch size, and the reason
+is a language fact rather than a harness one: no lab appends more than one row
+into one region in one transaction, because every appending event carries
+exactly one `append` per region. So the batch axis is *k successive
+transactions*, each paying the whole loop — 2.20× at five appends over ten
+thousand rows. The `then append` shape the `sequence` combinator admits has no
+caller, so the drain's cursor walk is exercised against the real host in the
+region runtime gate instead: three rows appended and drained from `length - 3`
+upward, the ADR-0093 order re-checked after each.
+
+The emission counts rather than positions, and that is the part worth
+remembering. A `regionAppend` is a tail `push` — the language's only insertion
+— and a tail push shifts nothing, so the rows a transaction added are the last
+*n* of whatever table it ends with. There is no position to store, so there is
+no position a later splice can leave naming the wrong row. The counter is the
+record's last slot, behind ADR-0097's drops queue; the drain walks a cursor
+upward from `length - n`, after the reconcile and before both the ADR-0043
+`updateAt` drain and the ADR-0051 filter sweep, which address rows by
+row-table position.
+
+Three obligations travel with taking the dirty bit away, one of them ADR-0097's
+verbatim. Every wake flag reads the counter beside the dirty bit and the drops
+queue, or the rows render correctly while the counts, the emptiness sweeps, the
+filter table and the write-back sleep through the append. The dirty branch
+zeroes the counter, because a reconcile has already mounted what was counted.
+And a removal that finds the counter non-zero falls back to the dirty bit,
+since its splice could be taking out a row this same transaction appended —
+unreachable today, because a row event can only name a row that already has a
+DOM node, and discharged as one comparison rather than as a whole-language
+invariant.
+
+### What it cost
+
+Paired A/B, six passes, **ABBA inside every cell of every pass**: appends
+**2.31×** at one thousand rows and **2.11×** at ten thousand (11.130 → 5.288
+ms), five successive single-row appends **2.20×** at ten thousand (52.985 →
+24.040 ms). Untouched paths within noise — `removeMiddle` 1.03–1.14×,
+`removeIf` 1.00–1.01×, `toggle` 0.97–1.02×, and the mount hydration reading
+53.2–56.7 ms on both sides at ten thousand rows. Five
+single-row appends over ten thousand rows moved the host counters
+`[5, 50010, 5, 0]` and now move them `[5, 0, 5, 0]`.
+
+Two ~2× results rather than ADR-0097's 2.9–4.3×, and the reason is worth
+writing down because it is the next axis. The append's commit is 11.2 ms of which
+`update` is 5.4; the other 5.8 is the per-commit O(N) sweeps — the ADR-0088
+predicate pass, the ADR-0051 filter sweep, the ADR-0063 encode loop, `join`
+and `storageSet` — every one of which walks the whole table for a change that
+touched one row. Removing the reconcile can only ever halve this commit, and
+it did.
+
+### The harness bug that nearly became a finding
+
+The first paired run reported the ten-thousand-row `toggle` at **0.72×** — a
+36% regression on a path this change does not touch. Bisecting the dist (the
+old module against the old module with only the new host file) put it on the
+host, which was already implausible: the toggle calls `updateAt` once, and one
+call cannot cost 0.9 ms.
+
+The **A/A control** settled it: the same dist against a byte-identical copy of
+itself read 0.79× on the same cell. The bias is the harness. On a
+storage-dominated cell the variant that runs *second* pays for the first's five
+250 kB `localStorage` writes, and alternating the leader across an **odd**
+number of passes leaves one slot leading once more than the other. Running
+ABBA within each cell of each pass brings the same A/A control to 0.95–1.00×,
+and it is what the reported numbers use. An A/A control belongs in any paired
+harness that touches a persistent store; without it this round would have
+shipped a regression that does not exist.
+
+### Compiler and gate work
+
+`runtimeAbi` 17 → 18 with twenty-six mechanical references — the sixteen
+artifact tests, the differential check, six Lean backend tests, the CLI
+doctor's expected output, and the Expression Playground example's own manifest
+check, which is the one the earlier rounds' "~25" never had to touch — and one
+gate that has not moved before: the **js-framework-benchmark size baseline**. That
+backend inlines the whole keyed host into a single minified file, so `main.mjs`
+grows 8 444 → 8 776 raw bytes (+3.9%, brotli 3 103 → 3 200) for an export it
+never calls. Its own emission is unchanged apart from the minifier's letter
+assignments shifting around the new method.
+
+Five generated modules change — exactly the five labs whose components declare
+an appending event — and regenerating every lab on both sides showed every
+other generated module byte-identical: Counter, Diamond, Echo, Filter, Tabs,
+Temperature, Validated Form, TodoMVC, Notes, Issue Browser, Data Grid, the
+docs lab, and the seven child components Mix Lab and Nest Lab compose, whose
+manifests move with the ABI and whose modules do not. `leanrx_region.mjs`
+changes in all eight bundles that ship it, which is the export.
+
+### Follow-up issue or commit
+
+The witnesses were broken four ways, all against the real emission, each run
+against the ninety-three Toggle/Twin/Mix browser tests. The structural wake
+flag forgetting the counter: **79 red**, and this is the break where the rows
+themselves are right — they mount, and the counts, the empty-region chrome,
+the filter table and the write-back sleep through the append that produced
+them. The drain naming a position one past the one the push took: **83 red**,
+the host's own `LRX-REGION-003` first. A drain that empties the counter
+without calling the host: **79 red**.
+
+The fourth break is worth recording precisely because it stayed green. Taking
+the counter reset out of the dirty branch — so a reconcile would mount the
+counted rows and the drain would mount them again — left all **93 tests
+passing**, which is the honest statement of that obligation's status: no lab
+can put an append and a dirty-raiser into one transaction on the same region,
+because a broadcast, a predicate removal and a hydration are all component
+events that do not also append there, and a row event can only name a row that
+already has a DOM node. Like ADR-0097's pending-queue fallback, it is a guard
+against a program the language cannot currently write, discharged in the
+emission rather than argued in a comment — and now known to be unwitnessed.
+
+`feat(component): mount a component-event append through insertAt (ADR-0098)`
+— `insertAt` in `runtime/leanrx_region.mjs`, its ADR-0094 surface entry and
+runtime tests, the counter slot and drain in `LeanRx/Backend/Component.lean`,
+the ABI bump and its references, the five labs' artifact expectations, three
+new browser witnesses and one rewritten, the language guide's append
+paragraph, both internals notes, the size baseline, the ADR, the DECISIONS.md
+row, and this record. **ADR-0097 OQ1 is closed.** What it leaves is the
+per-commit O(N) sweeps: with the reconcile gone from both single-row paths,
+what is left of a structural commit at ten thousand rows is three full-table
+walks for a change that touched one row.

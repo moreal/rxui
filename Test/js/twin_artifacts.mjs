@@ -13,7 +13,7 @@ if (
   twinManifest.module !== "TwinLab.mjs" ||
   typeof twinManifest.graphHash !== "string" ||
   twinManifest.graphHash.length === 0 ||
-  twinManifest.runtimeAbi !== 17 ||
+  twinManifest.runtimeAbi !== 18 ||
   JSON.stringify(twinManifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(twinManifest.stateSlots) !==
     JSON.stringify(["int", "string", "string"]) ||
@@ -49,23 +49,26 @@ for (const required of [
   "import { createKeyedRegion } from \"./leanrx_region.mjs\";",
   // ADR-0079: three filtered regions, and the filter container slot is
   // `5 + counts?2` computed inside the per-region loop — `left` carries a
-  // count so its record is eight slots wide with the container at 7, while
-  // `right` and `solo` carry none so the same container rides slot 5 of a
-  // six-slot record. Nothing about the filter feature is component-wide.
-  // ADR-0081: `right` is now persisted, and this line is the proof that
-  // persistence adds no region-record slot — the six-slot record and the
-  // container at 5 are byte-for-byte what ADR-0080 pinned.
-  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_24], [0, 0], node_26, []], [region_1, [], 0, false, [], node_27, []], [region_2, [], 0, false, [], node_28, []]];",
+  // count so its container sits at 7, while `right` and `solo` carry none so
+  // the same container rides slot 5. Nothing about the filter feature is
+  // component-wide.
+  // ADR-0081: `right` is persisted, and this line is the proof that
+  // persistence adds no region-record slot — every slot up to the container
+  // is byte-for-byte what ADR-0080 pinned.
+  // ADR-0097/0098: all three regions remove and append, so each record grows
+  // the drops queue and then the append counter, in that order, at its own
+  // end — which is why no earlier slot index moved.
+  "const regions = [[region_0, [], 0, false, [], [count_text_22, count_text_24], [0, 0], node_26, [], 0], [region_1, [], 0, false, [], node_27, [], 0], [region_2, [], 0, false, [], node_28, [], 0]];",
   // Each region's wake flag is its own, read before the reconcile consumes
   // the dirty bit and the pending positions.
-  "    const region_touched_1 = regions[1][3] || regions[1][6][\"length\"] !== 0 || regions[1][4][\"length\"] !== 0;",
-  "    const region_touched_2 = regions[2][3] || regions[2][6][\"length\"] !== 0 || regions[2][4][\"length\"] !== 0;",
+  "    const region_touched_1 = regions[1][3] || regions[1][6][\"length\"] !== 0 || regions[1][7] !== 0 || regions[1][4][\"length\"] !== 0;",
+  "    const region_touched_2 = regions[2][3] || regions[2][6][\"length\"] !== 0 || regions[2][7] !== 0 || regions[2][4][\"length\"] !== 0;",
   // ADR-0083: `left`'s only drain path writes `label`; its filter arms and
   // its predicate count read `flag`, and its row total reads no field at
   // all. Every sweep over the region is therefore disjoint from the drain,
   // so `left` declares *only* the structural flag — the flag set is derived
   // per region from the read sets, not fixed by the feature list.
-  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0;",
+  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;",
   // ADR-0079, axis one — two filtered regions: two scans with their own
   // `filter_scan_{i}` / `filter_row_{i}` identifiers, each navigating
   // `childAt` from *its own* container slot, so neither walk can reach the
@@ -96,7 +99,7 @@ for (const required of [
   // touch of `solo` beside a write to the twins' filter field — so the one
   // commit runs all three sweeps, two woken by the changed bit and one by
   // its own touched flag.
-  "  tx[7][\"push\"](\"event:stir\");\n  regions[2][1][\"push\"]([regions[2][2], $lrx_event_8_append_0_0(state[0], state[1], state[2]), $lrx_event_8_append_0_1(state[0], state[1], state[2]), null]);\n  regions[2][2] += 1;\n  regions[2][3] = true;\n  tx[7][\"push\"](\"region:solo:append\");\n  state[1] = $lrx_event_8_write_1(state[0], state[1], state[2]);",
+  "  tx[7][\"push\"](\"event:stir\");\n  regions[2][1][\"push\"]([regions[2][2], $lrx_event_8_append_0_0(state[0], state[1], state[2]), $lrx_event_8_append_0_1(state[0], state[1], state[2]), null]);\n  regions[2][2] += 1;\n  regions[2][7] += 1;\n  tx[7][\"push\"](\"region:solo:append\");\n  state[1] = $lrx_event_8_write_1(state[0], state[1], state[2]);",
   // ADR-0080: `left` and `right` each bind one row event of their own kind —
   // a delegated `click` on `left`'s container and a delegated `change` on
   // `right`'s — so the two dispatches never share a listener; `solo` binds
@@ -107,7 +110,7 @@ for (const required of [
   // predicate count reads `flag`, so a `mark` drain (which writes `label`)
   // asks neither. The two counts agree on their flag, so they share one
   // block rather than growing a second guard.
-  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0;\n    if (region_structural_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:left:0:evaluated\");",
+  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;\n    if (region_structural_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:left:0:evaluated\");",
   "      tx[7][\"push\"](\"count:left:1:evaluated\");\n      const count_scan_0_1 = [0];",
   "const region_off_1_change = listenDelegatedCells(node_27, \"change\", state, context, $lrx_region_1_dispatch, [\"\", \"\", \"toggle\"]);",
   // ADR-0080, axis one — a route over the *shared* filter field. The sealed
@@ -149,7 +152,7 @@ for (const required of [
   // ...while the canonical hash write rides `changed[1]` in the commit
   // prologue, ahead of *every* region block — the first region wake flag in
   // the commit is the statement that follows it.
-  "      tx[7][\"push\"](\"route:mode:write\");\n    }\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0;",
+  "      tx[7][\"push\"](\"route:mode:write\");\n    }\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;",
   // Mount seeds the routed field from the hash before the DOM exists and
   // hydrates the persisted region after the listeners are wired, so the
   // hydrate transaction's own sweep applies the routed literal to the rows

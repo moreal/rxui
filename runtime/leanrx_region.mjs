@@ -141,8 +141,10 @@ function monotoneKeys(items, count) {
 // forwarding context to the mount/update/dispose callbacks; updateAt(index,
 // item, context) re-runs updateItem for one retained, key-checked position;
 // swapAt(first, second, items, context) exchanges two retained positions with
-// at most two moves and re-runs updateItem for them; removeAt(index, key,
-// context) disposes one retained row and shifts the rest without re-rendering.
+// at most two moves and re-runs updateItem for them; insertAt(index, item,
+// context) mounts one row into a position and shifts the rest, and
+// removeAt(index, key, context) disposes one retained row and shifts the rest,
+// both without re-rendering anything else.
 // The key index (entries) exists only after an update needed it (a retained
 // key away from its position, or keys that are not monotone) and until an
 // update retains nothing.
@@ -266,6 +268,32 @@ export function createKeyedRegion(parent, mountItem, updateItem, disposeItem, ro
       updateItem(high.handle, lowItem, first, context);
       updateItem(low.handle, highItem, second, context);
       metrics[1] += 2;
+    },
+    // One row is mounted and placed at index — before the row that holds it
+    // now, or before the marker at current.length, any other index being
+    // LRX-REGION-003 — and every other row keeps its handle, its node and its
+    // rendering. The caller owns key freshness exactly as it owns the items
+    // array update reconciles; a key the index already holds is caught here
+    // (LRX-REGION-001), and the index exists only when an update needed it.
+    insertAt(index, item, context) {
+      if (disposed) return;
+      const key = item[0];
+      if (!(Number.isInteger(index) && index >= 0 && index <= current.length)) {
+        throw mismatchedKey(index, key);
+      }
+      if (entries !== null && entries.has(key)) {
+        entries = null;
+        throw duplicateKey(key);
+      }
+      const handle = mountItem(item, index, context);
+      const entry = { key, handle, node: null, stamp, pos: -1 };
+      entry.node = rootItem ? rootItem(handle) : handle;
+      parent.insertBefore(entry.node,
+        index < current.length ? current[index].node : marker);
+      current.splice(index, 0, entry);
+      if (entries !== null) entries.set(key, entry);
+      metrics[0] += 1;
+      metrics[2] += 1;
     },
     // The retained row at index, whose key must be key (LRX-REGION-003
     // otherwise), is disposed and detached; later rows shift one position and

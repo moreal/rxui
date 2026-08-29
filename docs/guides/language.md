@@ -794,10 +794,31 @@ it, so a transaction that also appends still reconciles. It runs before the
 filter sweep, which navigates by row-table position and needs the DOM back in
 step. And every wake flag that read the dirty bit as "the row set moved" reads
 the queue beside it, so the counts, the emptiness sweeps, the filter table and
-the write-back still run on a removal. Two removals keep the reconcile on
-purpose: an `update … remove` predicate removal, whose row count is unbounded
-and whose all-rows case the reconcile clears in bulk, and `append`, which has
-no host counterpart because mounting a row is `update`'s alone.
+the write-back still run on a removal. An `update … remove` predicate removal
+keeps the reconcile on purpose: its row count is unbounded, and the reconcile
+clears an owned parent in bulk when nothing is retained.
+
+An `append` is the same shape from the other end, and ABI 18 gives it the
+counterpart it lacked (ADR-0098). At ten thousand rows a single-row append
+spent 5.2 ms of an 11.2 ms commit in the same loop, to mount one row. So an
+append no longer raises the dirty flag either: it counts itself in the region
+record's last slot, and the commit sweep mounts the last *n* rows of the table
+the transaction ends with through the region handle's new
+`insertAt(index, item, context)` — one mount, one placement before the row that
+holds the position now or before the anchor, and every standing row's DOM node
+and row-update callback left alone. It is a count rather than a position
+because the language's only insertion is a tail push, which shifts nothing. A
+single-row append is **2.1×–2.3×** faster at one thousand and ten thousand
+rows, and the host's update counter does not move at all. The same three
+things travel with it: the drain runs after the reconcile and before the
+filter sweep and the `updateAt` drain, both of which address rows by row-table
+position; a reconcile zeroes the counter, because it has already mounted what
+was counted; and every wake flag reads the counter beside the dirty bit, so
+the counts, the emptiness sweeps, the filter table and the write-back still
+run on an append. Hydration keeps the reconcile on purpose: its rows arrive as
+a whole table into an empty region, where the bulk path refills a *detached*
+parent — 6.8 ms of placement at ten thousand rows that ten thousand connected
+inserts would not match.
 
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the

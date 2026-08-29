@@ -13,7 +13,7 @@ if (
   nestManifest.module !== "NestLab.mjs" ||
   typeof nestManifest.graphHash !== "string" ||
   nestManifest.graphHash.length === 0 ||
-  nestManifest.runtimeAbi !== 17 ||
+  nestManifest.runtimeAbi !== 18 ||
   JSON.stringify(nestManifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(nestManifest.stateSlots) !== JSON.stringify(["int", "int"]) ||
   nestManifest.sourceCount !== 2 ||
@@ -141,7 +141,13 @@ for (const required of [
   "const region_off_0_keydown = listenDelegatedCells(node_9, \"keydown\", state, context, $lrx_region_0_dispatch, [\"\", \"\", \"record\", \"\", \"\", \"\"]);",
   "regions[0][1][\"push\"]([regions[0][2], $lrx_event_1_append_0_0(state[0], state[1]), $lrx_event_1_append_0_1(state[0], state[1]), $lrx_event_1_append_0_2(state[0], state[1]), $lrx_event_1_append_0_3(state[0], state[1])]);",
   "setKey(row_0, item[0]);",
-  "const regions = [[region_0, [], 0, false, [], childInventory, []]];",
+  "const regions = [[region_0, [], 0, false, [], childInventory, [], 0]];",
+  // ADR-0098: the append counts itself in the record's last slot, and the
+  // drain forwards the ADR-0075 inventory as the row context, so each mounted
+  // row's children are pushed onto the inventory's end — where the
+  // reconcile's own in-order mount loop would have put them.
+  "  regions[0][2] += 1;\n  regions[0][7] += 1;\n  tx[7][\"push\"](\"region:roster:append\");",
+  "    if (regions[0][7] !== 0) {\n      const append_cursor_0 = [regions[0][1][\"length\"] - regions[0][7]];\n      while (append_cursor_0[0] < regions[0][1][\"length\"]) {\n        regions[0][0][\"insertAt\"](append_cursor_0[0], regions[0][1][append_cursor_0[0]], regions[0][5]);\n        tx[7][\"push\"](\"region:roster:insertAt\");\n        append_cursor_0[0] += 1;\n      }\n      regions[0][7] = 0;\n    }",
   // ADR-0043: the mark dispatch mutates the retained item in place and the
   // commit sweep drains exactly the pending positions through updateAt.
   "const row_next_0 = row_item[2] + \" ★\";",

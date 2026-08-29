@@ -394,11 +394,36 @@ reconcile. -/
 private def regionRemovesRows (region : RegionSpec) : Bool :=
   region.events.toList.any (·.action.removesRow)
 
-/-- The record slot of one region's ADR-0097 drops queue: the record's last
-slot, behind the ADR-0075 inventory, so adding it moves no slot any earlier
-ADR sealed. -/
+/-- The record slot of one region's ADR-0097 drops queue: behind the ADR-0075
+inventory, so adding it moves no slot any earlier ADR sealed. -/
 private def regionDropSlot (hasCounts hasFilter hasChild : Bool) : Nat :=
   regionChildSlot hasCounts hasFilter + (if hasChild then 1 else 0)
+
+/-- Whether some component event appends a row to one region (ADR-0098), the
+ADR-0056 key arms included. The ADR-0063 hydration path also pushes rows, but
+it pushes a whole table and keeps the dirty bit, so it is not one of these. -/
+private def regionAppendsRows (spec : ComponentSpec Γ) (region : RegionSpec) : Bool :=
+  (eventUpdates spec).any fun update =>
+    update.regionAppendTargets.any (·.1 == region.name)
+
+/-- The record slot of one region's ADR-0098 append counter: the record's
+last slot, behind the ADR-0097 drops queue, present exactly when some
+component event appends into the region. -/
+private def regionAppendSlot (hasCounts hasFilter hasChild hasDrops : Bool) : Nat :=
+  regionDropSlot hasCounts hasFilter hasChild + (if hasDrops then 1 else 0)
+
+/-- The ADR-0098 append counter slot of every region some component event
+appends into, by region name, laid out exactly as the record construction
+lays it out. Regions nothing appends into are absent, and their records are
+the length they were. -/
+private def regionAppendSlots (checked : CheckedComponent Γ) : List (String × Nat) :=
+  checked.spec.regions.toList.filterMap fun region =>
+    if regionAppendsRows checked.spec region then
+      some (region.name, regionAppendSlot
+        (checked.view.regionCounts.any (·.region == region.name))
+        (checked.spec.filters.toList.any (·.region == region.name))
+        (regionHasChildRef region) (regionRemovesRows region))
+    else none
 
 /-- The regions one component persists, by name (ADR-0063). A persisted
 region's rows carry the ADR-0085 serialization cache cell; every other
@@ -632,6 +657,7 @@ private def regionBroadcastStmts (regions tx : Ident) (regionSpecs : Array Regio
 
 private def updateStatements (evaluators : EvalState) (context state tx regions : Ident)
     (regionSpecs : Array RegionSpec) (persisted filtered : List String)
+    (appendSlots : List (String × Nat))
     (eventNames : List String) (valueCount eventIndex : Nat) :
     Update Γ → Nat → Except Error (Nat × List Stmt)
   | .set field _ _, writeIndex => do
@@ -669,14 +695,33 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
       construction. -/
       let fresh := freshRowCells (rowSerialSlotOf? persisted regionSpecs regionName)
         (rowFilterSlotOf? persisted filtered regionSpecs regionName)
+      /- ADR-0098: the row goes onto the tail of the table and the commit
+      sweep mounts exactly it through the handle's `insertAt`, so instead of
+      raising the dirty bit — which would re-render every retained row to
+      place one new one — the append counts itself into the record's last
+      slot. The count, not a position: a tail push shifts nothing, so the
+      positions the drain needs are the last `n` of whatever table the
+      transaction ends with, and a later removal that would invalidate them
+      falls back to the dirty bit at its own site. Every region an event
+      appends into carries the slot; the `none` arm is unreachable and
+      raises the bit the drain replaced. -/
+      let record : List Stmt :=
+        match (appendSlots.find? (·.1 == regionName)).map (·.2) with
+        | some slot => [
+            .assign (.index (.index (.ident regions) (uint regionIndex)) (uint slot))
+              (.binary .add (regionEntry regions regionIndex slot) (uint 1))
+          ]
+        | none => [
+            .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+              (.literal (.boolean true))
+          ]
       pure (writeIndex + 1, [
         .expr <| .call (.index (regionEntry regions regionIndex 1) (.literal (.string "push")))
           (.ofList [.array (.ofList
             (regionEntry regions regionIndex 2 :: fieldCalls ++ fresh))]),
         .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 2))
-          (.binary .add (regionEntry regions regionIndex 2) (uint 1)),
-        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
-          (.literal (.boolean true)),
+          (.binary .add (regionEntry regions regionIndex 2) (uint 1))
+      ] ++ record ++ [
         pushTrace tx s!"region:{regionName}:append"
       ])
   | .regionBroadcast regionName assignments _, writeIndex => do
@@ -714,9 +759,11 @@ private def updateStatements (evaluators : EvalState) (context state tx regions 
       ])
   | .sequence first second, writeIndex => do
       let (writeIndex, first) ← updateStatements evaluators context state tx regions
-        regionSpecs persisted filtered eventNames valueCount eventIndex first writeIndex
+        regionSpecs persisted filtered appendSlots eventNames valueCount eventIndex
+        first writeIndex
       let (writeIndex, second) ← updateStatements evaluators context state tx regions
-        regionSpecs persisted filtered eventNames valueCount eventIndex second writeIndex
+        regionSpecs persisted filtered appendSlots eventNames valueCount eventIndex
+        second writeIndex
       pure (writeIndex, first ++ second)
 
 private def anyChanged (changed : Ident) (deps : List Nat) : Expr :=
@@ -1036,12 +1083,26 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
       if regionRemovesRows region then
         some (regionDropSlot (!counts.isEmpty) filter?.isSome (regionHasChildRef region))
       else none
-    let structuralExpr : Expr := match dropSlot? with
-      | none => regionEntry regions regionIndex 3
-      | some slot => .binary .or (regionEntry regions regionIndex 3)
-          (.unary .not (.binary .eq
-            (.index (regionEntry regions regionIndex slot) (.literal (.string "length")))
-            (uint 0)))
+    /- The ADR-0098 append counter, read here for the same reason: an append
+    that counts itself instead of raising the dirty bit is still "the row set
+    moved", so every flag below reads it beside the bit and the queue, and
+    reads it before the drain empties it. -/
+    let appendSlot? : Option Nat :=
+      if regionAppendsRows checked.spec region then
+        some (regionAppendSlot (!counts.isEmpty) filter?.isSome
+          (regionHasChildRef region) (regionRemovesRows region))
+      else none
+    let structuralExpr : Expr :=
+      let withDrops : Expr := match dropSlot? with
+        | none => regionEntry regions regionIndex 3
+        | some slot => .binary .or (regionEntry regions regionIndex 3)
+            (.unary .not (.binary .eq
+              (.index (regionEntry regions regionIndex slot) (.literal (.string "length")))
+              (uint 0)))
+      match appendSlot? with
+      | none => withDrops
+      | some slot => .binary .or withDrops
+          (.unary .not (.binary .eq (regionEntry regions regionIndex slot) (uint 0)))
     if wakes.contains .touched then
       /- The touched flag serves every sweep every drain path can move: the
       count sweep (ADR-0050), the filter sweep (ADR-0051), the empty-region
@@ -1239,10 +1300,13 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
     keeps clean regions out of the sweep entirely (ADR-0041). A structurally
     dirty reconcile re-runs every retained row, so it drops pending update
     positions unrendered; an update-only transaction drains them through
-    `updateAt` instead (ADR-0043), and since ADR-0097 a removal-only
-    transaction drains them through `removeAt`. What still raises the dirty
-    bit is what the reconcile is the right shape for: an append, an ADR-0050
-    broadcast or predicate removal, a hydrate. -/
+    `updateAt` instead (ADR-0043), since ADR-0097 a removal-only transaction
+    drains them through `removeAt`, and since ADR-0098 an appending one
+    through `insertAt`. What still raises the dirty bit is what the reconcile
+    is the right shape for: an ADR-0050 broadcast or predicate removal, a
+    hydrate — whose rows arrive as a whole table into an empty region, where
+    the reconcile's `retained === 0` path clears and refills an owned parent
+    detached, which no sequence of per-row inserts can match. -/
     /- The row-scoped child context (ADR-0075): a child-composing region's
     record carries the live children inventory in its last slot, and the
     reconcile and drain forward it so the row mount callback pushes and the
@@ -1288,7 +1352,50 @@ private def transactionShell (checked : CheckedComponent Γ) (evaluators : EvalS
       pushTrace tx s!"region:{region.name}:update"
     ] ++ (if regionHasUpdates region then [
       .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 4)) (.array .nil)
-    ] else []))]
+    ] else []) ++ (match appendSlot? with
+      | none => []
+      | some slot => [
+          /- The reconcile mounts every counted append along with everything
+          else, so the counter is dropped exactly where the pending positions
+          are: whatever raised the dirty bit — a broadcast, a predicate
+          removal, a hydrate, a removal that fell back — the reconcile is the
+          right shape for it and the drain below must not mount a second
+          time. -/
+          .assign (.index (.index (.ident regions) (uint regionIndex)) (uint slot)) (uint 0)
+        ]))]
+    /- The ADR-0098 append drain, after the reconcile and before the pending
+    `updateAt` drain. An append is a tail `push`, so the rows it added are the
+    last `n` of the table this transaction ends with — no position is stored
+    and none can go stale — and the handle's `insertAt` mounts each one into
+    the position it already occupies there, leaving every retained row's DOM
+    node and generated row-update callback alone. The cursor walks upward, so
+    each row is inserted into a host whose entries already hold every row
+    before it and the marker is the anchor for all of them.
+
+    After the reconcile because a transaction that also broadcast has already
+    mounted them and zeroed the counter above; before the `updateAt` drain
+    and the ADR-0051 filter sweep because both address rows by row-table
+    position, and only after this drain do the table and the host agree
+    again. -/
+    if let some slot := appendSlot? then
+      let cursor ← Ident.checked s!"append_cursor_{regionIndex}"
+      let length : Expr :=
+        .index (regionEntry regions regionIndex 1) (.literal (.string "length"))
+      let cursorAt : Expr := .index (.ident cursor) (uint 0)
+      commitBody := commitBody ++ [.ifThen
+        (.unary .not (.binary .eq (regionEntry regions regionIndex slot) (uint 0))) <| .ofList [
+        .const cursor (.array (.ofList [
+          .binary .sub length (regionEntry regions regionIndex slot)])),
+        .whileLoop (.binary .lt cursorAt length) (.ofList [
+          .expr <| .call
+            (.index (regionEntry regions regionIndex 0) (.literal (.string "insertAt")))
+            (.ofList [cursorAt,
+              .index (regionEntry regions regionIndex 1) cursorAt, rowContext]),
+          pushTrace tx s!"region:{region.name}:insertAt",
+          .assign (.index (.ident cursor) (uint 0)) (.binary .add cursorAt (uint 1))
+        ]),
+        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint slot)) (uint 0)
+      ]]
     if regionHasUpdates region then
       let pendingRow ← Ident.checked "pending_row"
       commitBody := commitBody ++ [.ifThen (.unary .not <| .binary .eq
@@ -1461,7 +1568,7 @@ private def eventFunction (checked : CheckedComponent Γ) (evaluators : EvalStat
   let regions ← Ident.checked "regions"
   let (_, writes) ← updateStatements evaluators context state tx regions
     checked.spec.regions (persistedRegionNames checked.spec)
-    (filteredRegionNames checked.spec) eventNames
+    (filteredRegionNames checked.spec) (regionAppendSlots checked) eventNames
     checked.spec.values.size eventIndex event.update 0
   transactionShell checked evaluators runtime (← eventName eventIndex)
     #[context, ignored] event.name writes (skipIf? := event.guard?.map (skipGuardExpr state))
@@ -1546,7 +1653,7 @@ private def keyEventFunctions (checked : CheckedComponent Γ) (evaluators : Eval
   for (arm, armIndex) in event.arms.zipIdx do
     let (_, writes) ← updateStatements evaluators context state tx regions
       checked.spec.regions (persistedRegionNames checked.spec)
-      (filteredRegionNames checked.spec) eventNames
+      (filteredRegionNames checked.spec) (regionAppendSlots checked) eventNames
       checked.spec.values.size (bodyIndex + armIndex) arm.update 0
     let armFn ← keyArmName eventIndex armIndex
     functions := functions ++ [← transactionShell checked evaluators runtime armFn
@@ -2413,9 +2520,16 @@ here today; rather than rest a whole-language invariant on that, a removal
 that finds it non-empty falls back to the dirty bit, and the reconcile —
 which re-renders every retained row and drops the queue — is correct
 whatever the mixture was. Regions with no update action have no such queue
-and no such branch. -/
+and no such branch.
+
+ADR-0098 adds the second half of the same obligation. A removal that runs
+while this transaction has already counted appends could be splicing one of
+*them* out — the counter would then name rows the table no longer ends
+with — so it falls back to the dirty bit too, and the commit sweep's dirty
+branch zeroes the counter. The two guards read as one conjunction, and a
+region that neither updates nor appends emits neither. -/
 private def rowRemoveStmts (regions tx key : Ident) (regionIndex : Nat)
-    (dropSlot : Nat) (hasPending : Bool)
+    (dropSlot : Nat) (hasPending : Bool) (appendSlot? : Option Nat)
     (position? : Option Expr) (regionName eventName : String) :
     Except Error (List Stmt) := do
   let cursor ← Ident.checked "drop"
@@ -2428,16 +2542,24 @@ private def rowRemoveStmts (regions tx key : Ident) (regionIndex : Nat)
     .expr <| .call
       (.index (regionEntry regions regionIndex dropSlot) (.literal (.string "push")))
       (.ofList [.array (.ofList [position, .ident key])])
+  let pendingClean : List Expr :=
+    if hasPending then [.binary .eq
+      (.index (regionEntry regions regionIndex 4) (.literal (.string "length"))) (uint 0)]
+    else []
+  let appendClean : List Expr :=
+    appendSlot?.toList.map fun slot =>
+      .binary .eq (regionEntry regions regionIndex slot) (uint 0)
   let queue (position : Expr) : List Stmt :=
-    if hasPending then [
-      .const queued (.binary .eq
-        (.index (regionEntry regions regionIndex 4) (.literal (.string "length"))) (uint 0)),
-      .ifThen (.ident queued) (.ofList [push position]),
-      .ifThen (.unary .not (.ident queued)) (.ofList [
-        .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
-          (.literal (.boolean true))
-      ])
-    ] else [push position]
+    match pendingClean ++ appendClean with
+    | [] => [push position]
+    | first :: rest => [
+        .const queued (rest.foldl (Expr.binary .and) first),
+        .ifThen (.ident queued) (.ofList [push position]),
+        .ifThen (.unary .not (.ident queued)) (.ofList [
+          .assign (.index (.index (.ident regions) (uint regionIndex)) (uint 3))
+            (.literal (.boolean true))
+        ])
+      ]
   let drop ← match position? with
     | some position => pure (splice position :: queue position)
     | none => do
@@ -2460,7 +2582,8 @@ equality against the resolved row: a guard hit runs the removal sequence
 instead — no field write and no queued position — and a miss commits the
 assignments exactly as an unguarded stage does. -/
 private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
-    (dropSlot : Nat) (serialSlot? : Option Nat) (regionName eventName : String)
+    (dropSlot : Nat) (appendSlot? : Option Nat)
+    (serialSlot? : Option Nat) (regionName eventName : String)
     (payloadExpr : Expr) (stage : RowStage) : Except Error (List Stmt) := do
   let assignments := stage.assignments
   let scan ← Ident.checked "scan"
@@ -2494,7 +2617,7 @@ private def rowUpdateApplyStmts (regions tx key : Ident) (regionIndex : Nat)
           trimmed subject wraps it in the sealed trim emission. -/
           .const rowGuard (fieldPredicateJs rowItem noPayload guard),
           .ifThen (.ident rowGuard) (.ofList
-            (← rowRemoveStmts regions tx key regionIndex dropSlot true
+            (← rowRemoveStmts regions tx key regionIndex dropSlot true appendSlot?
               (some (.ident scan)) regionName eventName)),
           .ifThen (.unary .not (.ident rowGuard)) (.ofList applyStmts)
         ]
@@ -2522,12 +2645,17 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
   let regions ← Ident.checked "regions"
   let tx ← Ident.checked "tx"
   let serialSlot? := rowSerialSlot? (persistedRegionNames checked.spec) region
-  /- ADR-0097: the record slot this region's removals queue their positions
-  in, computed exactly as the record construction lays it out. -/
-  let dropSlot := regionDropSlot
-    (checked.view.regionCounts.any (·.region == region.name))
-    (checked.spec.filters.toList.any (·.region == region.name))
-    (regionHasChildRef region)
+  /- ADR-0097/0098: the record slots this region's removals queue their
+  positions in and its appends count themselves into, computed exactly as the
+  record construction lays them out. -/
+  let hasCounts := checked.view.regionCounts.any (·.region == region.name)
+  let hasFilter := checked.spec.filters.toList.any (·.region == region.name)
+  let hasChild := regionHasChildRef region
+  let dropSlot := regionDropSlot hasCounts hasFilter hasChild
+  let appendSlot? : Option Nat :=
+    if regionAppendsRows checked.spec region then
+      some (regionAppendSlot hasCounts hasFilter hasChild (regionRemovesRows region))
+    else none
   let hasPending := regionHasUpdates region
   let mut writes : List Stmt := []
   for event in region.events do
@@ -2536,7 +2664,7 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
             (.ofList (← rowRemoveStmts regions tx key regionIndex dropSlot hasPending
-              none region.name event.name))
+              appendSlot? none region.name event.name))
         ]
     | .update stage =>
         /- The ADR-0043 scan-evaluate-assign-queue sequence. A typed row
@@ -2554,8 +2682,8 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
           else noPayload
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
-            (.ofList (← rowUpdateApplyStmts regions tx key regionIndex dropSlot serialSlot?
-              region.name event.name payloadExpr stage))
+            (.ofList (← rowUpdateApplyStmts regions tx key regionIndex dropSlot
+              appendSlot? serialSlot? region.name event.name payloadExpr stage))
         ]
     | .keySelect arms =>
         /- The ADR-0052 key-branched selection: one `eventKey` equality per
@@ -2568,8 +2696,8 @@ private def regionDispatchFunction (checked : CheckedComponent Γ) (evaluators :
         for (keyLiteral, stage) in arms do
           armStmts := armStmts ++ [
             .ifThen (.binary .eq (.ident eventKey) (.literal (.string keyLiteral)))
-              (.ofList (← rowUpdateApplyStmts regions tx key regionIndex dropSlot serialSlot?
-                region.name event.name noPayload stage))
+              (.ofList (← rowUpdateApplyStmts regions tx key regionIndex dropSlot
+                appendSlot? serialSlot? region.name event.name noPayload stage))
           ]
         writes := writes ++ [
           .ifThen (.binary .eq (.ident action) (.literal (.string event.name)))
@@ -2853,9 +2981,11 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
     dirty, pending]`. Keys are region-owned monotone safe integers
     (ADR-0027/0029), so uniqueness holds by construction; `pending` holds the
     positions an update-only transaction drains through `updateAt`
-    (ADR-0043), and a region that declares a sealed single-row removal
-    carries one more slot, last, holding the `[position, key]` pairs a
-    removal-only transaction drains through `removeAt` (ADR-0097). -/
+    (ADR-0043), a region that declares a sealed single-row removal carries a
+    slot holding the `[position, key]` pairs drained through `removeAt`
+    (ADR-0097), and a region some component event appends into carries the
+    last slot, counting the tail rows drained through `insertAt`
+    (ADR-0098). -/
     let regionRecords ← checked.spec.regions.toList.mapM fun region => do
       let handle ← match dom.regionHandles.find? (·.1 == region.name) with
         | some entry => pure entry.2
@@ -2880,11 +3010,14 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
               }
           pure [Expr.ident (← nodeAt dom.nodes reference.path.dropLast)]
         else pure []
-      /- The ADR-0097 drops queue is the record's *last* slot, so a region
-      that removes rows adds one cell behind the ADR-0075 inventory and every
+      /- The ADR-0097 drops queue and the ADR-0098 append counter are the
+      record's *last* two slots, in that order, so a region that removes or
+      appends rows adds its cells behind the ADR-0075 inventory and every
       slot index an earlier ADR sealed stays where it was. -/
       let dropQueue : List Expr :=
         if regionRemovesRows region then [Expr.array .nil] else []
+      let appendCount : List Expr :=
+        if regionAppendsRows checked.spec region then [uint 0] else []
       pure <| Expr.array <| .ofList ([
         Expr.ident handle, .array .nil, uint 0, .literal (.boolean false), .array .nil
       ] ++ (if counts.isEmpty then [] else [
@@ -2897,7 +3030,7 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
           | some (_, other) => .literal (.string other)))
       ]) ++ containerRef ++
         (if regionHasChildRef region then [Expr.ident childInventory] else []) ++
-        dropQueue)
+        dropQueue ++ appendCount)
     mountBody := mountBody ++ [
       .const regions (.array (.ofList regionRecords))
     ]

@@ -16,7 +16,7 @@ if (
   // The ADR-0063 execution round is the one ABI 17 bump: five sealed DOM-host
   // exports (readHash, listenHash, writeHash, storageGet, storageSet) for the
   // routing and persistence vocabularies.
-  manifest.runtimeAbi !== 17 ||
+  manifest.runtimeAbi !== 18 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !== JSON.stringify(["int", "string", "string"]) ||
   manifest.sourceCount !== 3 ||
@@ -168,14 +168,14 @@ for (const required of [
   // commits the trimmed assignment sequence.
   // ADR-0092: a guard hit already stands on a resolved position, so it
   // splices at `scan[1]` unconditionally — no second search, and no rebuild.
-  "      if (scan !== -1) {\n        const row_item = regions[0][1][scan];\n        const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n        if (row_guard) {\n          regions[0][1][\"splice\"](scan, 1);\n          const drop_queued = regions[0][4][\"length\"] === 0;\n          if (drop_queued) {\n            regions[0][8][\"push\"]([scan, key]);\n          }\n          if (!drop_queued) {\n            regions[0][3] = true;\n          }\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n        if (!row_guard) {\n          const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_2 = \"view\";\n          row_item[1] = row_next_0;\n          row_item[2] = row_next_1;\n          row_item[4] = row_next_2;\n          row_item[5] = null;\n          regions[0][4][\"push\"](scan);\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n      }\n    }\n    if (eventKey === \"Escape\") {",
+  "      if (scan !== -1) {\n        const row_item = regions[0][1][scan];\n        const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n        if (row_guard) {\n          regions[0][1][\"splice\"](scan, 1);\n          const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n          if (drop_queued) {\n            regions[0][8][\"push\"]([scan, key]);\n          }\n          if (!drop_queued) {\n            regions[0][3] = true;\n          }\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n        if (!row_guard) {\n          const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n          const row_next_2 = \"view\";\n          row_item[1] = row_next_0;\n          row_item[2] = row_next_1;\n          row_item[4] = row_next_2;\n          row_item[5] = null;\n          regions[0][4][\"push\"](scan);\n          tx[7][\"push\"](\"region:items:keys\");\n        }\n      }\n    }\n    if (eventKey === \"Escape\") {",
   "        const row_next_0 = row_item[1];\n        const row_next_1 = \"view\";\n        row_item[2] = row_next_0;",
   // The ADR-0053 guarded commit with the ADR-0054 trim contract: the OK
   // button's action branch carries the same trimmed guard equality, trimmed
   // label commit, and removal sequence — destroy-on-whitespace-commit
   // through both commit paths, with the Escape revert arm unguarded and
   // untrimmed.
-  "      const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      if (row_guard) {\n        regions[0][1][\"splice\"](scan, 1);\n        const drop_queued = regions[0][4][\"length\"] === 0;\n        if (drop_queued) {\n          regions[0][8][\"push\"]([scan, key]);\n        }\n        if (!drop_queued) {\n          regions[0][3] = true;\n        }\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_2 = \"view\";\n        row_item[1] = row_next_0;\n        row_item[2] = row_next_1;\n        row_item[4] = row_next_2;\n        row_item[5] = null;\n        regions[0][4][\"push\"](scan);\n        tx[7][\"push\"](\"region:items:commit\");\n      }",
+  "      const row_guard = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\") === \"\";\n      if (row_guard) {\n        regions[0][1][\"splice\"](scan, 1);\n        const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n        if (drop_queued) {\n          regions[0][8][\"push\"]([scan, key]);\n        }\n        if (!drop_queued) {\n          regions[0][3] = true;\n        }\n        tx[7][\"push\"](\"region:items:commit\");\n      }\n      if (!row_guard) {\n        const row_next_0 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_1 = row_item[2][\"replace\"](/^[ \\t\\r\\n]+|[ \\t\\r\\n]+$/g, \"\");\n        const row_next_2 = \"view\";\n        row_item[1] = row_next_0;\n        row_item[2] = row_next_1;\n        row_item[4] = row_next_2;\n        row_item[5] = null;\n        regions[0][4][\"push\"](scan);\n        tx[7][\"push\"](\"region:items:commit\");\n      }",
   // ADR-0092: the key search is one module-level helper, shared by every
   // region and every branch, and `scan` is the position it returns. The loop
   // is the one `while` the emitter models: the window is half-open, the
@@ -264,18 +264,31 @@ for (const required of [
   // have shifted. The `-1` branch is unreachable from a mounted row's own
   // button and is emitted anyway; an absent key now changes nothing at all
   // but the trace, because there is no position to queue.
-  "    const drop = $lrx_row_seek(regions[0][1], key);\n    if (drop !== -1) {\n      regions[0][1][\"splice\"](drop, 1);\n      const drop_queued = regions[0][4][\"length\"] === 0;\n      if (drop_queued) {\n        regions[0][8][\"push\"]([drop, key]);\n      }\n      if (!drop_queued) {\n        regions[0][3] = true;\n      }\n    }\n    tx[7][\"push\"](\"region:items:remove\");",
+  "    const drop = $lrx_row_seek(regions[0][1], key);\n    if (drop !== -1) {\n      regions[0][1][\"splice\"](drop, 1);\n      const drop_queued = regions[0][4][\"length\"] === 0 && regions[0][9] === 0;\n      if (drop_queued) {\n        regions[0][8][\"push\"]([drop, key]);\n      }\n      if (!drop_queued) {\n        regions[0][3] = true;\n      }\n    }\n    tx[7][\"push\"](\"region:items:remove\");",
   // The ADR-0097 drain, ahead of the reconcile and ahead of the ADR-0051
   // filter sweep that navigates by row-table position: one `removeAt` per
   // queued pair, in the order the table was spliced, and the queue is
   // emptied. Every survivor keeps its DOM node and its generated row-update
   // callback goes unrun.
   "    if (regions[0][8][\"length\"] !== 0) {\n      for (const dropped_row of regions[0][8]) {\n        regions[0][0][\"removeAt\"](dropped_row[0], dropped_row[1], null);\n        tx[7][\"push\"](\"region:items:removeAt\");\n      }\n      regions[0][8] = [];\n    }\n    if (regions[0][3]) {\n      regions[0][3] = false;\n      regions[0][0][\"update\"](regions[0][1], null);",
+  // ADR-0098: the append is a tail push that counts itself in the record's
+  // last slot instead of raising the dirty bit, so the reconcile the count
+  // replaced never runs for it.
+  "  regions[0][1][\"push\"]([regions[0][2], $lrx_event_0_append_0_0(state[0], state[1], state[2]), $lrx_event_0_append_0_1(state[0], state[1], state[2]), $lrx_event_0_append_0_2(state[0], state[1], state[2]), $lrx_event_0_append_0_3(state[0], state[1], state[2]), null, null]);\n  regions[0][2] += 1;\n  regions[0][9] += 1;\n  tx[7][\"push\"](\"region:items:append\");",
+  // The ADR-0098 drain, after the reconcile and before the ADR-0043 pending
+  // drain and the ADR-0051 filter sweep, both of which address rows by
+  // row-table position. The cursor starts at the first counted row and walks
+  // upward, so each `insertAt` addresses a host that already holds every row
+  // before it; nothing retained is re-rendered. The dirty branch above zeroes
+  // the counter, because a reconcile has already mounted what it counted.
+  "      regions[0][4] = [];\n      regions[0][9] = 0;\n    }\n    if (regions[0][9] !== 0) {\n      const append_cursor_0 = [regions[0][1][\"length\"] - regions[0][9]];\n      while (append_cursor_0[0] < regions[0][1][\"length\"]) {\n        regions[0][0][\"insertAt\"](append_cursor_0[0], regions[0][1][append_cursor_0[0]], null);\n        tx[7][\"push\"](\"region:items:insertAt\");\n        append_cursor_0[0] += 1;\n      }\n      regions[0][9] = 0;\n    }",
   // The ADR-0063 mount hydration: one ordinary transaction whose writes
   // parse the stored value — arity mismatch fails the whole value closed to
   // the empty region — and push the parsed rows through the existing append
   // path, so the shared commit sweep reconciles rows, counts, visibility,
-  // and the filter table together.
+  // and the filter table together. ADR-0098 leaves this one on the dirty
+  // bit: a hydrate arrives as a whole table into an empty region, where the
+  // reconcile clears and refills an owned parent detached.
   "function $lrx_hydrate_0(context, ignored) {",
   "  tx[7][\"push\"](\"event:hydrate:items\");",
   "  const stored_value = storageGet(\"leanrx-toggle-lab.items\");",
@@ -285,11 +298,12 @@ for (const required of [
   // The ADR-0050 region record carries the count refs and numeric cache in
   // two region-local slots behind the pending slot, and the ADR-0051 filter
   // slot holds the container element behind them. The ADR-0097 drops queue
-  // is last, so adding it moved none of the slots those ADRs sealed.
+  // and the ADR-0098 append counter are the last two, in that order, so
+  // adding them moved none of the slots those ADRs sealed.
   // The ADR-0062 label count joins the count slots: its ref sits between
   // the predicate count and the total in view order, and its cache slot
   // mounts as the else string — the mounted DOM text of the empty region.
-  "const regions = [[region_0, [], 0, false, [], [count_text_19, count_text_20, count_text_22], [0, \" items left\", 0], node_14, []]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_19, count_text_20, count_text_22], [0, \" items left\", 0], node_14, [], 0]];",
   // The broadcast writes every row from the sealed row expression and raises
   // the dirty flag; the predicate removal keeps the non-matching rows.
   "  for (const row_item of regions[0][1]) {\n    const row_next_0 = \"true\";\n    row_item[3] = row_next_0;\n    row_item[5] = null;\n  }\n  regions[0][3] = true;",
@@ -303,8 +317,8 @@ for (const required of [
   // splits the block by read set — both `done` predicate counts keep the
   // touched flag, the row total moves behind the structural bit — so the
   // region declares both flags.
-  "    const region_touched_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][4][\"length\"] !== 0;",
-  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0;",
+  "    const region_touched_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0;",
+  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;",
   "    if (region_structural_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:items:2:evaluated\");\n      const count_next_0_2 = regions[0][1][\"length\"];",
   "        setText(regions[0][5][0], count_next_0_0);",
   "      const count_label_0_1 = count_next_0_1 === 1 ? \" item left\" : \" items left\";",
@@ -337,7 +351,7 @@ for (const required of [
   // `commit` and `keys` write `mode`, which the editing hint reads; `retype`
   // writes `draft`, which nothing but the persistence write-back reads — so
   // a keystroke inside a row editor lands in neither class.
-  "    const region_touched_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][4][\"length\"] !== 0;\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0;\n    const region_drain_0_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][4][\"length\"] !== 0 && action === \"toggle\";\n    const region_drain_0_1 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][4][\"length\"] !== 0 && (action === \"edit\" || action === \"commit\" || action === \"keys\");\n    const share_scan_0_0 = [0];\n    const share_scan_0_1 = [0];\n    if (region_drain_0_0) {\n      for (const share_row_0_0 of regions[0][1]) {\n        if (share_row_0_0[3] === \"false\") {\n          share_scan_0_0[0] += 1;\n        }\n        if (share_row_0_0[3] === \"true\") {\n          share_scan_0_1[0] += 1;\n        }\n      }\n    }\n    if (region_drain_0_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:items:0:evaluated\");",
+  "    const region_touched_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0;\n    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;\n    const region_drain_0_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0 && action === \"toggle\";\n    const region_drain_0_1 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0 || regions[0][4][\"length\"] !== 0 && (action === \"edit\" || action === \"commit\" || action === \"keys\");\n    const share_scan_0_0 = [0];\n    const share_scan_0_1 = [0];\n    if (region_drain_0_0) {\n      for (const share_row_0_0 of regions[0][1]) {\n        if (share_row_0_0[3] === \"false\") {\n          share_scan_0_0[0] += 1;\n        }\n        if (share_row_0_0[3] === \"true\") {\n          share_scan_0_1[0] += 1;\n        }\n      }\n    }\n    if (region_drain_0_0) {\n      tx[5] += 1;\n      tx[7][\"push\"](\"count:items:0:evaluated\");",
   "    if (region_drain_0_1) {\n      tx[8] += 1;\n      tx[7][\"push\"](\"attr:6:hidden:evaluated\");\n      const hidden_scan_0_6 = [0];\n      for (const hidden_row_0_6 of regions[0][1]) {\n        if (hidden_row_0_6[4] === \"edit\") {",
   "    if (region_drain_0_0 || changed[1]) {",
   // The persistence write-back reads every field, so no class can narrow it:
@@ -353,7 +367,7 @@ for (const required of [
   // `done == "false"` toggle-all subject and the `mode == "edit"` editing
   // hint — become one pass over three cells, and the two spellings of
   // `done == "false"` share cell 0.
-  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0;\n    const share_scan_0_0 = [0];\n    const share_scan_0_1 = [0];\n    const share_scan_0_2 = [0];\n    if (region_touched_0) {\n      for (const share_row_0_0 of regions[0][1]) {\n        if (share_row_0_0[3] === \"false\") {\n          share_scan_0_0[0] += 1;\n        }\n        if (share_row_0_0[3] === \"true\") {\n          share_scan_0_1[0] += 1;\n        }\n        if (share_row_0_0[4] === \"edit\") {\n          share_scan_0_2[0] += 1;\n        }\n      }\n    }",
+  "    const region_structural_0 = regions[0][3] || regions[0][8][\"length\"] !== 0 || regions[0][9] !== 0;\n    const share_scan_0_0 = [0];\n    const share_scan_0_1 = [0];\n    const share_scan_0_2 = [0];\n    if (region_touched_0) {\n      for (const share_row_0_0 of regions[0][1]) {\n        if (share_row_0_0[3] === \"false\") {\n          share_scan_0_0[0] += 1;\n        }\n        if (share_row_0_0[3] === \"true\") {\n          share_scan_0_1[0] += 1;\n        }\n        if (share_row_0_0[4] === \"edit\") {\n          share_scan_0_2[0] += 1;\n        }\n      }\n    }",
   // Inside the dispatch function the classes split, and the pass splits with
   // them: drain class 0 (`toggle`, which writes `done`) carries one pass over
   // two cells, and the editing hint keeps its own loop under drain class 1

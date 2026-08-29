@@ -394,8 +394,8 @@ test("removing every row one at a time never reconciles and empties the region (
   expect(trace.filter((entry) => entry === "region:items:removeAt").length).toBe(4);
   expect(trace.filter((entry) => entry === "region:items:update").length).toBe(0);
   // The emptied region takes the ADR-0058 visibility sweep and the ADR-0063
-  // write-back exactly as the reconcile left it, and a fresh append after a
-  // drained region still mounts through the reconcile.
+  // write-back exactly as the reconcile left it, and a fresh append into the
+  // drained region mounts one row through the ADR-0098 drain.
   await expect(page.locator("#items")).toBeHidden();
   await expect(page.locator("#items-left")).toHaveText("0 items left of 0");
   const afterEmpty = await page.evaluate(() =>
@@ -403,6 +403,87 @@ test("removing every row one at a time never reconciles and empties the region (
   expect(afterEmpty).toBe("");
   await add.click();
   await expect(page.locator("#items > li .item-label")).toHaveText(["Item 4"]);
+});
+
+test("a single-row append mounts one row and reconciles nothing (ADR-0098)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  for (let index = 0; index < 5; index += 1) await add.click();
+  await page.evaluate(() => {
+    globalThis.standing = [...document.querySelectorAll("#items > li")];
+  });
+  const before = await regionMetrics(page);
+  const beforeTrace = await page.evaluate(() =>
+    globalThis.toggleDispose.instrumentation()[7].length);
+  await add.click();
+  await expect(page.locator("#items > li .item-label"))
+    .toHaveText(["Item 0", "Item 1", "Item 2", "Item 3", "Item 4", "Item 5"]);
+  // Every standing row keeps the exact DOM node it had: `insertAt` places one
+  // new node before the anchor and touches nothing else.
+  const retained = await page.evaluate(() =>
+    globalThis.standing.every((node, index) =>
+      node === document.querySelectorAll("#items > li")[index]));
+  expect(retained).toBe(true);
+  const after = await regionMetrics(page);
+  // [mounts, updates, moves, disposals]: one mount, one placement, and no
+  // update at all. The reconcile would have re-run the generated row-update
+  // callback on every one of the five standing rows.
+  expect(after[0]).toBe(before[0] + 1);
+  expect(after[1]).toBe(before[1]);
+  expect(after[2]).toBe(before[2] + 1);
+  expect(after[3]).toBe(before[3]);
+  const trace = await page.evaluate((from) =>
+    globalThis.toggleDispose.instrumentation()[7].slice(from), beforeTrace);
+  expect(trace.filter((entry) => entry === "region:items:append").length).toBe(1);
+  expect(trace.filter((entry) => entry === "region:items:insertAt").length).toBe(1);
+  expect(trace.filter((entry) => entry === "region:items:update").length).toBe(0);
+  // An append is a structural change however it is recorded, so every sweep
+  // the row set can move still ran in the same commit.
+  expect(trace.filter((entry) => entry === "count:items:2:evaluated").length).toBe(1);
+  expect(trace.filter((entry) => entry === "filter:items:evaluated").length).toBe(1);
+  expect(trace.filter((entry) => entry === "storage:items:write").length).toBe(1);
+  await expect(page.locator("#items-left")).toHaveText("6 items left of 6");
+  // The mounted row is live: its checkbox drives the row's done field
+  // through the ordinary ADR-0043 drain.
+  const last = page.locator("#items > li").nth(5);
+  await last.getByRole("checkbox", { name: "Toggle item" }).check();
+  await expect(last).toHaveClass("item-row done");
+  await expect(page.locator("#items-left")).toHaveText("5 items left of 6");
+
+  // The contrast, in the same component: the ADR-0050 broadcast re-renders
+  // every retained row and keeps the reconcile.
+  const beforeAll = await regionMetrics(page);
+  await page.getByRole("button", { name: "Complete all" }).click();
+  const afterAll = await regionMetrics(page);
+  expect(afterAll[0]).toBe(beforeAll[0]);
+  expect(afterAll[1]).toBe(beforeAll[1] + 6);
+});
+
+test("an append under an active filter takes the sweep's selection (ADR-0098)", async ({ page }) => {
+  await mountToggle(page);
+  const add = page.getByRole("button", { name: "Add item" });
+  await add.click();
+  await add.click();
+  await page.locator("#items > li").nth(0).getByRole("checkbox", { name: "Toggle item" }).check();
+  await page.getByRole("button", { name: "Show completed" }).click();
+  await expect(page.locator("#items > li").nth(0)).toBeVisible();
+  await expect(page.locator("#items > li").nth(1)).toBeHidden();
+  // The ADR-0051 filter sweep navigates childAt(container, i) by row-table
+  // position, so it must run after the drain has put the new row in the host
+  // at exactly the position the table holds it. A fresh row is not done, so
+  // under "completed" it mounts and is hidden in the same commit.
+  await add.click();
+  await expect(page.locator("#items > li")).toHaveCount(3);
+  await expect(page.locator("#items > li").nth(2)).toBeHidden();
+  await expect(page.locator("#items > li").nth(2).locator(".item-label"))
+    .toHaveText("Item 2", { useInnerText: false });
+  await expect(page.locator("#items-left")).toHaveText("2 items left of 3");
+  await page.getByRole("button", { name: "Show all" }).click();
+  await expect(page.locator("#items > li").nth(2)).toBeVisible();
+  // The stored value carries the appended row, so the write-back woke too.
+  const stored = await page.evaluate(() =>
+    globalThis.localStorage.getItem("leanrx-toggle-lab.items"));
+  expect(stored).toBe("Item 0,Item 0,true,view;Item 1,Item 1,false,view;Item 2,Item 2,false,view");
 });
 
 test("dblclick outside the label cell dispatches nothing", async ({ page }) => {

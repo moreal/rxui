@@ -54,6 +54,7 @@ const SURFACE = {
     update: { 0: "table" },
     updateAt: { 1: "row" },
     swapAt: { 2: "table" },
+    insertAt: { 1: "row" },
     removeAt: {},
     instrumentation: {},
     dispose: {},

@@ -123,6 +123,42 @@ async function flipMode(page, name, hash) {
     .toBe(before + 2);
 }
 
+test("one transaction appends into three regions and mounts three rows (ADR-0098)", async ({ page }) => {
+  await mountTwin(page);
+  await seedBoth(page);
+  await page.evaluate(() => {
+    globalThis.standing = ["left", "right", "solo"].map((name) =>
+      [...document.querySelectorAll(`#${name} > li`)]);
+  });
+  const before = await markTrace(page);
+  // `seedOn` is `append left (…) then append right (…) then append solo (…)`:
+  // three regions, one row each, inside one transaction. Each region carries
+  // its own counter and its own drain, so the commit mounts three rows and
+  // re-renders none of the six standing ones.
+  await page.getByRole("button", { name: "Seed on" }).click();
+  await expect(page.locator("#left > li")).toHaveCount(3);
+  await expect(page.locator("#right > li")).toHaveCount(3);
+  await expect(page.locator("#solo > li")).toHaveCount(3);
+  const after = await readTrace(page);
+  expect(after.commits).toBe(before.commits + 1);
+  for (const index of [0, 1, 2]) {
+    expect(after.metrics[index][0]).toBe(before.metrics[index][0] + 1);
+    expect(after.metrics[index][1]).toBe(before.metrics[index][1]);
+    expect(after.metrics[index][3]).toBe(before.metrics[index][3]);
+  }
+  for (const name of ["left", "right", "solo"]) {
+    expect(occurrences(after.slice, `region:${name}:insertAt`)).toBe(1);
+    expect(occurrences(after.slice, `region:${name}:update`)).toBe(0);
+  }
+  // Every standing row in every region keeps the exact DOM node it had.
+  const retained = await page.evaluate(() =>
+    ["left", "right", "solo"].every((name, region) => {
+      const rows = document.querySelectorAll(`#${name} > li`);
+      return globalThis.standing[region].every((node, index) => node === rows[index]);
+    }));
+  expect(retained).toBe(true);
+});
+
 test("three filtered regions mount with their own containers", async ({ page }) => {
   await mountTwin(page);
   await expect(page.locator("#left-line")).toHaveText("0 left, 0 on");

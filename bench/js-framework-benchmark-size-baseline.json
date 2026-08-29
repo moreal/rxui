@@ -13,14 +13,14 @@
     },
     {
       "name": "main.mjs",
-      "rawBytes": 8444,
-      "brotliBytes": 3103,
-      "gzipBytes": 3450
+      "rawBytes": 8776,
+      "brotliBytes": 3200,
+      "gzipBytes": 3547
     }
   ],
   "totals": {
-    "rawBytes": 9902,
-    "brotliBytes": 3440,
-    "gzipBytes": 3932
+    "rawBytes": 10234,
+    "brotliBytes": 3537,
+    "gzipBytes": 4029
   }
 }

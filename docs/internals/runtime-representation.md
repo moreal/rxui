@@ -157,6 +157,15 @@ position without an update callback; both check their keys before any callback
 or DOM mutation (`LRX-REGION-003` otherwise). See
 [ADR-0026](../adr/0026-runtime-abi-v13-keyed-swap-and-remove.md).
 
+ABI 18 adds `insertAt(index, item, context)` to the keyed region: one row is
+mounted through `mountItem` and placed before the row that holds `index` now —
+or before the region's anchor marker at `index === current.length`, any other
+index being `LRX-REGION-003` — while every other row keeps its handle, node and
+rendering. A key an existing index already holds is `LRX-REGION-001`; when no
+index exists the caller owns key freshness, exactly as it owns the shape of the
+`items` array `update` reconciles. See
+[ADR-0098](../adr/0098-positional-row-insertion.md).
+
 ABI 14 adds `nextText(node)` to the DOM host: the Text node that follows
 `node` in document order (descendants first), or `null`, through one shared
 `TreeWalker(SHOW_TEXT)` whose `currentNode` is the last returned node; it does
@@ -243,10 +252,14 @@ lower node before the old successor of the higher one, then re-runs
 `updateItem` for both positions; `removeAt(index, key, context)` disposes the
 retained row at `index` (whose key must be `key`), detaches its node, and
 unregisters the key from an existing index, and the later rows keep their
-handles and nodes one position earlier without an update callback. A backend
+handles and nodes one position earlier without an update callback;
+`insertAt(index, item, context)` mounts one row and places it at `index`
+(`0 ≤ index ≤ current.length`, integral, `LRX-REGION-003` otherwise),
+registering its key in an existing index and shifting the later rows one
+position later, again without an update callback. A backend
 that lowers an operation through one of these must argue that the result
 equals a full `update` (no other row's render payload changed, and for
-`removeAt` no row's payload depends on its position).
+`removeAt` and `insertAt` no row's payload depends on its position).
 Placement inserts new nodes and moves only the retained nodes outside one
 longest order-preserving subsequence after trimming the unchanged prefix and
 suffix, so a two-row swap costs two DOM moves; ties keep earlier target

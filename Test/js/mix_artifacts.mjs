@@ -13,7 +13,7 @@ if (
   mixManifest.module !== "MixLab.mjs" ||
   typeof mixManifest.graphHash !== "string" ||
   mixManifest.graphHash.length === 0 ||
-  mixManifest.runtimeAbi !== 17 ||
+  mixManifest.runtimeAbi !== 18 ||
   JSON.stringify(mixManifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(mixManifest.stateSlots) !== JSON.stringify(["int", "string"]) ||
   mixManifest.sourceCount !== 2 ||
@@ -105,7 +105,7 @@ for (const required of [
   // end in the one shared mount-scope array identifier (ADR-0077), and each
   // region's count refs and cache are its own arrays, sized by its own cells.
   "const childInventory = [child_off_0];",
-  "const regions = [[region_0, [], 0, false, [], [count_text_10, count_text_12], [0, 0], node_13, childInventory, []], [region_1, [], 0, false, [], [count_text_25], [0], childInventory, []]];",
+  "const regions = [[region_0, [], 0, false, [], [count_text_10, count_text_12], [0, 0], node_13, childInventory, [], 0], [region_1, [], 0, false, [], [count_text_25], [0], childInventory, [], 0]];",
   // The reconcile and drain forward each region's own slot as the child
   // context, so every mount path — appends, broadcasts, and the ADR-0063
   // hydration that rides the same dirty-flag commit — pushes into the shared
@@ -186,10 +186,12 @@ for (const required of [
   "  regions[1][1][\"push\"]([regions[1][2], $lrx_event_3_append_0_0(state[0], state[1]), null]);",
   "storageSet(\"leanrx-mix-lab.pins\", persist_rows_1[\"join\"](\";\"));",
   // ADR-0078: one chained event touches both regions in one transaction — the
-  // pins append and the crew removal raise their own dirty flags in *event*
-  // order, and the commit sweep then drains them in *region declaration*
-  // order, crew before pins.
-  "  tx[7][\"push\"](\"event:stowDone\");\n  regions[1][1][\"push\"]([regions[1][2], $lrx_event_4_append_0_0(state[0], state[1]), null]);\n  regions[1][2] += 1;\n  regions[1][3] = true;\n  tx[7][\"push\"](\"region:pins:append\");",
+  // pins append and the crew removal record themselves in *event* order, and
+  // the commit sweep then drains them in *region declaration* order, crew
+  // before pins. Since ADR-0098 the two record themselves differently: the
+  // unbounded predicate removal still raises crew's dirty flag, while the
+  // single appended row counts itself in pins' last slot.
+  "  tx[7][\"push\"](\"event:stowDone\");\n  regions[1][1][\"push\"]([regions[1][2], $lrx_event_4_append_0_0(state[0], state[1]), null]);\n  regions[1][2] += 1;\n  regions[1][9] += 1;\n  tx[7][\"push\"](\"region:pins:append\");",
   "  regions[0][1] = kept_1;\n  regions[0][3] = true;\n  tx[7][\"push\"](\"region:crew:removeIf\");",
   // ADR-0092: one key search serves the whole module. Both regions' dispatch
   // functions call the same helper on their own row table, and neither
