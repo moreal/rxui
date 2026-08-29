@@ -17,6 +17,7 @@ import LeanRx.Backend.JsAst
 import LeanRx.Backend.JsName
 import LeanRx.Backend.JsPrinter
 import LeanRx.Backend.JsCompact
+import LeanRx.Backend.RowOrder
 import LeanRx.IR.Reactive
 import LeanRx.IR.Erasure
 import LeanRx.Lower.RxExpr

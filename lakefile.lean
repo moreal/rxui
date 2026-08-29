@@ -25,6 +25,7 @@ lean_lib LeanRxTest where
     `Test.Backend.Scalar,
     `Test.Backend.FormDom,
     `Test.Backend.Component,
+    `Test.Backend.RowOrder,
     `Test.Backend.Tabs,
     `Test.Backend.Temperature,
     `Test.Backend.ValidatedForm,

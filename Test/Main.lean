@@ -21,6 +21,7 @@ import Test.Lower.RxExpr
 import Test.Backend.Scalar
 import Test.Backend.FormDom
 import Test.Backend.Component
+import Test.Backend.RowOrder
 import Test.Backend.Tabs
 import Test.Backend.Temperature
 import Test.Backend.ValidatedForm
@@ -92,6 +93,7 @@ def main : IO Unit := do
   LeanRxTest.Backend.Scalar.run
   LeanRxTest.Backend.FormDom.run
   LeanRxTest.Backend.Component.run
+  LeanRxTest.Backend.RowOrder.run
   LeanRxTest.Backend.Tabs.run
   LeanRxTest.Backend.Temperature.run
   LeanRxTest.Backend.ValidatedForm.run

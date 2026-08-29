@@ -745,6 +745,18 @@ its own stage already resolved, so it searches once, not twice. On a
 10 000-row region a `toggle` walks the table **three** times and a keystroke
 **once** — the write-back alone.
 
+That order is checked by the compiler rather than trusted (ADR-0093). Every
+module the component backend emits is audited before it is handed back, and
+an emission that could disturb a row table's key order is rejected as
+`LRX-BE-036` with the rule and the function named: a row entering under
+anything but the region's own counter, a `splice` that inserts or removes a
+neighbour, a `sort`, an `unshift`, a key slot written, a table aliased into
+code the audit cannot see, a counter that rewinds, a region mounted
+non-empty, or a whole-table assignment that is not the order-preserving
+kept-filter rebuild. Nothing an author writes can trip it — it is a rule
+about the emitter, not about the language — and it costs no output bytes and
+under a millisecond per module.
+
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
 **union** of every filter table over that field, not the first-declared

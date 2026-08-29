@@ -5617,3 +5617,94 @@ ADR-0088 walk counts, the artifact pins in four labs, the language
 guide, the ADR, the DECISIONS.md row, and this record. **ADR-0084 OQ2,
 ADR-0085 OQ2, ADR-0086 OQ3, ADR-0087 OQ3 and ADR-0088 OQ1 are all
 closed.**
+
+## The key order is checked by the compiler (ADR-0093)
+
+### What was built
+
+ADR-0092 made a dispatching key resolve to its position by binary search
+and then wrote its own first open question: the order the search depends
+on is held up by review and by a nine-cell browser gate, and nothing in
+Lean stops a future emission from inserting a row mid-table, sorting one,
+or exposing a swap. It considered a structural check over the emitted
+AST and declined it, on the grounds that it "would restate the
+enumeration above in a second place".
+
+This round judged the other way, and the whole judgement turns on that
+sentence being wrong about what the check contains. ADR-0092's argument
+is a table with **one row per emission site** — append, hydrate, the
+update stage, broadcast, remove, a guard hit, `removeIf`, the sweep, the
+drain — and it grows every time the backend learns an action. A
+structural check is a list with **one rule per thing that can happen to a
+JavaScript array**: something enters, something leaves, an element is
+replaced, the array is replaced, a method reorders it, an alias escapes.
+That list is closed, and it does not grow when a tenth site appears,
+because the tenth site can only reach a table through one of the six.
+One artefact is a proof sketch over today's sites; the other is a
+decision procedure over all possible ones.
+
+The audit is eight rules in `LeanRx/Backend/RowOrder.lean`, reported
+under one new code `LRX-BE-036`, run inside `Backend.Component.emit`
+immediately after `Module.validate`. R0 establishes that every row table
+in the module is spelled `regions[r][1]` — no doubly indexed context, no
+second name for the record — and the other seven say what may be done to
+one: only approved positions, a `push` headed by the region's own
+counter, a `splice` of exactly one row, no key ever overwritten, a
+whole-table assignment that is the ADR-0050 kept filter and nothing else,
+a counter that only advances, and a region that mounts empty.
+
+### What broke or surprised
+
+**The layer that looks safer is the one that cannot be checked.**
+Narrowing the emission helpers to a `RowTableOp` vocabulary was the
+obvious alternative and it is the wrong one: `Stmt.assign` and
+`Expr.call` are the general AST every backend builds with and cannot be
+taken away, so a future author who does not use the vocabulary gets no
+diagnostic — only a convention they never read. A vocabulary constrains
+the paths that opt in; the paths that break the order are precisely the
+ones that did not. Auditing the *output* has no opt-out, because there is
+nothing to opt into.
+
+**The vacuity failure mode fails safe, and that was not designed in.**
+The worry with any name-keyed audit is that it quietly stops recognising
+what it audits and passes everything. Making the row-table recogniser
+blind, as a deliberate break, does not silently pass: the *real* Toggle
+Lab emission then fails R5, because a rebuild the audit can no longer
+classify is a rebuild it cannot accept. The check's fail direction is to
+reject.
+
+**R4 had to be broader than rows to be worth anything.** A row that
+reaches a function as an argument is not locally recognisable, so the
+rule forbids writing slot 0 of *any* function parameter. The emission
+pays nothing for it — no generated function writes any parameter's slot
+0 — and without it the `$lrx_region_0_row` callback was a hole big
+enough to drive a key rewrite through.
+
+**The witness is the real module, not a fixture.** Every one of the
+twenty-two rejection cases injects one order-breaking statement into the
+module `Backend.Component.emit` actually produced for Toggle Lab, into
+one of its real functions. A hand-written toy module would have proved
+the rules consistent with themselves and nothing about the emission.
+
+### Performance observations
+
+718 µs to audit Toggle Lab — 168 kB, 4 671 printed lines, the largest
+generated module — measured compiled over 200 repetitions; under 15 ms
+across every component-backend generator run in the codegen gate. The
+wall time of `lake exe leanrx_toggle_js` is 0.53–0.55 s with the audit
+and 0.53–0.55 s without it, so the check sits below the measurement floor
+of the process it runs inside. Zero output bytes: Toggle, Mix, Twin,
+Branch and Nest Lab are byte-identical before and after, proven by
+generating under `git stash`, regenerating, dereferencing both symlinked
+bundles with `cp -RL` and comparing with `diff -rq`. ABI stays 17.
+
+### Follow-up issue or commit
+
+`feat(backend): audit the emitted module for row-table key order
+(ADR-0093)` — the eight-rule audit and its `LRX-BE-036` diagnostic, the
+`Backend.Component.emit` call site, the twenty-two injected rejections
+and two acceptances over the real Toggle Lab module, the public
+`regionSlot`, the language guide, the ADR, the DECISIONS.md row, and this
+record. **ADR-0092 OQ1 is closed**; its replacement is narrower and named
+in the new ADR — the host side, which R1 lets a table reach and the audit
+stops at.

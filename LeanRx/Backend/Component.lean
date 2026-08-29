@@ -1,4 +1,5 @@
 import LeanRx.Backend.Manifest
+import LeanRx.Backend.RowOrder
 import LeanRx.Component.Model
 import LeanRx.Graph.Serialize
 import LeanRx.Lower.RxExpr
@@ -205,8 +206,11 @@ private def attrSlot (checked : CheckedComponent Γ) : Nat :=
 /-- The context slot carrying the keyed region records: after the prop and
 attribute-selection slots when those exist, directly after `sinkCache`
 otherwise (ADR-0041/0045). Each record is `[handle, items, nextKey, dirty]`
-(plus the pending-update slot for updating regions, ADR-0043). -/
-private def regionSlot (checked : CheckedComponent Γ) : Nat :=
+(plus the pending-update slot for updating regions, ADR-0043).
+
+Public because the ADR-0093 audit is parameterised by it, and that audit's
+witness re-runs it over an emitted module from outside this namespace. -/
+def regionSlot (checked : CheckedComponent Γ) : Nat :=
   attrSlot checked + (if checked.view.attrSelects.isEmpty then 0 else 2)
 
 private def regionEntry (regions : Ident) (regionIndex slot : Nat) : Expr :=
@@ -3013,6 +3017,10 @@ def emit (moduleName : String) (checked : CheckedComponent Γ) : Except Error Em
       ]).toArray
       exports := #[{ localName := mount, exportName := mount }] }
   module.validate
+  /- ADR-0093: the ADR-0092 search is exact only over a key-ordered table, so
+  the module the emitter just built is audited for every shape that could
+  break the order before it is handed back. -/
+  RowOrder.audit (regionSlot checked) module
   pure { module, manifest := manifest moduleName checked }
 
 end LeanRx.Backend.Component
