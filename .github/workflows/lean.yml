@@ -19,6 +19,8 @@ jobs:
         run: corepack pnpm install --frozen-lockfile --ignore-scripts
       - name: Install pinned Playwright Chromium
         run: corepack pnpm exec playwright install --with-deps chromium
+      - name: Install repository policy tools
+        run: sudo apt-get update && sudo apt-get install --yes ripgrep
       - name: Check formatting and shell syntax
         run: ./scripts/check_format.sh
       - name: Build library and tests
