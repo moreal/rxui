@@ -121,6 +121,19 @@ for (const markdown of await markdownFiles(directory)) {
 }
 const gettingStartedPath = path.join(directory, "docs", "guides", "getting-started.md");
 const gettingStarted = await readFile(gettingStartedPath, "utf8");
+for (const contract of [
+  "The repository CLI uses an explicit registry.",
+  "There is deliberately no `.tmp/counter/index.html`.",
+  "`Counter.mjs.manifest.json`",
+  "files through the managed `.tmp/counter` pointer",
+]) {
+  if (!gettingStarted.includes(contract)) {
+    throw new Error(`Getting Started lost its artifact contract: ${contract}`);
+  }
+}
+if (gettingStarted.includes("Serve `.tmp/counter/index.html`")) {
+  throw new Error("Getting Started incorrectly claims Counter emits an HTML shell");
+}
 for (const href of ["language.md", "backend-support.md", "trust-model.md"]) {
   if (!gettingStarted.includes(`](${href})`)) {
     throw new Error(`Getting Started lost its ${href} link`);

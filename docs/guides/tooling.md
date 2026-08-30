@@ -4,6 +4,21 @@ All commands below run from this repository root. The compiler executable has an
 explicit registry; it does not discover or dynamically load arbitrary Lean
 modules.
 
+## Fast feedback map
+
+| Question | Cheapest command |
+|---|---|
+| Does this Lean/source surface elaborate? | `lake env lean path/to/File.lean` |
+| Does a registered component and both JS printers validate? | `lake exe leanrx -- check MODULE` |
+| Which node depends on this field? | `lake exe leanrx -- graph MODULE --format html` |
+| What exactly ships? | `lake exe leanrx -- build MODULE --out DIRECTORY` |
+| What does a stable public error mean? | `lake exe leanrx -- explain CODE` |
+| Is the full checkout ready for browser evidence? | `lake exe leanrx -- doctor` |
+
+`check`, `graph`, and `build` know only modules compiled into the driver's
+registry. Use direct Lean checking and an application-specific builder while a
+new component is not registered.
+
 ## Diagnose the checkout
 
 ```sh
@@ -74,6 +89,18 @@ the documented TCB; see [ADR-0007](../adr/0007-atomic-versioned-output.md).
 Selected bundles contain a `.generated.lean` module that aliases inspectable
 schema/declaration/spec/check names. Verify it with `lake env lean`.
 
+The exact files are application-owned. The Counter bundle contains its ESM,
+adjacent manifest, three graph formats, generated Lean aliases, and direct-DOM
+host, but no `index.html`. The docs and js-framework-benchmark publishers are
+full applications and do emit HTML shells. Do not assume every `build` result is
+a directly navigable site; inspect the publisher or bundle contents.
+
+Treat the output path as a read-only pointer after publication. Adding files
+through it mutates the versioned directory but does not teach the next build
+about those files; they disappear when the pointer advances. Put hand-authored
+shells and deployment configuration outside the managed bundle, or make them
+part of the application publisher.
+
 ## Publish the documentation site
 
 The `Publish LeanRx docs and benchmark results` workflow deploys the generated
@@ -95,6 +122,10 @@ lake exe leanrx -- explain LRX-TYPE-108
 
 Explanations include phase, meaning, and next action for registered public codes.
 Unknown codes fail rather than receiving a guessed explanation.
+
+For an unregistered code, keep the original rendered message and source span.
+The prefix still identifies the failing phase, but prose must not invent a
+meaning that the checker did not report.
 
 ## Run examples directly
 
@@ -148,3 +179,17 @@ Artifact gates generate into two independent temporary directories and byte-diff
 them. Release/handoff verification also runs `./scripts/check.sh` from a fresh
 clone without hardlinks. A documented command must exist and work in the commit
 that documents it; commits are expected to remain buildable and bisectable.
+
+## Troubleshooting boundaries
+
+- A successful `lake env lean` followed by `LRX-BE-*` is a backend support gap,
+  not proof that the browser should accept the term.
+- `LRX-ELAB-020` means the CLI registry lacks the requested name; it does not
+  search the import graph.
+- `LRX-PORT-003` protects an unmanaged output. Choose an absent path instead of
+  deleting or overwriting data you have not identified.
+- A browser gate that cannot bind `127.0.0.1` has not tested the application;
+  rerun where loopback servers are permitted.
+- Artifact diffs should be explained through graph, manifest, ABI, or printer
+  changes. Regenerating expected bytes without understanding the delta weakens
+  the determinism contract.

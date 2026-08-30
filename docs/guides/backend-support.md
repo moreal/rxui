@@ -4,6 +4,28 @@ This matrix describes the implemented controlled browser backend. A green native
 Lean definition alone does not imply browser support. Unsupported staged terms
 must fail lowering; they are never silently interpreted by a Lean runtime in JS.
 
+## How to read this matrix
+
+| Label | Meaning |
+|---|---|
+| supported | accepted by the generic checked component/backend contract |
+| checked dependent context | available only through a named typed API such as Tabs |
+| specialized dogfood | implemented and tested for a repository application, not generalized syntax |
+| experimental | intentionally opt-in and not the default semantics |
+| unsupported | no public lowering; use must fail instead of escaping to arbitrary JavaScript |
+
+There are three separate questions for any feature: can Lean represent it, can a
+LeanRx checker accept it, and can the selected backend lower it? Only the last
+two establish browser support. When they differ, diagnostics identify the phase:
+
+| Prefix | Boundary |
+|---|---|
+| `LRX-RX-*` / `LRX-ELAB-*` | staged expression or surface elaboration |
+| `LRX-TYPE-*` / `LRX-VIEW-*` | typed component and safe-view validation |
+| `LRX-GRAPH-*` | dependency graph construction or scheduling |
+| `LRX-BE-*` | Reactive IR or JavaScript backend lowering |
+| `LRX-PORT-*` / `LRX-HOST-*` | artifact publication or browser-host contract |
+
 ## Scalar runtime values
 
 | Lean value | JavaScript representation | Equality plan | Status |
@@ -127,3 +149,9 @@ small and imports the module rather than interpolating generated text.
 - SSR or hydration;
 - formal verification of the JavaScript engine, DOM, network, storage, or host;
 - released package/versioning compatibility promise.
+
+If a product requirement needs an unsupported item, the extension is more than
+new syntax. It needs a closed typed representation, validation and diagnostics,
+backend lowering, manifest/ABI disclosure, native and generated tests, hostile
+boundary cases, cleanup behavior, and an ADR when a runtime contract changes.
+The [architecture guide](architecture.md) describes that path in detail.

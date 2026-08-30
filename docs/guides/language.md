@@ -8,6 +8,27 @@ not an arbitrary Lean-to-JavaScript transpiler.
 The repository is not a released package and has no selected license. Examples
 below assume this checkout and the exact toolchain in `lean-toolchain`.
 
+## Guide map
+
+Sections 1–6 define the small explicit core. Section 7 is the complete scoped
+authoring reference; it is long because each capability records both accepted
+syntax and its rejection boundary. Sections 8–10 cover compilation, specialized
+feature models, and current limits.
+
+| If you need to… | Start with… |
+|---|---|
+| understand fields, dependencies, and values | sections 1–3 |
+| write a scalar event and static view | sections 4–7 |
+| bind text inputs, checkboxes, or forms | “Controlled inputs and forms” |
+| render and update keyed rows | “Keyed regions” and the following row sections |
+| filter, route, or persist a region | “Filtered keyed regions”, “Hash routing”, and “Region persistence” |
+| compose stateful components | “Static component composition” and “Immutable component props” |
+| decide whether browser lowering exists | [backend support matrix](backend-support.md) |
+
+Examples named `*Mini` are focused syntax specimens. The corresponding
+repository dogfoods exercise lifecycle, hostile input, keyboard, disposal, and
+browser behavior; a snippet compiling is not by itself that broader evidence.
+
 ## 1. Define a typed store schema
 
 A `Schema` is an ordered heterogeneous list. A `Field Γ α` is a typed capability
@@ -157,8 +178,10 @@ explicit `ValueSpec`. Events chain steps with `then`
 is declared `event setDraft (value : String) := set draft value;` and bound
 with `onInput={setDraft}`, `onKeyDown={…}`, or `onChange={…}` on an `input`
 element. `onClick={increment}` binds by reference against the declared event
-inventory (or an `EventSpec` in scope outside a component). The explicit
-wrapper forms remain valid:
+inventory (or an `EventSpec` in scope outside a component). Explicit wrapper
+forms remain available and are shown near the end of this section.
+
+### Controlled inputs and forms
 
 Controlled inputs reflect state back into the DOM (ADR-0038): `value={rx% …}`
 and `checked={rx% …}` are property reflections valid only on `input` elements,
@@ -184,12 +207,16 @@ component EchoMini (schema := EchoMiniSchema) where {
 }
 ```
 
+### Static component composition
+
 An attr-less capitalized element statically nests another checked component
 when its `_spec` is in scope (ADR-0039): `<EchoMini/>` inside a later
 component's view records `EchoMini` in the parent's child table, and the
 parent's generated module imports and mounts `./EchoMini.mjs` in document
 order with fully independent state and disposal. A capitalized head without a
 matching `_spec` keeps its ordinary meaning as a typed view-term application.
+
+### Keyed regions
 
 A `region` item declares a keyed list with a sealed row template (ADR-0040,
 ADR-0041): rows are `String` tuples behind region-owned monotone keys,
@@ -255,6 +282,8 @@ each region's dispose callback splices only its own row's entries
 (ADR-0077). A region broadcast re-renders retained rows without remounting
 their children, so child state survives it.
 
+### Row updates and dynamic row text
+
 A `row` item declares a sealed update action on a region's rows (ADR-0043):
 `row roster mark := set marks (marks ++ " ★");` writes new field values —
 evaluated simultaneously against the dispatching row's current fields — and
@@ -287,6 +316,8 @@ component MarkedRosterMini (schema := MarkedRosterMiniSchema) where {
   ];
 }
 ```
+
+### Row payload events
 
 A `row` item may declare one `String` payload parameter (ADR-0046):
 `row roster rename (value : String) := set label value;` receives the
@@ -324,6 +355,8 @@ row fields plus the declaring event's payload, `remove` and declared
 `update` events are the whole action vocabulary, and each cell binds at most
 one row event per delegated kind (`click`, `dblclick`, `input`, `keydown`,
 and checkbox `change` — ADR-0049).
+
+### Conditional row cells and focus
 
 A row cell may be a sealed two-branch selection (ADR-0047):
 `{if mode == "view" then <span…/> else <input…/>}` mounts one of two
@@ -376,6 +409,8 @@ component BranchRosterMini (schema := BranchRosterMiniSchema) where {
 }
 ```
 
+### Delegated double-click and checkbox events
+
 Two more delegated kinds close the TodoMVC row vocabulary (ADR-0049).
 `onDblClick={name}` binds a payload-less row event as the `dblclick` kind —
 unlike row `click` it is permitted on non-button elements, so the label
@@ -419,6 +454,8 @@ component ToggleRosterMini (schema := ToggleRosterMiniSchema) where {
   ];
 }
 ```
+
+### Whole-region observations and commands
 
 Whole-region observations and mutations are sealed too (ADR-0050). A
 `{count region}` view child renders the region's row count and
@@ -482,6 +519,8 @@ component CountedRosterMini (schema := CountedRosterMiniSchema) where {
 }
 ```
 
+### Region-count attribute selections
+
 A static view element may also follow a region's structural emptiness
 (ADR-0058): `hidden={count region == 0}` reflects `region`'s *total* row
 count against the zero literal into the element's `hidden` boolean
@@ -540,6 +579,8 @@ disappear together with the empty list. Each selection keeps its own attr
 slot, evaluation, and flip-only write, so one appending commit reveals the
 whole chrome and the drain of the last row hides it again.
 
+### Component payload broadcasts
+
 A typed component event may flow its payload into a region broadcast
 (ADR-0061): `event toggleAll (checked : Bool) := update region (set field
 checked)` is the payload broadcast — the ADR-0050 `update … (set …)` body
@@ -561,6 +602,8 @@ state write), and the payload appears nowhere else in the component update
 language. The model validates the broadcast against the declared region
 exactly as ADR-0050's (`LRX-TYPE-116`): a payload broadcast that never
 writes its payload is rejected too.
+
+### Filtered keyed regions
 
 A `filter` item selects which of a keyed region's rows are *displayed*
 (ADR-0051): `filter region by field := when "literal" (rowField ==
@@ -600,6 +643,13 @@ component FilteredRosterMini (schema := FilteredRosterMiniSchema) where {
   ];
 }
 ```
+
+### Region scheduling and performance contract
+
+The following implementation notes explain when filter, count, row-update,
+route, and persistence work is scheduled or skipped. They are observable through
+the documented trace and metric contracts; benchmark numbers remain measurements
+of the recorded environment, not language-level complexity proofs.
 
 Filters distribute per region (ADR-0079). Several regions may each carry
 one, and two of them may name the *same* state field: each sweep allocates
@@ -1006,6 +1056,8 @@ hundred separate interruptions, against a laid-out list that scrolls without
 entering script at all. The window does not remove the per-row cost; it moves
 it out of a click the user has accepted as a wait and into a scroll.
 
+### Shared-filter routing constraints
+
 A `route` may target a filter field that several regions share (ADR-0080).
 The field's sealed state literals are then the declared default plus the
 **union** of every filter table over that field, not the first-declared
@@ -1048,6 +1100,8 @@ component TwinFilterMini (schema := TwinFilterMiniSchema) where {
   ];
 }
 ```
+
+### Hash routing
 
 A `route` item seals the browser's URL hash onto the filter field
 (ADR-0063): `route field := when "#/hash" "literal" then …` maps distinct
@@ -1115,6 +1169,8 @@ component RoutedRosterMini (schema := RoutedRosterMiniSchema) where {
   ];
 }
 ```
+
+### Region persistence
 
 A `persist` item seals a keyed region's row table onto one localStorage key
 (ADR-0063): `persist region := "storage-key"` declares one sealed literal
@@ -1210,6 +1266,8 @@ persistence — the host moves strings only), and both are reachability-gated
 in the import emission: a component declaring no route or persist item
 emits a byte-identical module.
 
+### Key-branched row events
+
 A keydown row event may *branch* on its key payload (ADR-0052):
 `row region event (pressed : String) := when "Enter" (set field (expr), …)
 then when "Escape" (…)` lowers to a sealed key table — the declared
@@ -1252,6 +1310,8 @@ Enter commits (`label := draft`, back to the view branch) and Escape reverts
 (`draft := label` restores the pre-edit text, since `label` changes only on
 commit), so the next edit entry opens pre-filled with the restored draft
 through the value reflection.
+
+### Guarded row removal
 
 A row stage may carry a *remove-if guard* (ADR-0053):
 `row region event := if field == "literal" then remove else
@@ -1307,6 +1367,8 @@ component GuardedEditorMini (schema := GuardedEditorMiniSchema) where {
 Escape stays unguarded by choice: reverting an empty draft restores the
 label instead of destroying the row.
 
+### Guarded component events
+
 A component event may carry a *skip-if guard* (ADR-0055): `event add := if
 trim draft == "" then skip else (append roster (trim draft), set draft
 "");` compares one `String` state field — raw or behind the `trim` unary,
@@ -1361,6 +1423,8 @@ outside the arm table is a whole-event no-op before any transaction exists.
 `LRX-TYPE-115` seals the arm table, `LRX-VIEW-041` the binding, and
 `LRX-ELAB-124` the surface.
 
+### State-selected attributes
+
 A static view element may select its `class`, `aria-pressed`, or `disabled`
 from component state (ADR-0045):
 `class={if filter == "all" then "selected" else ""}` selects between two
@@ -1397,6 +1461,8 @@ component FilterMini (schema := FilterMiniSchema) where {
   ];
 }
 ```
+
+### Immutable component props
 
 A `prop` item declares an immutable `String` input that the parent supplies
 through the mount ABI (ADR-0042): the child renders it with a `{title}` text
