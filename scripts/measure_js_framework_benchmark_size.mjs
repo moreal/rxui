@@ -50,7 +50,23 @@ process.stdout.write(rendered);
 
 if (baselinePath) {
   const baseline = JSON.parse(await readFile(baselinePath, "utf8"));
-  if (JSON.stringify(baseline) !== JSON.stringify(report)) {
+  const contract = (value) => ({
+    schemaVersion: value.schemaVersion,
+    upstreamTag: value.upstreamTag,
+    upstreamCommit: value.upstreamCommit,
+    commonCssExcluded: value.commonCssExcluded,
+    brotliThresholdBytes: value.brotliThresholdBytes,
+    files: value.files.map(({ name, rawBytes, brotliBytes }) => ({
+      name,
+      rawBytes,
+      brotliBytes,
+    })),
+    totals: {
+      rawBytes: value.totals.rawBytes,
+      brotliBytes: value.totals.brotliBytes,
+    },
+  });
+  if (JSON.stringify(contract(baseline)) !== JSON.stringify(contract(report))) {
     const rawDelta = report.totals.rawBytes - baseline.totals.rawBytes;
     const brotliDelta = report.totals.brotliBytes - baseline.totals.brotliBytes;
     throw new Error(

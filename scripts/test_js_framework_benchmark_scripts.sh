@@ -203,4 +203,33 @@ expect_failure 2 "unknown option: --surprise" \
 expect_failure 2 "only one upstream directory may be supplied" \
   "$repository_root/scripts/prepare_js_framework_benchmark.sh" one two
 
+size_dist="$workspace/size-dist"
+size_measure="$repository_root/scripts/measure_js_framework_benchmark_size.mjs"
+mkdir -p "$size_dist"
+printf '%s\n' '{"files":["index.html","main.mjs"]}' >"$size_dist/benchmark-assets.json"
+printf '%s\n' '<!doctype html><title>fixture</title>' >"$size_dist/index.html"
+printf '%s\n' 'export const fixture = 1;' >"$size_dist/main.mjs"
+node "$size_measure" "$size_dist" >"$workspace/size-baseline.json"
+cp "$workspace/size-baseline.json" "$workspace/gzip-varies.json"
+node -e '
+  const fs = require("node:fs");
+  const file = process.argv[1];
+  const baseline = JSON.parse(fs.readFileSync(file, "utf8"));
+  for (const entry of baseline.files) entry.gzipBytes += 1;
+  baseline.totals.gzipBytes += baseline.files.length;
+  fs.writeFileSync(file, `${JSON.stringify(baseline, null, 2)}\n`);
+' "$workspace/gzip-varies.json"
+node "$size_measure" "$size_dist" "$workspace/gzip-varies.json" >/dev/null
+cp "$workspace/size-baseline.json" "$workspace/raw-varies.json"
+node -e '
+  const fs = require("node:fs");
+  const file = process.argv[1];
+  const baseline = JSON.parse(fs.readFileSync(file, "utf8"));
+  baseline.files[0].rawBytes += 1;
+  baseline.totals.rawBytes += 1;
+  fs.writeFileSync(file, `${JSON.stringify(baseline, null, 2)}\n`);
+' "$workspace/raw-varies.json"
+expect_failure 1 "size baseline changed: raw -1 bytes, brotli +0 bytes" \
+  node "$size_measure" "$size_dist" "$workspace/raw-varies.json"
+
 echo "JS framework benchmark script tests passed"

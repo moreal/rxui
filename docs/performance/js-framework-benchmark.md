@@ -101,13 +101,15 @@ The size report reads `benchmark-assets.json`, which lists only resources fetche
 by the benchmark page. Common benchmark CSS, metadata, and test-only files are
 excluded. For parity with the pinned upstream server, files smaller than 1 KiB
 remain uncompressed and larger files use Node's default Brotli settings. Gzip
-level 9 is also reported for context but is not an upstream score.
+level 9 is also reported for context but is not an upstream score. Its exact
+bytes can vary with Node's bundled zlib, so Gzip is excluded from the baseline
+comparison; raw and upstream-style Brotli bytes remain exact gates.
 
 The checked baseline is:
 
 | Scope | Raw bytes | Upstream-style Brotli bytes | Gzip-9 bytes |
 |---|---:|---:|---:|
-| Complete fetched application | 9,902 | 3,440 | 3,932 |
+| Complete fetched application | 11,809 | 3,975 | 4,514 |
 
 The local size gate uses the pinned upstream workload's fetched-asset and
 compression rules; the official runner remains the publication check.
