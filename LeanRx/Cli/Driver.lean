@@ -128,6 +128,7 @@ private def doctor : IO UInt32 := do
   let node ← toolVersion "node" #["--version"]
   let pnpm ← toolVersion "corepack" #["pnpm", "--version"]
   let playwright ← toolVersion "corepack" #["pnpm", "exec", "playwright", "--version"]
+  let tailwind ← toolVersion "corepack" #["pnpm", "exec", "tailwindcss", "--help"]
   let mut hostsOk := true
   for host in ["runtime/leanrx_dom.mjs", "runtime/leanrx_form_events.mjs",
       "runtime/leanrx_region.mjs", "runtime/leanrx_unkeyed_region.mjs",
@@ -141,6 +142,7 @@ private def doctor : IO UInt32 := do
   let nodeOk := node.any Cli.nodeVersionCompatible
   let pnpmOk := pnpm.any Cli.pnpmVersionCompatible
   let playwrightOk := playwright.any Cli.playwrightVersionCompatible
+  let tailwindOk := tailwind.any Cli.tailwindVersionCompatible
   let chromium ← if nodeOk && playwrightOk then
     toolVersion "node" #["-e", String.intercalate "" [
       "const fs=require('node:fs');",
@@ -150,7 +152,7 @@ private def doctor : IO UInt32 := do
     ]]
   else pure none
   let chromiumOk := chromium.isSome
-  let ready := toolchainOk && nodeOk && pnpmOk && playwrightOk && chromiumOk &&
+  let ready := toolchainOk && nodeOk && pnpmOk && playwrightOk && tailwindOk && chromiumOk &&
     hostsOk && compilerOk
   IO.println "LeanRx doctor"
   doctorLine true "compiler" LeanRx.version
@@ -159,6 +161,8 @@ private def doctor : IO UInt32 := do
   doctorLine nodeOk "node" (node.getD "unavailable")
   doctorLine pnpmOk "pnpm" (pnpm.getD "unavailable")
   doctorLine playwrightOk "playwright" (playwright.getD "unavailable")
+  doctorLine tailwindOk "tailwind"
+    (tailwind.map (·.trimAscii.toString.splitOn "\n" |>.head!) |>.getD "unavailable")
   doctorLine chromiumOk "chromium" (if chromiumOk then "installed" else "unavailable")
   doctorLine hostsOk "browser hosts" (if hostsOk then "present" else "missing")
   doctorLine compilerOk "backend smoke" (if compilerOk then "valid" else "failed")

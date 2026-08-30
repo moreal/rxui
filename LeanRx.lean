@@ -34,6 +34,8 @@ import LeanRx.Backend.IssueBrowser
 import LeanRx.Backend.Grid
 import LeanRx.Backend.JsFrameworkBenchmark
 import LeanRx.View.Model
+import LeanRx.UI.Primitives
+import LeanRx.Docs.Framework
 import LeanRx.Component.Model
 import LeanRx.Component.Dependent
 import LeanRx.Component.Tabs

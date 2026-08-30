@@ -11,9 +11,9 @@ lake exe leanrx -- doctor
 ```
 
 `doctor` reports compiler version, exact Lean toolchain, runtime ABI, Node 22+,
-exact Corepack/pnpm and Playwright versions, installed Chromium, required browser
-hosts, and a pure Counter backend smoke check. It returns nonzero when a required
-item is unavailable or incompatible.
+exact Corepack/pnpm, Tailwind, and Playwright versions, installed Chromium,
+required browser hosts, and a pure Counter backend smoke check. It returns
+nonzero when a required item is unavailable or incompatible.
 
 ## Scaffold a public-API starter
 
@@ -57,6 +57,14 @@ lake exe leanrx -- build Examples.Counter --out .tmp/counter
 lake exe leanrx -- build Examples.LeanRxDocs --out .tmp/docs
 ```
 
+The docs build additionally runs the pinned Tailwind v4 CLI inside the atomic
+staging directory and publishes Markdown copies beside the generated app. The
+equivalent package script is:
+
+```sh
+corepack pnpm docs:build -- .tmp/docs
+```
+
 The output path becomes a LeanRx-managed symbolic-link pointer to a complete
 versioned sibling. First publication requires an absent path; later publication
 accepts only the managed pointer. Generation, validation, and all writes finish
@@ -65,6 +73,18 @@ the documented TCB; see [ADR-0007](../adr/0007-atomic-versioned-output.md).
 
 Selected bundles contain a `.generated.lean` module that aliases inspectable
 schema/declaration/spec/check names. Verify it with `lake env lean`.
+
+## Publish the documentation site
+
+The `Publish LeanRx docs and benchmark results` workflow deploys the generated
+site to <https://moreal.github.io/rxui/>. Every push to `main` rebuilds the docs
+and restores the latest successful benchmark under `/rxui/benchmark/`. The
+three-hour schedule rebuilds both the docs and the upstream benchmark, so the
+two Pages producers cannot overwrite each other.
+
+Manual workflow dispatches restore the previous benchmark by default. Select
+`refresh_benchmark` only when the approximately one-hour upstream comparison is
+intended.
 
 ## Explain a diagnostic
 
@@ -110,6 +130,8 @@ gates include:
 - `check_component_codegen.sh`: deterministic application artifacts and manifests;
 - `check_region_runtime.sh`, `check_effect_runtime.sh`: fake-host adversarial gates;
 - `check_browser.sh`: Chromium semantics, security, keyboard, axe, and disposal;
+- the docs artifact/browser gates: Tailwind source detection, responsive layout,
+  active navigation, Markdown export, and explicit shadcn compatibility metadata;
 - `check_js_framework_benchmark.sh`: standard keyed-app contract and size baseline;
 - `check_compile_fail.sh`: sealed public boundaries and source diagnostics;
 - policy/audit scripts: placeholders, exact axioms, and semantic unsafe scope.

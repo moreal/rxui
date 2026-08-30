@@ -42,7 +42,9 @@ runtime types.
 
 The generic scalar component supports these closed tags:
 
-- `main`, `div`, `button`, `p`, `span`, `h1`;
+- `main`, `header`, `footer`, `nav`, `aside`, `article`, and `section`;
+- `div`, `p`, `span`, `h1`–`h3`, `strong`, `em`, `ul`, and `li`;
+- `pre`, `code`, `button`, `form`, `input`, and `label`;
 - static `class`, `id`, `aria-label`, and typed button `type` attributes;
 - literal text and staged scalar text;
 - click events on native buttons only.
@@ -121,6 +123,7 @@ small and imports the module rather than interpolating generated text.
   one-per-component hash route table over the filter field, ADR-0063);
 - general Virtual DOM or runtime dependency tracking;
 - raw HTML, URL attributes, CSS DSL, images, links, or broad element vocabulary;
+- direct shadcn/ui component use or an installable Lean-native component registry;
 - SSR or hydration;
 - formal verification of the JavaScript engine, DOM, network, storage, or host;
 - released package/versioning compatibility promise.

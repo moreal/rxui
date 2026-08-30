@@ -2,13 +2,17 @@
 
 LeanRx is an unreleased Lean 4-hosted frontend compiler experiment. Start here:
 
-1. [Language guide](guides/language.md) — staged values, components, events, and views.
-2. [Tooling guide](guides/tooling.md) — check, build, graph, doctor, scaffold, and tests.
-3. [Backend support matrix](guides/backend-support.md) — what is actually lowerable today.
-4. [Architecture guide](guides/architecture.md) — compiler layers, runtime, and artifacts.
-5. [Trust model](guides/trust-model.md) — proved claims, exact audits, and remaining TCB.
-6. [Accessibility guide](guides/accessibility.md) — encoded guarantees and manual review.
-7. [Dogfood case studies](guides/dogfood-case-studies.md) — what each application found.
+1. [Getting started](guides/getting-started.md) — diagnose, scaffold, check, and build.
+2. [Philosophy and operating model](guides/philosophy.md) — why the language is staged.
+3. [Writing components](guides/components.md) — a complete component and authoring rules.
+4. [Tailwind and UI integrations](guides/integrations.md) — tested support and honest limits.
+5. [Language guide](guides/language.md) — the complete staged surface.
+6. [Tooling guide](guides/tooling.md) — commands, artifacts, and verification gates.
+7. [Backend support matrix](guides/backend-support.md) — what is actually lowerable today.
+8. [Architecture guide](guides/architecture.md) — compiler layers, runtime, and artifacts.
+9. [Trust model](guides/trust-model.md) — proved claims, exact audits, and remaining TCB.
+10. [Accessibility guide](guides/accessibility.md) — encoded guarantees and manual review.
+11. [Dogfood case studies](guides/dogfood-case-studies.md) — what each application found.
 
 Reference material:
 

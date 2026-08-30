@@ -50,6 +50,11 @@ def pnpmVersionCompatible (value : String) : Bool :=
 def playwrightVersionCompatible (value : String) : Bool :=
   value.trimAscii.toString == "Version 1.62.1"
 
+def tailwindVersionCompatible (value : String) : Bool :=
+  match value.trimAscii.toString.splitOn "\n" with
+  | firstLine :: _ => firstLine == "≈ tailwindcss v4.3.3"
+  | [] => false
+
 /-- Stable help for the most important public diagnostic boundaries. -/
 def explanation? : String → Option Explanation
   | "LRX-SYN-001" => some {

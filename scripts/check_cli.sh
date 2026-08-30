@@ -4,6 +4,7 @@ set -euo pipefail
 workspace="$(mktemp -d)"
 output="$workspace/dist"
 docs_output="$workspace/docs"
+docs_script_output="$workspace/docs-script"
 trap 'rm -rf -- "$workspace"' EXIT
 
 check_output="$(lake exe leanrx -- check Examples.Counter)"
@@ -28,9 +29,9 @@ node Test/js/component_artifacts.mjs "$output"
 lake env lean "$output/Counter.generated.lean"
 
 docs_check_output="$(lake exe leanrx -- check Examples.LeanRxDocs)"
-if [[ "$docs_check_output" != *"graph: 7 nodes / 7 scheduled"* ||
-      "$docs_check_output" != *"values: 1 source / 3 derived"* ||
-      "$docs_check_output" != *"view: 3 text sinks / 7 events"* ||
+if [[ "$docs_check_output" != *"graph: 27 nodes / 27 scheduled"* ||
+      "$docs_check_output" != *"values: 1 source / 6 derived"* ||
+      "$docs_check_output" != *"view: 6 text sinks / 7 events"* ||
       "$docs_check_output" != *"result: ok"* ]]; then
   echo "LeanRx docs check output changed: $docs_check_output" >&2
   exit 1
@@ -38,6 +39,16 @@ fi
 lake exe leanrx -- build Examples.LeanRxDocs --out "$docs_output"
 node Test/js/docs_artifacts.mjs "$docs_output"
 lake env lean "$docs_output/LeanRxDocs.generated.lean"
+if docs_script_error="$(corepack pnpm docs:build 2>&1)"; then
+  echo "docs package script accepted a missing output" >&2
+  exit 1
+fi
+if [[ "$docs_script_error" != *"usage: corepack pnpm docs:build -- <output>"* ]]; then
+  echo "docs package script lost its usage diagnostic" >&2
+  exit 1
+fi
+corepack pnpm docs:build -- "$docs_script_output"
+node Test/js/docs_artifacts.mjs "$docs_script_output"
 lake exe leanrx -- graph Examples.LeanRxDocs --format html > "$docs_output/cli.graph.html"
 if ! diff -u "$docs_output/LeanRxDocs.graph.html" "$docs_output/cli.graph.html"; then
   echo "LeanRx docs CLI graph differs from its build artifact" >&2
@@ -102,7 +113,8 @@ fi
 doctor_output="$(lake exe leanrx -- doctor)"
 for fragment in "LeanRx doctor" "[ok] compiler: 0.1.0-dev" \
     "[ok] toolchain: leanprover/lean4:v4.33.0" "[ok] runtime ABI: 20" \
-    "[ok] node:" "[ok] pnpm: 10.33.0" "[ok] browser hosts: present" \
+    "[ok] node:" "[ok] pnpm: 10.33.0" "[ok] tailwind: ≈ tailwindcss v4.3.3" \
+    "[ok] browser hosts: present" \
     "[ok] playwright: Version 1.62.1" "[ok] chromium: installed" \
     "[ok] backend smoke: valid" "result: ready"; do
   if [[ "$doctor_output" != *"$fragment"* ]]; then
@@ -117,7 +129,8 @@ if incompatible_doctor="$(PATH="$incompatible_path" lake exe leanrx -- doctor 2>
   exit 1
 fi
 for fragment in "[error] node: v21.99.0" "[error] pnpm: 9.99.0" \
-    "[error] playwright: Version 1.61.0" "[error] chromium: unavailable" \
+    "[error] playwright: Version 1.61.0" \
+    "[error] tailwind: ≈ tailwindcss v4.2.0" "[error] chromium: unavailable" \
     "result: not ready"; do
   if [[ "$incompatible_doctor" != *"$fragment"* ]]; then
     echo "leanrx doctor lost incompatible-tool result: $fragment" >&2

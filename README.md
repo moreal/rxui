@@ -11,7 +11,7 @@ and [PLAN.md](PLAN.md). The repository is not yet a released framework.
 - Bash and ripgrep for repository policy gates
 - POSIX `ln` and `readlink` for atomic versioned-directory publication
 - Node.js 22 or newer for M3 generated-module differential tests
-- Corepack with pnpm 10.33.0 (pinned by `packageManager`) for browser tests
+- Corepack with pnpm 10.33.0 (pinned by `packageManager`) for browser and docs builds
 
 ## Reproducible commands
 
@@ -214,14 +214,23 @@ lake exe leanrx -- scaffold --out .tmp/starter
 lake exe leanrx -- explain LRX-GRAPH-001
 lake exe leanrx -- graph Examples.Counter --format html > .tmp/Counter.graph.html
 lake exe leanrx -- build Examples.LeanRxDocs --out .tmp/docs
+corepack pnpm docs:build -- .tmp/docs-tailwind
 ```
 
-The seven-page site uses LeanRx state, derived values, events, text sinks, graphs,
-and atomic output. It records rather than hides missing routing, semantic content
-tags, typed CSS, SSR, and hydration. See the
+The seven-page site uses the reusable `LeanRx.Docs` shell and `LeanRx.UI`
+primitives with LeanRx state, derived values, events, selected attributes, text
+sinks, graphs, Tailwind v4, Markdown export, and atomic output. It records rather
+than hides missing routing, Markdown ingestion, direct shadcn/ui compatibility,
+SSR, and hydration. Start with the
+[Getting Started guide](docs/guides/getting-started.md), then see the
 [case studies](docs/guides/dogfood-case-studies.md),
 [accessibility guide](docs/guides/accessibility.md), and
 [trust model](docs/guides/trust-model.md).
+
+The generated site is published at <https://moreal.github.io/rxui/>. Pushes to
+`main` rebuild the docs while preserving the latest benchmark at
+<https://moreal.github.io/rxui/benchmark/>; the scheduled Pages run refreshes
+that benchmark every three hours.
 
 ## Project boundaries
 

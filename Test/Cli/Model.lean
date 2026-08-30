@@ -43,7 +43,14 @@ def run : IO Unit := do
     throw <| IO.userError "Node doctor compatibility changed"
   unless pnpmVersionCompatible "10.33.0\n" && !pnpmVersionCompatible "10.32.0" &&
       playwrightVersionCompatible "Version 1.62.1" &&
-      !playwrightVersionCompatible "Version 1.61.0" do
+      !playwrightVersionCompatible "Version 1.61.0" &&
+      tailwindVersionCompatible "≈ tailwindcss v4.3.3\n\nUsage:" &&
+      tailwindVersionCompatible "≈ tailwindcss v4.3.3" &&
+      !tailwindVersionCompatible "≈ tailwindcss v4.3.30\n\nUsage:" &&
+      !tailwindVersionCompatible "≈ tailwindcss v4.3.3-beta\n\nUsage:" &&
+      !tailwindVersionCompatible "≈ tailwindcss v4.3.3 extra" &&
+      !tailwindVersionCompatible "≈ tailwindcss v4.2.0" &&
+      !tailwindVersionCompatible "" do
     throw <| IO.userError "pinned browser-tool doctor compatibility changed"
   for code in ["LRX-PORT-001", "LRX-PORT-002", "LRX-PORT-003", "LRX-PORT-004"] do
     unless (explanation? code).isSome do

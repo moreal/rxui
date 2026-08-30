@@ -57,6 +57,17 @@ component CounterSyntax (schema := CounterSchema) where {
   ];
 }
 
+/- Kept structurally identical to the complete snippet in `guides/components.md`. -/
+component ComponentsGuideCounter (schema := CounterSchema) where {
+  state count : Int := 0;
+  derived label := rx% s!"Count: {count}";
+  event increment := set count (count + 1);
+  view := jsx% <main> [
+    <h1> [{"countLabel": rx% label}],
+    <button type="button" onClick={increment}> ["Increment"]
+  ];
+}
+
 /- The explicit right-hand sides remain valid alongside the sugared items. -/
 component CounterExplicitSyntax (schema := CounterSchema) where {
   state count := ValueSpec.state count (.int 1);
@@ -525,6 +536,13 @@ component PropForwardMini (schema := PropForwardMiniSchema) where {
 def run : IO Unit := do
   unless doubled.dependencies.ids == [0] && countText.dependencies.ids == [0] do
     throw <| IO.userError "language-guide expression dependencies changed"
+  match ComponentsGuideCounter_check with
+  | .ok checked =>
+      unless checked.sourceCount == 1 && checked.spec.values.size == 2 &&
+          checked.spec.events.size == 1 && checked.view.textSinks.length == 1 do
+        throw <| IO.userError "components-guide complete snippet changed"
+  | .error error =>
+      throw <| IO.userError s!"components-guide complete snippet rejected: {error.render}"
   match checked, CounterSyntax_check with
   | .ok explicit, .ok generated =>
       unless explicit.graph.graph.nodes.map (·.name) ==

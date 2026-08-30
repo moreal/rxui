@@ -6,8 +6,8 @@ namespace LeanRx
 /-- Closed element whitelist. Arbitrary tag text never reaches the emitter. -/
 inductive HtmlTag where
   | main | div | button | p | span | h1
-  | h2 | h3 | header | footer | section | nav | ul | li | input | label | strong | em
-  | form
+  | h2 | h3 | header | footer | section | nav | aside | article | ul | li
+  | pre | code | input | label | strong | em | form
 deriving Repr, BEq, DecidableEq
 
 def HtmlTag.name : HtmlTag → String
@@ -23,8 +23,12 @@ def HtmlTag.name : HtmlTag → String
   | .footer => "footer"
   | .section => "section"
   | .nav => "nav"
+  | .aside => "aside"
+  | .article => "article"
   | .ul => "ul"
   | .li => "li"
+  | .pre => "pre"
+  | .code => "code"
   | .input => "input"
   | .label => "label"
   | .strong => "strong"

@@ -17,6 +17,9 @@ mutual
 end
 
 def run : IO Unit := do
+  unless HtmlTag.aside.name == "aside" && HtmlTag.article.name == "article" &&
+      HtmlTag.pre.name == "pre" && HtmlTag.code.name == "code" do
+    throw <| IO.userError "documentation semantic tag names changed"
   let split := syntaxView.split
   unless split.textSinks.map (·.name) ==
       ["countText", "doubledText", "parityText", "stableText", "hostileText"] do

@@ -7390,3 +7390,77 @@ cheaper row moves it down and a list too long to lay out moves it the other way
 by fiat. `<textarea>` is now reachable by the ownership rule and still not by
 `HtmlTag`, alongside `<select>`. And `swapAt` and the filter still cannot meet
 in any emission, fourth round standing.
+
+## LeanRx documentation framework — Tailwind and source-owned UI
+
+### Scenario exercised
+
+The original seven-tab M11 documentation example was rebuilt as a practical
+documentation-framework dogfood. `LeanRx.Docs` now owns page metadata, active
+native navigation, and a semantic docs shell; `LeanRx.UI` owns small button,
+callout, and code-block primitives. The checked component publishes Getting
+Started, philosophy, static reactivity, component authoring, Tailwind, UI, and
+limitations pages together with the source-preserving repository Markdown tree.
+
+The bundle compiles pinned Tailwind CSS 4.3.3 from complete class candidates in
+the `.lean` sources. The Tailwind process runs inside the atomic publisher's
+staging callback, so no incomplete unstyled version can become the managed
+output pointer. The build records direct shadcn compatibility as false.
+
+### What was pleasant
+
+The existing `View` API could express the layout as ordinary reusable Lean
+functions. Adding the document-specific semantic tags `aside`, `article`,
+`pre`, and `code` required no new backend algorithm: the closed `HtmlTag`
+mapping automatically kept all content on the safe `createElement` and
+`textContent` path. Tailwind's explicit `@source` accepted Lean files without a
+framework plugin and emitted a 13.6 KB minified stylesheet with responsive,
+theme, focus, and arbitrary-value utilities.
+
+The active page is a `String` source. Each of seven buttons reflects its state
+through a checked `class` selection and `aria-pressed` selection, so visual and
+accessible selection cannot drift into separate event handlers.
+
+### Friction and bugs found
+
+The first navigation helper supplied an idle static `class` and a reactive
+`class` selection on the same element. `LRX-VIEW-001` rejected the duplicate
+owner; removing the static attribute made the selection the single owner of
+both mount and update values. Copying the Tailwind input into the temporary
+bundle before compilation also changed the relative base of `@source`; the
+compiler now reads the repository input in place and copies it only as a
+published provenance artifact.
+
+`section` already existed in the explicit API but remains a reserved word in
+the JSX-like grammar, a concrete authoring inconsistency. Documentation content
+also has to be duplicated between reactive page summaries and Markdown guides
+because there is no Markdown ingestion or static page generator.
+
+### Compatibility verdict
+
+Tailwind is supported as a tested build-time integration: artifact gates pin
+its emitted utilities and metadata, and Chromium verifies computed desktop and
+mobile layouts. shadcn/ui is not directly compatible because its CLI emits
+React/JavaScript components and configures React-oriented primitives. The
+source-ownership model transfers, which is why the first Lean-native primitives
+are ordinary editable source, but a registry and complex accessible primitives
+remain missing.
+
+### Accessibility and exact work
+
+Chromium covers keyboard activation, one active `aria-pressed` button, a two-
+column 375px navigation, minimum 44px targets, zero horizontal overflow, dark
+theme and reduced-motion behavior, two independent mounts, idempotent disposal,
+and zero axe violations for both the site themes and its script-free graph
+viewer. Eight page transitions perform eight
+commits and source writes, 48 derived evaluations/changes, 48 text-sink
+evaluations/writes, and 32 active-attribute writes. The trace therefore carries
+88 `:write` records including the eight source writes; there is no runtime
+dependency discovery.
+
+### Missing framework capability
+
+General URL routing, Markdown ingestion, static multi-page output, links and URL
+attributes, clipboard copy, search, SSR/hydration, overlays and focus management,
+and an installable Lean-native UI registry. Until those exist this is a useful
+minimum framework and integration proof, not Starlight or Astro parity.

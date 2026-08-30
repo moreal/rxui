@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "scripts": {
+    "docs:build": "./scripts/build_docs.sh",
     "test:browser": "playwright test",
     "test:browser:install": "playwright install chromium",
     "benchmark:check": "./scripts/check_js_framework_benchmark.sh",
@@ -19,6 +20,8 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
-    "@playwright/test": "1.62.1"
+    "@playwright/test": "1.62.1",
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3"
   }
 }

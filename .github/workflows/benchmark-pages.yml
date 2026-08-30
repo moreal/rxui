@@ -1,11 +1,21 @@
-name: Publish JS framework benchmark results
+name: Publish LeanRx docs and benchmark results
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      refresh_benchmark:
+        description: Run the full upstream benchmark instead of restoring the latest result
+        required: true
+        default: false
+        type: boolean
   schedule:
     - cron: '17 */3 * * *'
 
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
@@ -15,9 +25,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  benchmark:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REFRESH_BENCHMARK: ${{ github.event_name == 'schedule' || inputs.refresh_benchmark }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
@@ -25,26 +38,72 @@ jobs:
           use-github-cache: true
       - name: Install pinned browser test dependencies
         run: corepack pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build the self-hosted documentation site
+        run: corepack pnpm docs:build -- .tmp/pages-site
+      - name: Locate and verify the documentation bundle
+        id: site
+        run: |
+          site_path="$(readlink -f .tmp/pages-site)"
+          node Test/js/docs_artifacts.mjs "$site_path"
+          echo "path=$site_path" >> "$GITHUB_OUTPUT"
+      - name: Restore the latest published benchmark
+        if: env.REFRESH_BENCHMARK != 'true'
+        env:
+          SITE_PATH: ${{ steps.site.outputs.path }}
+        run: |
+          previous_run="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/benchmark-pages.yml/runs?status=success&per_page=1" \
+            --jq '.workflow_runs[0].id // empty')"
+          if [[ -z "$previous_run" ]]; then
+            echo "no successful Pages run is available for benchmark restoration" >&2
+            exit 1
+          fi
+          artifact_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts" \
+            --jq '.artifacts | map(select(.name == "github-pages" and .expired == false)) | first | .id // empty')"
+          if [[ -z "$artifact_id" ]]; then
+            echo "the latest successful Pages run has no live github-pages artifact" >&2
+            exit 1
+          fi
+          archive="$RUNNER_TEMP/previous-pages.zip"
+          extracted="$RUNNER_TEMP/previous-pages"
+          mkdir -p "$extracted"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
+          unzip -q "$archive" -d "$extracted"
+          mkdir -p "$extracted/site"
+          tar -xf "$extracted/artifact.tar" -C "$extracted/site"
+          if [[ -f "$extracted/site/benchmark/index.html" ]]; then
+            cp -R "$extracted/site/benchmark" "$SITE_PATH/benchmark"
+          elif [[ -f "$extracted/site/index.html" ]]; then
+            mkdir -p "$SITE_PATH/benchmark"
+            cp -R "$extracted/site/." "$SITE_PATH/benchmark/"
+          else
+            echo "the previous Pages artifact has no benchmark entry point" >&2
+            exit 1
+          fi
       - name: Install pinned Playwright Chromium
+        if: env.REFRESH_BENCHMARK == 'true'
         run: corepack pnpm exec playwright install --with-deps chromium
       - name: Run js-framework-benchmark popular-preset comparison
+        if: env.REFRESH_BENCHMARK == 'true'
         run: corepack pnpm benchmark:compare -- --headless
-      - name: Locate generated results table
-        id: results
+      - name: Add the refreshed benchmark to the documentation site
+        if: env.REFRESH_BENCHMARK == 'true'
+        env:
+          SITE_PATH: ${{ steps.site.outputs.path }}
         run: |
           latest_result_dir="$(ls -1dt .tmp/js-framework-benchmark-results/*/ | head -n 1)"
           if [[ ! -d "${latest_result_dir}table" ]]; then
             echo "no results table found under ${latest_result_dir}" >&2
             exit 1
           fi
-          echo "path=${latest_result_dir}table" >> "$GITHUB_OUTPUT"
+          cp -R "${latest_result_dir}table" "$SITE_PATH/benchmark"
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: ${{ steps.results.outputs.path }}
+          path: ${{ steps.site.outputs.path }}
 
   deploy:
-    needs: benchmark
+    needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
