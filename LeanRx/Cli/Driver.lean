@@ -111,7 +111,14 @@ private def scaffold (output : String) : IO UInt32 := do
 
 private def toolVersion (command : String) (args : Array String) : IO (Option String) := do
   try
-    let output ← IO.Process.output { cmd := command, args }
+    let output ← IO.Process.output {
+      cmd := command
+      args
+      env := #[
+        ("FORCE_COLOR", none),
+        ("NO_COLOR", some "1")
+      ]
+    }
     if output.exitCode == 0 then
       let value := output.stdout.trimAscii.toString
       pure (if value.isEmpty then none else some value)

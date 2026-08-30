@@ -110,7 +110,11 @@ if [[ "$unknown_explain" != *"error[LRX-SYN-002]"* ]]; then
   exit 1
 fi
 
-doctor_output="$(lake exe leanrx -- doctor)"
+if ! doctor_output="$(lake exe leanrx -- doctor 2>&1)"; then
+  echo "leanrx doctor reported the checkout as not ready" >&2
+  echo "$doctor_output" >&2
+  exit 1
+fi
 for fragment in "LeanRx doctor" "[ok] compiler: 0.1.0-dev" \
     "[ok] toolchain: leanprover/lean4:v4.33.0" "[ok] runtime ABI: 20" \
     "[ok] node:" "[ok] pnpm: 10.33.0" "[ok] tailwind: ≈ tailwindcss v4.3.3" \
