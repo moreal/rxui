@@ -191,20 +191,16 @@ private def runKnown : Cli.Command → IO UInt32
         match CounterSyntax_check with
         | .ok checked => checkComponent moduleName checked
         | .error error => componentError error
-      else if moduleName == "Examples.LeanRxDocs" then
-        match LeanRxDocsSyntax_check with
-        | .ok checked => checkComponent moduleName checked
-        | .error error => componentError error
+      else if moduleName == "Examples.LeanRxDocs" then do
+        LeanRxExamples.LeanRxDocsBuild.withChecked (checkComponent moduleName)
       else unknownModule moduleName
   | .graph moduleName format =>
       if moduleName == "Examples.Counter" then
         match CounterSyntax_check with
         | .ok checked => graphComponent format checked
         | .error error => componentError error
-      else if moduleName == "Examples.LeanRxDocs" then
-        match LeanRxDocsSyntax_check with
-        | .ok checked => graphComponent format checked
-        | .error error => componentError error
+      else if moduleName == "Examples.LeanRxDocs" then do
+        LeanRxExamples.LeanRxDocsBuild.withChecked (graphComponent format)
       else unknownModule moduleName
   | .build moduleName output =>
       if moduleName == "Examples.Counter" then do

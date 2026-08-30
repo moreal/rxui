@@ -29,9 +29,9 @@ node Test/js/component_artifacts.mjs "$output"
 lake env lean "$output/Counter.generated.lean"
 
 docs_check_output="$(lake exe leanrx -- check Examples.LeanRxDocs)"
-if [[ "$docs_check_output" != *"graph: 27 nodes / 27 scheduled"* ||
-      "$docs_check_output" != *"values: 1 source / 6 derived"* ||
-      "$docs_check_output" != *"view: 6 text sinks / 7 events"* ||
+if [[ "$docs_check_output" != *"graph: 34 nodes / 34 scheduled"* ||
+      "$docs_check_output" != *"values: 1 source / 0 derived"* ||
+      "$docs_check_output" != *"view: 0 text sinks / 11 events"* ||
       "$docs_check_output" != *"result: ok"* ]]; then
   echo "LeanRx docs check output changed: $docs_check_output" >&2
   exit 1

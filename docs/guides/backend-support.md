@@ -65,14 +65,18 @@ runtime types.
 The generic scalar component supports these closed tags:
 
 - `main`, `header`, `footer`, `nav`, `aside`, `article`, and `section`;
-- `div`, `p`, `span`, `h1`–`h3`, `strong`, `em`, `ul`, and `li`;
+- `div`, `p`, `span`, `h1`–`h6`, `strong`, `em`, `del`, `ul`, `ol`, and `li`;
+- `a`, `blockquote`, `table`, `thead`, `tbody`, `tr`, `th`, `td`, `hr`, and `br`;
 - `pre`, `code`, `button`, `form`, `input`, and `label`;
-- static `class`, `id`, `aria-label`, and typed button `type` attributes;
+- static `class`, `id`, `aria-label`, checked `href`, and typed button `type`
+  attributes;
 - literal text and staged scalar text;
 - click events on native buttons only.
 
-No constructor exists for raw HTML, arbitrary tag/attribute/event names, URL
-attributes, style text, images, links, generic key events, or direct DOM access.
+No constructor exists for raw HTML, arbitrary tag/attribute/event names, style
+text, images, generic key events, or direct DOM access. Link destinations cross
+the `SafeHref` boundary, which rejects control characters, protocol-relative
+URLs, and executable or unknown schemes.
 Specialized checked form/region applications add only their documented typed
 capabilities; they do not make arbitrary attributes public.
 
@@ -144,7 +148,7 @@ small and imports the module rather than interpolating generated text.
 - general URL router/history integration (routing is the sealed
   one-per-component hash route table over the filter field, ADR-0063);
 - general Virtual DOM or runtime dependency tracking;
-- raw HTML, URL attributes, CSS DSL, images, links, or broad element vocabulary;
+- raw HTML, unrestricted URL attributes, CSS DSL, images, or broad element vocabulary;
 - direct shadcn/ui component use or an installable Lean-native component registry;
 - SSR or hydration;
 - formal verification of the JavaScript engine, DOM, network, storage, or host;

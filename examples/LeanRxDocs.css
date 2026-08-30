@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 @source "../LeanRx/UI/Primitives.lean";
 @source "../LeanRx/Docs/Framework.lean";
+@source "../LeanRx/Docs/Markdown.lean";
 @source "./LeanRxDocs.lean";
 
 @theme inline {

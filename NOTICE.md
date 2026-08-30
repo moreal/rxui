@@ -21,3 +21,13 @@ package source is copied into LeanRx:
 Exact dependency integrity and transitive versions are recorded in
 `pnpm-lock.yaml`. They are test infrastructure and are not imported by generated
 LeanRx application modules or the browser host.
+
+The documentation build imports MD4Lean at revision
+`31907cc18f48a95384f99cee5582c00fb39e0f67`, Copyright © 2024 Jz Pan, under the
+MIT License. MD4Lean vendors a custom MD4C fork, Copyright © 2016–2024 Martin
+Mitáš, also under the MIT License. These sources remain in Lake's dependency
+checkout rather than being copied into LeanRx. MD4Lean/MD4C parse documentation
+at native build time; generated browser modules do not import either library.
+Their complete license texts are distributed in the corresponding dependency
+checkout and upstream repositories, with the exact MD4Lean revision recorded in
+`lake-manifest.json`.

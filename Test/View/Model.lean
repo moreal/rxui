@@ -18,8 +18,15 @@ end
 
 def run : IO Unit := do
   unless HtmlTag.aside.name == "aside" && HtmlTag.article.name == "article" &&
-      HtmlTag.pre.name == "pre" && HtmlTag.code.name == "code" do
+      HtmlTag.pre.name == "pre" && HtmlTag.code.name == "code" &&
+      HtmlTag.a.name == "a" && HtmlTag.table.name == "table" && HtmlTag.ol.name == "ol" do
     throw <| IO.userError "documentation semantic tag names changed"
+  match SafeHref.parse "docs/guides/getting-started.md" with
+  | .error reason => throw <| IO.userError s!"safe relative link rejected: {reason}"
+  | .ok href =>
+      unless (StaticAttr.href href).name == "href" &&
+          (StaticAttr.href href).value == "docs/guides/getting-started.md" do
+        throw <| IO.userError "safe link attribute changed"
   let split := syntaxView.split
   unless split.textSinks.map (·.name) ==
       ["countText", "doubledText", "parityText", "stableText", "hostileText"] do

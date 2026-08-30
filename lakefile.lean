@@ -7,6 +7,9 @@ package leanrx where
   fixedToolchain := true
   moreLeanArgs := #["-E", "hasSorry"]
 
+require MD4Lean from git
+  "https://github.com/acmepjz/md4lean" @ "31907cc18f48a95384f99cee5582c00fb39e0f67"
+
 lean_lib LeanRx
 
 lean_lib LeanRxTest where

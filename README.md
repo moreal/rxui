@@ -217,11 +217,11 @@ lake exe leanrx -- build Examples.LeanRxDocs --out .tmp/docs
 corepack pnpm docs:build -- .tmp/docs-tailwind
 ```
 
-The seven-page site uses the reusable `LeanRx.Docs` shell and `LeanRx.UI`
-primitives with LeanRx state, derived values, events, selected attributes, text
-sinks, graphs, Tailwind v4, Markdown export, and atomic output. It records rather
-than hides missing routing, Markdown ingestion, direct shadcn/ui compatibility,
-SSR, and hydration. Start with the
+The eleven-page site parses the guide sources with pinned MD4Lean, lowers the
+AST into LeanRx's checked `View`, and publishes graphs, Tailwind v4 CSS,
+Markdown sources, and the direct-DOM module as one atomic output. Raw HTML is
+disabled and links cross a checked URL boundary. It records rather than hides
+missing routing, direct shadcn/ui compatibility, SSR, and hydration. Start with the
 [Getting Started guide](docs/guides/getting-started.md), then see the
 [case studies](docs/guides/dogfood-case-studies.md),
 [accessibility guide](docs/guides/accessibility.md), and

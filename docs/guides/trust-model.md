@@ -46,6 +46,7 @@ kernel or toolchain implementation is infallible.
 The following are not formally verified by LeanRx:
 
 - Lean's kernel, compiler, elaborator, standard library, Lake, and exact toolchain;
+- MD4Lean's Lean/FFI wrapper and its vendored MD4C parser for documentation builds;
 - the component extraction and specialized application backends;
 - proof erasure implementation beyond the closed structural analyzer theorem;
 - JavaScript AST validation/printer implementation and the JS engine;

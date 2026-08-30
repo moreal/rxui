@@ -8,6 +8,11 @@ structure Page where
   label : String
   eventName : String
 
+/-- One Markdown document after it has crossed the parser-to-safe-view boundary. -/
+structure RenderedPage (Γ : Schema) where
+  page : Page
+  content : List (View Γ)
+
 private def navigationItem (activePage : Field Γ String) (page : Page) : View Γ :=
   View.node .button [.text page.label]
     (attrs := [.buttonType .button])
@@ -23,6 +28,71 @@ where
   navigationIdleClasses : String :=
     "min-h-11 w-full rounded-lg px-3 py-2 text-left text-sm font-medium " ++
     "text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2"
+
+private def renderedArticle (activePage : Field Γ String) (page : RenderedPage Γ) : View Γ :=
+  View.node .article page.content
+    (attrs := [.ariaLabel page.page.label])
+    (selects := [
+      .classSelect activePage page.page.slug visibleClasses "hidden"
+    ])
+where
+  visibleClasses : String :=
+    "prose mx-auto max-w-4xl px-5 py-10 text-foreground sm:px-8 sm:py-14"
+
+/-- Documentation shell for MD4Lean documents. Every parsed document remains a
+closed LeanRx tree; page state selects visibility and never inserts HTML. -/
+def markdownShell (activePage : Field Γ String) (pages : List (RenderedPage Γ)) : View Γ :=
+  let metadata := pages.map (·.page)
+  View.node .div [
+    View.node .header [
+      View.node .div [
+        View.node .span [.text "LR"]
+          (attrs := [
+            .className
+              ("inline-flex size-9 items-center justify-center rounded-lg bg-primary text-sm " ++
+               "font-bold text-primary-foreground")
+          ]),
+        View.node .div [
+          View.node .strong [.text "LeanRx"]
+            (attrs := [.className "block text-sm font-semibold text-foreground"]),
+          View.node .span [.text "MD4Lean documentation dogfood"]
+            (attrs := [.className "block text-xs text-muted-foreground"])
+        ]
+      ] (attrs := [.className "flex items-center gap-3"]),
+      View.node .span [.text "Unreleased experiment"]
+        (attrs := [
+          .className
+            ("rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium " ++
+             "text-muted-foreground")
+        ])
+    ] (attrs := [
+      .className
+        "mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"
+    ]),
+    View.node .div [
+      View.node .aside [
+        View.node .nav (metadata.map (navigationItem activePage))
+          (attrs := [
+            .className "grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-1",
+            .ariaLabel "Documentation"
+          ])
+      ] (attrs := [.className "border-b border-border p-4 sm:p-6 lg:border-b-0 lg:border-r"]),
+      View.node .main (pages.map (renderedArticle activePage))
+        (attrs := [.className "min-w-0"])
+    ] (attrs := [
+      .className
+        "mx-auto grid max-w-7xl border-t border-border lg:grid-cols-[16rem_minmax(0,1fr)]"
+    ]),
+    View.node .footer [
+      View.node .p [
+        .text "Parsed by MD4Lean and emitted through LeanRx's checked direct-DOM backend."
+      ]
+    ] (attrs := [
+      .className
+        ("border-t border-border px-5 py-8 text-center text-sm text-muted-foreground " ++
+         "pb-[max(2rem,env(safe-area-inset-bottom))]")
+    ])
+  ] (attrs := [.className "min-h-screen bg-background text-foreground"])
 
 /--
 An accessible, direct-DOM documentation shell. Navigation, all copy, and the

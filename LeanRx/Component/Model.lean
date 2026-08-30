@@ -1012,6 +1012,9 @@ private def validateView : View Γ → Except ComponentError Unit
         if let .inputType _ := attr then
           unless tag == .input do
             throw { code := "LRX-VIEW-022", message := "input type is valid only on input elements", spans := #[span] }
+        if let .href _ := attr then
+          unless tag == .a do
+            throw { code := "LRX-VIEW-045", message := "href is valid only on anchor elements", spans := #[span] }
       validateChildren children
   | .text _ _ => pure ()
   | .scalarText name _ span =>

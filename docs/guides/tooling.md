@@ -72,8 +72,10 @@ lake exe leanrx -- build Examples.Counter --out .tmp/counter
 lake exe leanrx -- build Examples.LeanRxDocs --out .tmp/docs
 ```
 
-The docs build additionally runs the pinned Tailwind v4 CLI inside the atomic
-staging directory and publishes Markdown copies beside the generated app. The
+The docs build additionally parses the eleven guide sources through the
+revision-pinned MD4Lean/MD4C FFI with raw HTML disabled, lowers the AST to the
+closed LeanRx view, runs the pinned Tailwind v4 CLI inside the atomic staging
+directory, and publishes Markdown copies beside the generated app. The
 equivalent package script is:
 
 ```sh

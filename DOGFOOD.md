@@ -7464,3 +7464,27 @@ General URL routing, Markdown ingestion, static multi-page output, links and URL
 attributes, clipboard copy, search, SSR/hydration, overlays and focus management,
 and an installable Lean-native UI registry. Until those exist this is a useful
 minimum framework and integration proof, not Starlight or Astro parity.
+
+### MD4Lean ingestion follow-up
+
+The documentation build now pins MD4Lean at
+`31907cc18f48a95384f99cee5582c00fb39e0f67`, reads all eleven guide sources at
+build time, and lowers its AST directly into the closed LeanRx `View`. It does
+not call the MD4Lean HTML renderer or insert an HTML string. GitHub tables,
+ordered and unordered lists, headings, emphasis, deletion, links, inline code,
+and fenced code blocks therefore stay on the checked `createElement`/text-node
+path. Raw HTML is disabled in the parser flags. Link destinations cross the new
+`SafeHref` boundary, which rejects control characters, protocol-relative URLs,
+and executable or unknown schemes.
+
+The reactive shape is correspondingly smaller and more honest: one page source,
+eleven navigation events, and thirty-three state-selected attributes control
+eleven statically mounted parsed articles. There are no duplicated derived copy
+slots or Markdown-shaped text sinks. Images, task lists, math, wiki links,
+nested block structures inside list items, and block quotes fail the docs build
+with `LRX-DOC-*` diagnostics until their safe rendering contracts are added.
+
+General URL routing, static multi-page output, clipboard copy, search,
+SSR/hydration, overlays and focus management, and an installable Lean-native UI
+registry remain missing. Markdown ingestion and checked links are no longer on
+that list.

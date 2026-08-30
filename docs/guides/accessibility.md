@@ -81,10 +81,9 @@ an environment that permits the local test server.
 ## Current gaps
 
 The generic view DSL now includes semantic navigation, article/aside/section,
-list, and code-block elements, but it still lacks links and URL attributes,
-images/alt policy, tables, broad form controls, and general keyboard events.
-Specialized dogfoods implement only their checked needs. The documentation site
-therefore uses a named `nav` with native page buttons and maintained
-`aria-pressed` rather than pretending it has URL navigation. Screen-reader/manual
-cross-platform coverage is not automated, and axe success must not be reported
-as proof of accessibility.
+lists, code blocks, tables, and links with checked destinations. It still lacks
+images/alt policy, broad form controls, and general keyboard events. The
+documentation site uses a named `nav` with native page buttons and maintained
+`aria-pressed`; these buttons select rendered documents but are not a URL
+router. Screen-reader/manual cross-platform coverage is not automated, and axe
+success must not be reported as proof of accessibility.

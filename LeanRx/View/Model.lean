@@ -7,7 +7,8 @@ namespace LeanRx
 inductive HtmlTag where
   | main | div | button | p | span | h1
   | h2 | h3 | header | footer | section | nav | aside | article | ul | li
-  | pre | code | input | label | strong | em | form
+  | h4 | h5 | h6 | a | ol | blockquote | table | thead | tbody | tr | th | td
+  | hr | br | pre | code | input | label | strong | em | del | form
 deriving Repr, BEq, DecidableEq
 
 def HtmlTag.name : HtmlTag → String
@@ -19,6 +20,10 @@ def HtmlTag.name : HtmlTag → String
   | .h1 => "h1"
   | .h2 => "h2"
   | .h3 => "h3"
+  | .h4 => "h4"
+  | .h5 => "h5"
+  | .h6 => "h6"
+  | .a => "a"
   | .header => "header"
   | .footer => "footer"
   | .section => "section"
@@ -26,14 +31,51 @@ def HtmlTag.name : HtmlTag → String
   | .aside => "aside"
   | .article => "article"
   | .ul => "ul"
+  | .ol => "ol"
   | .li => "li"
+  | .blockquote => "blockquote"
+  | .table => "table"
+  | .thead => "thead"
+  | .tbody => "tbody"
+  | .tr => "tr"
+  | .th => "th"
+  | .td => "td"
+  | .hr => "hr"
+  | .br => "br"
   | .pre => "pre"
   | .code => "code"
   | .input => "input"
   | .label => "label"
   | .strong => "strong"
   | .em => "em"
+  | .del => "del"
   | .form => "form"
+
+/-- A URL admitted by the static view boundary. It excludes protocol-relative
+URLs, control characters, and executable/unknown schemes. -/
+structure SafeHref where
+  private mk ::
+  raw : String
+deriving Repr, BEq
+
+namespace SafeHref
+
+def parse (raw : String) : Except String SafeHref := do
+  if raw.isEmpty then
+    throw "link destination must not be empty"
+  if raw.startsWith "//" then
+    throw "protocol-relative link destinations are not supported"
+  if raw.any fun char => char.toNat < 0x20 || char.toNat == 0x7f then
+    throw "link destination contains a control character"
+  if raw.startsWith "http://" || raw.startsWith "https://" || raw.startsWith "mailto:" ||
+      raw.startsWith "#" || !raw.contains ':' then
+    pure ⟨raw⟩
+  else
+    throw "link destination uses an unsupported URL scheme"
+
+def value (href : SafeHref) : String := href.raw
+
+end SafeHref
 
 inductive ButtonType where
   | button | submit | reset
@@ -65,6 +107,7 @@ inductive StaticAttr where
   | inputType (value : InputType)
   | role (value : String)
   | placeholder (value : String)
+  | href (value : SafeHref)
   | ownedState
 deriving Repr, BEq
 
@@ -76,11 +119,13 @@ def StaticAttr.name : StaticAttr → String
   | .inputType _ => "type"
   | .role _ => "role"
   | .placeholder _ => "placeholder"
+  | .href _ => "href"
   | .ownedState => "autocomplete"
 
 def StaticAttr.value : StaticAttr → String
   | .className value | .id value | .ariaLabel value | .role value
   | .placeholder value => value
+  | .href value => value.value
   | .buttonType value => value.name
   | .inputType value => value.name
   | .ownedState => "off"

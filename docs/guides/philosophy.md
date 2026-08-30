@@ -49,5 +49,6 @@ js-framework-benchmark, and this documentation site. Each case records pleasant
 parts, friction, missing capabilities, bugs, accessibility, and performance in
 [`DOGFOOD.md`](../../DOGFOOD.md).
 
-The support matrix is a product feature. Missing routing, Markdown ingestion,
-clipboard, and complex UI primitives remain visible until LeanRx owns them.
+The support matrix is a product feature. The docs build now ingests Markdown
+through pinned MD4Lean, while missing routing, clipboard, and complex UI
+primitives remain visible until LeanRx owns them.

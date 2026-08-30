@@ -16,11 +16,15 @@ const files = new Set([
   "leanrx_dom.mjs",
   "docs/guides/getting-started.md",
   "docs/guides/philosophy.md",
+  "docs/guides/architecture.md",
   "docs/guides/components.md",
   "docs/guides/integrations.md",
   "docs/guides/language.md",
+  "docs/guides/tooling.md",
+  "docs/guides/accessibility.md",
   "docs/guides/backend-support.md",
   "docs/guides/trust-model.md",
+  "docs/guides/dogfood-case-studies.md",
   "DOGFOOD.md",
 ]);
 let server;
@@ -59,52 +63,58 @@ test.afterAll(async () => {
   );
 });
 
-test("dogfoods seven useful pages with active navigation and exact work", async ({ page }) => {
+test("renders eleven MD4Lean guides with active navigation and exact work", async ({ page }) => {
   await page.goto(origin);
-  const title = page.locator("main h1");
-  const body = page.locator("article section").first().locator("p");
-  const code = page.locator("pre code");
+  const article = page.locator("main article:not(.hidden)");
+  const title = article.locator("h1");
   const buttons = page.locator("nav button");
-  await expect(title).toHaveText("Build a checked browser component");
-  await expect(code).toContainText("leanrx -- doctor");
-  await expect(buttons).toHaveCount(7);
+  await expect(title).toHaveText("Getting started");
+  await expect(article.locator("pre code").first()).toContainText("leanrx -- doctor");
+  await expect(article.locator("table")).toHaveCount(2);
+  await expect(article.locator("a")).not.toHaveCount(0);
+  await expect(buttons).toHaveCount(11);
   await expect(buttons.nth(0)).toHaveAttribute("aria-pressed", "true");
   expect(await buttons.evaluateAll((values) =>
     values.every((value) => value.getAttribute("type") === "button"),
   )).toBe(true);
 
   const destinations = [
-    "Make frontend behavior inspectable",
-    "Dependencies are data, not runtime guesses",
-    "Write a small staged component",
-    "Tailwind works as a build-time compiler",
-    "A small Lean-native kit, not shadcn/ui",
-    "Know what LeanRx cannot do yet",
+    "Philosophy and operating model",
+    "LeanRx architecture guide",
+    "Writing components",
+    "LeanRx language guide",
+    "LeanRx tooling guide",
+    "Tailwind and component-library integration",
+    "Accessibility guide",
+    "Backend support matrix",
+    "LeanRx trust model",
+    "Dogfood case studies",
   ];
   await buttons.nth(1).focus();
   await expect(buttons.nth(1)).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(title).toHaveText(destinations[0]);
   await expect(buttons.nth(1)).toHaveAttribute("aria-pressed", "true");
-  for (let index = 2; index < 7; index += 1) {
+  for (let index = 2; index < 11; index += 1) {
     await buttons.nth(index).click();
     await expect(title).toHaveText(destinations[index - 1]);
     await expect(buttons.nth(index)).toHaveAttribute("aria-pressed", "true");
     await expect(buttons.nth(index - 1)).toHaveAttribute("aria-pressed", "false");
   }
-  await expect(body).toContainText("no general URL router");
+  await expect(article).toContainText("documentation site");
   await buttons.nth(3).click();
-  await expect(code).toContainText("component Counter");
-  await expect(code.locator("main")).toHaveCount(0);
+  await expect(article.locator("pre code").filter({ hasText: "component Counter" })).toHaveCount(1);
+  await expect(article.locator("pre code main")).toHaveCount(0);
   await buttons.nth(0).click();
-  await expect(title).toHaveText("Build a checked browser component");
+  await expect(title).toHaveText("Getting started");
 
   const instrumentation = await page.evaluate(() =>
     globalThis.leanrxDocsDispose.instrumentation(),
   );
-  expect(instrumentation.slice(0, 7)).toEqual([0, 8, 8, 48, 48, 48, 48]);
-  expect(instrumentation[7].filter((entry) => entry === "transaction:commit")).toHaveLength(8);
-  expect(instrumentation[7].filter((entry) => entry.endsWith(":write"))).toHaveLength(88);
+  expect(instrumentation.slice(0, 7)).toEqual([0, 12, 12, 0, 0, 0, 0]);
+  expect(instrumentation[7].filter((entry) => entry === "transaction:commit")).toHaveLength(12);
+  expect(instrumentation[7].filter((entry) => entry.endsWith(":write"))).toHaveLength(84);
+  expect(instrumentation.slice(8, 10)).toEqual([396, 72]);
 
   const layout = await page.evaluate(() => {
     const shell = document.querySelector("header + div");
@@ -144,7 +154,7 @@ test("dogfoods seven useful pages with active navigation and exact work", async 
 
   await page.goto(`${origin}/LeanRxDocs.graph.html`);
   await expect(page.locator("main h1")).toHaveText("LeanRx reactive graph");
-  await expect(page.locator(".leanrx-node")).toHaveCount(27);
+  await expect(page.locator(".leanrx-node")).toHaveCount(34);
   const graphAccessibility = await new AxeBuilder({ page }).analyze();
   expect(graphAccessibility.violations).toEqual([]);
 });
@@ -194,8 +204,8 @@ test("mounts independently and disposes listeners idempotently", async ({ page }
     const firstButton = document.querySelector("#app nav button");
     const secondButton = document.querySelector("#second nav button:nth-of-type(2)");
     secondButton.click();
-    const firstTitle = document.querySelector("#app h1").textContent;
-    const secondTitle = document.querySelector("#second h1").textContent;
+    const firstTitle = document.querySelector("#app main article:not(.hidden) h1").textContent;
+    const secondTitle = document.querySelector("#second main article:not(.hidden) h1").textContent;
     const before = disposeSecond.instrumentation();
     disposeSecond();
     disposeSecond();
@@ -206,8 +216,8 @@ test("mounts independently and disposes listeners idempotently", async ({ page }
     firstButton.click();
     return { firstTitle, secondTitle, before, after };
   });
-  expect(result.firstTitle).toBe("Build a checked browser component");
-  expect(result.secondTitle).toBe("Make frontend behavior inspectable");
+  expect(result.firstTitle).toBe("Getting started");
+  expect(result.secondTitle).toBe("Philosophy and operating model");
   expect(result.after).toEqual(result.before);
   await expect(page.locator("#app > div")).toHaveCount(0);
 });

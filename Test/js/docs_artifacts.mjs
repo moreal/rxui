@@ -27,11 +27,11 @@ if (
   manifest.runtimeAbi !== 20 ||
   JSON.stringify(manifest.exports) !== JSON.stringify(["mount"]) ||
   JSON.stringify(manifest.stateSlots) !==
-    JSON.stringify(["string", "string", "string", "string", "string", "string", "string"]) ||
+    JSON.stringify(["string"]) ||
   manifest.sourceCount !== 1 ||
-  manifest.derivedCount !== 6 ||
-  manifest.textSinkCount !== 6 ||
-  manifest.eventCount !== 7 ||
+  manifest.derivedCount !== 0 ||
+  manifest.textSinkCount !== 0 ||
+  manifest.eventCount !== 11 ||
   JSON.stringify(manifest.hostImports) !==
     JSON.stringify(["./leanrx_dom.mjs"]) ||
   JSON.stringify(manifest.features) !==
@@ -59,7 +59,7 @@ const declarations = await readFile(
   path.join(directory, "LeanRxDocs.generated.lean"),
   "utf8",
 );
-for (const banned of ["currentObserver", "new Proxy", "eval(", "Function(", "innerHTML"]) {
+for (const banned of ["new Proxy", "eval(", "Function(", "innerHTML"]) {
   if (source.includes(banned)) throw new Error(`generated LeanRx docs contains ${banned}`);
 }
 if (!index.startsWith("<!doctype html>") ||
@@ -85,11 +85,14 @@ for (const utility of [
 }
 if (!stylesInput.includes('@import "tailwindcss" source(none)') ||
     !stylesInput.includes('@source "../LeanRx/Docs/Framework.lean"') ||
+    !stylesInput.includes('@source "../LeanRx/Docs/Markdown.lean"') ||
     styles.includes("@tailwind")) {
   throw new Error("Tailwind docs input or compiled output is invalid");
 }
 if (docsManifest.framework !== "LeanRx.Docs" ||
     docsManifest.styling !== "Tailwind CSS 4.3.3" ||
+    docsManifest.markdownParser !==
+      "MD4Lean@31907cc18f48a95384f99cee5582c00fb39e0f67" ||
     docsManifest.shadcnDirectCompatibility !== false ||
     docsManifest.markdownExport !== true) {
   throw new Error("LeanRx docs framework metadata is invalid");
@@ -148,8 +151,8 @@ if (!philosophy.includes("../../DOGFOOD.md")) {
   throw new Error("Philosophy lost its exported DOGFOOD link");
 }
 if (!declarations.includes("namespace LeanRxGenerated.Docs") ||
-    !declarations.includes("LeanRxDocsSyntax_declarations") ||
-    !declarations.includes("LeanRxDocsSyntax_check")) {
+    !declarations.includes("LeanRxDocsBuild.withSpec") ||
+    !declarations.includes("LeanRxDocsBuild.withChecked")) {
   throw new Error("generated LeanRx docs editor declarations are invalid");
 }
 

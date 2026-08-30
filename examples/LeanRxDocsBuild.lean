@@ -1,19 +1,21 @@
 import examples.LeanRxDocs
 import LeanRx.Cli.AtomicOutput
+import LeanRx.Docs.Markdown
 
 namespace LeanRxExamples.LeanRxDocsBuild
 
 open LeanRx LeanRxExamples.LeanRxDocs
 
 def generatedDeclarationsSource : String := String.intercalate "\n" [
-  "import examples.LeanRxDocs",
+  "import examples.LeanRxDocsBuild",
   "",
   "namespace LeanRxGenerated.Docs",
   "",
-  "abbrev Schema := LeanRxExamples.LeanRxDocs.LeanRxDocsSyntax_schema",
-  "def declarations := LeanRxExamples.LeanRxDocs.LeanRxDocsSyntax_declarations",
-  "abbrev Spec := LeanRxExamples.LeanRxDocs.LeanRxDocsSyntax_spec",
-  "abbrev Check := LeanRxExamples.LeanRxDocs.LeanRxDocsSyntax_check",
+  "abbrev Schema := LeanRxExamples.LeanRxDocs.DocsSchema",
+  "def withSpec (action : LeanRx.ComponentSpec Schema → IO α) : IO α :=",
+  "  LeanRxExamples.LeanRxDocsBuild.withSpec action",
+  "def withCheck (action : LeanRx.CheckedComponent Schema → IO α) : IO α :=",
+  "  LeanRxExamples.LeanRxDocsBuild.withChecked action",
   "",
   "end LeanRxGenerated.Docs",
   ""
@@ -56,11 +58,34 @@ private def buildManifest : String := String.intercalate "\n" [
   "  \"framework\": \"LeanRx.Docs\",",
   "  \"styling\": \"Tailwind CSS 4.3.3\",",
   "  \"ui\": \"LeanRx.UI experimental source primitives\",",
+  "  \"markdownParser\": \"MD4Lean@31907cc18f48a95384f99cee5582c00fb39e0f67\",",
   "  \"shadcnDirectCompatibility\": false,",
   "  \"markdownExport\": true",
   "}",
   ""
 ]
+
+def withRendered (action : List (Docs.RenderedPage DocsSchema) → IO α) : IO α :=
+  let rec loop (remaining : List Guide) (rendered : List (Docs.RenderedPage DocsSchema)) :
+      IO α := do
+    match remaining with
+    | [] => action rendered.reverse
+    | guide :: rest =>
+        let source ← IO.FS.readFile guide.path
+        match Docs.Markdown.render source "./docs/guides/" with
+        | .ok content => loop rest ({ page := guide.page, content } :: rendered)
+        | .error error =>
+            throw <| IO.userError s!"{guide.path}: {error.render}"
+  loop guides []
+
+def withSpec (action : ComponentSpec DocsSchema → IO α) : IO α :=
+  withRendered fun rendered => action (LeanRxExamples.LeanRxDocs.spec rendered)
+
+def withChecked (action : CheckedComponent DocsSchema → IO α) : IO α :=
+  withSpec fun spec =>
+    match spec.check with
+    | .ok checked => action checked
+    | .error error => throw <| IO.userError s!"docs component invalid: {error.render}"
 
 private def compileTailwind (directory : System.FilePath) : IO Unit := do
   let input := directory / "LeanRxDocs.input.css"
@@ -118,9 +143,7 @@ private def generateChecked (directory : System.FilePath)
   compileTailwind directory
 
 def generateInto (directory : System.FilePath) : IO Unit :=
-  match LeanRxDocsSyntax_spec.check with
-  | .error error => throw <| IO.userError s!"docs component invalid: {error.render}"
-  | .ok checked => generateChecked directory checked
+  withChecked (generateChecked directory)
 
 def generate (directory : System.FilePath) : IO Unit :=
   LeanRx.Cli.AtomicOutput.replaceDirectory directory generateInto
